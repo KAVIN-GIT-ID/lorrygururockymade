@@ -225,9 +225,40 @@ async function main() {
         console.log(`✓ Index for "${col.id}" created successfully.`);
       } else if (idxData.code === 409 || idxData.type === 'index_already_exists') {
         console.log(`ℹ Index for "${col.id}" already exists.`);
-      } else {
-        console.warn(`⚠ Warning: Index creation for "${col.id}" returned: ${idxData.message || JSON.stringify(idxData)}`);
       }
+    }
+    
+    // 7. Create Storage Bucket
+    console.log(`\n7. Setting up Storage Bucket...`);
+    const bucketId = process.env.VITE_APPWRITE_BUCKET_ID || 'fleet_docs';
+    console.log(`Creating/Verifying Storage Bucket "${bucketId}"...`);
+    try {
+      let bucketResponse = await fetch(`${endpoint}/storage/buckets`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          bucketId: bucketId,
+          name: 'Fleet Documents',
+          permissions: [
+            'create("any")',
+            'read("any")',
+            'update("any")',
+            'delete("any")'
+          ],
+          fileSecurity: false
+        })
+      });
+      
+      let bucketData = await bucketResponse.json();
+      if (bucketResponse.ok) {
+        console.log(`✓ Storage Bucket "${bucketId}" created successfully.`);
+      } else if (bucketData.code === 409 || bucketData.type === 'storage_bucket_already_exists' || bucketData.type === 'bucket_already_exists') {
+        console.log(`ℹ Storage Bucket "${bucketId}" already exists.`);
+      } else {
+        console.warn(`⚠ Warning: Storage bucket setup returned: ${bucketData.message || JSON.stringify(bucketData)}`);
+      }
+    } catch (bucketErr) {
+      console.warn(`⚠ Warning: Storage bucket setup failed: ${bucketErr.message}`);
     }
     
     console.log("\n=================================");

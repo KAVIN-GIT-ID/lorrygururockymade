@@ -401,7 +401,7 @@ export default function TripList({
       </div>
 
       {/* CORE MASTER LIST TABLE CONTAINER */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden hidden md:block">
         <div ref={scrollRef} className="overflow-x-auto">
           <table id="master-trips-table" className="w-full text-left text-sm text-slate-700 whitespace-nowrap min-w-[1000px]">
             <thead className="text-[11px] text-slate-500 uppercase bg-slate-50 border-b border-slate-200 font-bold tracking-wider">
@@ -498,32 +498,28 @@ export default function TripList({
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
-                            {/* MODIFY */}
+                            {/* MODIFY SPEC ROW */}
                             <button
-                              title="Modify Master Fleet Record"
+                              title="Modify Cargo Entry specs"
                               disabled={!canEditTrips}
-                              onClick={() => {
-                                onEditEntry(trip);
-                              }}
-                              className="p-1 px-2.5 bg-slate-50 text-slate-700 hover:text-slate-950 hover:bg-slate-100 rounded border border-slate-200 transition cursor-pointer flex items-center h-8 disabled:opacity-40 disabled:cursor-not-allowed"
+                              onClick={() => onEditEntry(trip)}
+                              className="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center h-8"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            {/* SCRAP */}
+                            {/* DELETE ENTRY */}
                             <button
-                              title="Permanent deletion of trip segments"
+                              title="Wipe Cargo Entry record"
                               disabled={!canDeleteTrips}
                               onClick={() => {
-                                const msg = `Caution! Deleting Master Trip ${trip.tripNo} will permanently delete all ${trip.subTrips?.length || 0} sub-trip segments, loaded cargos, expenditures and advances receipts. Continue?`;
+                                const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
                                 if (confirmAction) {
-                                  confirmAction(msg, () => {
-                                    onDeleteEntry(trip.id);
-                                  }, "Delete Master Trip Journey");
+                                  confirmAction(msg, () => onDeleteEntry(trip.id), "Delete Cargo Entry Record");
                                 } else if (confirm(msg)) {
                                   onDeleteEntry(trip.id);
                                 }
                               }}
-                              className="p-1 px-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded border border-rose-100 transition cursor-pointer flex items-center h-8 disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="p-1 px-2.5 bg-rose-50/30 text-rose-600 hover:text-rose-700 hover:bg-rose-550/10 rounded border border-rose-150 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center h-8"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -538,15 +534,11 @@ export default function TripList({
 
             {/* GRAND FILTERED TOTALS ON FOOTER */}
             {filteredTrips.length > 0 && (
-              <tfoot className="bg-slate-50 text-slate-705 font-bold text-[12px] border-t border-slate-200 uppercase tracking-wide font-mono">
-                <tr className="bg-slate-50/90 shrink-0 font-bold">
-                  <td className="px-6 py-4 pl-6 text-left font-sans text-xs text-blue-650 font-extrabold">
-                    Filtered Cumulative totals
+              <tfoot className="bg-slate-50 font-mono text-slate-800 text-[11px] font-bold border-t border-slate-200">
+                <tr>
+                  <td className="px-6 py-4 pl-6" colSpan={3}>
+                    Totals ({filteredTrips.length} transport logs mapped)
                   </td>
-                  <td className="px-4 py-4 text-left font-sans text-[10px] text-slate-500 font-semibold uppercase">
-                    {filteredTrips.length} master trips &bull; {totals.km.toLocaleString('en-IN')} KM total
-                  </td>
-                  <td className="px-4 py-4 text-center"></td>
                   <td className="px-4 py-4 text-right">
                     ₹{totals.income.toLocaleString('en-IN')}
                   </td>
@@ -566,6 +558,132 @@ export default function TripList({
             )}
           </table>
         </div>
+      </div>
+
+      {/* MOBILE LIST CARD VIEW */}
+      <div className="block md:hidden space-y-4">
+        {filteredTrips.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
+            No active transport references matched your operational filters.
+          </div>
+        ) : (
+          sortedTrips.map((trip) => {
+            const m = getTripMetrics(trip);
+            return (
+              <div
+                key={trip.id}
+                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+                onClick={() => setViewingEntry(trip)}
+              >
+                <div>
+                  {/* Top Row: Trip ID & Status */}
+                  <div className="flex justify-between items-center gap-2 mb-3">
+                    <span className="font-mono font-extrabold text-blue-600 text-xs">
+                      {trip.tripNo}
+                    </span>
+                    {getStatusBadge(trip.status)}
+                  </div>
+
+                  {/* Truck & Driver */}
+                  <div className="flex items-center gap-3 text-xs mb-3 text-slate-800">
+                    <span className="font-mono font-bold text-slate-900 tracking-wider">
+                      {trip.truckNo}
+                    </span>
+                    <span className="w-px h-3.5 bg-slate-200" />
+                    <span className="text-slate-500 font-medium flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 animate-none shrink-0" />
+                      {trip.driverName || 'No Driver'}
+                    </span>
+                  </div>
+
+                  {/* Route & Dates */}
+                  <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-bold uppercase text-[9px]">Route</span>
+                      <span className="font-semibold text-slate-850 truncate max-w-[200px]" title={trip.partyName || 'Broker'}>
+                        {trip.partyName || 'Broker'} &bull; {trip.fromCity} &rarr; {trip.toCity}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-bold uppercase text-[9px]">Dates</span>
+                      <span className="font-medium text-slate-700">
+                        {dateFormatted(trip.startDate)} &rarr; {dateFormatted(trip.endDate)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Financials Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+                    <div className="bg-emerald-50/20 border border-emerald-100/40 rounded-lg p-2 flex flex-col justify-between">
+                      <span className="text-emerald-700/85 font-bold uppercase text-[9px]">Income</span>
+                      <span className="font-extrabold text-emerald-800 mt-1">
+                        {currencyFormatted(m.income)}
+                      </span>
+                    </div>
+                    <div className="bg-rose-50/20 border border-rose-100/40 rounded-lg p-2 flex flex-col justify-between">
+                      <span className="text-rose-750 font-bold uppercase text-[9px]">Expense</span>
+                      <span className="font-extrabold text-rose-800 mt-1">
+                        ₹{m.totalExpense.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200/45 rounded-lg p-2 flex flex-col justify-between">
+                      <span className="text-slate-500 font-bold uppercase text-[9px]">Profit</span>
+                      <span className={`font-extrabold mt-1 ${m.profit >= 0 ? 'text-indigo-800' : 'text-rose-800'}`}>
+                        ₹{m.profit.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="bg-amber-50/25 border border-amber-100/60 rounded-lg p-2 flex flex-col justify-between">
+                      <span className="text-amber-700 font-bold uppercase text-[9px]">Outstanding</span>
+                      <span className="font-black text-amber-800 mt-1">
+                        ₹{m.outstandingBalance.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions Grid */}
+                <div 
+                  className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto"
+                  onClick={(e) => e.stopPropagation()} // Prevent triggering viewport modal
+                >
+                  <button
+                    type="button"
+                    onClick={() => setViewingEntry(trip)}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                    <span>View</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEditTrips}
+                    onClick={() => onEditEntry(trip)}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canDeleteTrips}
+                    onClick={() => {
+                      const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
+                      if (confirmAction) {
+                        confirmAction(msg, () => onDeleteEntry(trip.id), "Delete Cargo Entry Record");
+                      } else if (confirm(msg)) {
+                        onDeleteEntry(trip.id);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* SINGLE MASTER TRIP COMPLETE 23-COLUMNS PRINT AUDIT TAB MODAL */}

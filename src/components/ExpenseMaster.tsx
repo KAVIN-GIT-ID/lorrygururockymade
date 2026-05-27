@@ -216,7 +216,7 @@ export default function ExpenseMaster({
             
             {/* Truck No */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Truck ID No <span className="text-rose-500">*</span></label>
+              <label htmlFor="expense-input-truck" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Truck ID No <span className="text-rose-500">*</span></label>
               <select
                 id="expense-input-truck"
                 value={truckNo}
@@ -258,7 +258,7 @@ export default function ExpenseMaster({
 
             {/* Expense Type */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Type <span className="text-rose-500">*</span></label>
+              <label htmlFor="expense-input-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Type <span className="text-rose-500">*</span></label>
               <select
                 id="expense-input-type"
                 value={expenseType}
@@ -280,7 +280,7 @@ export default function ExpenseMaster({
 
             {/* Shop / Supplier Name */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name No <span className="text-rose-500">*</span></label>
+              <label htmlFor="expense-input-shop" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name No <span className="text-rose-500">*</span></label>
               <input
                 id="expense-input-shop"
                 type="text"
@@ -294,7 +294,7 @@ export default function ExpenseMaster({
 
             {/* Expense Amount */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span className="text-rose-500">*</span></label>
+              <label htmlFor="expense-input-amount" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span className="text-rose-500">*</span></label>
               <input
                 id="expense-input-amount"
                 type="number"
@@ -310,7 +310,7 @@ export default function ExpenseMaster({
 
             {/* Account Type Selector (Requirement 2) */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Account Type <span className="text-rose-500">*</span></label>
+              <label htmlFor="expense-input-account-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Account Type <span className="text-rose-500">*</span></label>
               <select
                 id="expense-input-account-type"
                 value={accountType}
@@ -335,7 +335,7 @@ export default function ExpenseMaster({
             {/* Account / Driver Selector depending on Account Type */}
             {accountType === 'Account' ? (
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Ledger Account / Mode</label>
+                <label htmlFor="expense-input-payment-mode" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Ledger Account / Mode</label>
                 <select
                   id="expense-input-payment-mode"
                   value={paymentMode}
@@ -352,7 +352,7 @@ export default function ExpenseMaster({
               </div>
             ) : (
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Select Driver <span className="text-rose-500">*</span></label>
+                <label htmlFor="expense-input-driver-name" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Select Driver <span className="text-rose-500">*</span></label>
                 <select
                   id="expense-input-driver-name"
                   value={selectedDriverName}
@@ -370,7 +370,7 @@ export default function ExpenseMaster({
 
             {/* Date */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
+              <label htmlFor="expense-input-date" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
               <input
                 id="expense-input-date"
                 type="date"
@@ -383,7 +383,7 @@ export default function ExpenseMaster({
 
             {/* Ledger Status */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
+              <label htmlFor="expense-input-status" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
               <select
                 id="expense-input-status"
                 value={status}
@@ -481,7 +481,7 @@ export default function ExpenseMaster({
       </div>
 
       {/* EXPENSE LEDGER DATAGRID */}
-      <div className="overflow-x-auto border border-slate-200.5/90 rounded-xl bg-white shadow-2xs">
+      <div className="overflow-x-auto border border-slate-200.5/90 rounded-xl bg-white shadow-2xs hidden md:block">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-[10px] font-extrabold text-slate-550 border-b border-slate-200 uppercase tracking-wider">
             <tr>
@@ -518,15 +518,14 @@ export default function ExpenseMaster({
                     </span>
                   </td>
                   <td className="p-3">
-                    <span className="bg-indigo-50 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold">
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 border border-blue-100 text-blue-800 font-extrabold rounded px-2 py-0.5">
                       {exp.expenseType}
                     </span>
                   </td>
                   <td className="p-3">
-                    <span className="flex items-center gap-1.5 font-bold font-sans text-slate-800">
-                      <ShoppingBag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {exp.shopName}
-                    </span>
+                    <div className="font-semibold text-slate-800 truncate max-w-[150px]" title={exp.shopName || '—'}>
+                      {exp.shopName || '—'}
+                    </div>
                   </td>
                   <td className="p-3 font-semibold text-xs text-indigo-700 whitespace-nowrap">
                     {exp.accountType === 'Driver' ? (
@@ -579,6 +578,97 @@ export default function ExpenseMaster({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* MOBILE LIST CARD VIEW */}
+      <div className="block md:hidden space-y-4">
+        {filteredExpenses.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
+            No expense records match the selected registers.
+          </div>
+        ) : (
+          filteredExpenses.map((exp) => (
+            <div 
+              key={exp.id}
+              className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+            >
+              <div>
+                {/* Top Row: Date & Status */}
+                <div className="flex justify-between items-center gap-2 mb-3">
+                  <span className="font-mono text-[10px] text-slate-500 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    {exp.date}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    exp.status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                    'bg-amber-50 text-amber-705 border border-amber-100'
+                  }`}>
+                    {exp.status}
+                  </span>
+                </div>
+
+                {/* Truck & Expense Type */}
+                <div className="flex items-center gap-2.5 text-xs mb-3 text-slate-800">
+                  <span className="flex items-center gap-1 uppercase font-mono font-bold text-slate-900 tracking-wider">
+                    <TruckIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {exp.truckNo}
+                  </span>
+                  <span className="w-px h-3 bg-slate-200" />
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 border border-blue-100 text-blue-800 font-extrabold rounded px-2 py-0.2 uppercase tracking-wider">
+                    {exp.expenseType}
+                  </span>
+                </div>
+
+                {/* Details Section */}
+                <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Supplier / Shop</span>
+                    <span className="font-semibold text-slate-800 truncate max-w-[180px]">{exp.shopName || '—'}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Payment Mode</span>
+                    <span className="text-slate-700">{exp.accountType === 'Driver' ? `Driver: ${exp.driverName}` : exp.paymentMode}</span>
+                  </div>
+                </div>
+
+                {/* Amount Row */}
+                <div className="flex justify-between items-center text-xs mb-4">
+                  <span className="text-slate-500 font-semibold">Expense Amount:</span>
+                  <span className="font-mono font-black text-rose-650 text-[14px]">
+                    ₹{exp.amount.toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions Grid */}
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
+                <button
+                  type="button"
+                  disabled={!canEditExpenses}
+                  onClick={() => startEdit(exp)}
+                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!canDeleteExpenses}
+                  onClick={() => {
+                    if (confirm(`Are you sure you want to delete this expense record of ₹${exp.amount}?`)) {
+                      onDeleteExpense(exp.id);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

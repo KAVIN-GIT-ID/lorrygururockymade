@@ -58,7 +58,8 @@ import {
   Clock,
   Settings,
   ShieldCheck,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 
 
@@ -1044,6 +1045,10 @@ export default function App() {
       const uniqueSuffix = Math.random().toString(36).substring(2, 6);
       const localSlug = `org_${cleanSlug || 'company'}_${uniqueSuffix}`;
 
+      if (dryRun) {
+        return { approved: true, orgId: '' };
+      }
+
       if (isAppwriteConfigured()) {
         try {
           const teamId = await appwrite.createTeam(trimmedOrgName);
@@ -1249,6 +1254,12 @@ export default function App() {
 
   // Navigation / Tabs State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND'>('DASHBOARD');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND') => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
 
   // Live Appwrite team membership list (fetched when admin opens USERS tab)
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -2766,6 +2777,13 @@ export default function App() {
     const merged: Driver = oldDriver ? { ...oldDriver, ...updated } : updated;
     const next = drivers.map(d => d.id === updated.id ? merged : d);
     saveDrivers(next);
+
+    if (isAppwriteConfigured() && oldDriver && oldDriver.licenseFileId && oldDriver.licenseFileId !== merged.licenseFileId) {
+      appwrite.deleteFile(oldDriver.licenseFileId).catch(err => {
+        console.warn("Failed to delete replaced driver license file:", err);
+      });
+    }
+
     const diff = oldDriver ? getDriverDiff(oldDriver, merged) : `Updated driver specs or active status to ${merged.status}`;
     if (diff) {
       logAction('Edited', 'Driver', merged.driverName, diff);
@@ -2782,6 +2800,13 @@ export default function App() {
     }
     const next = drivers.filter(d => d.id !== id);
     saveDrivers(next);
+
+    if (isAppwriteConfigured() && dr?.licenseFileId) {
+      appwrite.deleteFile(dr.licenseFileId).catch(err => {
+        console.warn("Failed to delete driver license file on driver removal:", err);
+      });
+    }
+
     if (dr) {
       logAction('Deleted', 'Driver', dr.driverName, `Permanently deleted driver ${dr.driverName} record`);
     }
@@ -2816,6 +2841,20 @@ export default function App() {
     const merged: Truck = oldTruck ? { ...oldTruck, ...updated } : updated;
     const next = trucks.map(t => t.id === updated.id ? merged : t);
     saveTrucks(next);
+
+    if (isAppwriteConfigured() && oldTruck) {
+      if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
+        appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
+          console.warn("Failed to delete replaced RC file:", err);
+        });
+      }
+      if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
+        appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
+          console.warn("Failed to delete replaced Insurance file:", err);
+        });
+      }
+    }
+
     const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
     if (diff) {
       logAction('Edited', 'Truck', merged.truckNo, diff);
@@ -2832,6 +2871,19 @@ export default function App() {
     }
     const next = trucks.filter(t => t.id !== id);
     saveTrucks(next);
+
+    if (isAppwriteConfigured() && truckToDelete) {
+      if (truckToDelete.rcFileId) {
+        appwrite.deleteFile(truckToDelete.rcFileId).catch(err => {
+          console.warn("Failed to delete RC file on truck removal:", err);
+        });
+      }
+      if (truckToDelete.insuranceFileId) {
+        appwrite.deleteFile(truckToDelete.insuranceFileId).catch(err => {
+          console.warn("Failed to delete Insurance file on truck removal:", err);
+        });
+      }
+    }
 
     // Remove pending or rejected approval request if it exists
     const targetOrgId = truckToDelete?.organizationId || currentUserOrgId;
@@ -3459,9 +3511,10 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       <aside className="w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
-        <div className="p-6 flex-1 flex flex-col min-h-0">
-          <div className="flex items-center gap-3 mb-8 text-slate-900 dark:text-white font-bold text-xl shrink-0">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
+        {/* Header Panel (Logo & Mobile Toggle Button) */}
+        <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
+          <div className="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
+            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 00-1 1v1h2v-1a1 1 0 00-1-1z"></path>
@@ -3469,195 +3522,218 @@ export default function App() {
             </div>
             <span>FleetTrack Pro</span>
           </div>
-
-          <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
-            <button
-              id="tab-btn-dashboard"
-              onClick={() => setActiveTab('DASHBOARD')}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
-                  ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                  : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>Dashboard</span>
-            </button>
-            {currentUserRights.canViewTrips && (
-              <button
-                id="tab-btn-trips"
-                onClick={() => setActiveTab('TRIPS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <BookOpen className="w-4 h-4" />
-                <span>Trip Management</span>
-              </button>
-            )}
-            {currentUserRights.canViewTrucks && (
-              <button
-                id="tab-btn-trucks"
-                onClick={() => setActiveTab('TRUCKS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <TruckIcon className="w-4 h-4" />
-                <span>Truck Registry</span>
-              </button>
-            )}
-            {currentUserRights.canViewOffices && (
-              <button
-                id="tab-btn-offices"
-                onClick={() => setActiveTab('OFFICES')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <MapPin className="w-4 h-4" />
-                <span>Offices</span>
-              </button>
-            )}
-            {currentUserRights.canViewAccounts && (
-              <button
-                id="tab-btn-accounts"
-                onClick={() => setActiveTab('ACCOUNTS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <Coins className="w-4 h-4" />
-                <span>Account Ledger</span>
-              </button>
-            )}
-            {currentUserRights.canViewDrivers && (
-              <button
-                id="tab-btn-drivers"
-                onClick={() => setActiveTab('DRIVERS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Drivers Database</span>
-              </button>
-            )}
-            {currentUserRights.canViewExpenses && (
-              <button
-                id="tab-btn-expenses"
-                onClick={() => setActiveTab('EXPENSES')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Expense Ledger</span>
-              </button>
-            )}
-            {currentUserRights.canViewTrips && (
-              <button
-                id="tab-btn-reports"
-                onClick={() => setActiveTab('REPORTS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Monthly Reports</span>
-              </button>
-            )}
-            {currentUserRights.isAdmin && (
-              <button
-                id="tab-btn-audit"
-                onClick={() => setActiveTab('AUDIT')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <History className="w-4 h-4" />
-                <span>System Audit Logs</span>
-              </button>
-            )}
-            {currentUserRights.canViewTyres && (
-              <button
-                id="tab-btn-tyres"
-                onClick={() => setActiveTab('TYRES')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <Disc className="w-4 h-4" />
-                <span>Tyre Ledger & ODO</span>
-              </button>
-            )}
-            {hasUsersTabAccess && (
-              <button
-                id="tab-btn-users"
-                onClick={() => setActiveTab('USERS')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Access Control</span>
-              </button>
-            )}
-            {currentUserRights.isSuperAdmin && (
-              <button
-                id="tab-btn-backend"
-                onClick={() => setActiveTab('BACKEND')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
-                    ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <Settings className="w-4 h-4 text-purple-500" />
-                <span>Backend Dashboard</span>
-              </button>
-            )}
-          </nav>
-        </div>
-        <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-850 space-y-3 shrink-0">
-          <div>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">Logged in as</div>
-            <div className="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser?.email || currentUser?.name || 'User'}>
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-              <span className="truncate">{currentUser?.name || currentUser?.email || 'Logistics Admin'}</span>
-            </div>
-          </div>
-          {currentUserOrgId && (
-            <div className="flex items-center justify-between bg-slate-150 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
-              <span className="truncate font-semibold select-all" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(currentUserOrgId);
-                  showNotification("Organization ID copied to clipboard!");
-                }}
-                className="text-slate-550 hover:text-slate-900 dark:hover:text-white transition-colors p-0.5 shrink-0 ml-1.5 cursor-pointer"
-                title="Copy Organization ID"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
+          
+          {/* Mobile Menu Toggle Button */}
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 text-xs font-bold transition cursor-pointer"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
+            aria-label="Toggle Navigation Menu"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
+            {isMobileMenuOpen ? (
+              <X className="w-5 h-5" />
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            )}
           </button>
+        </div>
+
+        {/* Collapsible Content Area */}
+        <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-h-0 overflow-hidden`}>
+          {/* Navigation Items */}
+          <div className="p-6 pt-4 md:p-6 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
+            <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
+              <button
+                id="tab-btn-dashboard"
+                onClick={() => selectTab('DASHBOARD')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                  }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Dashboard</span>
+              </button>
+              {currentUserRights.canViewTrips && (
+                <button
+                  id="tab-btn-trips"
+                  onClick={() => selectTab('TRIPS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Trip Management</span>
+                </button>
+              )}
+              {currentUserRights.canViewTrucks && (
+                <button
+                  id="tab-btn-trucks"
+                  onClick={() => selectTab('TRUCKS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <TruckIcon className="w-4 h-4" />
+                  <span>Truck Registry</span>
+                </button>
+              )}
+              {currentUserRights.canViewOffices && (
+                <button
+                  id="tab-btn-offices"
+                  onClick={() => selectTab('OFFICES')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <MapPin className="w-4 h-4" />
+                  <span>Offices</span>
+                </button>
+              )}
+              {currentUserRights.canViewAccounts && (
+                <button
+                  id="tab-btn-accounts"
+                  onClick={() => selectTab('ACCOUNTS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <Coins className="w-4 h-4" />
+                  <span>Account Ledger</span>
+                </button>
+              )}
+              {currentUserRights.canViewDrivers && (
+                <button
+                  id="tab-btn-drivers"
+                  onClick={() => selectTab('DRIVERS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Drivers Database</span>
+                </button>
+              )}
+              {currentUserRights.canViewExpenses && (
+                <button
+                  id="tab-btn-expenses"
+                  onClick={() => selectTab('EXPENSES')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Expense Ledger</span>
+                </button>
+              )}
+              {currentUserRights.canViewTrips && (
+                <button
+                  id="tab-btn-reports"
+                  onClick={() => selectTab('REPORTS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Monthly Reports</span>
+                </button>
+              )}
+              {currentUserRights.isAdmin && (
+                <button
+                  id="tab-btn-audit"
+                  onClick={() => selectTab('AUDIT')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <History className="w-4 h-4" />
+                  <span>System Audit Logs</span>
+                </button>
+              )}
+              {currentUserRights.canViewTyres && (
+                <button
+                  id="tab-btn-tyres"
+                  onClick={() => selectTab('TYRES')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <Disc className="w-4 h-4" />
+                  <span>Tyre Ledger & ODO</span>
+                </button>
+              )}
+              {hasUsersTabAccess && (
+                <button
+                  id="tab-btn-users"
+                  onClick={() => selectTab('USERS')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
+                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Access Control</span>
+                </button>
+              )}
+              {currentUserRights.isSuperAdmin && (
+                <button
+                  id="tab-btn-backend"
+                  onClick={() => selectTab('BACKEND')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
+                      ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
+                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    }`}
+                >
+                  <Settings className="w-4 h-4 text-purple-500" />
+                  <span>Backend Dashboard</span>
+                </button>
+              )}
+            </nav>
+          </div>
+          
+          {/* User Profile Info Footer Panel */}
+          <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-850 space-y-3 shrink-0">
+            <div>
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">Logged in as</div>
+              <div className="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser?.email || currentUser?.name || 'User'}>
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
+                <span className="truncate">{currentUser?.name || currentUser?.email || 'Logistics Admin'}</span>
+              </div>
+            </div>
+            {currentUserOrgId && (
+              <div className="flex items-center justify-between bg-slate-150 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
+                <span className="truncate font-semibold select-all" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentUserOrgId);
+                    showNotification("Organization ID copied to clipboard!");
+                  }}
+                  className="text-slate-555 hover:text-slate-900 dark:hover:text-white transition-colors p-0.5 shrink-0 ml-1.5 cursor-pointer"
+                  title="Copy Organization ID"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-660 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 text-xs font-bold transition cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -3746,7 +3822,12 @@ export default function App() {
               </button>
 
               {notificationOpen && (
-                <div className="absolute right-0 mt-2 w-72 md:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left">
+                <div className="
+                  fixed left-3 right-3 top-16
+                  md:absolute md:left-auto md:right-0 md:top-auto md:mt-2 md:w-80
+                  bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800
+                  text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left
+                ">
                   <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
                     <span className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Recent Activity Logs</span>
                     <button
@@ -3756,7 +3837,7 @@ export default function App() {
                       ✕
                     </button>
                   </div>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                     {orgAuditLogs.length === 0 ? (
                       <p className="text-center py-6 text-xs text-slate-400 dark:text-slate-500 italic">No recent activities logged.</p>
                     ) : (
@@ -3970,7 +4051,7 @@ export default function App() {
         </header>
 
         {/* Outer content container */}
-        <div id="app-viewport-container" className="flex-1 overflow-auto p-6 md:p-8 space-y-6">
+        <div id="app-viewport-container" className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 space-y-6">
 
           {/* WARNING BAR IF MASTERS INACTIVE */}
           {!currentUserRights.isSuperAdmin && (orgTrucks.length === 0 || orgOffices.length === 0 || orgAccounts.length === 0) && (
@@ -4025,6 +4106,7 @@ export default function App() {
               canDeleteTrucks={currentUserRights.canDeleteTrucks}
               maxTrucksAllowed={organizationProfiles.find(p => p.organizationId === currentUserOrgId)?.maxTrucksAllowed || 2}
               onAddTruckRequest={handleAddTruckRequest}
+              organizationId={currentUserOrgId}
             />
           )}
 
@@ -4066,6 +4148,7 @@ export default function App() {
               canViewDrivers={currentUserRights.canViewDrivers}
               canEditDrivers={currentUserRights.canEditDrivers}
               canDeleteDrivers={currentUserRights.canDeleteDrivers}
+              organizationId={currentUserOrgId}
             />
           )}
 

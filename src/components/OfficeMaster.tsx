@@ -110,7 +110,7 @@ export default function OfficeMaster({
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Office Name <span className="text-red-500">*</span></label>
+              <label htmlFor="input-office-name" className="block text-xs font-semibold text-slate-600 mb-1">Office Name <span className="text-red-500">*</span></label>
               <input
                 id="input-office-name"
                 type="text"
@@ -122,7 +122,7 @@ export default function OfficeMaster({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">City/Branch Location</label>
+              <label htmlFor="input-office-city" className="block text-xs font-semibold text-slate-600 mb-1">City/Branch Location</label>
               <input
                 id="input-office-city"
                 type="text"
@@ -133,7 +133,7 @@ export default function OfficeMaster({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Person</label>
+              <label htmlFor="input-office-contact" className="block text-xs font-semibold text-slate-600 mb-1">Contact Person</label>
               <input
                 id="input-office-contact"
                 type="text"
@@ -144,7 +144,7 @@ export default function OfficeMaster({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Phone</label>
+              <label htmlFor="input-office-phone" className="block text-xs font-semibold text-slate-600 mb-1">Contact Phone</label>
               <input
                 id="input-office-phone"
                 type="tel"
@@ -155,7 +155,7 @@ export default function OfficeMaster({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Office Status</label>
+              <label htmlFor="select-office-status" className="block text-xs font-semibold text-slate-600 mb-1">Office Status</label>
               <select
                 id="select-office-status"
                 value={status}
@@ -185,7 +185,7 @@ export default function OfficeMaster({
         </form>
       )}
 
-      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+      <div className="overflow-x-auto border border-slate-200 rounded-lg hidden md:block">
         <table id="offices-table" className="w-full text-left text-sm text-slate-700">
           <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 font-bold tracking-wider">
             <tr>
@@ -229,59 +229,51 @@ export default function OfficeMaster({
                         <span className="text-slate-400 italic font-mono">&mdash;</span>
                       )
                     ) : (
-                      <span className="text-slate-400 italic text-xs font-mono">[Restricted]</span>
+                      <span className="text-slate-450 italic text-[11px] font-mono">[Restricted]</span>
                     )}
                   </td>
-                  <td className="px-4 py-3.5 font-mono text-xs text-slate-600 font-medium">
+                  <td className="px-4 py-3.5 font-mono text-slate-600 font-medium">
                     {canViewOffices ? (
                       office.phone ? (
-                        <span className="flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-slate-400" />
+                        <a href={`tel:${office.phone}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                          <Phone className="w-3.5 h-3.5 text-slate-400" />
                           {office.phone}
-                        </span>
+                        </a>
                       ) : (
                         <span className="text-slate-400 italic font-mono">&mdash;</span>
                       )
                     ) : (
-                      <span className="text-slate-400 italic text-xs font-mono">[Restricted]</span>
+                      <span className="text-slate-450 italic text-[11px] font-mono">[Restricted]</span>
                     )}
                   </td>
                   <td className="px-4 py-3.5 text-center">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                      office.status === 'Active' 
-                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' 
-                        : 'bg-rose-50 border border-rose-200 text-rose-700'
-                    }`}>
-                      {office.status === 'Active' ? (
-                        <>
-                          <CheckCircle className="w-3 h-3 text-emerald-600" />
-                          Active
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-3 h-3 text-rose-600" />
-                          Inactive
-                        </>
-                      )}
-                    </span>
+                    {office.status === 'Active' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                        Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-semibold">
+                        Inactive
+                      </span>
+                    )}
                   </td>
-                  <td className="px-4 py-3.5 text-right font-medium pr-6">
-                    <div className="flex justify-end gap-1 px-1">
+                  <td className="px-4 py-3.5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex justify-end gap-2">
                       <button
-                        title="Edit Office"
+                        title="Edit Office Details"
                         disabled={!canEditOffices}
                         onClick={() => startEdit(office)}
-                        className="p-1 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-105 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        title="Delete Office"
+                        title="Delete office"
                         disabled={!canDeleteOffices}
                         onClick={() => {
-                          const msg = `Are you sure you want to delete Office ${office.officeName}?`;
+                          const msg = `Caution! Are you sure you want to permanently delete office branch ${office.officeName}? This can disrupt filters in Trip journal sheets.`;
                           if (confirmAction) {
-                            confirmAction(msg, () => onDeleteOffice(office.id), "Delete Office Branch");
+                            confirmAction(msg, () => onDeleteOffice(office.id), "Delete branch office");
                           } else if (confirm(msg)) {
                             onDeleteOffice(office.id);
                           }
@@ -297,6 +289,111 @@ export default function OfficeMaster({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* MOBILE LIST CARD VIEW */}
+      <div className="block md:hidden space-y-4">
+        {offices.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
+            No offices registered. Create a transport branch/broker office.
+          </div>
+        ) : (
+          offices.map((office) => (
+            <div 
+              key={office.id}
+              className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+            >
+              <div>
+                {/* Top Row: Office Name & Status */}
+                <div className="flex justify-between items-center gap-2 mb-3">
+                  <h4 className="font-bold text-slate-800 text-sm truncate">{office.officeName}</h4>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    office.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                    'bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}>
+                    {office.status}
+                  </span>
+                </div>
+
+                {/* Details Section */}
+                <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Location</span>
+                    {office.city ? (
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200/60 rounded px-2 py-0.5">
+                        <MapPin className="w-3 h-3 text-blue-600" />
+                        {office.city}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 italic">—</span>
+                    )}
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Contact Person</span>
+                    {canViewOffices ? (
+                      office.contactPerson ? (
+                        <span className="flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          {office.contactPerson}
+                        </span>
+                      ) : (
+                        <span className="text-slate-450 italic">—</span>
+                      )
+                    ) : (
+                      <span className="text-slate-450 italic">[Restricted]</span>
+                    )}
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-bold uppercase text-[9px]">Phone</span>
+                    {canViewOffices ? (
+                      office.phone ? (
+                        <a href={`tel:${office.phone}`} className="text-blue-600 hover:underline flex items-center gap-1 font-mono font-medium">
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          {office.phone}
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 italic">—</span>
+                      )
+                    ) : (
+                      <span className="text-slate-450 italic">[Restricted]</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Grid */}
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
+                <button
+                  type="button"
+                  disabled={!canEditOffices}
+                  onClick={() => startEdit(office)}
+                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!canDeleteOffices}
+                  onClick={() => {
+                    const msg = `Caution! Are you sure you want to permanently delete office branch ${office.officeName}? This can disrupt filters in Trip journal sheets.`;
+                    if (confirmAction) {
+                      confirmAction(msg, () => onDeleteOffice(office.id), "Delete branch office");
+                    } else if (confirm(msg)) {
+                      onDeleteOffice(office.id);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

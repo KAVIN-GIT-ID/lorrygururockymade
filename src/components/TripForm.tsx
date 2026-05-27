@@ -757,8 +757,9 @@ export default function TripForm({
 
               {/* TRUCK SELECT */}
               <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Target Truck <span className="text-red-500">*</span></label>
+                <label htmlFor="select-truckNo" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Target Truck <span className="text-red-500">*</span></label>
                 <select
+                  id="select-truckNo"
                   value={truckNo}
                   onChange={(e) => setTruckNo(e.target.value)}
                   required
@@ -792,7 +793,7 @@ export default function TripForm({
 
               {/* DRIVER NAME */}
               <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5 font-sans font-sans">Driver Operator <span className="text-red-500">*</span></label>
+                <label htmlFor="select-driverName" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5 font-sans font-sans">Driver Operator <span className="text-red-500">*</span></label>
                 <select
                   id="select-driverName"
                   value={driverName}
@@ -859,8 +860,9 @@ export default function TripForm({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Starting Odometer (KM)</label>
+                <label htmlFor="input-startingKM" className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Starting Odometer (KM)</label>
                 <input
+                  id="input-startingKM"
                   type="number"
                   min="0"
                   required
@@ -872,8 +874,9 @@ export default function TripForm({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Ending Odometer (KM)</label>
+                <label htmlFor="input-endingKM" className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Ending Odometer (KM)</label>
                 <input
+                  id="input-endingKM"
                   type="number"
                   min="0"
                   required
@@ -1165,7 +1168,7 @@ export default function TripForm({
                           <td className="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
                           <td className="p-3 font-mono text-slate-650">{st.loadingDate}</td>
                           <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
-                          <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} &rarr; {st.routeTo}</td>
+                          <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
                           <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
                           <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{fuelExp.toLocaleString()}</td>
                           <td className="p-3 text-right font-medium text-red-600 font-mono">₹{otherCol.toLocaleString()}</td>
@@ -1253,8 +1256,9 @@ export default function TripForm({
 
                   {/* ROUTE ORIGIN */}
                   <div>
-                    <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Route origin <span className="text-red-500">*</span></label>
+                    <label htmlFor="input-stRouteFrom" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Origin <span className="text-red-500">*</span></label>
                     <input
+                      id="input-stRouteFrom"
                       type="text"
                       list="indian_cities_list"
                       placeholder="e.g. Bangalore"
@@ -1266,8 +1270,9 @@ export default function TripForm({
 
                   {/* ROUTE END DESTINATION */}
                   <div>
-                    <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Destination <span className="text-red-500">*</span></label>
+                    <label htmlFor="input-stRouteTo" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Destination <span className="text-red-500">*</span></label>
                     <input
+                      id="input-stRouteTo"
                       type="text"
                       list="indian_cities_list"
                       placeholder="e.g. Mumbai Port"
@@ -1289,7 +1294,7 @@ export default function TripForm({
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-2">
                   {/* SEG FREIGHT INCOME */}
                   <div>
-                    <label className="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Segment Contract Income</label>
+                    <label htmlFor="input_st_income" className="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Billed Freight Income <span className="text-red-500">*</span></label>
                     <input
                       id="input_st_income"
                       type="number"
@@ -1306,7 +1311,7 @@ export default function TripForm({
                         }
                       }}
                       placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-850"
+                      className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
                     />
                   </div>
 

@@ -141,8 +141,8 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction }: Audit
   };
 
   return (
-    <div id="audit-log-workspace" className="space-y-6">
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 text-white flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-md border border-slate-700">
+    <div id="audit-log-workspace" className="space-y-6 w-full overflow-x-hidden">
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-5 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md border border-slate-700 w-full">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-blue-500/20 rounded-xl text-blue-400">
@@ -208,7 +208,7 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction }: Audit
           {/* Action selection */}
           <div className="space-y-1">
             <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Operation Action</span>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               {actions.map(act => (
                 <button
                   key={act}
@@ -242,7 +242,69 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction }: Audit
       {/* LOG DATA TABLE */}
       {filteredLogs.length > 0 ? (
         <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
+
+          {/* ── Mobile cards (< md) ── */}
+          <div className="block md:hidden divide-y divide-slate-100">
+            {sortedLogs.map((log) => (
+              <div key={log.id} className="p-4 space-y-2">
+                {/* Header row: action badge + timestamp */}
+                <div className="flex items-center justify-between">
+                  {getActionBadge(log.action)}
+                  <span className="text-[10px] text-slate-400 font-mono">{log.timestamp}</span>
+                </div>
+                {/* Category + reference */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] uppercase font-extrabold">
+                    {log.category}
+                  </span>
+                  {log.reference && (
+                    <span className="text-[11px] font-mono text-slate-600 font-semibold">
+                      {log.reference}
+                    </span>
+                  )}
+                </div>
+                {/* User */}
+                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                  <Users className="w-3 h-3 text-slate-400" />
+                  <span>{log.user}</span>
+                </div>
+                {/* Details */}
+                <div className="text-[11px] text-slate-600 leading-relaxed">
+                  {log.details && (log.details.includes('➔') || log.details.includes('|')) ? (
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      {log.details.split(' | ').map((change, index) => {
+                        const arrowIdx = change.indexOf('➔');
+                        if (arrowIdx !== -1) {
+                          const colonIdx = change.indexOf(':');
+                          if (colonIdx !== -1 && colonIdx < arrowIdx) {
+                            const field = change.substring(0, colonIdx);
+                            const values = change.substring(colonIdx + 1).trim();
+                            const valuesSplit = values.split('➔');
+                            const oldVal = valuesSplit[0]?.trim().replace(/^"|"$/g, '') || '';
+                            const newVal = valuesSplit[1]?.trim().replace(/^"|"$/g, '') || '';
+                            return (
+                              <div key={index} className="flex flex-wrap items-center gap-1.5 text-[11px] leading-none">
+                                <span className="font-bold text-slate-600 bg-slate-100/80 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">{field}</span>
+                                <span className="text-slate-400 line-through truncate max-w-[90px] inline-block font-mono bg-slate-50 px-1 rounded text-[10px]" title={oldVal}>{oldVal}</span>
+                                <span className="text-slate-400 font-bold">&rarr;</span>
+                                <span className="text-blue-700 font-extrabold truncate max-w-[110px] inline-block font-mono bg-blue-50/50 px-1 rounded text-[10px]" title={newVal}>{newVal}</span>
+                              </div>
+                            );
+                          }
+                        }
+                        return <div key={index} className="text-slate-600 text-[11px] leading-tight font-medium">&bull; {change}</div>;
+                      })}
+                    </div>
+                  ) : (
+                    <span>{log.details}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Desktop table (≥ md) ── */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-150 text-[10px] text-slate-450 uppercase font-extrabold tracking-wider">

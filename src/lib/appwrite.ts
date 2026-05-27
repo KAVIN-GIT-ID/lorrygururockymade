@@ -7,6 +7,77 @@ export const isAppwriteConfigured = () => {
   return !!projectID && !!endpoint;
 };
 
+export function compressImageIfNeeded(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    // Only compress images
+    if (!file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Resize image if it exceeds 1600px in any dimension
+        const MAX_DIM = 1600;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to JPEG with 0.75 quality for high compression and good readability
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            // Construct a new file with jpeg extension
+            const lastDot = file.name.lastIndexOf('.');
+            const nameWithoutExt = lastDot !== -1 ? file.name.substring(0, lastDot) : file.name;
+            const compressedFile = new File([blob], `${nameWithoutExt}.jpg`, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          0.75
+        );
+      };
+      img.onerror = () => {
+        resolve(file);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      resolve(file);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 class AppwriteService {
   private client: Client;
   private account: AppwriteAccount;
@@ -32,7 +103,7 @@ class AppwriteService {
     return this.client;
   }
 
-  // Authorize anonymously or get active session to enable standard RBAC writes safely
+  // Authorize or get active session to enable standard RBAC writes safely
   async initSession() {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite credentials not detected in environment variables.');
@@ -47,15 +118,9 @@ class AppwriteService {
         // Try getting current logged-in user
         const user = await this.account.get();
         return user;
-      } catch (err) {
-        // No session exists, create anonymous session
-        try {
-          const session = await this.account.createAnonymousSession();
-          return session;
-        } catch (innerErr: any) {
-          console.warn('Anonymous session creation bypassed/failed:', innerErr.message);
-          return null;
-        }
+      } catch (err: any) {
+        // No session exists, return null. Do not create anonymous sessions to avoid database pollution and session conflicts.
+        return null;
       }
     })();
 
@@ -67,7 +132,13 @@ class AppwriteService {
       throw new Error('Appwrite is not configured.');
     }
     this.sessionPromise = null; // Clear cached promise
+    try {
+      await this.account.deleteSession('current');
+    } catch (e) {
+      // Ignore if no session is currently active
+    }
     await this.account.createEmailPasswordSession(email, password);
+
     this.sessionPromise = this.account.get();
     return await this.sessionPromise;
   }
@@ -100,6 +171,70 @@ class AppwriteService {
       return user;
     } catch (err) {
       return null;
+    }
+  }
+
+  getBucketId() {
+    return (import.meta as any).env.VITE_APPWRITE_BUCKET_ID || '6a1713930029ff1ca4d3';
+  }
+
+  async uploadFile(file: File, customName?: string): Promise<string> {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    await this.initSession();
+    try {
+      // Compress image files before uploading
+      let fileToUpload = await compressImageIfNeeded(file);
+
+      if (customName) {
+        const lastDot = fileToUpload.name.lastIndexOf('.');
+        const ext = lastDot !== -1 ? fileToUpload.name.substring(lastDot) : '';
+        fileToUpload = new File([fileToUpload], `${customName}${ext}`, { type: fileToUpload.type });
+      }
+      const response = await this.storage.createFile(
+        this.getBucketId(),
+        ID.unique(),
+        fileToUpload
+      );
+      return response.$id;
+    } catch (err: any) {
+      console.error("Appwrite uploadFile failed:", err);
+      throw err;
+    }
+  }
+
+  getFileView(fileId: string): string {
+    if (!isAppwriteConfigured() || !fileId) return '';
+    try {
+      const url = this.storage.getFileView(this.getBucketId(), fileId);
+      return url.toString();
+    } catch (err) {
+      console.warn("Appwrite getFileView failed:", err);
+      return '';
+    }
+  }
+
+  getFileDownload(fileId: string): string {
+    if (!isAppwriteConfigured() || !fileId) return '';
+    try {
+      const url = this.storage.getFileDownload(this.getBucketId(), fileId);
+      return url.toString();
+    } catch (err) {
+      console.warn("Appwrite getFileDownload failed:", err);
+      return '';
+    }
+  }
+
+  async deleteFile(fileId: string): Promise<boolean> {
+    if (!isAppwriteConfigured() || !fileId) return false;
+    await this.initSession();
+    try {
+      await this.storage.deleteFile(this.getBucketId(), fileId);
+      return true;
+    } catch (err) {
+      console.warn("Appwrite deleteFile failed:", err);
+      return false;
     }
   }
 

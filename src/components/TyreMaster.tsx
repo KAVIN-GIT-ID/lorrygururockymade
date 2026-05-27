@@ -378,8 +378,9 @@ export default function TyreMaster({
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
-              <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Serial No <span className="text-red-500">*</span></label>
+              <label htmlFor="tyreNo" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Serial No <span className="text-red-500">*</span></label>
               <input
+                id="tyreNo"
                 type="text"
                 required
                 placeholder="e.g. MRF-102948"
@@ -389,8 +390,9 @@ export default function TyreMaster({
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Manufacturer <span className="text-red-500">*</span></label>
+              <label htmlFor="manufacturer" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Manufacturer <span className="text-red-500">*</span></label>
               <select
+                id="manufacturer"
                 required
                 value={manufacturer}
                 onChange={(e) => setManufacturer(e.target.value)}
@@ -408,8 +410,9 @@ export default function TyreMaster({
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Size Dimension</label>
+              <label htmlFor="tyreSize" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Size Dimension</label>
               <input
+                id="tyreSize"
                 type="text"
                 placeholder="e.g. 10.00R20, 295/85R22.5"
                 value={size}
@@ -418,8 +421,9 @@ export default function TyreMaster({
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Date</label>
+              <label htmlFor="purchaseDate" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Date</label>
               <input
+                id="purchaseDate"
                 type="date"
                 value={purchaseDate}
                 onChange={(e) => setPurchaseDate(e.target.value)}
@@ -427,8 +431,9 @@ export default function TyreMaster({
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Amount (₹)</label>
+              <label htmlFor="purchaseAmount" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Amount (₹)</label>
               <input
+                id="purchaseAmount"
                 type="number"
                 placeholder="e.g. 24000"
                 value={purchaseAmount}
@@ -450,8 +455,9 @@ export default function TyreMaster({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Allocate Expense to</label>
+                <label htmlFor="associatedTruckNo" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Allocate Expense to</label>
                 <select
+                  id="associatedTruckNo"
                   value={associatedTruckNo}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -489,8 +495,9 @@ export default function TyreMaster({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Paid From Ledger Account</label>
+                <label htmlFor="paymentMode" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Paid From Ledger Account</label>
                 <select
+                  id="paymentMode"
                   value={paymentMode}
                   onChange={(e) => setPaymentMode(e.target.value)}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
@@ -503,8 +510,9 @@ export default function TyreMaster({
               </div>
 
               <div className="flex flex-col justify-center">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
+                <label htmlFor="createExpense" className="flex items-center gap-2 cursor-pointer select-none">
                   <input
+                    id="createExpense"
                     type="checkbox"
                     checked={createExpense}
                     onChange={(e) => setCreateExpense(e.target.checked)}
@@ -520,8 +528,9 @@ export default function TyreMaster({
 
               {associatedTruckNo && (
                 <div className="flex flex-col justify-center border-l sm:border-l-0 lg:border-l border-slate-200 pl-0 lg:pl-4">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <label htmlFor="mountDirectly" className="flex items-center gap-2 cursor-pointer select-none">
                     <input
+                      id="mountDirectly"
                       type="checkbox"
                       checked={mountDirectly}
                       onChange={(e) => setMountDirectly(e.target.checked)}
@@ -538,10 +547,11 @@ export default function TyreMaster({
             {mountDirectly && associatedTruckNo && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-fade-in">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-650 uppercase mb-1">
+                  <label htmlFor="initialOdoKM" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">
                     Installation Odometer Reading (KM) <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="initialOdoKM"
                     type="number"
                     required={mountDirectly}
                     placeholder={`Current Vehicle KM: ${trucks.find(t => t.truckNo === associatedTruckNo)?.currentKM || 0}`}
@@ -790,8 +800,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Select Active Truck <span className="text-red-500">*</span></label>
+                  <label htmlFor="mountSelectedTruckId" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Select Active Truck <span className="text-red-500">*</span></label>
                   <select
+                    id="mountSelectedTruckId"
                     required
                     value={selectedTruckId}
                     onChange={(e) => {
@@ -833,8 +844,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Mounting Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="mountingDate" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Mounting Date <span className="text-red-500">*</span></label>
                   <input
+                    id="mountingDate"
                     type="date"
                     required
                     value={mountingDate}
@@ -844,8 +856,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Truck Odometer KM <span className="text-red-500">*</span></label>
+                  <label htmlFor="mountingKM" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Truck Odometer KM <span className="text-red-500">*</span></label>
                   <input
+                    id="mountingKM"
                     type="number"
                     required
                     placeholder="e.g. 102540"
@@ -904,8 +917,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Dismount Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="removalDate" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Dismount Date <span className="text-red-500">*</span></label>
                   <input
+                    id="removalDate"
                     type="date"
                     required
                     value={removalDate}
@@ -915,8 +929,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Removal Odometer KM <span className="text-red-500">*</span></label>
+                  <label htmlFor="removalKM" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Removal Odometer KM <span className="text-red-500">*</span></label>
                   <input
+                    id="removalKM"
                     type="number"
                     required
                     value={removalKM}
@@ -935,8 +950,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Removal Reason / Note</label>
+                  <label htmlFor="removalRemarks" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Removal Reason / Note</label>
                   <input
+                    id="removalRemarks"
                     type="text"
                     value={removalRemarks}
                     onChange={(e) => setRemovalRemarks(e.target.value)}
@@ -987,8 +1003,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="saleDate" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Date <span className="text-red-500">*</span></label>
                   <input
+                    id="saleDate"
                     type="date"
                     required
                     value={saleDate}
@@ -998,8 +1015,9 @@ export default function TyreMaster({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Invoice Amount (₹) <span className="text-red-500">*</span></label>
+                  <label htmlFor="saleAmount" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Invoice Amount (₹) <span className="text-red-500">*</span></label>
                   <input
+                    id="saleAmount"
                     type="number"
                     required
                     placeholder="e.g. 12000"
@@ -1051,8 +1069,9 @@ export default function TyreMaster({
                 </p>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Scrapping Date <span className="text-red-500">*</span></label>
+                  <label htmlFor="scrapDate" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Scrapping Date <span className="text-red-500">*</span></label>
                   <input
+                    id="scrapDate"
                     type="date"
                     required
                     value={scrapDate}

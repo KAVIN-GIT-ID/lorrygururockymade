@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Truck, TripEntry, ExpenseEntry, getTripMetrics } from '../types';
-import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
+import { formatTruckNumber } from '../lib/formatUtils';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface TruckMasterProps {
   trucks: Truck[];
@@ -16,6 +18,7 @@ interface TruckMasterProps {
   canDeleteTrucks?: boolean;
   maxTrucksAllowed?: number;
   onAddTruckRequest?: (truck: Omit<Truck, 'id'>) => void;
+  organizationId?: string;
 }
 
 export default function TruckMaster({ 
@@ -30,11 +33,13 @@ export default function TruckMaster({
   canEditTrucks = true,
   canDeleteTrucks = true,
   maxTrucksAllowed = 2,
-  onAddTruckRequest
+  onAddTruckRequest,
+  organizationId = ''
 }: TruckMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
+  const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +90,36 @@ export default function TruckMaster({
   const [gearBoxOilKM, setGearBoxOilKM] = useState<number | ''>('');
   const [radiatorKM, setRadiatorKM] = useState<number | ''>('');
 
+  const [rcFileId, setRcFileId] = useState('');
+  const [insuranceFileId, setInsuranceFileId] = useState('');
+  const [rcUploading, setRcUploading] = useState(false);
+  const [insuranceUploading, setInsuranceUploading] = useState(false);
+  const [rcFile, setRcFile] = useState<File | null>(null);
+  const [insuranceFile, setInsuranceFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleRcFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!truckNo.trim()) {
+      alert("Please enter the Vehicle Number first before uploading documents so we can name the file properly.");
+      e.target.value = '';
+      return;
+    }
+    setRcFile(file);
+  };
+
+  const handleInsuranceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!truckNo.trim()) {
+      alert("Please enter the Vehicle Number first before uploading documents so we can name the file properly.");
+      e.target.value = '';
+      return;
+    }
+    setInsuranceFile(file);
+  };
+
   const resetForm = () => {
     setTruckNo('');
     setOwnerName('');
@@ -106,15 +141,65 @@ export default function TruckMaster({
     setCrownOilKM('');
     setGearBoxOilKM('');
     setRadiatorKM('');
+    setRcFileId('');
+    setInsuranceFileId('');
+    setRcFile(null);
+    setInsuranceFile(null);
+    setRcUploading(false);
+    setInsuranceUploading(false);
+    setIsSubmitting(false);
     setIsEditing(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!truckNo.trim()) return;
 
+    setIsSubmitting(true);
+    let uploadedRcId = rcFileId;
+    let uploadedInsuranceId = insuranceFileId;
+
+    try {
+      if (rcFile) {
+        setRcUploading(true);
+        const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
+        const sanitizedTruckNo = truckNo.trim().replace(/[^a-zA-Z0-9-]/g, '_');
+        const customName = `${sanitizedOrgId}_RC_${sanitizedTruckNo}`;
+        uploadedRcId = await appwrite.uploadFile(rcFile, customName);
+        setRcFileId(uploadedRcId);
+      }
+    } catch (err) {
+      alert("Failed to upload RC document. Please check your network connection and Appwrite configuration.");
+      setIsSubmitting(false);
+      setRcUploading(false);
+      return;
+    } finally {
+      setRcUploading(false);
+    }
+
+    try {
+      if (insuranceFile) {
+        setInsuranceUploading(true);
+        const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
+        const sanitizedTruckNo = truckNo.trim().replace(/[^a-zA-Z0-9-]/g, '_');
+        const customName = `${sanitizedOrgId}_INSURANCE_${sanitizedTruckNo}`;
+        uploadedInsuranceId = await appwrite.uploadFile(insuranceFile, customName);
+        setInsuranceFileId(uploadedInsuranceId);
+      }
+    } catch (err) {
+      alert("Failed to upload Insurance document. Please check your network connection and Appwrite configuration.");
+      setIsSubmitting(false);
+      setInsuranceUploading(false);
+      return;
+    } finally {
+      setInsuranceUploading(false);
+    }
+
+    const approvedCount = trucks.filter(t => t.isApproved !== false).length;
+    const limitReached = approvedCount >= maxTrucksAllowed;
+
     const truckPayload = {
-      truckNo: truckNo.toUpperCase(),
+      truckNo: formatTruckNumber(truckNo),
       ownerName: ownerName || undefined,
       status: limitReached && !isEditing ? 'Inactive' : status,
       make: make || undefined,
@@ -134,6 +219,8 @@ export default function TruckMaster({
       crownOilKM: crownOilKM !== '' ? Number(crownOilKM) : undefined,
       gearBoxOilKM: gearBoxOilKM !== '' ? Number(gearBoxOilKM) : undefined,
       radiatorKM: radiatorKM !== '' ? Number(radiatorKM) : undefined,
+      rcFileId: uploadedRcId || undefined,
+      insuranceFileId: uploadedInsuranceId || undefined,
     };
 
     if (isEditing) {
@@ -142,8 +229,6 @@ export default function TruckMaster({
         ...truckPayload
       });
     } else {
-      const approvedCount = trucks.filter(t => t.isApproved !== false).length;
-      const limitReached = approvedCount >= maxTrucksAllowed;
       if (limitReached && onAddTruckRequest) {
         onAddTruckRequest(truckPayload);
       } else {
@@ -156,7 +241,7 @@ export default function TruckMaster({
 
   const startEdit = (truck: Truck) => {
     setIsEditing(truck.id);
-    setTruckNo(truck.truckNo);
+    setTruckNo(formatTruckNumber(truck.truckNo));
     setOwnerName(truck.ownerName || '');
     setStatus(truck.status);
     setMake(truck.make || '');
@@ -176,6 +261,10 @@ export default function TruckMaster({
     setCrownOilKM(truck.crownOilKM !== undefined ? truck.crownOilKM : '');
     setGearBoxOilKM(truck.gearBoxOilKM !== undefined ? truck.gearBoxOilKM : '');
     setRadiatorKM(truck.radiatorKM !== undefined ? truck.radiatorKM : '');
+    setRcFileId(truck.rcFileId || '');
+    setInsuranceFileId(truck.insuranceFileId || '');
+    setRcFile(null);
+    setInsuranceFile(null);
     setShowAddForm(true);
   };
 
@@ -298,19 +387,19 @@ export default function TruckMaster({
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">1. Core Vehicle Specs</span>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Vehicle No <span className="text-red-500">*</span></label>
+                <label htmlFor="input-truck-no" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Vehicle No <span className="text-red-500">*</span></label>
                 <input
                   id="input-truck-no"
                   type="text"
                   placeholder="e.g. MH-12-PQ-4532"
                   value={truckNo}
-                  onChange={(e) => setTruckNo(e.target.value)}
+                  onChange={(e) => setTruckNo(formatTruckNumber(e.target.value))}
                   required
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 uppercase font-mono font-bold"
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Manufacturer / Make</label>
+                <label htmlFor="input-make" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Manufacturer / Make</label>
                 <select
                   id="input-make"
                   value={make}
@@ -326,7 +415,7 @@ export default function TruckMaster({
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Model / Horsepower</label>
+                <label htmlFor="input-model" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Model / Horsepower</label>
                 <input
                   id="input-model"
                   type="text"
@@ -337,7 +426,7 @@ export default function TruckMaster({
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Trailer Type</label>
+                <label htmlFor="input-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Trailer Type</label>
                 <select
                   id="input-type"
                   value={type}
@@ -422,8 +511,9 @@ export default function TruckMaster({
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">3. Odometer Readings & Mechanical Spares Target Limits (KM)</span>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div>
-                <label className="block text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded inline-block uppercase mb-1">Current Odo KM <span className="text-red-500">*</span></label>
+                <label htmlFor="input-current-km" className="block text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded inline-block uppercase mb-1">Current Odo KM <span className="text-red-500">*</span></label>
                 <input
+                  id="input-current-km"
                   type="number"
                   placeholder="e.g. 154000"
                   value={currentKM}
@@ -516,10 +606,81 @@ export default function TruckMaster({
                   className="w-full bg-white border border-slate-200 text-slate-855 border-slate-250 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                 />
               </div>
+              {/* SECTION 4: Upload Documents */}
+              <div className="col-span-full border-t border-slate-200 pt-3">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2.5">4. Compliance Document Uploads (Optional)</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">RC Document File</label>
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                      <input
+                        key={rcFileId ? 'has-file' : 'no-file'}
+                        type="file"
+                        onChange={handleRcFileChange}
+                        disabled={rcUploading || isSubmitting || !isAppwriteConfigured()}
+                        className="w-full text-xs text-slate-600 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer disabled:opacity-50"
+                      />
+                      {rcUploading && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+                      {!rcUploading && (rcFile || rcFileId) && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <CheckCircle className="w-4 h-4 text-emerald-600" title={rcFile ? `Queued: ${rcFile.name}` : "Document linked"} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRcFile(null);
+                              setRcFileId('');
+                            }}
+                            className="text-[9px] text-red-500 font-bold hover:underline cursor-pointer"
+                            title="Remove file document"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {!isAppwriteConfigured() && (
+                      <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Appwrite bucket connection required for document uploads.</span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Insurance Certificate File</label>
+                    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                      <input
+                        key={insuranceFileId ? 'has-file' : 'no-file'}
+                        type="file"
+                        onChange={handleInsuranceFileChange}
+                        disabled={insuranceUploading || isSubmitting || !isAppwriteConfigured()}
+                        className="w-full text-xs text-slate-600 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer disabled:opacity-50"
+                      />
+                      {insuranceUploading && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+                      {!insuranceUploading && (insuranceFile || insuranceFileId) && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <CheckCircle className="w-4 h-4 text-emerald-600" title={insuranceFile ? `Queued: ${insuranceFile.name}` : "Document linked"} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInsuranceFile(null);
+                              setInsuranceFileId('');
+                            }}
+                            className="text-[9px] text-red-500 font-bold hover:underline cursor-pointer"
+                            title="Remove file document"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {!isAppwriteConfigured() && (
+                      <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Appwrite bucket connection required for document uploads.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Operational Status</label>
                 <select
-                  disabled={status === 'Admin Disabled' || (isEditing !== null && trucks.find(t => t.id === isEditing)?.isApproved === false) || (isEditing === null && limitReached)}
+                  disabled={status === 'Admin Disabled' || (isEditing !== null && trucks.find(t => t.id === isEditing)?.isApproved === false) || (isEditing === null && limitReached) || isSubmitting}
                   value={limitReached && !isEditing ? 'Inactive' : status}
                   onChange={(e) => setStatus(e.target.value as any)}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs focus:outline-none disabled:opacity-50"
@@ -553,22 +714,27 @@ export default function TruckMaster({
             <button
               type="button"
               onClick={resetForm}
-              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-810 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-810 cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-lg transition shadow-2xs cursor-pointer"
+              disabled={isSubmitting}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
             >
-              {isEditing ? 'Save Specification Updates' : limitReached ? 'Submit Activation Request' : 'Add Truck Specs'}
+              {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {isSubmitting 
+                ? 'Uploading & Saving...' 
+                : (isEditing ? 'Save Specification Updates' : limitReached ? 'Submit Activation Request' : 'Add Truck Specs')}
             </button>
           </div>
         </form>
       )}
 
       {/* HORIZONTAL SCROLLABLE EXCEL-LIKE HIGHDENSITY DATA SHEET */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs hidden md:block">
         <div className="bg-slate-550/5 px-4 py-2 text-slate-500 font-mono text-[10px] flex justify-between items-center border-b border-slate-200">
           <span className="flex items-center gap-1">
             <Wrench className="w-3.5 h-3.5 text-slate-400" />
@@ -812,7 +978,7 @@ export default function TruckMaster({
                             <Edit2 className="w-3 h-3" />
                           </button>
                           <button
-                            title="Delete Records"
+                            title="Delete Truck"
                             disabled={!canDeleteTrucks}
                             onClick={() => {
                               const msg = `Are you sure you want to delete Vehicle ${truck.truckNo} and all associated compliance specifications?`;
@@ -835,6 +1001,202 @@ export default function TruckMaster({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* MOBILE LIST CARD VIEW */}
+      <div className="block md:hidden space-y-4">
+        {trucks.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
+            No operational vehicles mapped in the system registry.
+          </div>
+        ) : (
+          trucks.map((truck) => {
+            const isExpanded = expandedTruckId === truck.id;
+            
+            const insDays = calculateDaysLeft(truck.insuranceDate);
+            const fcDays = calculateDaysLeft(truck.fcDate);
+            const npDays = calculateDaysLeft(truck.npTaxDate);
+
+            const insProps = getExpiryCellProps(truck.insuranceDate, insDays);
+            const fcProps = getExpiryCellProps(truck.fcDate, fcDays);
+            const npProps = getExpiryCellProps(truck.npTaxDate, npDays);
+
+            return (
+              <div 
+                key={truck.id}
+                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+              >
+                <div>
+                  {/* Top Row: Vehicle No & Status */}
+                  <div className="flex justify-between items-center gap-2 mb-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span 
+                        className="font-mono font-extrabold text-blue-600 text-xs flex items-center gap-1.5 cursor-pointer underline decoration-dotted"
+                        onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
+                      >
+                        <Shield className={`w-3.5 h-3.5 ${truck.isApproved === false ? 'text-amber-500 animate-pulse' : 'text-blue-500'}`} />
+                        {truck.truckNo}
+                      </span>
+                      {truck.isApproved === false && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider max-w-max ${
+                          truck.requestStatus === 'Rejected'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse'
+                        }`}>
+                          {truck.requestStatus === 'Rejected' ? 'Rejected' : 'Pending Approval'}
+                        </span>
+                      )}
+                    </div>
+
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      truck.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                      truck.status === 'Inactive' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                      'bg-rose-50 text-rose-705 border border-rose-100'
+                    }`}>
+                      {truck.status}
+                    </span>
+                  </div>
+
+                  {/* Make/Model & Specs */}
+                  <div className="text-xs mb-3 text-slate-800 flex flex-wrap gap-2.5 items-center">
+                    {(truck.make || truck.model) && (
+                      <span className="font-bold text-slate-700">
+                        {truck.make || ''} {truck.model || ''}
+                      </span>
+                    )}
+                    {truck.type && (
+                      <span className="bg-slate-100 text-slate-650 px-1.5 py-0.2 rounded font-semibold text-[9px] uppercase tracking-wider">
+                        {truck.type}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Critical Expiries */}
+                  <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs mb-3.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-bold uppercase text-[9px]">Insurance</span>
+                      <span className={`${insProps.className} font-semibold text-[11px]`}>{insProps.displayText}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-bold uppercase text-[9px]">FC Expiry</span>
+                      <span className={`${fcProps.className} font-semibold text-[11px]`}>{fcProps.displayText}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-bold uppercase text-[9px]">National Permit</span>
+                      <span className={`${npProps.className} font-semibold text-[11px]`}>{npProps.displayText}</span>
+                    </div>
+                  </div>
+
+                  {/* Mileage & Lubes Toggle */}
+                  <div className="border border-slate-150 rounded-lg p-2 mb-3.5 bg-white">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-500 font-semibold">Current Odometer:</span>
+                      <span className="font-mono font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded border border-slate-150">
+                        {truck.currentKM ? truck.currentKM.toLocaleString() : '0'} KM
+                      </span>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTruckId(isExpanded ? null : truck.id)}
+                      className="w-full text-center text-[10px] font-bold text-blue-600 mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <span>{isExpanded ? 'Hide' : 'Show'} Lubes & Oil Status</span>
+                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-2.5 pt-2 border-t border-dashed border-slate-150 space-y-2 text-[11px]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-medium">Engine Oil Left:</span>
+                          <span>{renderKMLeftBadge(truck.engineOilKM, truck.currentKM)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-medium">Crown Oil Left:</span>
+                          <span>{renderKMLeftBadge(truck.crownOilKM, truck.currentKM)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-medium">Gearbox Oil Left:</span>
+                          <span>{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500 font-medium">Radiator Coolant Left:</span>
+                          <span>{renderKMLeftBadge(truck.radiatorKM, truck.currentKM)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Documents View links */}
+                  {(truck.rcFileId || truck.insuranceFileId) && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {truck.rcFileId && (
+                        <a
+                          href={appwrite.getFileView(truck.rcFileId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-700 font-semibold text-[10px] rounded hover:bg-blue-100/50 transition cursor-pointer"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>RC Doc</span>
+                        </a>
+                      )}
+                      {truck.insuranceFileId && (
+                        <a
+                          href={appwrite.getFileView(truck.insuranceFileId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold text-[10px] rounded hover:bg-indigo-100/50 transition cursor-pointer"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Insurance Doc</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions Grid */}
+                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
+                  <button
+                    type="button"
+                    onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
+                    disabled={truck.isApproved === false}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                    <span>View Info</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEditTrucks}
+                    onClick={() => startEdit(truck)}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canDeleteTrucks}
+                    onClick={() => {
+                      const msg = `Caution! Are you sure you want to permanently delete vehicle entry ${truck.truckNo}? This will delete all compliance records.`;
+                      if (confirmAction) {
+                        confirmAction(msg, () => onDeleteTruck(truck.id), "Delete Vehicle Database Record");
+                      } else if (confirm(msg)) {
+                        onDeleteTruck(truck.id);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* VEHICLE METRICS & FINANCIAL PERFORMANCE DRAWER (FLYOUT) */}
@@ -1022,6 +1384,37 @@ export default function TruckMaster({
                     </div>
                   </div>
                 </div>
+
+                {/* Section D: Uploaded Compliance Documents */}
+                {(truck.rcFileId || truck.insuranceFileId) && (
+                  <div>
+                    <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-2.5 font-sans">Uploaded Compliance Documents</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {truck.rcFileId && (
+                        <a
+                          href={appwrite.getFileView(truck.rcFileId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg text-blue-700 font-semibold text-xs hover:bg-blue-100/70 transition cursor-pointer"
+                        >
+                          <span>RC Document</span>
+                          <span className="text-[10px] text-blue-500 font-medium font-sans">View &rarr;</span>
+                        </a>
+                      )}
+                      {truck.insuranceFileId && (
+                        <a
+                          href={appwrite.getFileView(truck.insuranceFileId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-700 font-semibold text-xs hover:bg-indigo-100/70 transition cursor-pointer"
+                        >
+                          <span>Insurance Certificate</span>
+                          <span className="text-[10px] text-indigo-500 font-medium font-sans">View &rarr;</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Section D: Active Vouchers Logs */}
                 <div>

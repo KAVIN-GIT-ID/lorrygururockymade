@@ -12,6 +12,8 @@ export interface Truck {
   isApproved?: boolean;
   requestStatus?: 'Pending' | 'Approved' | 'Rejected';
   registrationExpiryDate?: string; // Expiry Date (YYYY-MM-DD)
+  rcFileId?: string;
+  insuranceFileId?: string;
 
   // New Specs properties
   make?: string;
@@ -43,6 +45,7 @@ export interface Driver {
   licenseNo?: string;
   status: 'Active' | 'Inactive';
   organizationId?: string;
+  licenseFileId?: string;
 }
 
 export interface Office {
@@ -62,6 +65,12 @@ export interface Account {
   holderName?: string;
   status: 'Active' | 'Inactive';
   organizationId?: string;
+  
+  // Optional bank details fields
+  bankName?: string;
+  accountNo?: string;
+  ifscCode?: string;
+  branchName?: string;
 }
 
 export interface TruckExpense {
