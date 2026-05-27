@@ -1,0 +1,250 @@
+import readline from 'readline';
+import dotenv from 'dotenv';
+
+// Load environmental parameters if configured
+dotenv.config();
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+const question = (query) => new Promise((resolve) => rl.question(query, resolve));
+
+async function main() {
+  console.log("\n=== Appwrite Database Bootstrapper ===");
+
+  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+  const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
+  
+  console.log(`Appwrite Endpoint: ${endpoint}`);
+  console.log(`Project ID:        ${projectId || '(Not loaded from environment)'}`);
+  
+  let targetProjectId = projectId;
+  if (!targetProjectId) {
+    targetProjectId = await question("Enter your Appwrite Project ID: ");
+    targetProjectId = targetProjectId.trim();
+  }
+  
+  if (!targetProjectId) {
+    console.error("❌ Project ID is required.");
+    rl.close();
+    return;
+  }
+
+  let apiKey = await question("Enter your Appwrite API Key (must have 'databases.write' permission scope): ");
+  apiKey = apiKey.trim();
+  if (!apiKey) {
+    console.error("❌ API Key is required to create database schemas.");
+    rl.close();
+    return;
+  }
+  
+  const dbId = 'fleet_db';
+  const collections = [
+    { id: 'trucks', name: 'Trucks', type: 'entity' },
+    { id: 'drivers', name: 'Drivers', type: 'entity' },
+    { id: 'offices', name: 'Offices', type: 'entity' },
+    { id: 'accounts', name: 'Accounts', type: 'entity' },
+    { id: 'trips', name: 'Trips', type: 'entity' },
+    { id: 'expenses', name: 'Expenses', type: 'entity' },
+    { id: 'tyres', name: 'Tyres', type: 'entity' },
+    { id: 'audit_logs', name: 'Audit Logs', type: 'entity' },
+    { id: 'global_configs', name: 'Global Configs', type: 'config' }
+  ];
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Appwrite-Project': targetProjectId,
+    'X-Appwrite-Key': apiKey
+  };
+  
+  try {
+    // 1. Delete Database if exists
+    console.log(`\n1. Deleting database "${dbId}" if it exists to start fresh...`);
+    let deleteRes = await fetch(`${endpoint}/databases/${dbId}`, {
+      method: 'DELETE',
+      headers
+    });
+    
+    if (deleteRes.ok) {
+      console.log(`✓ Database "${dbId}" deleted successfully.`);
+      // Wait a brief moment to allow deletion to propagate in Appwrite
+      await new Promise(r => setTimeout(r, 2000));
+    } else {
+      let deleteData = await deleteRes.json();
+      if (deleteData.code === 404 || deleteData.type === 'database_not_found') {
+        console.log(`ℹ Database "${dbId}" does not exist, proceeding to create.`);
+      } else {
+        console.warn(`⚠ Failed to delete database: ${deleteData.message || JSON.stringify(deleteData)}`);
+      }
+    }
+
+    // 2. Create Database
+    console.log(`\n2. Creating database "${dbId}"...`);
+    let dbResponse = await fetch(`${endpoint}/databases`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        databaseId: dbId,
+        name: 'Fleet Database'
+      })
+    });
+    
+    let dbData = await dbResponse.json();
+    if (dbResponse.ok) {
+      console.log(`✓ Database "${dbId}" created successfully.`);
+    } else if (dbData.code === 409 || dbData.type === 'database_already_exists') {
+      console.log(`ℹ Database "${dbId}" already exists.`);
+    } else {
+      throw new Error(`Failed to create database: ${dbData.message || JSON.stringify(dbData)}`);
+    }
+    
+    // 3. Create Collections
+    console.log(`\n3. Creating collections...`);
+    for (const col of collections) {
+      console.log(`Creating collection "${col.id}" ("${col.name}")...`);
+      let colResponse = await fetch(`${endpoint}/databases/${dbId}/collections`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          collectionId: col.id,
+          name: col.name,
+          permissions: [
+            'create("any")',
+            'read("any")',
+            'update("any")',
+            'delete("any")'
+          ]
+        })
+      });
+      
+      let colData = await colResponse.json();
+      if (colResponse.ok) {
+        console.log(`✓ Collection "${col.id}" created successfully.`);
+      } else if (colData.code === 409 || colData.type === 'collection_already_exists') {
+        console.log(`ℹ Collection "${col.id}" already exists.`);
+      } else {
+        throw new Error(`Failed to create collection "${col.id}": ${colData.message || JSON.stringify(colData)}`);
+      }
+    }
+    
+    // 4. Create Attributes
+    console.log(`\n4. Creating attributes in collections...`);
+    for (const col of collections) {
+      const attributes = col.type === 'entity' 
+        ? [
+            { key: 'organizationId', type: 'string', size: 50, required: false },
+            { key: 'data', type: 'string', size: 1000000, required: true }
+          ]
+        : [
+            { key: 'key', type: 'string', size: 50, required: true },
+            { key: 'data', type: 'string', size: 1000000, required: true }
+          ];
+
+      for (const attr of attributes) {
+        console.log(`Creating attribute "${attr.key}" in collection "${col.id}"...`);
+        let attrResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/attributes/string`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            key: attr.key,
+            size: attr.size,
+            required: attr.required
+          })
+        });
+        let attrData = await attrResponse.json();
+        if (attrResponse.ok) {
+          console.log(`✓ Attribute "${attr.key}" created in "${col.id}".`);
+        } else if (attrData.code === 409 || attrData.type === 'attribute_already_exists') {
+          console.log(`ℹ Attribute "${attr.key}" already exists in "${col.id}".`);
+        } else {
+          throw new Error(`Failed to create attribute "${attr.key}" in "${col.id}": ${attrData.message || JSON.stringify(attrData)}`);
+        }
+      }
+    }
+    
+    // 5. Wait for attributes to transition from processing to available
+    console.log(`\n5. Waiting for attributes to become active...`);
+    let attributesReady = false;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      let pending = 0;
+      for (const col of collections) {
+        let getColRes = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}`, {
+          headers
+        });
+        if (!getColRes.ok) {
+          pending++;
+          continue;
+        }
+        let colMeta = await getColRes.json();
+        const expectedKeys = col.type === 'entity' ? ['organizationId', 'data'] : ['key', 'data'];
+        const activeAttrs = colMeta.attributes ? colMeta.attributes.filter(a => expectedKeys.includes(a.key)) : [];
+        
+        if (activeAttrs.length === expectedKeys.length && activeAttrs.every(a => a.status === 'available')) {
+          // Ready
+        } else {
+          pending++;
+          const statuses = activeAttrs.map(a => `${a.key}:${a.status}`).join(', ');
+          console.log(`Collection "${col.id}" attributes status: [ ${statuses} ]`);
+        }
+      }
+      
+      if (pending === 0) {
+        attributesReady = true;
+        break;
+      } else {
+        console.log(`Waiting... ${pending} collections still processing attributes (attempt ${attempt + 1}/30)...`);
+        await new Promise(r => setTimeout(r, 2500));
+      }
+    }
+    
+    if (!attributesReady) {
+      console.warn("⚠ Warning: Attributes took too long to become available. Index creation might fail.");
+    } else {
+      console.log("✓ All attributes are available and active.");
+    }
+    
+    // 6. Create Index on organizationId for entity collections
+    console.log(`\n6. Creating indexes on attribute "organizationId"...`);
+    for (const col of collections) {
+      if (col.type !== 'entity') continue;
+      
+      console.log(`Creating index on "${col.id}"...`);
+      let idxResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/indexes`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          key: `idx_${col.id}_organizationId`,
+          type: 'key',
+          attributes: ['organizationId']
+        })
+      });
+      let idxData = await idxResponse.json();
+      if (idxResponse.ok) {
+        console.log(`✓ Index for "${col.id}" created successfully.`);
+      } else if (idxData.code === 409 || idxData.type === 'index_already_exists') {
+        console.log(`ℹ Index for "${col.id}" already exists.`);
+      } else {
+        console.warn(`⚠ Warning: Index creation for "${col.id}" returned: ${idxData.message || JSON.stringify(idxData)}`);
+      }
+    }
+    
+    console.log("\n=================================");
+    console.log("✓ Setup Complete!");
+    console.log(`Database ID: "${dbId}"`);
+    console.log(`Collections created:`);
+    for (const col of collections) {
+      console.log(` - "${col.id}"`);
+    }
+    console.log("=================================");
+    console.log("You can now safely sync your app directly using row-level document databases!");
+    
+  } catch (err) {
+    console.error(`\n❌ Bootstrapping Error: ${err.message}`);
+  } finally {
+    rl.close();
+  }
+}
+
+main();

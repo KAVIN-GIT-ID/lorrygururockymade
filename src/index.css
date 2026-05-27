@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark, .dark *));
+
+/* Global Dark Theme Selector overrides */
+.dark body {
+  background-color: #0b0f19 !important; /* slate-950 deep dark */
+  color: #f1f5f9 !important; /* slate-100 */
+}
+
+/* Background Color Overrides */
+.dark .bg-white {
+  background-color: #161e2e !important; /* slate-900 dark bg */
+}
+
+.dark .bg-slate-50 {
+  background-color: #0b0f19 !important; /* slate-950 deep dark */
+}
+
+.dark .bg-slate-100 {
+  background-color: #243046 !important; /* slate-800 gray-800 */
+}
+
+.dark .bg-slate-200 {
+  background-color: #313f56 !important; /* slate-700 gray-700 */
+}
+
+.dark .bg-slate-50\/10 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .bg-blue-600\/10 {
+  background-color: rgba(59, 130, 246, 0.18) !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: #1b263b !important;
+}
+
+/* Text Color Overrides */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-850,
+.dark .text-slate-700,
+.dark .text-gray-900,
+.dark h1, .dark h2, .dark h3, .dark h4 {
+  color: #f8fafc !important; /* slate-50 */
+}
+
+.dark .text-slate-600,
+.dark .text-slate-650,
+.dark .text-slate-500,
+.dark .text-gray-650,
+.dark .text-gray-600,
+.dark .text-gray-500 {
+  color: #cbd5e1 !important; /* slate-300 */
+}
+
+.dark .text-slate-400,
+.dark .text-gray-400 {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Border Color Overrides */
+.dark .border-slate-100,
+.dark .border-slate-150,
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-gray-200 {
+  border-color: #243046 !important; /* slate-800 */
+}
+
+/* Hover Overrides */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-gray-50:hover {
+  background-color: #243046 !important;
+}
+
+.dark .hover\:text-slate-900:hover,
+.dark .hover\:text-black:hover {
+  color: #ffffff !important;
+}
+
+/* Forms controls in Dark Mode */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="date"],
+.dark select,
+.dark textarea {
+  background-color: #243046 !important; /* slate-800 */
+  border-color: #313f56 !important; /* slate-700 */
+  color: #f9fafb !important; /* slate-50 */
+}
+
+.dark input:disabled,
+.dark select:disabled {
+  background-color: #161e2e !important; /* slate-900 */
+  color: #64748b !important; /* slate-500 */
+  opacity: 0.7;
+}
+
+.dark input::placeholder {
+  color: #64748b !important;
+}
+
+/* Specific elements like table headers */
+.dark th {
+  background-color: #161e2e !important;
+  color: #cbd5e1 !important;
+}
+
+.dark tr:hover td {
+  background-color: #1b263b !important;
+}
+
+/* Scrollbar styling in Dark Mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #313f56;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
