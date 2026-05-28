@@ -18,5 +18,24 @@ export default defineConfig(() => {
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Core React runtime — changes rarely, long-lived cache
+            'vendor-react': ['react', 'react-dom'],
+            // Charting library — large, changes rarely
+            'vendor-recharts': ['recharts'],
+            // Appwrite SDK — large, changes rarely
+            'vendor-appwrite': ['appwrite'],
+            // Icon library — large, changes rarely
+            'vendor-lucide': ['lucide-react'],
+            // Animation library
+            'vendor-motion': ['motion'],
+          },
+        },
+      },
+    },
   };
 });
+
