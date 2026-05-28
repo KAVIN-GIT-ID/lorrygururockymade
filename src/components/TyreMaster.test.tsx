@@ -113,7 +113,7 @@ describe('TyreMaster Component Integration Tests', () => {
     );
 
     // Filter by Active status
-    const statusSelect = screen.getByRole('combobox');
+    const statusSelect = screen.getByRole('combobox', { name: 'Status Filter' });
     fireEvent.change(statusSelect, { target: { value: 'Active' } });
     expect(screen.getByText(/1\s*Tyres/i)).toBeInTheDocument();
     expect(screen.queryByText('MRF-001')).not.toBeInTheDocument();

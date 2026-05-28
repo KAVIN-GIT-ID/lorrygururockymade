@@ -7,6 +7,9 @@ import {
   ArrowUp, ArrowDown, ArrowUpDown
 } from 'lucide-react';
 
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { useEffect } from 'react';
+
 interface TripListProps {
   trips: TripEntry[];
   trucks: Truck[];
@@ -18,6 +21,7 @@ interface TripListProps {
   canViewTrips?: boolean;
   canEditTrips?: boolean;
   canDeleteTrips?: boolean;
+  organizationId?: string;
 }
 
 export default function TripList({
@@ -30,7 +34,8 @@ export default function TripList({
   confirmAction,
   canViewTrips = true,
   canEditTrips = true,
-  canDeleteTrips = true
+  canDeleteTrips = true,
+  organizationId
 }: TripListProps) {
   // Mouse hover scroll redirection for horizontal overflow
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -61,30 +66,160 @@ export default function TripList({
   const [sortField, setSortField] = useState<'tripNo' | 'truckNo' | 'startDate' | 'income' | 'totalExpense' | 'profit' | 'outstandingBalance' | 'status'>('startDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // Selection/Expansion state
-  const [expandedTripId, setExpandedTripId] = useState<string | null>(null);
-  
-  // Master Details modal state for viewing full list of 21+ columns cleanly
-  const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
+  // Pagination & Display states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [displayedTrips, setDisplayedTrips] = useState<TripEntry[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  // Filter and search logic
-  const filteredTrips = trips.filter(trip => {
-    const metrics = getTripMetrics(trip);
-    const matchesSearch = !search ? true : (
-      trip.tripNo.toLowerCase().includes(search.toLowerCase()) ||
-      trip.truckNo.toLowerCase().includes(search.toLowerCase()) ||
-      trip.driverName.toLowerCase().includes(search.toLowerCase()) ||
-      (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
-    );
+  const online = isAppwriteConfigured();
 
-    const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-    const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+  // Reset to page 1 when any filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedTruck, selectedStatus, startDate, endDate]);
 
-    const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
-    const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
+  // Offline / fallback local logic
+  useEffect(() => {
+    if (!online) {
+      const filtered = trips.filter(trip => {
+        const matchesSearch = !search ? true : (
+          trip.tripNo.toLowerCase().includes(search.toLowerCase()) ||
+          trip.truckNo.toLowerCase().includes(search.toLowerCase()) ||
+          trip.driverName.toLowerCase().includes(search.toLowerCase()) ||
+          (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
+        );
 
-    return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
-  });
+        const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
+        const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+
+        const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
+        const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
+
+        return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
+      });
+
+      const sorted = [...filtered].sort((a, b) => {
+        let aVal: any = '';
+        let bVal: any = '';
+
+        if (sortField === 'tripNo') {
+          aVal = a.tripNo;
+          bVal = b.tripNo;
+        } else if (sortField === 'truckNo') {
+          aVal = a.truckNo;
+          bVal = b.truckNo;
+        } else if (sortField === 'startDate') {
+          aVal = a.startDate;
+          bVal = b.startDate;
+        } else if (sortField === 'status') {
+          aVal = a.status;
+          bVal = b.status;
+        } else {
+          const mA = getTripMetrics(a);
+          const mB = getTripMetrics(b);
+          if (sortField === 'income') {
+            aVal = mA.income;
+            bVal = mB.income;
+          } else if (sortField === 'totalExpense') {
+            aVal = mA.totalExpense;
+            bVal = mB.totalExpense;
+          } else if (sortField === 'profit') {
+            aVal = mA.profit;
+            bVal = mB.profit;
+          } else if (sortField === 'outstandingBalance') {
+            aVal = mA.outstandingBalance;
+            bVal = mB.outstandingBalance;
+          }
+        }
+
+        if (typeof aVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = (bVal || '').toLowerCase();
+        }
+
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      setTotalCount(sorted.length);
+      const startIdx = (currentPage - 1) * pageSize;
+      setDisplayedTrips(sorted.slice(startIdx, startIdx + pageSize));
+    }
+  }, [trips, search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online]);
+
+  // Online Appwrite logic
+  useEffect(() => {
+    if (online) {
+      const fetchServerTrips = async () => {
+        setLoading(true);
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
+          
+          let serverSortField = 'startDate';
+          if (['tripNo', 'truckNo', 'startDate', 'status'].includes(sortField)) {
+            serverSortField = sortField;
+          }
+
+          const res = await appwrite.queryTrips(
+            databaseId,
+            orgId,
+            {
+              search: search || undefined,
+              truckNo: selectedTruck || undefined,
+              status: selectedStatus || undefined,
+              startDate: startDate || undefined,
+              endDate: endDate || undefined
+            },
+            currentPage,
+            pageSize,
+            serverSortField,
+            sortDirection
+          );
+
+          const mapped = (res.documents || []).map(doc => {
+            try {
+              if (doc.data) {
+                const parsed = JSON.parse(doc.data);
+                return { id: doc.$id, ...parsed };
+              }
+            } catch (e) {
+              console.warn("Failed to parse doc.data for trip:", doc.$id, e);
+            }
+            return {
+              id: doc.$id,
+              organizationId: doc.organizationId,
+              tripNo: doc.tripNo || '',
+              truckNo: doc.truckNo || '',
+              startDate: doc.startDate || '',
+              endDate: doc.endDate || '',
+              driverName: doc.driverName || '',
+              status: doc.status || 'Pending',
+              notes: doc.notes || '',
+              payments: [],
+              subTrips: [],
+              fuels: []
+            };
+          });
+          setDisplayedTrips(mapped);
+          setTotalCount(res.total || 0);
+        } catch (err) {
+          console.error("Failed to query trips from Appwrite:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const delayDebounce = setTimeout(() => {
+        fetchServerTrips();
+      }, 300);
+
+      return () => clearTimeout(delayDebounce);
+    }
+  }, [search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online, organizationId]);
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
@@ -95,52 +230,27 @@ export default function TripList({
     }
   };
 
-  const sortedTrips = [...filteredTrips].sort((a, b) => {
-    let aVal: any = '';
-    let bVal: any = '';
+  // Selection/Expansion state
+  const [expandedTripId, setExpandedTripId] = useState<string | null>(null);
+  
+  // Master Details modal state for viewing full list of 21+ columns cleanly
+  const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
 
-    if (sortField === 'tripNo') {
-      aVal = a.tripNo;
-      bVal = b.tripNo;
-    } else if (sortField === 'truckNo') {
-      aVal = a.truckNo;
-      bVal = b.truckNo;
-    } else if (sortField === 'startDate') {
-      aVal = a.startDate;
-      bVal = b.startDate;
-    } else if (sortField === 'status') {
-      aVal = a.status;
-      bVal = b.status;
-    } else {
-      const mA = getTripMetrics(a);
-      const mB = getTripMetrics(b);
-      if (sortField === 'income') {
-        aVal = mA.income;
-        bVal = mB.income;
-      } else if (sortField === 'totalExpense') {
-        aVal = mA.totalExpense;
-        bVal = mB.totalExpense;
-      } else if (sortField === 'profit') {
-        aVal = mA.profit;
-        bVal = mB.profit;
-      } else if (sortField === 'outstandingBalance') {
-        aVal = mA.outstandingBalance;
-        bVal = mB.outstandingBalance;
-      }
-    }
 
-    if (typeof aVal === 'string') {
-      aVal = aVal.toLowerCase();
-      bVal = (bVal || '').toLowerCase();
-    }
-
-    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  // Calculate totals of filtered items for footer reporting
-  const totals = filteredTrips.reduce((acc, t) => {
+  // Calculate totals of matched items for footer reporting
+  const totals = (online ? displayedTrips : trips.filter(trip => {
+    const matchesSearch = !search ? true : (
+      trip.tripNo.toLowerCase().includes(search.toLowerCase()) ||
+      trip.truckNo.toLowerCase().includes(search.toLowerCase()) ||
+      trip.driverName.toLowerCase().includes(search.toLowerCase()) ||
+      (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
+    );
+    const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
+    const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+    const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
+    const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
+    return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
+  })).reduce((acc, t) => {
     const m = getTripMetrics(t);
     return {
       income: acc.income + m.income,
@@ -163,7 +273,22 @@ export default function TripList({
 
   // CSV Exporter reflecting the new flat 23-column schema
   const handleExportCSV = () => {
-    if (filteredTrips.length === 0) return;
+    const localFiltered = trips.filter(trip => {
+      const matchesSearch = !search ? true : (
+        trip.tripNo.toLowerCase().includes(search.toLowerCase()) ||
+        trip.truckNo.toLowerCase().includes(search.toLowerCase()) ||
+        trip.driverName.toLowerCase().includes(search.toLowerCase()) ||
+        (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
+      );
+      const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
+      const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+      const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
+      const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
+      return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
+    });
+
+    const exportList = online ? displayedTrips : localFiltered;
+    if (exportList.length === 0) return;
     const headers = [
       "Trip No", "Truck No", "Trip Start Date", "Trip End Date", "Driver Name", 
       "Income (₹)", "Loading Expense (₹)", "Unloading Expense (₹)", "RTO Expense (₹)", 
@@ -173,8 +298,9 @@ export default function TripList({
       "Payments Received (₹)", "Outstanding Balance (₹)", "Status"
     ];
 
-    const rows = filteredTrips.map(t => {
+    const rows = exportList.map(t => {
       const m = getTripMetrics(t);
+
       return [
         t.tripNo,
         t.truckNo,
@@ -298,13 +424,16 @@ export default function TripList({
       <div id="trip-filter-hud" className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-800 leading-tight font-sans">Active Transport Journals</h2>
+            <h2 className="text-lg font-bold text-slate-800 leading-tight font-sans flex items-center gap-2">
+              <span>Active Transport Journals</span>
+              {loading && <span className="inline-block w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">Fleet performance auditing. Select custom master records to inspect sub-trip segments & expenditures.</p>
           </div>
           
           <button
             id="export-csv-btn"
-            disabled={filteredTrips.length === 0}
+            disabled={totalCount === 0}
             onClick={handleExportCSV}
             className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-905 disabled:opacity-45 disabled:hover:bg-transparent font-bold px-4 py-2.5 rounded-lg border border-slate-200 transition text-xs shadow-2xs cursor-pointer text-slate-905"
           >
@@ -387,7 +516,7 @@ export default function TripList({
           <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-lg p-3 px-4 shadow-3xs">
             <span className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
               <Filter className="w-3.5 h-3.5 text-blue-500" />
-              Matched <strong>{filteredTrips.length}</strong> of <strong>{trips.length}</strong> master transport records.
+              Matched <strong>{totalCount}</strong> transport records.
             </span>
             <button
               id="reset-filters"
@@ -418,14 +547,14 @@ export default function TripList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-sans">
-              {filteredTrips.length === 0 ? (
+              {displayedTrips.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-center py-16 text-slate-400 font-medium italic">
                     No active transport references matched your operational filters.
                   </td>
                 </tr>
               ) : (
-                sortedTrips.map((trip) => {
+                displayedTrips.map((trip) => {
                   const m = getTripMetrics(trip);
 
                   return (
@@ -533,11 +662,11 @@ export default function TripList({
             </tbody>
 
             {/* GRAND FILTERED TOTALS ON FOOTER */}
-            {filteredTrips.length > 0 && (
+            {displayedTrips.length > 0 && (
               <tfoot className="bg-slate-50 font-mono text-slate-800 text-[11px] font-bold border-t border-slate-200">
                 <tr>
                   <td className="px-6 py-4 pl-6" colSpan={3}>
-                    Totals ({filteredTrips.length} transport logs mapped)
+                    Totals ({online ? 'Current Page' : `${totalCount} logs`})
                   </td>
                   <td className="px-4 py-4 text-right">
                     ₹{totals.income.toLocaleString('en-IN')}
@@ -549,7 +678,7 @@ export default function TripList({
                     ₹{totals.profit.toLocaleString('en-IN')}
                   </td>
                   <td className="px-4 py-4 text-right text-amber-700 font-extrabold bg-amber-50/15">
-                    ₹{filteredTrips.reduce((sum, t) => sum + getTripMetrics(t).outstandingBalance, 0).toLocaleString('en-IN')}
+                    ₹{totals.outstanding.toLocaleString('en-IN')}
                   </td>
                   <td className="px-4 py-4 text-center"></td>
                   <td className="px-6 py-4 text-right font-medium font-sans"></td>
@@ -562,12 +691,12 @@ export default function TripList({
 
       {/* MOBILE LIST CARD VIEW */}
       <div className="block md:hidden space-y-4">
-        {filteredTrips.length === 0 ? (
+        {displayedTrips.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
             No active transport references matched your operational filters.
           </div>
         ) : (
-          sortedTrips.map((trip) => {
+          displayedTrips.map((trip) => {
             const m = getTripMetrics(trip);
             return (
               <div
@@ -684,6 +813,48 @@ export default function TripList({
             );
           })
         )}
+      </div>
+
+      {/* PAGINATION FOOTER */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs no-print">
+        <div className="text-slate-500 font-medium">
+          Showing <strong className="text-slate-800">{totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to{" "}
+          <strong className="text-slate-800">{Math.min(currentPage * pageSize, totalCount)}</strong> of{" "}
+          <strong className="text-slate-800">{totalCount}</strong> entries
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">Page size:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-50 border border-slate-200 rounded p-1 text-slate-700 font-bold focus:outline-none cursor-pointer"
+            >
+              {[10, 25, 50, 100].map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1 || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+              disabled={currentPage >= Math.ceil(totalCount / pageSize) || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* SINGLE MASTER TRIP COMPLETE 23-COLUMNS PRINT AUDIT TAB MODAL */}

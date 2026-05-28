@@ -94,6 +94,10 @@ describe('Dashboard Component Tests', () => {
         trucks={mockTrucks}
         offices={mockOffices}
         accounts={mockAccounts}
+        activeMonth="ALL"
+        activeYear="2026"
+        setActiveMonth={() => {}}
+        setActiveYear={() => {}}
         currentUserRights={{
           isAdmin: true,
           isApproved: true,
@@ -128,6 +132,10 @@ describe('Dashboard Component Tests', () => {
         trucks={mockTrucks}
         offices={mockOffices}
         accounts={mockAccounts}
+        activeMonth="ALL"
+        activeYear="2026"
+        setActiveMonth={() => {}}
+        setActiveYear={() => {}}
       />
     );
 
@@ -148,6 +156,10 @@ describe('Dashboard Component Tests', () => {
         trucks={mockTrucks}
         offices={mockOffices}
         accounts={mockAccounts}
+        activeMonth="ALL"
+        activeYear="2026"
+        setActiveMonth={() => {}}
+        setActiveYear={() => {}}
       />
     );
 

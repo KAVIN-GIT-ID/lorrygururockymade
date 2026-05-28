@@ -131,27 +131,84 @@ async function main() {
     
     // 4. Create Attributes
     console.log(`\n4. Creating attributes in collections...`);
+    const collectionCustomConfig = {
+      audit_logs: {
+        attributes: [
+          { key: 'organizationId', type: 'string', size: 50, required: false },
+          { key: 'timestamp', type: 'string', size: 30, required: false },
+          { key: 'user', type: 'string', size: 100, required: false },
+          { key: 'action', type: 'string', size: 20, required: false },
+          { key: 'category', type: 'string', size: 30, required: false },
+          { key: 'reference', type: 'string', size: 100, required: false },
+          { key: 'details', type: 'string', size: 10000, required: false },
+          { key: 'data', type: 'string', size: 100000, required: true }
+        ]
+      },
+      trips: {
+        attributes: [
+          { key: 'organizationId', type: 'string', size: 50, required: false },
+          { key: 'tripNo', type: 'string', size: 50, required: false },
+          { key: 'truckNo', type: 'string', size: 50, required: false },
+          { key: 'startDate', type: 'string', size: 20, required: false },
+          { key: 'endDate', type: 'string', size: 20, required: false },
+          { key: 'driverName', type: 'string', size: 100, required: false },
+          { key: 'status', type: 'string', size: 30, required: false },
+          { key: 'notes', type: 'string', size: 5000, required: false },
+          { key: 'data', type: 'string', size: 1000000, required: true }
+        ]
+      },
+      expenses: {
+        attributes: [
+          { key: 'organizationId', type: 'string', size: 50, required: false },
+          { key: 'truckNo', type: 'string', size: 50, required: false },
+          { key: 'expenseType', type: 'string', size: 50, required: false },
+          { key: 'shopName', type: 'string', size: 200, required: false },
+          { key: 'amount', type: 'float', required: false },
+          { key: 'paymentMode', type: 'string', size: 200, required: false },
+          { key: 'date', type: 'string', size: 20, required: false },
+          { key: 'status', type: 'string', size: 30, required: false },
+          { key: 'accountType', type: 'string', size: 30, required: false },
+          { key: 'driverName', type: 'string', size: 100, required: false },
+          { key: 'data', type: 'string', size: 100000, required: true }
+        ]
+      },
+      tyres: {
+        attributes: [
+          { key: 'organizationId', type: 'string', size: 50, required: false },
+          { key: 'tyreNo', type: 'string', size: 50, required: false },
+          { key: 'manufacturer', type: 'string', size: 50, required: false },
+          { key: 'status', type: 'string', size: 30, required: false },
+          { key: 'currentTruckNo', type: 'string', size: 50, required: false },
+          { key: 'purchaseDate', type: 'string', size: 20, required: false },
+          { key: 'data', type: 'string', size: 100000, required: true }
+        ]
+      }
+    };
+
     for (const col of collections) {
-      const attributes = col.type === 'entity' 
-        ? [
-            { key: 'organizationId', type: 'string', size: 50, required: false },
-            { key: 'data', type: 'string', size: 1000000, required: true }
-          ]
-        : [
-            { key: 'key', type: 'string', size: 50, required: true },
-            { key: 'data', type: 'string', size: 1000000, required: true }
-          ];
+      const attributes = collectionCustomConfig[col.id]?.attributes || (
+        col.type === 'entity' 
+          ? [
+              { key: 'organizationId', type: 'string', size: 50, required: false },
+              { key: 'data', type: 'string', size: 1000000, required: true }
+            ]
+          : [
+              { key: 'key', type: 'string', size: 50, required: true },
+              { key: 'data', type: 'string', size: 1000000, required: true }
+            ]
+      );
 
       for (const attr of attributes) {
         console.log(`Creating attribute "${attr.key}" in collection "${col.id}"...`);
-        let attrResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/attributes/string`, {
+        const endpointType = attr.type === 'float' ? 'float' : 'string';
+        const body = attr.type === 'float'
+          ? { key: attr.key, required: attr.required }
+          : { key: attr.key, size: attr.size, required: attr.required };
+
+        let attrResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/attributes/${endpointType}`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            key: attr.key,
-            size: attr.size,
-            required: attr.required
-          })
+          body: JSON.stringify(body)
         });
         let attrData = await attrResponse.json();
         if (attrResponse.ok) {
@@ -178,7 +235,7 @@ async function main() {
           continue;
         }
         let colMeta = await getColRes.json();
-        const expectedKeys = col.type === 'entity' ? ['organizationId', 'data'] : ['key', 'data'];
+        const expectedKeys = (collectionCustomConfig[col.id]?.attributes || (col.type === 'entity' ? [{key: 'organizationId'}, {key: 'data'}] : [{key: 'key'}, {key: 'data'}])).map(a => a.key);
         const activeAttrs = colMeta.attributes ? colMeta.attributes.filter(a => expectedKeys.includes(a.key)) : [];
         
         if (activeAttrs.length === expectedKeys.length && activeAttrs.every(a => a.status === 'available')) {
@@ -205,26 +262,65 @@ async function main() {
       console.log("✓ All attributes are available and active.");
     }
     
-    // 6. Create Index on organizationId for entity collections
-    console.log(`\n6. Creating indexes on attribute "organizationId"...`);
+    // 6. Create Indexes
+    console.log(`\n6. Creating indexes...`);
+    const customIndexes = {
+      audit_logs: [
+        { key: 'idx_audit_logs_organizationId', type: 'key', attributes: ['organizationId'] },
+        { key: 'idx_audit_logs_timestamp', type: 'key', attributes: ['timestamp'] },
+        { key: 'idx_audit_logs_category', type: 'key', attributes: ['category'] },
+        { key: 'idx_audit_logs_action', type: 'key', attributes: ['action'] },
+        { key: 'idx_audit_logs_details', type: 'fulltext', attributes: ['details'] },
+        { key: 'idx_audit_logs_org_ts', type: 'key', attributes: ['organizationId', 'timestamp'] }
+      ],
+      trips: [
+        { key: 'idx_trips_organizationId', type: 'key', attributes: ['organizationId'] },
+        { key: 'idx_trips_startDate', type: 'key', attributes: ['startDate'] },
+        { key: 'idx_trips_status', type: 'key', attributes: ['status'] },
+        { key: 'idx_trips_truckNo', type: 'key', attributes: ['truckNo'] },
+        { key: 'idx_trips_tripNo_driver', type: 'fulltext', attributes: ['tripNo', 'driverName'] }
+      ],
+      expenses: [
+        { key: 'idx_expenses_organizationId', type: 'key', attributes: ['organizationId'] },
+        { key: 'idx_expenses_date', type: 'key', attributes: ['date'] },
+        { key: 'idx_expenses_truckNo', type: 'key', attributes: ['truckNo'] },
+        { key: 'idx_expenses_expenseType', type: 'key', attributes: ['expenseType'] },
+        { key: 'idx_expenses_shopName', type: 'fulltext', attributes: ['shopName'] }
+      ],
+      tyres: [
+        { key: 'idx_tyres_organizationId', type: 'key', attributes: ['organizationId'] },
+        { key: 'idx_tyres_status', type: 'key', attributes: ['status'] },
+        { key: 'idx_tyres_tyreNo', type: 'key', attributes: ['tyreNo'] },
+        { key: 'idx_tyres_currentTruckNo', type: 'key', attributes: ['currentTruckNo'] }
+      ]
+    };
+
     for (const col of collections) {
-      if (col.type !== 'entity') continue;
-      
-      console.log(`Creating index on "${col.id}"...`);
-      let idxResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/indexes`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          key: `idx_${col.id}_organizationId`,
-          type: 'key',
-          attributes: ['organizationId']
-        })
-      });
-      let idxData = await idxResponse.json();
-      if (idxResponse.ok) {
-        console.log(`✓ Index for "${col.id}" created successfully.`);
-      } else if (idxData.code === 409 || idxData.type === 'index_already_exists') {
-        console.log(`ℹ Index for "${col.id}" already exists.`);
+      const indexes = customIndexes[col.id] || (
+        col.type === 'entity'
+          ? [{ key: `idx_${col.id}_organizationId`, type: 'key', attributes: ['organizationId'] }]
+          : []
+      );
+
+      for (const index of indexes) {
+        console.log(`Creating index "${index.key}" on collection "${col.id}"...`);
+        let idxResponse = await fetch(`${endpoint}/databases/${dbId}/collections/${col.id}/indexes`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            key: index.key,
+            type: index.type,
+            attributes: index.attributes
+          })
+        });
+        let idxData = await idxResponse.json();
+        if (idxResponse.ok) {
+          console.log(`✓ Index "${index.key}" created successfully.`);
+        } else if (idxData.code === 409 || idxData.type === 'index_already_exists') {
+          console.log(`ℹ Index "${index.key}" already exists.`);
+        } else {
+          console.warn(`⚠ Failed to create index "${index.key}": ${idxData.message}`);
+        }
       }
     }
     

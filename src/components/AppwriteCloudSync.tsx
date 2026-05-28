@@ -167,11 +167,7 @@ export default function AppwriteCloudSync({
         { key: 'trucks', collection: 'trucks' },
         { key: 'drivers', collection: 'drivers' },
         { key: 'offices', collection: 'offices' },
-        { key: 'accounts', collection: 'accounts' },
-        { key: 'trips', collection: 'trips' },
-        { key: 'expenses', collection: 'expenses' },
-        { key: 'tyres', collection: 'tyres' },
-        { key: 'auditLogs', collection: 'audit_logs' }
+        { key: 'accounts', collection: 'accounts' }
       ];
 
       const fetchPromises = categories.map(async (cat) => {
@@ -225,10 +221,10 @@ export default function AppwriteCloudSync({
         drivers: loadedState.drivers.filter((d: any) => orgId === 'org_backend' || d.organizationId === orgId),
         offices: loadedState.offices.filter((o: any) => orgId === 'org_backend' || o.organizationId === orgId),
         accounts: loadedState.accounts.filter((a: any) => orgId === 'org_backend' || a.organizationId === orgId),
-        trips: loadedState.trips.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        expenses: loadedState.expenses.filter((e: any) => orgId === 'org_backend' || e.organizationId === orgId),
-        tyres: loadedState.tyres.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        auditLogs: loadedState.auditLogs.filter((l: any) => orgId === 'org_backend' || l.organizationId === orgId)
+        trips: [],
+        expenses: [],
+        tyres: [],
+        auditLogs: []
       };
 
       // Load state into local UI
@@ -291,11 +287,7 @@ export default function AppwriteCloudSync({
       { key: 'trucks', collection: 'trucks' },
       { key: 'drivers', collection: 'drivers' },
       { key: 'offices', collection: 'offices' },
-      { key: 'accounts', collection: 'accounts' },
-      { key: 'trips', collection: 'trips' },
-      { key: 'expenses', collection: 'expenses' },
-      { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' }
+      { key: 'accounts', collection: 'accounts' }
     ];
 
     try {
@@ -358,10 +350,10 @@ export default function AppwriteCloudSync({
           drivers: (currentState.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
           offices: (currentState.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
           accounts: (currentState.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-          trips: (currentState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          expenses: (currentState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-          tyres: (currentState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          auditLogs: (currentState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+          trips: [],
+          expenses: [],
+          tyres: [],
+          auditLogs: []
         };
       }
       
@@ -401,7 +393,7 @@ export default function AppwriteCloudSync({
         await appwrite.initSession();
         const client = appwrite.getClient();
         
-        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'global_configs'];
+        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'global_configs'];
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
         console.log(`Appwrite socket: Subscribing to multi-collection channels...`);
 
@@ -431,10 +423,10 @@ export default function AppwriteCloudSync({
               drivers: [...(currentState.drivers || [])],
               offices: [...(currentState.offices || [])],
               accounts: [...(currentState.accounts || [])],
-              trips: [...(currentState.trips || [])],
-              expenses: [...(currentState.expenses || [])],
-              tyres: [...(currentState.tyres || [])],
-              auditLogs: [...(currentState.auditLogs || [])]
+              trips: [],
+              expenses: [],
+              tyres: [],
+              auditLogs: []
             };
 
             if (collectionId === 'global_configs') {
@@ -514,10 +506,10 @@ export default function AppwriteCloudSync({
               drivers: (nextState.drivers).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
               offices: (nextState.offices).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
               accounts: (nextState.accounts).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-              trips: (nextState.trips).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              expenses: (nextState.expenses).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-              tyres: (nextState.tyres).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              auditLogs: (nextState.auditLogs).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+              trips: [],
+              expenses: [],
+              tyres: [],
+              auditLogs: []
             };
 
             onLoadCloudStateRef.current(nextState);

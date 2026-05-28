@@ -78,10 +78,10 @@ describe('TripList Component Tests', () => {
       />
     );
 
-    expect(screen.getByText('TRIP-A-01')).toBeInTheDocument();
-    expect(screen.getByText('TRIP-B-02')).toBeInTheDocument();
-    expect(screen.getByText('Ramesh Driver')).toBeInTheDocument();
-    expect(screen.getByText('Suresh Driver')).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-B-02')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Ramesh Driver')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Suresh Driver')[0]).toBeInTheDocument();
   });
 
   it('should filter the list of trips based on search text input', () => {
@@ -102,7 +102,7 @@ describe('TripList Component Tests', () => {
     fireEvent.change(searchInput, { target: { value: 'MH-12' } });
 
     // Should only show TRIP-A-01, and not TRIP-B-02
-    expect(screen.getByText('TRIP-A-01')).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
     expect(screen.queryByText('TRIP-B-02')).not.toBeInTheDocument();
   });
 
@@ -119,8 +119,8 @@ describe('TripList Component Tests', () => {
       />
     );
 
-    const editBtns = screen.getAllByTitle('Modify Master Fleet Record');
-    fireEvent.click(editBtns[1]); // Click edit on second rendered row (t-101)
+    const editBtns = screen.getAllByTitle('Modify Cargo Entry specs');
+    fireEvent.click(editBtns[1]); // Click edit on second rendered row (t-101) in sorted order
 
     expect(handleEdit).toHaveBeenCalledTimes(1);
     expect(handleEdit).toHaveBeenCalledWith(mockTrips[0]);
@@ -142,7 +142,7 @@ describe('TripList Component Tests', () => {
       />
     );
 
-    const deleteBtns = screen.getAllByTitle('Permanent deletion of trip segments');
+    const deleteBtns = screen.getAllByTitle('Wipe Cargo Entry record');
     fireEvent.click(deleteBtns[0]); // Delete first rendered row (t-102)
 
     expect(handleConfirm).toHaveBeenCalledTimes(1);

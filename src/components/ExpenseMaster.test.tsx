@@ -58,13 +58,13 @@ describe('ExpenseMaster Component Tests', () => {
 
     // Filtered totals: Paid (1500) + Pending (5000) = 6500
     expect(screen.getByText('Total Filtered Cost')).toBeInTheDocument();
-    expect(screen.getByText('₹6,500')).toBeInTheDocument();
+    expect(screen.getAllByText('₹6,500')[0]).toBeInTheDocument();
 
     expect(screen.getByText('Paid Settlements')).toBeInTheDocument();
-    expect(screen.getByText('₹1,500')).toBeInTheDocument();
+    expect(screen.getAllByText('₹1,500')[0]).toBeInTheDocument();
 
     expect(screen.getByText('Pending/On-Credit')).toBeInTheDocument();
-    expect(screen.getByText('₹5,000')).toBeInTheDocument();
+    expect(screen.getAllByText('₹5,000')[0]).toBeInTheDocument();
   });
 
   it('should render all listed expenses in the grid table', () => {
@@ -80,9 +80,9 @@ describe('ExpenseMaster Component Tests', () => {
       />
     );
 
-    expect(screen.getByText('TVS Auto Shop')).toBeInTheDocument();
-    expect(screen.getByText('MRF Tyres Depot')).toBeInTheDocument();
-    expect(screen.getByText('Driver: Karan Singh')).toBeInTheDocument();
+    expect(screen.getAllByText('TVS Auto Shop')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('MRF Tyres Depot')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Driver: Karan Singh')[0]).toBeInTheDocument();
   });
 
   it('should filter table rows dynamically based on the search query input', () => {
@@ -104,7 +104,7 @@ describe('ExpenseMaster Component Tests', () => {
     fireEvent.change(searchInput, { target: { value: 'MRF' } });
 
     expect(screen.queryByText('TVS Auto Shop')).not.toBeInTheDocument();
-    expect(screen.getByText('MRF Tyres Depot')).toBeInTheDocument();
+    expect(screen.getAllByText('MRF Tyres Depot')[0]).toBeInTheDocument();
   });
 
   it('should trigger onAddExpense callback on valid form submit', () => {

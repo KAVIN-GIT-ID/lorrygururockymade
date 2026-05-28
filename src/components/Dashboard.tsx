@@ -1,6 +1,6 @@
 import React from 'react';
 import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign } from 'lucide-react';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar } from 'lucide-react';
 import { getOutstandingAge, formatToDisplayDate } from '../lib/dateUtils';
 
 interface DashboardProps {
@@ -9,6 +9,10 @@ interface DashboardProps {
   offices: Office[];
   accounts: Account[];
   currentUserRights?: UserRights;
+  activeMonth: string;
+  activeYear: string;
+  setActiveMonth: (month: string) => void;
+  setActiveYear: (year: string) => void;
 }
 
 export default function Dashboard({ 
@@ -16,8 +20,29 @@ export default function Dashboard({
   trucks, 
   offices, 
   accounts, 
-  currentUserRights
+  currentUserRights,
+  activeMonth,
+  activeYear,
+  setActiveMonth,
+  setActiveYear
 }: DashboardProps) {
+  const months = [
+    { value: '01', label: 'January' },
+    { value: '02', label: 'February' },
+    { value: '03', label: 'March' },
+    { value: '04', label: 'April' },
+    { value: '05', label: 'May' },
+    { value: '06', label: 'June' },
+    { value: '07', label: 'July' },
+    { value: '08', label: 'August' },
+    { value: '09', label: 'September' },
+    { value: '10', label: 'October' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'December' }
+  ];
+
+  const years = ['2025', '2026', '2027', '2028', '2029', '2030', 'All Time'];
+
   // Tooltip interactive state
   const [hoveredTruck, setHoveredTruck] = React.useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = React.useState({ x: 0, y: 0 });
@@ -155,8 +180,40 @@ export default function Dashboard({
   const validRecoveryRate = isNaN(recoveryRate) ? 0 : Math.min(100, Math.max(0, recoveryRate));
 
   return (
-    <div id="dashboard-tab" className="space-y-6 animate-fade-in">
+    <div id="dashboard-tab" className="space-y-6 animate-fade-in font-sans">
       
+      {/* FILTER CONTROL BAR */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between no-print">
+        <div className="space-y-1 text-center sm:text-left">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">Time Period</h3>
+          <p className="text-xs text-slate-500 font-sans font-normal">Select the month and year to view metrics and aggregates.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
+          <Calendar className="w-4 h-4 text-slate-450" />
+          <select
+            id="dashboard-month-select"
+            value={activeMonth}
+            disabled={activeYear === 'All Time'}
+            onChange={(e) => setActiveMonth(e.target.value)}
+            className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {months.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <select
+            id="dashboard-year-select"
+            value={activeYear}
+            onChange={(e) => setActiveYear(e.target.value)}
+            className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pl-2 border-l border-slate-200"
+          >
+            {years.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* STATS OVERVIEW CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {/* CONTRACT RENTAL */}

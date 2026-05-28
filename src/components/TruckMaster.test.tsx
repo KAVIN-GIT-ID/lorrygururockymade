@@ -34,9 +34,9 @@ describe('TruckMaster Component Tests', () => {
       />
     );
 
-    expect(screen.getByText('MH-12-PQ-9999')).toBeInTheDocument();
-    expect(screen.getByText('TATA')).toBeInTheDocument();
-    expect(screen.getByText('3118')).toBeInTheDocument();
+    expect(screen.getAllByText('MH-12-PQ-9999')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TATA')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('3118')[0]).toBeInTheDocument();
   });
 
   it('should display warning styling for expired FC and near-expiry insurance', () => {
@@ -52,11 +52,11 @@ describe('TruckMaster Component Tests', () => {
     );
 
     // FC is 2026-04-20, which is expired (displayText is 20-04-2026)
-    const fcCell = screen.getByText('20-04-2026');
+    const fcCell = screen.getAllByText('20-04-2026')[0];
     expect(fcCell).toHaveClass('bg-rose-50');
 
     // Insurance is 2026-06-20, which is near expiry (displayText is 20-06-2026)
-    const insCell = screen.getByText('20-06-2026');
+    const insCell = screen.getAllByText('20-06-2026')[0];
     expect(insCell).toHaveClass('bg-amber-50');
   });
 

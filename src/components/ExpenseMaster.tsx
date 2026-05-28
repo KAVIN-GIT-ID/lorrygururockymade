@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExpenseEntry, Truck, Account, Driver } from '../types';
 import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User } from 'lucide-react';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface ExpenseMasterProps {
   expenses: ExpenseEntry[];
@@ -13,6 +14,7 @@ interface ExpenseMasterProps {
   canViewExpenses?: boolean;
   canEditExpenses?: boolean;
   canDeleteExpenses?: boolean;
+  organizationId?: string;
 }
 
 export default function ExpenseMaster({
@@ -25,7 +27,8 @@ export default function ExpenseMaster({
   onDeleteExpense,
   canViewExpenses = true,
   canEditExpenses = true,
-  canDeleteExpenses = true
+  canDeleteExpenses = true,
+  organizationId
 }: ExpenseMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -123,18 +126,135 @@ export default function ExpenseMaster({
     setShowForm(true);
   };
 
-  // Filter logic
-  const filteredExpenses = expenses.filter(exp => {
+  // Date range filters
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [displayedExpenses, setDisplayedExpenses] = useState<ExpenseEntry[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const online = isAppwriteConfigured();
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter]);
+
+  // Offline / local logic
+  useEffect(() => {
+    if (!online) {
+      const filtered = expenses.filter(exp => {
+        const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                              exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
+        const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
+        const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
+        const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
+        return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
+      });
+
+      setTotalCount(filtered.length);
+      const startIdx = (currentPage - 1) * pageSize;
+      setDisplayedExpenses(filtered.slice(startIdx, startIdx + pageSize));
+    }
+  }, [expenses, searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online]);
+
+  // Online Appwrite logic
+  useEffect(() => {
+    if (online) {
+      const fetchServerExpenses = async () => {
+        setLoading(true);
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
+
+          const res = await appwrite.queryExpenses(
+            databaseId,
+            orgId,
+            {
+              search: searchQuery || undefined,
+              truckNo: selectedTruckFilter || undefined,
+              expenseType: selectedTypeFilter || undefined,
+              startDate: startDateFilter || undefined,
+              endDate: endDateFilter || undefined
+            },
+            currentPage,
+            pageSize
+          );
+
+          const mapped = (res.documents || []).map(doc => {
+            try {
+              if (doc.data) {
+                const parsed = JSON.parse(doc.data);
+                return { id: doc.$id, ...parsed };
+              }
+            } catch (e) {
+              console.warn("Failed to parse doc.data for expense:", doc.$id, e);
+            }
+            return {
+              id: doc.$id,
+              organizationId: doc.organizationId,
+              truckNo: doc.truckNo || '',
+              expenseType: doc.expenseType || '',
+              shopName: doc.shopName || '',
+              amount: Number(doc.amount) || 0,
+              paymentMode: doc.paymentMode || '',
+              date: doc.date || '',
+              status: doc.status || 'Pending',
+              accountType: doc.accountType || 'Account',
+              driverName: doc.driverName || ''
+            };
+          });
+          setDisplayedExpenses(mapped);
+          setTotalCount(res.total || 0);
+        } catch (err) {
+          console.error("Failed to query expenses from Appwrite:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const delayDebounce = setTimeout(() => {
+        fetchServerExpenses();
+      }, 300);
+
+      return () => clearTimeout(delayDebounce);
+    }
+  }, [searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online, organizationId]);
+
+  const totalExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
     const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
     const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
-    return matchesSearch && matchesTruck && matchesType;
-  });
+    const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
+    const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
+    return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
+  })).reduce((sum, item) => sum + item.amount, 0);
 
-  const totalExpenseSum = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
-  const pendingExpenseSum = filteredExpenses.filter(e => e.status === 'Pending').reduce((sum, item) => sum + item.amount, 0);
-  const paidExpenseSum = filteredExpenses.filter(e => e.status === 'Paid').reduce((sum, item) => sum + item.amount, 0);
+  const pendingExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
+    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
+    const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
+    const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
+    const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
+    return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
+  })).filter(e => e.status === 'Pending').reduce((sum, item) => sum + item.amount, 0);
+
+  const paidExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
+    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
+    const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
+    const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
+    const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
+    return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
+  })).filter(e => e.status === 'Paid').reduce((sum, item) => sum + item.amount, 0);
 
   const uniqueExpenseTypes = Array.from(new Set(expenses.map(e => e.expenseType).filter(Boolean)));
 
@@ -146,7 +266,8 @@ export default function ExpenseMaster({
         <div>
           <h2 className="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-            Voucher & Expenses Ledger
+            <span>Voucher & Expenses Ledger</span>
+            {loading && <span className="inline-block w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">Register, manage, and monitor general shop and temporary truck maintenance expenses.</p>
         </div>
@@ -417,11 +538,9 @@ export default function ExpenseMaster({
           </div>
         </form>
       )}
-
-      {/* FILTER CONTROLS BAR */}
-      <div className="bg-slate-50 border border-slate-200 p-3.5 mb-5 rounded-xl flex flex-col md:flex-row items-center gap-3">
+      <div className="bg-slate-50 border border-slate-200 p-3.5 mb-5 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-center">
         
-        <div className="w-full md:w-1/3">
+        <div>
           <input
             type="text"
             placeholder="Search shop name or expense type..."
@@ -431,7 +550,7 @@ export default function ExpenseMaster({
           />
         </div>
 
-        <div className="w-full md:w-1/4">
+        <div>
           <select
             value={selectedTruckFilter}
             onChange={(e) => setSelectedTruckFilter(e.target.value)}
@@ -444,7 +563,7 @@ export default function ExpenseMaster({
           </select>
         </div>
 
-        <div className="w-full md:w-1/4">
+        <div>
           <select
             value={selectedTypeFilter}
             onChange={(e) => setSelectedTypeFilter(e.target.value)}
@@ -464,15 +583,35 @@ export default function ExpenseMaster({
           </select>
         </div>
 
+        {/* Date inputs */}
+        <div className="flex gap-2">
+          <input
+            type="date"
+            title="Start Date"
+            value={startDateFilter}
+            onChange={(e) => setStartDateFilter(e.target.value)}
+            className="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+          />
+          <input
+            type="date"
+            title="End Date"
+            value={endDateFilter}
+            onChange={(e) => setEndDateFilter(e.target.value)}
+            className="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+          />
+        </div>
+
         {/* Refresh / Clear Button */}
-        <div className="w-full md:w-auto flex-shrink-0 flex gap-1 justify-end">
+        <div className="flex gap-1 justify-end">
           <button
             onClick={() => {
               setSearchQuery('');
               setSelectedTruckFilter('');
               setSelectedTypeFilter('');
+              setStartDateFilter('');
+              setEndDateFilter('');
             }}
-            className="bg-white border border-slate-250/70 hover:bg-slate-100 text-slate-600 font-bold px-3 py-1.5 rounded-lg transition duration-150 text-xs cursor-pointer active:scale-95"
+            className="bg-white border border-slate-250/70 hover:bg-slate-100 text-slate-605 text-slate-600 font-bold px-3 py-1.5 rounded-lg transition duration-150 text-xs cursor-pointer active:scale-95 w-full text-center"
           >
             Reset Filters
           </button>
@@ -496,14 +635,14 @@ export default function ExpenseMaster({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-            {filteredExpenses.length === 0 ? (
+            {displayedExpenses.length === 0 ? (
               <tr>
                 <td colSpan={8} className="p-12 text-center text-slate-400 font-sans italic font-normal">
                   No expense records match the selected registers.
                 </td>
               </tr>
             ) : (
-              filteredExpenses.map((exp) => (
+              displayedExpenses.map((exp) => (
                 <tr key={exp.id} className="hover:bg-slate-50/70 transition duration-150">
                   <td className="p-3 pl-4 font-mono text-[10px] text-slate-500 whitespace-nowrap">
                     <span className="flex items-center gap-1">
@@ -556,10 +695,10 @@ export default function ExpenseMaster({
                   <td className="p-3 text-right pr-4 whitespace-nowrap">
                     <div className="flex justify-end gap-1.5">
                       <button
-                        title="Edit Expense"
-                        disabled={!canEditExpenses}
-                        onClick={() => startEdit(exp)}
-                        className="p-1 px-2 border border-slate-200 rounded text-slate-600 hover:text-indigo-600 hover:border-indigo-300 bg-white shadow-3xs cursor-pointer active:scale-95 duration-100 flex items-center gap-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
+                         title="Edit Expense"
+                         disabled={!canEditExpenses}
+                         onClick={() => startEdit(exp)}
+                         className="p-1 px-2 border border-slate-200 rounded text-slate-600 hover:text-indigo-600 hover:border-indigo-300 bg-white shadow-3xs cursor-pointer active:scale-95 duration-100 flex items-center gap-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Edit2 className="w-2.5 h-2.5" /> Edit
                       </button>
@@ -582,12 +721,12 @@ export default function ExpenseMaster({
 
       {/* MOBILE LIST CARD VIEW */}
       <div className="block md:hidden space-y-4">
-        {filteredExpenses.length === 0 ? (
+        {displayedExpenses.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
             No expense records match the selected registers.
           </div>
         ) : (
-          filteredExpenses.map((exp) => (
+          displayedExpenses.map((exp) => (
             <div 
               key={exp.id}
               className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
@@ -620,7 +759,7 @@ export default function ExpenseMaster({
                 </div>
 
                 {/* Details Section */}
-                <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3">
+                <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-655 mb-3">
                   <div className="flex justify-between">
                     <span className="text-slate-400 font-bold uppercase text-[9px]">Supplier / Shop</span>
                     <span className="font-semibold text-slate-800 truncate max-w-[180px]">{exp.shopName || '—'}</span>
@@ -669,6 +808,48 @@ export default function ExpenseMaster({
             </div>
           ))
         )}
+      </div>
+
+      {/* PAGINATION FOOTER */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mt-5 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs no-print">
+        <div className="text-slate-500 font-medium">
+          Showing <strong className="text-slate-800">{totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to{" "}
+          <strong className="text-slate-800">{Math.min(currentPage * pageSize, totalCount)}</strong> of{" "}
+          <strong className="text-slate-800">{totalCount}</strong> entries
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">Page size:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-50 border border-slate-200 rounded p-1 text-slate-700 font-bold focus:outline-none cursor-pointer"
+            >
+              {[10, 25, 50, 100].map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1 || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+              disabled={currentPage >= Math.ceil(totalCount / pageSize) || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

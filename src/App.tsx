@@ -79,7 +79,8 @@ const getUserInitials = (user: any) => {
 
 const reconcileOrganizationProfiles = (
   rights: UserPermission[],
-  currentProfiles: OrganizationProfile[]
+  currentProfiles: OrganizationProfile[],
+  knownNames: { [orgId: string]: string } = {}
 ): OrganizationProfile[] => {
   let profiles = [...currentProfiles];
 
@@ -97,8 +98,25 @@ const reconcileOrganizationProfiles = (
       // Find owner (role === 'Admin')
       const adminUser = rights.find(r => r.organizationId === orgId && r.role === 'Admin') || rights.find(r => r.organizationId === orgId);
       if (adminUser) {
-        const cleanSlug = orgId.replace(/^org_/, '').replace(/_[a-z0-9]{4}$/, '');
-        const displayName = cleanSlug.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Sakthi Logistics';
+        let displayName = knownNames[orgId];
+        if (!displayName) {
+          const cleanSlug = orgId.replace(/^org_/, '').replace(/_[a-z0-9]{4}$/, '');
+          displayName = cleanSlug.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Sakthi Logistics';
+
+          // Check if the displayName is just a raw alphanumeric ID/code and make it human-readable!
+          const isHexOrAlphanumericId = /^[a-f0-9]{15,40}$/i.test(displayName) || /^[a-z0-9]{15,40}$/i.test(displayName);
+          if (isHexOrAlphanumericId) {
+            // Construct a nice human-readable name based on the admin's name or email
+            const ownerName = adminUser.name || '';
+            if (ownerName && ownerName.trim().length > 0 && !ownerName.includes('@')) {
+              displayName = `${ownerName.trim()}'s Fleet`;
+            } else {
+              const emailPrefix = adminUser.email.split('@')[0];
+              const cleanPrefix = emailPrefix.replace(/[._-]/g, ' ').split(' ').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+              displayName = `${cleanPrefix} Logistics`;
+            }
+          }
+        }
 
         profiles.push({
           organizationId: orgId,
@@ -112,8 +130,27 @@ const reconcileOrganizationProfiles = (
     } else {
       // Sync owner email if it changed or is missing
       const adminUser = rights.find(r => r.organizationId === orgId && r.role === 'Admin') || rights.find(r => r.organizationId === orgId);
-      if (adminUser && existing.ownerEmail !== adminUser.email) {
-        existing.ownerEmail = adminUser.email;
+      if (adminUser) {
+        if (existing.ownerEmail !== adminUser.email) {
+          existing.ownerEmail = adminUser.email;
+        }
+
+        if (knownNames[orgId]) {
+          existing.organizationName = knownNames[orgId];
+        } else {
+          // Also fix organizationName if it is a raw ID string!
+          const isHexOrAlphanumericId = /^[a-f0-9]{15,40}$/i.test(existing.organizationName) || /^[a-z0-9]{15,40}$/i.test(existing.organizationName);
+          if (isHexOrAlphanumericId) {
+            const ownerName = adminUser.name || '';
+            if (ownerName && ownerName.trim().length > 0 && !ownerName.includes('@')) {
+              existing.organizationName = `${ownerName.trim()}'s Fleet`;
+            } else {
+              const emailPrefix = adminUser.email.split('@')[0];
+              const cleanPrefix = emailPrefix.replace(/[._-]/g, ' ').split(' ').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+              existing.organizationName = `${cleanPrefix} Logistics`;
+            }
+          }
+        }
       }
     }
   }
@@ -177,6 +214,7 @@ export default function App() {
 
   // Profile update form states
   const [profileName, setProfileName] = useState('');
+  const [profileOrgName, setProfileOrgName] = useState('');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -463,6 +501,15 @@ export default function App() {
 
   const currentUserRights = getCurrentUserRights();
 
+  // Sync profile organization name input when modal or profiles updates
+  useEffect(() => {
+    if (profileModalOpen && currentUser) {
+      const currentOrgId = currentUserRights?.organizationId || '';
+      const currentOrg = organizationProfiles.find(p => p.organizationId === currentOrgId);
+      setProfileOrgName(currentOrg ? currentOrg.organizationName : '');
+    }
+  }, [profileModalOpen, currentUser, currentUserRights?.organizationId, organizationProfiles]);
+
   const fetchAllGlobalConfigs = async (databaseId: string): Promise<{ userRightsList: UserPermission[]; organizationProfiles: OrganizationProfile[] }> => {
     try {
       const allConfigs = await appwrite.listGlobalConfigs(databaseId);
@@ -599,6 +646,7 @@ export default function App() {
       setCurrentUser(null);
       return;
     }
+    setCurrentUser(user);
 
     try {
       let activeRightsList = userRightsList;
@@ -687,7 +735,7 @@ export default function App() {
 
       const localProfilesStr = localStorage.getItem('ttt_organization_profiles');
       let localProfiles = localProfilesStr ? JSON.parse(localProfilesStr) : organizationProfiles;
-      const reconciled = reconcileOrganizationProfiles(activeRightsList, localProfiles);
+      let reconciled = reconcileOrganizationProfiles(activeRightsList, localProfiles);
       setOrganizationProfiles(reconciled);
       localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
 
@@ -702,6 +750,13 @@ export default function App() {
           if (userTeams.length > 0) {
             const appwriteOrgId = userTeams[0].$id; // First team = their org
             migrateLocalDataToOrg(appwriteOrgId);
+
+            const knownNames: { [orgId: string]: string } = {};
+            for (const team of userTeams) {
+              knownNames[team.$id] = team.name;
+            }
+            reconciled = reconcileOrganizationProfiles(activeRightsList, reconciled, knownNames);
+            await saveOrganizationProfiles(reconciled);
 
             // Check if user is the Team Owner (Admin)
             let isAdminUser = false;
@@ -731,6 +786,12 @@ export default function App() {
               if (!match.isApproved) {
                 console.info(`Reconciling approval for ${email}: false → true (member of Appwrite Team)`);
                 updatedMatch.isApproved = true;
+                needsUpdate = true;
+              }
+
+              if (user.name && match.name !== user.name) {
+                console.info(`Reconciling name for ${email}: ${match.name} → ${user.name}`);
+                updatedMatch.name = user.name;
                 needsUpdate = true;
               }
 
@@ -1034,7 +1095,11 @@ export default function App() {
         : [...activeRights, newPerm];
       saveUserRightsList(updatedList);
 
-      const reconciled = reconcileOrganizationProfiles(updatedList, organizationProfiles);
+      const reconciled = reconcileOrganizationProfiles(
+        updatedList,
+        organizationProfiles,
+        trimmedOrgName && targetOrgId ? { [targetOrgId]: trimmedOrgName } : {}
+      );
       await saveOrganizationProfiles(reconciled);
 
       await pushPermissionsToCloud(updatedList);
@@ -1094,7 +1159,11 @@ export default function App() {
         : [...activeRights, newPerm];
       saveUserRightsList(updatedList);
 
-      const reconciled = reconcileOrganizationProfiles(updatedList, organizationProfiles);
+      const reconciled = reconcileOrganizationProfiles(
+        updatedList,
+        organizationProfiles,
+        { [finalOrgId]: trimmedOrgName }
+      );
       await saveOrganizationProfiles(reconciled);
 
       const newOrgProfile = reconciled.find(p => p.organizationId === finalOrgId);
@@ -1212,7 +1281,7 @@ export default function App() {
     return { success: true };
   };
 
-  const handleUpdateProfile = async (newName: string, newPassword?: string, oldPassword?: string) => {
+  const handleUpdateProfile = async (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string) => {
     try {
       const loginMethod = localStorage.getItem('ttt_login_method');
       if (loginMethod === 'appwrite') {
@@ -1239,6 +1308,21 @@ export default function App() {
           : ur
       );
       saveUserRightsList(updatedRightsList);
+
+      if (isAppwriteConfigured()) {
+        await pushPermissionsToCloud(updatedRightsList);
+      }
+
+      // Update organization name if modified and user is Admin
+      const currentOrgId = currentUserRights?.organizationId || '';
+      if (currentUserRights.isAdmin && newOrgName && newOrgName.trim() && currentOrgId) {
+        const nextProfiles = organizationProfiles.map(p =>
+          p.organizationId === currentOrgId
+            ? { ...p, organizationName: newOrgName.trim() }
+            : p
+        );
+        await saveOrganizationProfiles(nextProfiles);
+      }
 
       showNotification("Profile updated successfully!");
       setProfileModalOpen(false);
@@ -1379,6 +1463,52 @@ export default function App() {
       return [];
     }
   });
+
+  const [dashboardTrips, setDashboardTrips] = useState<TripEntry[]>([]);
+  const [dashboardExpenses, setDashboardExpenses] = useState<ExpenseEntry[]>([]);
+  const [activeMonth, setActiveMonth] = useState(() => {
+    const today = new Date();
+    return String(today.getMonth() + 1).padStart(2, '0');
+  });
+  const [activeYear, setActiveYear] = useState(() => {
+    return String(new Date().getFullYear());
+  });
+
+  const loadDashboardData = async (month: string, year: string) => {
+    if (!isAppwriteConfigured()) {
+      const localTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+      const localExpenses = JSON.parse(localStorage.getItem('ttt_expenses') || '[]');
+      
+      const filteredTrips = year === 'All Time' 
+        ? localTrips 
+        : localTrips.filter((t: any) => t.startDate && t.startDate.startsWith(`${year}-${month}`));
+      const filteredExpenses = year === 'All Time' 
+        ? localExpenses 
+        : localExpenses.filter((e: any) => e.date && e.date.startsWith(`${year}-${month}`) && e.status !== 'Declined');
+      
+      setDashboardTrips(filteredTrips);
+      setDashboardExpenses(filteredExpenses);
+      return;
+    }
+
+    try {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      const orgId = currentUserOrgId || 'org_default';
+      const { trips: parsedTrips, expenses: parsedExpenses } = await appwrite.fetchMonthlyTripsAndExpenses(databaseId, orgId, year, month);
+      
+      const mappedTrips = parsedTrips.map(doc => JSON.parse(doc.data));
+      const mappedExpenses = parsedExpenses.map(doc => JSON.parse(doc.data));
+      
+      setDashboardTrips(mappedTrips);
+      setDashboardExpenses(mappedExpenses);
+    } catch (err) {
+      console.warn("Failed to load monthly dashboard data from Appwrite:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData(activeMonth, activeYear);
+  }, [activeMonth, activeYear, currentUserOrgId]);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -2912,7 +3042,7 @@ export default function App() {
   };
 
   // --- TYRE CRUD HANDLERS ---
-  const handleAddTyre = (
+  const handleAddTyre = async (
     tyreInput: Omit<Tyre, 'id' | 'movementHistory' | 'accumulatedKM'>,
     expenseDetails?: {
       createExpense: boolean;
@@ -2944,7 +3074,21 @@ export default function App() {
         }
       ] as TyreMovementLog[]
     };
-    saveTyres([...tyres, n]);
+    
+    // Save locally
+    const nextTyres = [...tyres, n];
+    saveTyres(nextTyres);
+    
+    // Save to Appwrite if online
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'tyres', n.id, currentUserOrgId, n);
+      } catch (err) {
+        console.warn("Failed to save tyre to Appwrite:", err);
+      }
+    }
+
     logAction('Created', 'Tyre', n.tyreNo, `Registered brand new ${n.manufacturer} (${n.size}) tyre to yard warehouse.`);
 
     // Automatically create matching expense entry in the ledger
@@ -2963,6 +3107,17 @@ export default function App() {
       };
 
       saveExpenses([...expenses, newExpense]);
+      
+      if (isAppwriteConfigured()) {
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'expenses', newExpense.id, currentUserOrgId, newExpense);
+          await loadDashboardData(activeMonth, activeYear);
+        } catch (err) {
+          console.warn("Failed to save tyre purchase expense to Appwrite:", err);
+        }
+      }
+
       logAction('Created', 'Expense', expNo, `Auto-created Tyre purchase expense for Serial ${n.tyreNo} charge to vehicle ${newExpense.truckNo} of ₹${newExpense.amount.toLocaleString()}`);
       showNotification(`Tyre ${n.tyreNo} registered and purchase expense voucher added.`);
     } else {
@@ -2970,11 +3125,20 @@ export default function App() {
     }
   };
 
-  const handleUpdateTyre = (updated: Tyre) => {
+  const handleUpdateTyre = async (updated: Tyre) => {
     const oldTyre = tyres.find(t => t.id === updated.id);
     const merged: Tyre = oldTyre ? { ...oldTyre, ...updated } : updated;
     const next = tyres.map(t => t.id === updated.id ? merged : t);
     saveTyres(next);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'tyres', merged.id, currentUserOrgId, merged);
+      } catch (err) {
+        console.warn("Failed to update tyre in Appwrite:", err);
+      }
+    }
 
     let actionD = `Updated tyre specifications`;
     if (oldTyre && oldTyre.status !== merged.status) {
@@ -2994,7 +3158,7 @@ export default function App() {
     showNotification(`Tyre ${merged.tyreNo} status updated.`);
   };
 
-  const handleDeleteTyre = (id: string) => {
+  const handleDeleteTyre = async (id: string) => {
     const tyreToDelete = tyres.find(t => t.id === id);
     if (!tyreToDelete) return;
     if (tyreToDelete.status === 'Active') {
@@ -3003,6 +3167,16 @@ export default function App() {
     }
     const next = tyres.filter(t => t.id !== id);
     saveTyres(next);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'tyres', id);
+      } catch (err) {
+        console.warn("Failed to delete tyre from Appwrite:", err);
+      }
+    }
+
     logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre datasheet from registry`);
     showNotification(`Tyre record deleted.`);
   };
@@ -3091,22 +3265,47 @@ export default function App() {
   };
 
   // --- EXPENSES CRUD HANDLERS ---
-  const handleAddExpense = (expenseInput: Omit<ExpenseEntry, 'id'>) => {
+  const handleAddExpense = async (expenseInput: Omit<ExpenseEntry, 'id'>) => {
     const newExp = {
       ...expenseInput,
       id: 'exp_id_' + Date.now(),
       organizationId: currentUserOrgId
     };
-    saveExpenses([...expenses, newExp]);
+    
+    // Save locally
+    const nextExpenses = [...expenses, newExp];
+    saveExpenses(nextExpenses);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, currentUserOrgId, newExp);
+        await loadDashboardData(activeMonth, activeYear);
+      } catch (err) {
+        console.warn("Failed to save expense to Appwrite:", err);
+      }
+    }
+
     logAction('Created', 'Expense', newExp.truckNo, `Vouched ₹${newExp.amount} expense for truck (${newExp.expenseType})`);
     showNotification(`New expense of ₹${newExp.amount.toLocaleString()} registered.`);
   };
 
-  const handleUpdateExpense = (updated: ExpenseEntry) => {
+  const handleUpdateExpense = async (updated: ExpenseEntry) => {
     const oldExpense = expenses.find(e => e.id === updated.id);
     const merged: ExpenseEntry = oldExpense ? { ...oldExpense, ...updated } : updated;
     const next = expenses.map(e => e.id === updated.id ? merged : e);
     saveExpenses(next);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, currentUserOrgId, merged);
+        await loadDashboardData(activeMonth, activeYear);
+      } catch (err) {
+        console.warn("Failed to update expense in Appwrite:", err);
+      }
+    }
+
     const diff = oldExpense ? getExpenseDiff(oldExpense, merged) : `Voucher authorization updated to ${merged.status}`;
     if (diff) {
       logAction('Edited', 'Expense', merged.truckNo, diff);
@@ -3114,10 +3313,21 @@ export default function App() {
     showNotification(`Expense record has been updated.`);
   };
 
-  const handleDeleteExpense = (id: string) => {
+  const handleDeleteExpense = async (id: string) => {
     const exp = expenses.find(e => e.id === id);
     const next = expenses.filter(e => e.id !== id);
     saveExpenses(next);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'expenses', id);
+        await loadDashboardData(activeMonth, activeYear);
+      } catch (err) {
+        console.warn("Failed to delete expense from Appwrite:", err);
+      }
+    }
+
     if (exp) {
       logAction('Deleted', 'Expense', exp.truckNo, `Canceled/archived ₹${exp.amount} voucher`);
     }
@@ -3125,7 +3335,7 @@ export default function App() {
   };
 
   // --- TRIP ENTRIES CRUD SYSTEM ---
-  const handlePostTripEntry = (entryInput: Omit<TripEntry, 'id'>) => {
+  const handlePostTripEntry = async (entryInput: Omit<TripEntry, 'id'>) => {
     if (editingTrip) {
       // Update logic
       const updated: TripEntry = {
@@ -3136,6 +3346,17 @@ export default function App() {
 
       const next = trips.map(t => t.id === editingTrip.id ? updated : t);
       saveTrips(next);
+
+      if (isAppwriteConfigured()) {
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, currentUserOrgId, updated);
+          await loadDashboardData(activeMonth, activeYear);
+        } catch (err) {
+          console.warn("Failed to update trip in Appwrite:", err);
+        }
+      }
+
       setEditingTrip(null);
       const diff = getTripDiff(editingTrip, updated);
       if (diff) {
@@ -3149,16 +3370,40 @@ export default function App() {
         id: 'trip_ent_' + Date.now(),
         organizationId: currentUserOrgId
       };
-      saveTrips([...trips, newEntry]);
+      
+      const nextTrips = [...trips, newEntry];
+      saveTrips(nextTrips);
+
+      if (isAppwriteConfigured()) {
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, currentUserOrgId, newEntry);
+          await loadDashboardData(activeMonth, activeYear);
+        } catch (err) {
+          console.warn("Failed to save trip to Appwrite:", err);
+        }
+      }
+
       logAction('Created', 'Trip', newEntry.tripNo, `Initiated cargo load ledger (Vehicle: ${newEntry.truckNo}, Driver: ${newEntry.driverName})`);
       showNotification(`Saved segment load posted as master trip.`);
     }
   };
 
-  const handleDeleteTripEntry = (id: string) => {
+  const handleDeleteTripEntry = async (id: string) => {
     const tEntry = trips.find(t => t.id === id);
     const next = trips.filter(t => t.id !== id);
     saveTrips(next);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'trips', id);
+        await loadDashboardData(activeMonth, activeYear);
+      } catch (err) {
+        console.warn("Failed to delete trip from Appwrite:", err);
+      }
+    }
+
     if (tEntry) {
       logAction('Deleted', 'Trip', tEntry.tripNo, `Voided/deleted trip ID ${tEntry.tripNo} journey database`);
     }
@@ -4069,11 +4314,15 @@ export default function App() {
           {/* TAB RENDERING CONTROLS */}
           {activeTab === 'DASHBOARD' && (
             <Dashboard
-              trips={orgTrips}
+              trips={dashboardTrips}
               trucks={approvedOrgTrucks}
               offices={orgOffices}
               accounts={orgAccounts}
               currentUserRights={currentUserRights}
+              activeMonth={activeMonth}
+              activeYear={activeYear}
+              setActiveMonth={setActiveMonth}
+              setActiveYear={setActiveYear}
             />
           )}
 
@@ -4089,6 +4338,7 @@ export default function App() {
               canViewTrips={currentUserRights.canViewTrips}
               canEditTrips={currentUserRights.canEditTrips}
               canDeleteTrips={currentUserRights.canDeleteTrips}
+              organizationId={currentUserOrgId}
             />
           )}
 
@@ -4164,14 +4414,19 @@ export default function App() {
               canViewExpenses={currentUserRights.canViewExpenses}
               canEditExpenses={currentUserRights.canEditExpenses}
               canDeleteExpenses={currentUserRights.canDeleteExpenses}
+              organizationId={currentUserOrgId}
             />
           )}
 
           {activeTab === 'REPORTS' && currentUserRights.canViewTrips && (
             <MonthlyReport
-              trips={orgTrips}
+              trips={dashboardTrips}
               trucks={approvedOrgTrucks}
-              expenses={orgExpenses}
+              expenses={dashboardExpenses}
+              selectedMonth={activeMonth}
+              selectedYear={activeYear}
+              setSelectedMonth={setActiveMonth}
+              setSelectedYear={setActiveYear}
             />
           )}
 
@@ -4180,6 +4435,8 @@ export default function App() {
               logs={orgAuditLogs}
               onClearLogs={handleClearAuditLogs}
               confirmAction={confirmAction}
+              organizationProfiles={organizationProfiles}
+              currentUserOrgId={currentUserOrgId}
             />
           )}
 
@@ -4195,6 +4452,7 @@ export default function App() {
               canViewTyres={currentUserRights.canViewTyres}
               canEditTyres={currentUserRights.canEditTyres}
               canDeleteTyres={currentUserRights.canDeleteTyres}
+              organizationId={currentUserOrgId}
             />
           )}
 
@@ -4300,7 +4558,12 @@ export default function App() {
                 alert("Current password is required to change password in Appwrite.");
                 return;
               }
-              await handleUpdateProfile(profileName, newPassword || undefined, oldPassword || undefined);
+              await handleUpdateProfile(
+                profileName,
+                currentUserRights.isAdmin ? profileOrgName : undefined,
+                newPassword || undefined,
+                oldPassword || undefined
+              );
             }} className="space-y-4">
               {/* DISPLAY NAME */}
               <div>
@@ -4313,6 +4576,20 @@ export default function App() {
                   className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
                 />
               </div>
+
+              {/* ORGANIZATION NAME */}
+              {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Organization Name</label>
+                  <input
+                    type="text"
+                    value={profileOrgName}
+                    onChange={(e) => setProfileOrgName(e.target.value)}
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+              )}
 
               {/* EMAIL (READ-ONLY) */}
               <div>

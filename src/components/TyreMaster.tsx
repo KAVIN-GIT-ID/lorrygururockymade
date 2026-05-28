@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tyre, Truck, TyreMovementLog, TyreStatus, Account } from '../types';
 import { 
   CheckCircle, 
@@ -20,6 +20,7 @@ import {
   Activity,
   Tag 
 } from 'lucide-react';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface TyreMasterProps {
   tyres: Tyre[];
@@ -39,6 +40,7 @@ interface TyreMasterProps {
   canViewTyres?: boolean;
   canEditTyres?: boolean;
   canDeleteTyres?: boolean;
+  organizationId?: string;
 }
 
 export default function TyreMaster({ 
@@ -51,7 +53,8 @@ export default function TyreMaster({
   confirmAction, 
   canViewTyres = true,
   canEditTyres = true,
-  canDeleteTyres = true
+  canDeleteTyres = true,
+  organizationId
 }: TyreMasterProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [tyreNo, setTyreNo] = useState('');
@@ -90,6 +93,95 @@ export default function TyreMaster({
   const [scrapDate, setScrapDate] = useState('2026-05-23');
 
   const [viewHistoryTyreId, setViewHistoryTyreId] = useState<string | null>(null);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+  const [displayedTyres, setDisplayedTyres] = useState<Tyre[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const online = isAppwriteConfigured();
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
+
+  // Offline / local logic fallback
+  useEffect(() => {
+    if (!online) {
+      const filtered = tyres.filter(tyre => {
+        const matchesStatus = statusFilter ? tyre.status === statusFilter : true;
+        const matchesSearch = searchQuery 
+          ? tyre.tyreNo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            tyre.manufacturer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery.toLowerCase()))
+          : true;
+        return matchesStatus && matchesSearch;
+      });
+
+      setTotalCount(filtered.length);
+      const startIdx = (currentPage - 1) * pageSize;
+      setDisplayedTyres(filtered.slice(startIdx, startIdx + pageSize));
+    }
+  }, [tyres, searchQuery, statusFilter, currentPage, pageSize, online]);
+
+  // Online Appwrite logic
+  useEffect(() => {
+    if (online) {
+      const fetchServerTyres = async () => {
+        setLoading(true);
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
+
+          const res = await appwrite.queryTyres(
+            databaseId,
+            orgId,
+            {
+              search: searchQuery || undefined,
+              status: statusFilter || undefined
+            },
+            currentPage,
+            pageSize
+          );
+
+          const mapped = (res.documents || []).map(doc => {
+            try {
+              if (doc.data) {
+                const parsed = JSON.parse(doc.data);
+                return { id: doc.$id, ...parsed };
+              }
+            } catch (e) {
+              console.warn("Failed to parse doc.data for tyre:", doc.$id, e);
+            }
+            return {
+              id: doc.$id,
+              tyreNo: doc.tyreNo || '',
+              manufacturer: doc.manufacturer || '',
+              status: doc.status || 'Available',
+              currentTruckNo: doc.currentTruckNo || '',
+              purchaseDate: doc.purchaseDate || '',
+              movementHistory: []
+            };
+          });
+          setDisplayedTyres(mapped);
+          setTotalCount(res.total || 0);
+        } catch (err) {
+          console.error("Failed to query tyres from Appwrite:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const delayDebounce = setTimeout(() => {
+        fetchServerTyres();
+      }, 300);
+
+      return () => clearTimeout(delayDebounce);
+    }
+  }, [searchQuery, statusFilter, currentPage, pageSize, online, organizationId]);
 
   const resetAddForm = () => {
     setTyreNo('');
@@ -335,6 +427,7 @@ export default function TyreMaster({
           </div>
           <div>
             <select
+              aria-label="Status Filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
@@ -347,7 +440,8 @@ export default function TyreMaster({
             </select>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
-            <span>Filtered: <b>{filteredTyres.length} Tyres</b></span>
+            <span>Filtered: <b>{totalCount} Tyres</b></span>
+            {loading && <span className="inline-block w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin ml-1.5 align-middle"></span>}
           </div>
         </div>
 
@@ -589,12 +683,12 @@ export default function TyreMaster({
 
       {/* Main Grid display list */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredTyres.length === 0 ? (
+        {displayedTyres.length === 0 ? (
           <div className="col-span-full bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 italic">
             No tyres mapped with current filter. Please select "All Statuses" or register a new Tyre purchase.
           </div>
         ) : (
-          filteredTyres.map(tyre => {
+          displayedTyres.map(tyre => {
             const activeRunKM = calculateActiveKM(tyre);
             const overallKM = tyre.accumulatedKM + activeRunKM;
             const relatedTruck = trucks.find(tk => tk.truckNo === tyre.currentTruckNo);
@@ -776,6 +870,48 @@ export default function TyreMaster({
             );
           })
         )}
+      </div>
+
+      {/* PAGINATION FOOTER */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mt-5 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs no-print">
+        <div className="text-slate-500 font-medium">
+          Showing <strong className="text-slate-800">{totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to{" "}
+          <strong className="text-slate-800">{Math.min(currentPage * pageSize, totalCount)}</strong> of{" "}
+          <strong className="text-slate-800">{totalCount}</strong> entries
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">Page size:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-slate-50 border border-slate-200 rounded p-1 text-slate-700 font-bold focus:outline-none cursor-pointer"
+            >
+              {[12, 24, 48, 96].map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1 || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+              disabled={currentPage >= Math.ceil(totalCount / pageSize) || loading}
+              className="p-1 px-3 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold rounded border border-slate-200 disabled:cursor-not-allowed select-none cursor-pointer transition"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ACTION 1: MOUNT (INSTALL) DIALOG MODLET */}

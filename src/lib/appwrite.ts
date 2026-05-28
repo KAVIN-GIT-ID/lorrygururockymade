@@ -310,10 +310,60 @@ class AppwriteService {
    */
   async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
     await this.initSession();
-    const documentData = {
+    
+    let documentData: any = {
       organizationId: orgId,
       data: JSON.stringify(dataObj)
     };
+
+    if (collectionId === 'audit_logs') {
+      documentData = {
+        organizationId: orgId,
+        timestamp: dataObj.timestamp || '',
+        user: dataObj.user || '',
+        action: dataObj.action || 'Cloud',
+        category: dataObj.category || '',
+        reference: dataObj.reference || '',
+        details: dataObj.details || '',
+        data: JSON.stringify(dataObj)
+      };
+    } else if (collectionId === 'trips') {
+      documentData = {
+        organizationId: orgId,
+        tripNo: dataObj.tripNo || '',
+        truckNo: dataObj.truckNo || '',
+        startDate: dataObj.startDate || '',
+        endDate: dataObj.endDate || '',
+        driverName: dataObj.driverName || '',
+        status: dataObj.status || 'Pending',
+        notes: dataObj.notes || '',
+        data: JSON.stringify(dataObj)
+      };
+    } else if (collectionId === 'expenses') {
+      documentData = {
+        organizationId: orgId,
+        truckNo: dataObj.truckNo || '',
+        expenseType: dataObj.expenseType || '',
+        shopName: dataObj.shopName || '',
+        amount: Number(dataObj.amount) || 0,
+        paymentMode: dataObj.paymentMode || '',
+        date: dataObj.date || '',
+        status: dataObj.status || 'Pending',
+        accountType: dataObj.accountType || 'Account',
+        driverName: dataObj.driverName || '',
+        data: JSON.stringify(dataObj)
+      };
+    } else if (collectionId === 'tyres') {
+      documentData = {
+        organizationId: orgId,
+        tyreNo: dataObj.tyreNo || '',
+        manufacturer: dataObj.manufacturer || '',
+        status: dataObj.status || 'Available',
+        currentTruckNo: dataObj.currentTruckNo || '',
+        purchaseDate: dataObj.purchaseDate || '',
+        data: JSON.stringify(dataObj)
+      };
+    }
 
     try {
       // Upsert: Try updating the document first
@@ -598,6 +648,289 @@ class AppwriteService {
     } catch (err) {
       console.warn(`Appwrite leaveTeam for ${teamId} failed:`, err);
       return false;
+    }
+  }
+
+  /**
+   * General paginated query method for Audit Logs.
+   */
+  async queryAuditLogs(
+    dbId: string,
+    orgId: string,
+    filters: { category?: string; action?: string; search?: string; startDate?: string; endDate?: string },
+    page: number,
+    limit: number
+  ): Promise<{ documents: any[]; total: number; fallback?: boolean }> {
+    await this.initSession();
+    try {
+      const baseQueries = [];
+      if (orgId !== 'ALL') {
+        baseQueries.push(Query.equal('organizationId', orgId));
+      }
+      if (filters.category) {
+        baseQueries.push(Query.equal('category', filters.category));
+      }
+      if (filters.action) {
+        baseQueries.push(Query.equal('action', filters.action));
+      }
+      if (filters.search) {
+        baseQueries.push(Query.search('details', filters.search));
+      }
+      if (filters.startDate) {
+        baseQueries.push(Query.greaterThanEqual('timestamp', filters.startDate));
+      }
+      if (filters.endDate) {
+        baseQueries.push(Query.lessThanEqual('timestamp', filters.endDate + ' 23:59:59'));
+      }
+      
+      const sortedQueries = [
+        ...baseQueries,
+        Query.orderDesc('timestamp'),
+        Query.limit(limit),
+        Query.offset((page - 1) * limit)
+      ];
+
+      try {
+        const response = await this.databases.listDocuments(dbId, 'audit_logs', sortedQueries);
+        return {
+          documents: response.documents || [],
+          total: response.total || 0,
+          fallback: false
+        };
+      } catch (err: any) {
+        const errMsg = (err.message || '').toLowerCase();
+        if (err.code === 400 || errMsg.includes('index') || errMsg.includes('composite')) {
+          console.warn("Appwrite composite index missing for audit logs. Retrying with client-side fallback (fetching last 300 records)...");
+          const fallbackQueries = [];
+          if (orgId !== 'ALL') {
+            fallbackQueries.push(Query.equal('organizationId', orgId));
+          }
+          fallbackQueries.push(Query.limit(300));
+          const response = await this.databases.listDocuments(dbId, 'audit_logs', fallbackQueries);
+          return {
+            documents: response.documents || [],
+            total: response.total || 0,
+            fallback: true
+          };
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      console.error("queryAuditLogs failure:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * General paginated query method for Trips.
+   */
+  async queryTrips(
+    dbId: string,
+    orgId: string,
+    filters: { search?: string; truckNo?: string; status?: string; startDate?: string; endDate?: string },
+    page: number,
+    limit: number,
+    sortField: string = 'startDate',
+    sortDirection: 'asc' | 'desc' = 'desc'
+  ): Promise<{ documents: any[]; total: number }> {
+    await this.initSession();
+    try {
+      const queries = [];
+      if (orgId !== 'org_backend') {
+        queries.push(Query.equal('organizationId', orgId));
+      }
+      if (filters.truckNo) {
+        queries.push(Query.equal('truckNo', filters.truckNo));
+      }
+      if (filters.status) {
+        queries.push(Query.equal('status', filters.status));
+      }
+      if (filters.search) {
+        queries.push(Query.search('tripNo', filters.search));
+      }
+      if (filters.startDate) {
+        queries.push(Query.greaterThanEqual('startDate', filters.startDate));
+      }
+      if (filters.endDate) {
+        queries.push(Query.lessThanEqual('startDate', filters.endDate));
+      }
+
+      if (sortDirection === 'asc') {
+        queries.push(Query.orderAsc(sortField));
+      } else {
+        queries.push(Query.orderDesc(sortField));
+      }
+
+      queries.push(Query.limit(limit));
+      queries.push(Query.offset((page - 1) * limit));
+
+      const response = await this.databases.listDocuments(dbId, 'trips', queries);
+      return {
+        documents: response.documents || [],
+        total: response.total || 0
+      };
+    } catch (err: any) {
+      console.error("queryTrips failure:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * General paginated query method for Expenses.
+   */
+  async queryExpenses(
+    dbId: string,
+    orgId: string,
+    filters: { search?: string; truckNo?: string; expenseType?: string; startDate?: string; endDate?: string },
+    page: number,
+    limit: number
+  ): Promise<{ documents: any[]; total: number }> {
+    await this.initSession();
+    try {
+      const queries = [];
+      if (orgId !== 'org_backend') {
+        queries.push(Query.equal('organizationId', orgId));
+      }
+      if (filters.truckNo) {
+        queries.push(Query.equal('truckNo', filters.truckNo));
+      }
+      if (filters.expenseType) {
+        queries.push(Query.equal('expenseType', filters.expenseType));
+      }
+      if (filters.search) {
+        queries.push(Query.search('shopName', filters.search));
+      }
+      if (filters.startDate) {
+        queries.push(Query.greaterThanEqual('date', filters.startDate));
+      }
+      if (filters.endDate) {
+        queries.push(Query.lessThanEqual('date', filters.endDate));
+      }
+
+      queries.push(Query.orderDesc('date'));
+      queries.push(Query.limit(limit));
+      queries.push(Query.offset((page - 1) * limit));
+
+      const response = await this.databases.listDocuments(dbId, 'expenses', queries);
+      return {
+        documents: response.documents || [],
+        total: response.total || 0
+      };
+    } catch (err: any) {
+      console.error("queryExpenses failure:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * General paginated query method for Tyres.
+   */
+  async queryTyres(
+    dbId: string,
+    orgId: string,
+    filters: { search?: string; status?: string },
+    page: number,
+    limit: number
+  ): Promise<{ documents: any[]; total: number }> {
+    await this.initSession();
+    try {
+      const queries = [];
+      if (orgId !== 'org_backend') {
+        queries.push(Query.equal('organizationId', orgId));
+      }
+      if (filters.status) {
+        queries.push(Query.equal('status', filters.status));
+      }
+      if (filters.search) {
+        queries.push(Query.equal('tyreNo', filters.search.toUpperCase()));
+      }
+
+      queries.push(Query.limit(limit));
+      queries.push(Query.offset((page - 1) * limit));
+
+      const response = await this.databases.listDocuments(dbId, 'tyres', queries);
+      return {
+        documents: response.documents || [],
+        total: response.total || 0
+      };
+    } catch (err: any) {
+      console.error("queryTyres failure:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches monthly slice of Trips and Expenses for Dashboard/Monthly Reports aggregates.
+   */
+  async fetchMonthlyTripsAndExpenses(
+    dbId: string,
+    orgId: string,
+    year: string,
+    month: string
+  ): Promise<{ trips: any[]; expenses: any[] }> {
+    await this.initSession();
+    try {
+      const trips = [];
+      const expenses = [];
+      const fetchAllTime = year === 'All Time';
+
+      // 1. Fetch Trips
+      let hasMore = true;
+      let offset = 0;
+      const limit = 100;
+
+      while (hasMore) {
+        const queries = [];
+        if (orgId !== 'org_backend') {
+          queries.push(Query.equal('organizationId', orgId));
+        }
+        if (!fetchAllTime) {
+          const monthStr = `${year}-${month}`;
+          queries.push(Query.greaterThanEqual('startDate', `${monthStr}-01`));
+          queries.push(Query.lessThanEqual('startDate', `${monthStr}-31`));
+        }
+        queries.push(Query.limit(limit));
+        queries.push(Query.offset(offset));
+
+        const res = await this.databases.listDocuments(dbId, 'trips', queries);
+        trips.push(...(res.documents || []));
+        if ((res.documents || []).length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+
+      // 2. Fetch Expenses
+      hasMore = true;
+      offset = 0;
+
+      while (hasMore) {
+        const queries = [];
+        if (orgId !== 'org_backend') {
+          queries.push(Query.equal('organizationId', orgId));
+        }
+        if (!fetchAllTime) {
+          const monthStr = `${year}-${month}`;
+          queries.push(Query.greaterThanEqual('date', `${monthStr}-01`));
+          queries.push(Query.lessThanEqual('date', `${monthStr}-31`));
+        }
+        queries.push(Query.limit(limit));
+        queries.push(Query.offset(offset));
+
+        const res = await this.databases.listDocuments(dbId, 'expenses', queries);
+        expenses.push(...(res.documents || []));
+        if ((res.documents || []).length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+
+      return { trips, expenses };
+    } catch (err: any) {
+      console.error("fetchMonthlyTripsAndExpenses failure:", err);
+      throw err;
     }
   }
 }

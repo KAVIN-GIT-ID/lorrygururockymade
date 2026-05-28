@@ -28,12 +28,22 @@ interface MonthlyReportProps {
   trips: TripEntry[];
   trucks: Truck[];
   expenses: ExpenseEntry[];
+  selectedMonth: string;
+  selectedYear: string;
+  setSelectedMonth: (month: string) => void;
+  setSelectedYear: (year: string) => void;
 }
 
-export default function MonthlyReport({ trips, trucks, expenses }: MonthlyReportProps) {
+export default function MonthlyReport({ 
+  trips, 
+  trucks, 
+  expenses,
+  selectedMonth,
+  selectedYear,
+  setSelectedMonth,
+  setSelectedYear
+}: MonthlyReportProps) {
   // Query Filter state
-  const [selectedMonth, setSelectedMonth] = useState('05'); // Default: May
-  const [selectedYear, setSelectedYear] = useState('2026');   // Default: 2026
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [selectedTruck, setSelectedTruck] = useState('');
 
@@ -53,18 +63,19 @@ export default function MonthlyReport({ trips, trucks, expenses }: MonthlyReport
     { value: '12', label: 'December' }
   ];
 
-  const years = ['2025', '2026', '2027', '2028', '2029', '2030'];
+  const years = ['2025', '2026', '2027', '2028', '2029', '2030', 'All Time'];
 
-  const targetMonthStr = `${selectedYear}-${selectedMonth}`;
+  const isAllTime = selectedYear === 'All Time';
 
-  // Filter raw collections to selected month
-  const targetTrips = trips.filter(
-    t => t.startDate && t.startDate.startsWith(targetMonthStr)
-  );
+  // Filter raw collections to selected month or all-time
+  const targetTrips = isAllTime
+    ? trips
+    : trips.filter(t => t.startDate && t.startDate.startsWith(`${selectedYear}-${selectedMonth}`));
 
-  const targetExpenses = expenses.filter(
-    e => e.date && e.date.startsWith(targetMonthStr) && e.status !== 'Declined'
-  );
+  const targetExpenses = isAllTime
+    ? expenses.filter(e => e.status !== 'Declined')
+    : expenses.filter(e => e.date && e.date.startsWith(`${selectedYear}-${selectedMonth}`) && e.status !== 'Declined');
+
 
   // Group and compute metrics grouped by Truck
   const filteredTrucks = selectedTruck 
@@ -205,8 +216,9 @@ export default function MonthlyReport({ trips, trucks, expenses }: MonthlyReport
             <select
               id="report-month-select"
               value={selectedMonth}
+              disabled={isAllTime}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4"
+              className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {months.map(m => (
                 <option key={m.value} value={m.value}>{m.label}</option>
