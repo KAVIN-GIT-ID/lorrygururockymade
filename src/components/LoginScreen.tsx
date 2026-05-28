@@ -378,9 +378,9 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
 
           {showConfigDetails && (
             <div className="w-full bg-slate-950/80 p-2.5 rounded-lg border border-slate-850 font-mono text-[9px] text-slate-400 space-y-1 text-left leading-relaxed">
-              <div><b>Endpoint:</b> {(import.meta as any).env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}</div>
-              <div><b>Project ID:</b> {(import.meta as any).env.VITE_APPWRITE_PROJECT_ID || '(Not Configured)'}</div>
-              <div><b>Database:</b> {(import.meta as any).env.VITE_APPWRITE_PROJECT_NAME || 'truck'}</div>
+              <div><b>Endpoint:</b> {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}</div>
+              <div><b>Project ID:</b> {import.meta.env.VITE_APPWRITE_PROJECT_ID || '(Not Configured)'}</div>
+              <div><b>Database:</b> {import.meta.env.VITE_APPWRITE_PROJECT_NAME || 'truck'}</div>
               {!configured && (
                 <div className="text-amber-500 border-t border-slate-850 mt-1.5 pt-1.5 leading-relaxed font-sans">
                   <b>Troubleshooting Notice:</b> Create a `.env` file containing these keys inside the project workspace directory to connect your specific backend database.

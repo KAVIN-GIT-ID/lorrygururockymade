@@ -1,22 +1,20 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest } from './types';
-
-// Lazy-loaded components for code splitting — each becomes its own chunk
-const Dashboard = lazy(() => import('./components/Dashboard'));
-const TripList = lazy(() => import('./components/TripList'));
-const TripForm = lazy(() => import('./components/TripForm'));
-const TruckMaster = lazy(() => import('./components/TruckMaster'));
-const DriverMaster = lazy(() => import('./components/DriverMaster'));
-const OfficeMaster = lazy(() => import('./components/OfficeMaster'));
-const AccountMaster = lazy(() => import('./components/AccountMaster'));
-const ExpenseMaster = lazy(() => import('./components/ExpenseMaster'));
-const MonthlyReport = lazy(() => import('./components/MonthlyReport'));
-const AuditLogView = lazy(() => import('./components/AuditLogView'));
-const TyreMaster = lazy(() => import('./components/TyreMaster'));
-const AppwriteCloudSync = lazy(() => import('./components/AppwriteCloudSync'));
-const LoginScreen = lazy(() => import('./components/LoginScreen'));
-const UserAccessControl = lazy(() => import('./components/UserAccessControl'));
-const BackendDashboard = lazy(() => import('./components/BackendDashboard'));
+import Dashboard from './components/Dashboard';
+import TripList from './components/TripList';
+import TripForm from './components/TripForm';
+import TruckMaster from './components/TruckMaster';
+import DriverMaster from './components/DriverMaster';
+import OfficeMaster from './components/OfficeMaster';
+import AccountMaster from './components/AccountMaster';
+import ExpenseMaster from './components/ExpenseMaster';
+import MonthlyReport from './components/MonthlyReport';
+import AuditLogView from './components/AuditLogView';
+import TyreMaster from './components/TyreMaster';
+import AppwriteCloudSync from './components/AppwriteCloudSync';
+import LoginScreen from './components/LoginScreen';
+import UserAccessControl from './components/UserAccessControl';
+import BackendDashboard from './components/BackendDashboard';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import { 
   migrateTripsIfNecessary,
@@ -3272,33 +3270,24 @@ export default function App() {
 
   if (!currentUser) {
     return (
-      <Suspense fallback={
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-white font-sans">
-          <div className="flex flex-col items-center gap-3">
-            <Loader className="w-8 h-8 animate-spin text-blue-500" />
-            <p className="text-xs text-slate-400">Loading...</p>
-          </div>
-        </div>
-      }>
-        <LoginScreen
-          onLoginSuccess={async (user) => {
-            localStorage.setItem('ttt_login_method', 'appwrite');
-            localStorage.removeItem('ttt_guest_user');
-            setLoadingUser(true);
-            setInitialPullDone(false);
-            try {
-              await reconcileSession(user);
-              showNotification(`Successfully logged in as ${user.name || user.email}`);
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setLoadingUser(false);
-            }
-          }}
-          checkUserApproval={checkUserApproval}
-          onRegisterUserPermissions={handleRegisterUserPermissions}
-        />
-      </Suspense>
+      <LoginScreen
+        onLoginSuccess={async (user) => {
+          localStorage.setItem('ttt_login_method', 'appwrite');
+          localStorage.removeItem('ttt_guest_user');
+          setLoadingUser(true);
+          setInitialPullDone(false);
+          try {
+            await reconcileSession(user);
+            showNotification(`Successfully logged in as ${user.name || user.email}`);
+          } catch (err) {
+            console.error(err);
+          } finally {
+            setLoadingUser(false);
+          }
+        }}
+        checkUserApproval={checkUserApproval}
+        onRegisterUserPermissions={handleRegisterUserPermissions}
+      />
     );
   }
 
@@ -3510,14 +3499,6 @@ export default function App() {
   };
 
   return (
-    <Suspense fallback={
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-white font-sans">
-        <div className="flex flex-col items-center gap-3">
-          <Loader className="w-8 h-8 animate-spin text-blue-500" />
-          <p className="text-xs text-slate-400">Loading module...</p>
-        </div>
-      </div>
-    }>
     <div className="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
 
       {/* GLOBAL TOAST BANNER */}
@@ -4437,6 +4418,5 @@ export default function App() {
       )}
 
     </div>
-    </Suspense>
   );
 }

@@ -600,8 +600,8 @@ export default function TripList({
                   <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3.5">
                     <div className="flex justify-between">
                       <span className="text-slate-400 font-bold uppercase text-[9px]">Route</span>
-                      <span className="font-semibold text-slate-850 truncate max-w-[200px]" title={trip.partyName || 'Broker'}>
-                        {trip.partyName || 'Broker'} &bull; {trip.fromCity} &rarr; {trip.toCity}
+                      <span className="font-semibold text-slate-850 truncate max-w-[200px]" title={trip.subTrips?.[0]?.officeName || 'Broker'}>
+                        {trip.subTrips?.[0]?.officeName || 'Broker'} &bull; {trip.subTrips?.[0]?.routeFrom || 'Origin'} &rarr; {trip.subTrips?.[trip.subTrips.length - 1]?.routeTo || 'Destination'}
                       </span>
                     </div>
                     <div className="flex justify-between">

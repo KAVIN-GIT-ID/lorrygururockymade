@@ -22,16 +22,12 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks: {
-            // Core React runtime — changes rarely, long-lived cache
-            'vendor-react': ['react', 'react-dom'],
             // Charting library — large, changes rarely
             'vendor-recharts': ['recharts'],
             // Appwrite SDK — large, changes rarely
             'vendor-appwrite': ['appwrite'],
             // Icon library — large, changes rarely
             'vendor-lucide': ['lucide-react'],
-            // Animation library
-            'vendor-motion': ['motion'],
           },
         },
       },

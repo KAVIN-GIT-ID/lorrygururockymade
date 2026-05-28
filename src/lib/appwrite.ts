@@ -1,7 +1,7 @@
 import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query } from 'appwrite';
 
-const projectID = (import.meta as any).env.VITE_APPWRITE_PROJECT_ID || '';
-const endpoint = (import.meta as any).env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+const projectID = import.meta.env.VITE_APPWRITE_PROJECT_ID || '';
+const endpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
 
 export const isAppwriteConfigured = () => {
   return !!projectID && !!endpoint;
@@ -175,7 +175,7 @@ class AppwriteService {
   }
 
   getBucketId() {
-    return (import.meta as any).env.VITE_APPWRITE_BUCKET_ID || '6a1713930029ff1ca4d3';
+    return import.meta.env.VITE_APPWRITE_BUCKET_ID || '6a1713930029ff1ca4d3';
   }
 
   async uploadFile(file: File, customName?: string): Promise<string> {

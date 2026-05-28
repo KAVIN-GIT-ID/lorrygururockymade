@@ -674,8 +674,8 @@ export default function AppwriteCloudSync({
             </div>
             <div className="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
               <span className="text-slate-400">Endpoint:</span>
-              <span className="font-mono text-[10px] text-slate-400 max-w-[180px] truncate" title={(import.meta as any).env.VITE_APPWRITE_ENDPOINT}>
-                {(import.meta as any).env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}
+              <span className="font-mono text-[10px] text-slate-400 max-w-[180px] truncate" title={import.meta.env.VITE_APPWRITE_ENDPOINT}>
+                {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}
               </span>
             </div>
           </div>
