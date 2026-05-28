@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
+
+beforeEach(() => {
+  (globalThis as any).mockGlobalConfigs = undefined;
+});
 
 // Global mock for Recharts
 vi.mock('recharts', () => {
@@ -42,40 +46,93 @@ vi.mock('../lib/appwrite', () => {
       listFleetDocuments: vi.fn().mockResolvedValue([]),
       saveFleetDocument: vi.fn().mockResolvedValue('doc-id'),
       deleteFleetDocument: vi.fn().mockResolvedValue(true),
-      listGlobalConfigs: vi.fn().mockImplementation(async () => [
-        {
-          $id: 'config-user-admin',
-          key: 'usr_admin_test_com',
-          data: JSON.stringify({
-            id: 'ur-admin',
-            email: 'admin@test.com',
-            name: 'Test Admin',
-            role: 'Admin',
-            organizationId: 'org_test',
-            isApproved: true,
-            canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
-            canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
-            canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
-            canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: true,
-            canViewOffices: true, canEditOffices: true, canDeleteOffices: true,
-            canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
-            canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
-          })
-        },
-        {
-          $id: 'config-profile-org_test',
-          key: 'prf_org_test',
-          data: JSON.stringify({
-            organizationId: 'org_test',
-            organizationName: 'Test Logistics Corp',
-            ownerEmail: 'admin@test.com',
-            status: 'Active',
-            maxTrucksAllowed: 10,
-            truckRequests: []
-          })
+      listGlobalConfigs: vi.fn().mockImplementation(async () => {
+        if (!globalThis.mockGlobalConfigs) {
+          globalThis.mockGlobalConfigs = [
+            {
+              $id: 'config-user-admin',
+              key: 'usr_admin_test_com',
+              data: JSON.stringify({
+                id: 'ur-admin',
+                email: 'admin@test.com',
+                name: 'Test Admin',
+                role: 'Admin',
+                organizationId: 'org_test',
+                isApproved: true,
+                canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
+                canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
+                canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
+                canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: true,
+                canViewOffices: true, canEditOffices: true, canDeleteOffices: true,
+                canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
+                canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
+              })
+            },
+            {
+              $id: 'config-profile-org_test',
+              key: 'prf_org_test',
+              data: JSON.stringify({
+                organizationId: 'org_test',
+                organizationName: 'Test Logistics Corp',
+                ownerEmail: 'admin@test.com',
+                status: 'Active',
+                maxTrucksAllowed: 10,
+                truckRequests: []
+              })
+            }
+          ];
         }
-      ]),
-      saveGlobalConfig: vi.fn().mockResolvedValue('config-id'),
+        return globalThis.mockGlobalConfigs;
+      }),
+      saveGlobalConfig: vi.fn().mockImplementation(async (dbId: string, key: string, payload: any) => {
+        if (!globalThis.mockGlobalConfigs) {
+          // Initialize if not done
+          globalThis.mockGlobalConfigs = [
+            {
+              $id: 'config-user-admin',
+              key: 'usr_admin_test_com',
+              data: JSON.stringify({
+                id: 'ur-admin',
+                email: 'admin@test.com',
+                name: 'Test Admin',
+                role: 'Admin',
+                organizationId: 'org_test',
+                isApproved: true,
+                canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
+                canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
+                canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
+                canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: true,
+                canViewOffices: true, canEditOffices: true, canDeleteOffices: true,
+                canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
+                canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
+              })
+            },
+            {
+              $id: 'config-profile-org_test',
+              key: 'prf_org_test',
+              data: JSON.stringify({
+                organizationId: 'org_test',
+                organizationName: 'Test Logistics Corp',
+                ownerEmail: 'admin@test.com',
+                status: 'Active',
+                maxTrucksAllowed: 10,
+                truckRequests: []
+              })
+            }
+          ];
+        }
+        const existing = globalThis.mockGlobalConfigs.find((c: any) => c.key === key);
+        if (existing) {
+          existing.data = JSON.stringify(payload);
+        } else {
+          globalThis.mockGlobalConfigs.push({
+            $id: 'config-' + key,
+            key: key,
+            data: JSON.stringify(payload)
+          });
+        }
+        return 'config-id';
+      }),
       deleteGlobalConfig: vi.fn().mockResolvedValue(true),
       inviteToTeam: vi.fn().mockResolvedValue({}),
       removeMembership: vi.fn().mockResolvedValue(true),
@@ -88,6 +145,12 @@ vi.mock('../lib/appwrite', () => {
       deleteFile: vi.fn().mockResolvedValue(true),
       getFileView: vi.fn().mockReturnValue('https://sgp.cloud.appwrite.io/v1/storage/buckets/mock-bucket/files/mock-file-id/view'),
       getFileDownload: vi.fn().mockReturnValue('https://sgp.cloud.appwrite.io/v1/storage/buckets/mock-bucket/files/mock-file-id/download'),
+      queryTrips: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      queryExpenses: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      queryTyres: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      queryAuditLogs: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      fetchMonthlyTripsAndExpenses: vi.fn().mockResolvedValue({ trips: [], expenses: [] }),
+      getClient: vi.fn().mockReturnValue(null),
     }
   };
 });

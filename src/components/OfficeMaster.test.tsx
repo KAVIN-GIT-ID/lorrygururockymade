@@ -35,10 +35,10 @@ describe('OfficeMaster Component Integration Tests', () => {
     );
 
     expect(screen.getByText('Office Datasheet')).toBeInTheDocument();
-    expect(screen.getByText('Mumbai HQ')).toBeInTheDocument();
-    expect(screen.getByText('Delhi Hub')).toBeInTheDocument();
-    expect(screen.getByText('Rahul Sharma')).toBeInTheDocument();
-    expect(screen.getByText('Amit Verma')).toBeInTheDocument();
+    expect(screen.getAllByText('Mumbai HQ')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Delhi Hub')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Rahul Sharma')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Amit Verma')[0]).toBeInTheDocument();
   });
 
   it('should display "No offices registered" message when list is empty', () => {
@@ -51,7 +51,7 @@ describe('OfficeMaster Component Integration Tests', () => {
       />
     );
 
-    expect(screen.getByText(/No offices registered/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/No offices registered/i)[0]).toBeInTheDocument();
   });
 
   it('should restrict view details when canViewOffices is false', () => {

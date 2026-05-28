@@ -367,7 +367,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
             </span>
           </div>
 
-          <button
+          {/* <button
             type="button"
             onClick={() => setShowConfigDetails(!showConfigDetails)}
             className="text-[9px] text-slate-500 hover:text-slate-350 underline inline-flex items-center gap-1"
@@ -387,7 +387,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 </div>
               )}
             </div>
-          )}
+          )} */}
         </div>
 
       </div>

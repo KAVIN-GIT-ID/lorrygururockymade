@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance } from '../types';
+import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile } from '../types';
 import { indianCities } from './indianCities';
 import { 
   X, Calculator, Calendar, Landmark, Coins, Plus, Trash2, Edit2, 
@@ -17,6 +17,7 @@ interface TripFormProps {
   onSubmit: (entry: Omit<TripEntry, 'id'>) => void;
   editingEntry?: TripEntry | null;
   canViewDrivers?: boolean;
+  orgProfile?: OrganizationProfile;
 }
 
 export default function TripForm({
@@ -29,7 +30,8 @@ export default function TripForm({
   existingTripNos,
   onSubmit,
   editingEntry,
-  canViewDrivers = true
+  canViewDrivers = true,
+  orgProfile
 }: TripFormProps) {
   // Trip group keying
   const [tripNoOption, setTripNoOption] = useState<'AUTO' | 'EXISTING'>('AUTO');
@@ -89,11 +91,31 @@ export default function TripForm({
   const [stUnloadingPaidByDriver, setStUnloadingPaidByDriver] = useState<boolean>(true);
   const [stBrokerageExpense, setStBrokerageExpense] = useState<number>(0);
   const [stBrokeragePaidByDriver, setStBrokeragePaidByDriver] = useState<boolean>(true);
+
+  // New settlement state variables
+  const [stLoadingDeductedFrom, setStLoadingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [stLoadingBears, setStLoadingBears] = useState<'Org' | 'Driver'>('Org');
+
+  const [stUnloadingDeductedFrom, setStUnloadingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [stUnloadingBears, setStUnloadingBears] = useState<'Org' | 'Driver'>('Org');
+
+  const [stBrokerageDeductedFrom, setStBrokerageDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [stBrokerageBears, setStBrokerageBears] = useState<'Org' | 'Driver'>('Driver');
+
+  const [stCrossingExpense, setStCrossingExpense] = useState<number>(0);
+  const [stCrossingPaidByDriver, setStCrossingPaidByDriver] = useState<boolean>(true);
+  const [stCrossingDeductedFrom, setStCrossingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [stCrossingBears, setStCrossingBears] = useState<'Org' | 'Driver'>('Org');
+
   const [stDriverWages, setStDriverWages] = useState<number>(0);
   const [stStartingKM, setStStartingKM] = useState<number>(0);
   const [stEndingKM, setStEndingKM] = useState<number>(0);
   const [stNotes, setStNotes] = useState('');
   const [stWagePct, setStWagePct] = useState<string>('');
+  
+  const [stNoOfTons, setStNoOfTons] = useState<number>(0);
+  const [stMaterial, setStMaterial] = useState<string>('');
+  const [stRatePerTon, setStRatePerTon] = useState<number>(0);
   const [originalSubTripSnapshot, setOriginalSubTripSnapshot] = useState<any>(null);
 
   // Draft states for payment ledger receipts list
@@ -328,25 +350,54 @@ export default function TripForm({
       tripLevelDriverSpend += Number(otherExpense) || 0;
     }
 
-    // 3. SubTrip specific cargo level loading/unloading, brokerage & driver wages
-    const subTripsDriverSpend = (subTrips || []).reduce((sum, st) => {
-      let stSum = 0;
-      if (st.loadingPaidByDriver !== false && st.loadingExpense) {
-        stSum += Number(st.loadingExpense) || 0;
-      }
-      if (st.unloadingPaidByDriver !== false && st.unloadingExpense) {
-        stSum += Number(st.unloadingExpense) || 0;
-      }
-      if (st.brokeragePaidByDriver !== false && st.brokerageExpense) {
-        stSum += Number(st.brokerageExpense) || 0;
-      }
-      if (st.driverWages) {
-        stSum += Number(st.driverWages) || 0;
-      }
-      return sum + stSum;
-    }, 0);
+    // 3. SubTrip specific cargo level loading/unloading, brokerage, crossing & driver wages
+    let subTripsDriverSpend = 0;
+    let driverRecovery = 0;
 
-    // Sum driver spends
+    (subTrips || []).forEach((st) => {
+      // Resolve Loading
+      const loadAmt = Number(st.loadingExpense) || 0;
+      const loadDF = st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+      const loadB = st.loadingBears || 'Org';
+      if (loadAmt > 0) {
+        if (loadDF === 'DriverDirect' && loadB === 'Org') subTripsDriverSpend += loadAmt;
+        if (loadDF === 'OrgRental' && loadB === 'Driver') driverRecovery += loadAmt;
+      }
+
+      // Resolve Unloading
+      const unloadAmt = Number(st.unloadingExpense) || 0;
+      const unloadDF = st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+      const unloadB = st.unloadingBears || 'Org';
+      if (unloadAmt > 0) {
+        if (unloadDF === 'DriverDirect' && unloadB === 'Org') subTripsDriverSpend += unloadAmt;
+        if (unloadDF === 'OrgRental' && unloadB === 'Driver') driverRecovery += unloadAmt;
+      }
+
+      // Resolve Brokerage
+      const brokerageAmt = Number(st.brokerageExpense) || 0;
+      const brokerageDF = st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
+      const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+      const brokerageB = st.brokerageBears || defaultBears;
+      if (brokerageAmt > 0) {
+        if (brokerageDF === 'DriverDirect' && brokerageB === 'Org') subTripsDriverSpend += brokerageAmt;
+        if (brokerageDF === 'OrgRental' && brokerageB === 'Driver') driverRecovery += brokerageAmt;
+      }
+
+      // Resolve Crossing
+      const crossingAmt = Number(st.crossingExpense) || 0;
+      const crossingDF = st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+      const crossingB = st.crossingBears || 'Org';
+      if (crossingAmt > 0) {
+        if (crossingDF === 'DriverDirect' && crossingB === 'Org') subTripsDriverSpend += crossingAmt;
+        if (crossingDF === 'OrgRental' && crossingB === 'Driver') driverRecovery += crossingAmt;
+      }
+
+      // Driver wages (always credited to driver)
+      if (st.driverWages) {
+        subTripsDriverSpend += Number(st.driverWages) || 0;
+      }
+    });
+
     const totalDriverSpend = fuelsDriverSpend + tripLevelDriverSpend + subTripsDriverSpend;
 
     // Driver Advances (Category 4)
@@ -360,7 +411,7 @@ export default function TripForm({
     // Total received by driver
     const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
 
-    return totalDriverSpend - totalIssuedToDriver;
+    return totalDriverSpend - (totalIssuedToDriver + driverRecovery);
   };
 
   const driverBalance = calculateDriverBalance();
@@ -410,6 +461,26 @@ export default function TripForm({
     setStUnloadingPaidByDriver(true);
     setStBrokerageExpense(0);
     setStBrokeragePaidByDriver(true);
+    
+    setStNoOfTons(0);
+    setStMaterial('');
+    setStRatePerTon(0);
+    
+    // Default Bears policy
+    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+    const isPolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
+
+    setStLoadingDeductedFrom('DriverDirect');
+    setStLoadingBears('Org');
+    setStUnloadingDeductedFrom('DriverDirect');
+    setStUnloadingBears('Org');
+    setStBrokerageDeductedFrom(isPolicy2 ? 'OrgRental' : 'DriverDirect');
+    setStBrokerageBears(defaultBears);
+    setStCrossingExpense(0);
+    setStCrossingPaidByDriver(true);
+    setStCrossingDeductedFrom('DriverDirect');
+    setStCrossingBears('Org');
+
     setStDriverWages(0);
     // Align segment mileage to main odometer reads to reduce user friction
     setStStartingKM(startingKM || 0);
@@ -428,11 +499,24 @@ export default function TripForm({
       loadingPaidByDriver: true,
       unloadingPaidByDriver: true,
       brokerageExpense: 0,
-      brokeragePaidByDriver: true,
+      brokeragePaidByDriver: !isPolicy2,
+      loadingDeductedFrom: 'DriverDirect',
+      loadingBears: 'Org',
+      unloadingDeductedFrom: 'DriverDirect',
+      unloadingBears: 'Org',
+      brokerageDeductedFrom: isPolicy2 ? 'OrgRental' : 'DriverDirect',
+      brokerageBears: defaultBears,
+      crossingExpense: 0,
+      crossingPaidByDriver: true,
+      crossingDeductedFrom: 'DriverDirect',
+      crossingBears: 'Org',
       driverWages: 0,
       startingKM: startingKM || 0,
       endingKM: endingKM || 0,
-      notes: ''
+      notes: '',
+      noOfTons: 0,
+      material: '',
+      ratePerTon: 0
     };
     setOriginalSubTripSnapshot(snapshot);
     setShowSubTripForm(true);
@@ -451,6 +535,25 @@ export default function TripForm({
     setStUnloadingPaidByDriver(st.unloadingPaidByDriver !== undefined ? st.unloadingPaidByDriver : true);
     setStBrokerageExpense(st.brokerageExpense || 0);
     setStBrokeragePaidByDriver(st.brokeragePaidByDriver !== undefined ? st.brokeragePaidByDriver : true);
+
+    setStNoOfTons(st.noOfTons || 0);
+    setStMaterial(st.material || '');
+    setStRatePerTon(st.ratePerTon || 0);
+
+    setStLoadingDeductedFrom(st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
+    setStLoadingBears(st.loadingBears || 'Org');
+    setStUnloadingDeductedFrom(st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
+    setStUnloadingBears(st.unloadingBears || 'Org');
+    
+    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+    setStBrokerageDeductedFrom(st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental'));
+    setStBrokerageBears(st.brokerageBears || defaultBears);
+
+    setStCrossingExpense(st.crossingExpense || 0);
+    setStCrossingPaidByDriver(st.crossingPaidByDriver || false);
+    setStCrossingDeductedFrom(st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
+    setStCrossingBears(st.crossingBears || 'Org');
+
     setStDriverWages(st.driverWages || 0);
     setStStartingKM(st.startingKM || 0);
     setStEndingKM(st.endingKM || 0);
@@ -471,16 +574,34 @@ export default function TripForm({
       unloadingPaidByDriver: st.unloadingPaidByDriver !== undefined ? st.unloadingPaidByDriver : true,
       brokerageExpense: st.brokerageExpense || 0,
       brokeragePaidByDriver: st.brokeragePaidByDriver !== undefined ? st.brokeragePaidByDriver : true,
+      loadingDeductedFrom: st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
+      loadingBears: 'Org',
+      unloadingDeductedFrom: st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
+      unloadingBears: 'Org',
+      brokerageDeductedFrom: st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental'),
+      brokerageBears: st.brokerageBears || defaultBears,
+      crossingExpense: st.crossingExpense || 0,
+      crossingPaidByDriver: st.crossingPaidByDriver || false,
+      crossingDeductedFrom: st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
+      crossingBears: 'Org',
       driverWages: st.driverWages || 0,
       startingKM: st.startingKM || 0,
       endingKM: st.endingKM || 0,
-      notes: st.notes || ''
+      notes: st.notes || '',
+      noOfTons: st.noOfTons || 0,
+      material: st.material || '',
+      ratePerTon: st.ratePerTon || 0
     };
     setOriginalSubTripSnapshot(snapshot);
     setShowSubTripForm(true);
   };
 
   const checkIfSubTripHasChanges = () => {
+    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+    const isPolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
+    const finalBrokerageDeductedFrom = isPolicy2 ? 'OrgRental' : stBrokerageDeductedFrom;
+    const finalBrokeragePaidByDriver = isPolicy2 ? false : stBrokeragePaidByDriver;
+
     const currentSnapshot = {
       loadingDate: stLoadingDate,
       officeName: stOfficeName,
@@ -492,11 +613,24 @@ export default function TripForm({
       loadingPaidByDriver: stLoadingPaidByDriver,
       unloadingPaidByDriver: stUnloadingPaidByDriver,
       brokerageExpense: Number(stBrokerageExpense) || 0,
-      brokeragePaidByDriver: stBrokeragePaidByDriver,
+      brokeragePaidByDriver: finalBrokeragePaidByDriver,
+      loadingDeductedFrom: stLoadingDeductedFrom,
+      loadingBears: 'Org',
+      unloadingDeductedFrom: stUnloadingDeductedFrom,
+      unloadingBears: 'Org',
+      brokerageDeductedFrom: finalBrokerageDeductedFrom,
+      brokerageBears: orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver',
+      crossingExpense: Number(stCrossingExpense) || 0,
+      crossingPaidByDriver: stCrossingPaidByDriver,
+      crossingDeductedFrom: stCrossingDeductedFrom,
+      crossingBears: 'Org',
       driverWages: Number(stDriverWages) || 0,
       startingKM: Number(stStartingKM) || 0,
       endingKM: Number(stEndingKM) || 0,
-      notes: stNotes
+      notes: stNotes,
+      noOfTons: Number(stNoOfTons) || 0,
+      material: stMaterial,
+      ratePerTon: Number(stRatePerTon) || 0
     };
     return originalSubTripSnapshot && JSON.stringify(originalSubTripSnapshot) !== JSON.stringify(currentSnapshot);
   };
@@ -522,6 +656,10 @@ export default function TripForm({
       return;
     }
 
+    const isBrokeragePolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
+    const finalBrokerageDeductedFrom = isBrokeragePolicy2 ? 'OrgRental' : stBrokerageDeductedFrom;
+    const finalBrokeragePaidByDriver = isBrokeragePolicy2 ? false : stBrokeragePaidByDriver;
+
     const originalSubTrip = editingSubTripId ? subTrips.find(item => item.id === editingSubTripId) : null;
     const segmentObj: SubTrip = {
       ...(originalSubTrip || {}),
@@ -537,10 +675,25 @@ export default function TripForm({
       driverWages: Number(stDriverWages) || 0,
       loadingPaidByDriver: stLoadingPaidByDriver,
       unloadingPaidByDriver: stUnloadingPaidByDriver,
-      brokeragePaidByDriver: stBrokeragePaidByDriver,
+      brokeragePaidByDriver: finalBrokeragePaidByDriver,
       startingKM: Number(stStartingKM) || 0,
       endingKM: Number(stEndingKM) || 0,
-      notes: stNotes.trim() || undefined
+      notes: stNotes.trim() || undefined,
+      
+      loadingDeductedFrom: stLoadingDeductedFrom,
+      loadingBears: 'Org',
+      unloadingDeductedFrom: stUnloadingDeductedFrom,
+      unloadingBears: 'Org',
+      brokerageDeductedFrom: finalBrokerageDeductedFrom,
+      brokerageBears: orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver',
+      crossingExpense: Number(stCrossingExpense) || 0,
+      crossingPaidByDriver: stCrossingPaidByDriver,
+      crossingDeductedFrom: stCrossingDeductedFrom,
+      crossingBears: 'Org',
+      
+      noOfTons: Number(stNoOfTons) || undefined,
+      material: stMaterial.trim() || undefined,
+      ratePerTon: Number(stRatePerTon) || undefined
     };
 
     if (editingSubTripId) {
@@ -1157,6 +1310,7 @@ export default function TripForm({
                         (st.loadingExpense || 0) + 
                         (st.unloadingExpense || 0) + 
                         (st.brokerageExpense || 0) +
+                        (st.crossingExpense || 0) +
                         (st.rtoExpense || 0) + 
                         (st.addBlueExpense || 0) + 
                         (st.fastagExpense || 0) + 
@@ -1290,6 +1444,73 @@ export default function TripForm({
                   </datalist>
                 </div>
 
+                {/* CARGO SPECS: MATERIAL, NO OF TONS, RATE PER TON */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 mt-2">
+                  <div>
+                    <label htmlFor="input_st_material" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Material Description</label>
+                    <input
+                      id="input_st_material"
+                      type="text"
+                      placeholder="e.g. Steel Pipe, Cement, Coal"
+                      value={stMaterial}
+                      onChange={(e) => setStMaterial(e.target.value)}
+                      className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 font-sans"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="input_st_noOfTons" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">No of Tons</label>
+                    <input
+                      id="input_st_noOfTons"
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={stNoOfTons || ''}
+                      onChange={(e) => {
+                        const tons = parseFloat(e.target.value) || 0;
+                        setStNoOfTons(tons);
+                        const calculatedIncome = tons * (stRatePerTon || 0);
+                        if (calculatedIncome > 0) {
+                          setStIncome(calculatedIncome);
+                          if (stWagePct) {
+                            const pct = parseFloat(stWagePct);
+                            if (!isNaN(pct) && pct > 0) {
+                              setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
+                            }
+                          }
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="input_st_ratePerTon" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Rate per Ton</label>
+                    <input
+                      id="input_st_ratePerTon"
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={stRatePerTon || ''}
+                      onChange={(e) => {
+                        const rate = parseFloat(e.target.value) || 0;
+                        setStRatePerTon(rate);
+                        const calculatedIncome = (stNoOfTons || 0) * rate;
+                        if (calculatedIncome > 0) {
+                          setStIncome(calculatedIncome);
+                          if (stWagePct) {
+                            const pct = parseFloat(stWagePct);
+                            if (!isNaN(pct) && pct > 0) {
+                              setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
+                            }
+                          }
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
                 {/* COSTINGS METALS EXPENSES CHIPS */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-2">
                   {/* SEG FREIGHT INCOME */}
@@ -1325,17 +1546,25 @@ export default function TripForm({
                       value={stLoadingExpense || ''}
                       onChange={(e) => setStLoadingExpense(parseFloat(e.target.value) || 0)}
                       placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                      className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
                     />
-                    <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={stLoadingPaidByDriver}
-                        onChange={(e) => setStLoadingPaidByDriver(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                      />
-                      <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
-                    </label>
+                    {stLoadingExpense > 0 && (
+                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
+                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
+                        <select
+                          value={stLoadingDeductedFrom}
+                          onChange={(e) => {
+                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
+                            setStLoadingDeductedFrom(val);
+                            setStLoadingPaidByDriver(val === 'DriverDirect');
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
+                        >
+                          <option value="OrgRental">Org Rental (Office Deduct)</option>
+                          <option value="DriverDirect">Driver Direct (Advance)</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   {/* UNLOADING COST */}
@@ -1348,17 +1577,25 @@ export default function TripForm({
                       value={stUnloadingExpense || ''}
                       onChange={(e) => setStUnloadingExpense(parseFloat(e.target.value) || 0)}
                       placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
                     />
-                    <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={stUnloadingPaidByDriver}
-                        onChange={(e) => setStUnloadingPaidByDriver(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                      />
-                      <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
-                    </label>
+                    {stUnloadingExpense > 0 && (
+                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
+                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
+                        <select
+                          value={stUnloadingDeductedFrom}
+                          onChange={(e) => {
+                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
+                            setStUnloadingDeductedFrom(val);
+                            setStUnloadingPaidByDriver(val === 'DriverDirect');
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
+                        >
+                          <option value="OrgRental">Org Rental (Office Deduct)</option>
+                          <option value="DriverDirect">Driver Direct (Advance)</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   {/* BROKERAGE COST */}
@@ -1371,17 +1608,56 @@ export default function TripForm({
                       value={stBrokerageExpense || ''}
                       onChange={(e) => setStBrokerageExpense(parseFloat(e.target.value) || 0)}
                       placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
                     />
-                    <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={stBrokeragePaidByDriver}
-                        onChange={(e) => setStBrokeragePaidByDriver(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
-                      />
-                      <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
-                    </label>
+                    {stBrokerageExpense > 0 && orgProfile?.brokeragePolicy === 'OrgBears' && (
+                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
+                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
+                        <select
+                          value={stBrokerageDeductedFrom}
+                          onChange={(e) => {
+                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
+                            setStBrokerageDeductedFrom(val);
+                            setStBrokeragePaidByDriver(val === 'DriverDirect');
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
+                        >
+                          <option value="OrgRental">Org Rental (Office Deduct)</option>
+                          <option value="DriverDirect">Driver Direct (Advance)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CROSSING COST */}
+                  <div>
+                    <label className="block text-[10px] text-slate-455 font-bold uppercase mb-1">₹ Crossing / Mamul</label>
+                    <input
+                      id="input_st_crossing"
+                      type="number"
+                      min="0"
+                      value={stCrossingExpense || ''}
+                      onChange={(e) => setStCrossingExpense(parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
+                    />
+                    {stCrossingExpense > 0 && (
+                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
+                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
+                        <select
+                          value={stCrossingDeductedFrom}
+                          onChange={(e) => {
+                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
+                            setStCrossingDeductedFrom(val);
+                            setStCrossingPaidByDriver(val === 'DriverDirect');
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
+                        >
+                          <option value="OrgRental">Org Rental (Office Deduct)</option>
+                          <option value="DriverDirect">Driver Direct (Advance)</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   {/* WAGES */}

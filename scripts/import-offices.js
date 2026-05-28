@@ -12,44 +12,56 @@ const rl = readline.createInterface({
 const question = (query) => new Promise((resolve) => rl.question(query, resolve));
 
 const officesList = [
-  "Murugan Roladlines Karakpur",
-  "Bellari Office",
-  "Suresh Anna",
-  "SRN Thangavel Mama",
-  "Chennai Mahalaxi Office",
-  "Lathur Tamilnadu Tpt",
-  "Cuttack Jayalakshmi",
-  "Pollachi Office",
-  "SRMT Cuttack",
-  "New Babu Chennai",
-  "Annop MP Roadlines",
-  "Cherran Mani Office",
-  "Kothatoor Bhai",
-  "Namakkal Sugumar",
-  "Bharat Roadlines Chennai",
-  "Navajeevan Thoothukudi",
-  "Bhavani Tpt",
-  "Sakthi Driver",
-  "Sita Rama Vizag",
-  "Murugan Transport Sankari",
-  "Iyappa Transport Coimbatore",
-  "Real Transport Dindigul",
-  "AP Roadlines Bardhaman",
-  "Gundur Bhai Office",
-  "Udgir Office",
-  "Navagevan Thoothukudi",
-  "Lucky Vizianagaram",
-  "Guna Anna",
-  "Hubli Tamilandu Office",
-  "KK Mohan Tata",
-  "Dinesh Pugalur",
-  "Howrah Roadlines",
-  "Kalai Nagpur",
-  "MS Transport Hosur",
-  "Novadia Vijawada",
-  "Murugan Office Amaravathi",
-  "VMS Swetha Chennai",
-  "Chennai All India Transport"
+  { officeName: 'Tamilnadu Andra Salem', city: 'Salem', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Mettur Velliyan', city: 'Mettur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'MR Transport Salem', city: 'Salem', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Everest Transport Salem', city: 'Salem', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Select Transport Sankari', city: 'Sankari', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Keerana Office Vizag', city: 'Visakhapatnam', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Murugan Roladlines Karakpur', city: 'Kharagpur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Balaji Transport Warangal', city: 'Warangal', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Velmurugan Office', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Bellari Office', city: 'Ballari', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Suresh Anna', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'SPM Transport Chennai', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Sibi Roadlines Durgapur', city: 'Durgapur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'SRN Thangavel Mama', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Srinivasa Office Chennai', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Chennai Mahalaxi Office', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Lathur Tamilnadu Tpt', city: 'Latur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Lucky Rajamundry', city: 'Rajahmundry', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Cuttack Jayalakshmi', city: 'Cuttack', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Pollachi Office', city: 'Pollachi', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'SRMT Cuttack', city: 'Cuttack', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'New Babu Chennai', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Annop MP Roadlines', city: 'Madhya Pradesh', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Cherran Mani Office', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Kothatoor Bhai', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Namakkal Sugumar', city: 'Namakkal', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Bharat Roadlines Chennai', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Navajeevan Thoothukudi', city: 'Thoothukudi', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Bhavani Tpt', city: 'Bhavani', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Sakthi Driver', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Sita Rama Vizag', city: 'Visakhapatnam', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Murugan Transport Sankari', city: 'Sankari', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Iyappa Transport Coimbatore', city: 'Coimbatore', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Real Transport Dindigul', city: 'Dindigul', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'AP Roadlines Bardhaman', city: 'Bardhaman', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Gundur Bhai Office', city: 'Guntur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Udgir Office', city: 'Udgir', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Navagevan Thoothukudi', city: 'Thoothukudi', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Lucky Vizianagaram', city: 'Vizianagaram', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Guna Anna', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Hubli Tamilandu Office', city: 'Hubli', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'KK Mohan Tata', city: 'Tamil Nadu', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Dinesh Pugalur', city: 'Pugalur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Howrah Roadlines', city: 'Howrah', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Kalai Nagpur', city: 'Nagpur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'MS Transport Hosur', city: 'Hosur', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Novadia Vijawada', city: 'Vijayawada', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Murugan Office Amaravathi', city: 'Amaravati', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'VMS Swetha Chennai', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' },
+  { officeName: 'Chennai All India Transport', city: 'Chennai', contactPerson: 'Manager', phone: '', status: 'Active' }
 ];
 
 async function main() {
@@ -97,17 +109,18 @@ async function main() {
   let failCount = 0;
 
   for (let i = 0; i < officesList.length; i++) {
-    const officeName = officesList[i];
+    const item = officesList[i];
+    const officeName = item.officeName;
     const timestamp = Date.now();
     const docId = `off_${timestamp}_${i}`;
 
     const officeDataObj = {
       id: docId,
       officeName: officeName,
-      city: "",
-      contactPerson: "",
-      phone: "",
-      status: "Active",
+      city: item.city,
+      contactPerson: item.contactPerson,
+      phone: item.phone,
+      status: item.status,
       organizationId: orgId
     };
 

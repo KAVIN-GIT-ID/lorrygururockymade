@@ -260,7 +260,7 @@ export default function OfficeMaster({
                   <td className="px-4 py-3.5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
                       <button
-                        title="Edit Office Details"
+                        title="Edit Office"
                         disabled={!canEditOffices}
                         onClick={() => startEdit(office)}
                         className="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-105 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -268,7 +268,7 @@ export default function OfficeMaster({
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        title="Delete office"
+                        title="Delete Office"
                         disabled={!canDeleteOffices}
                         onClick={() => {
                           const msg = `Caution! Are you sure you want to permanently delete office branch ${office.officeName}? This can disrupt filters in Trip journal sheets.`;

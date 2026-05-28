@@ -166,4 +166,35 @@ describe('Dashboard Component Tests', () => {
     expect(screen.getByText('Receipts by Accounts')).toBeInTheDocument();
     expect(screen.getByText('State Bank Current A/C')).toBeInTheDocument();
   });
+
+  it('should compute total outstanding from allTrips while billed income uses trips', () => {
+    render(
+      <Dashboard
+        trips={[mockTrips[0]]}
+        allTrips={mockTrips}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        activeMonth="05"
+        activeYear="2026"
+        setActiveMonth={() => {}}
+        setActiveYear={() => {}}
+        currentUserRights={{
+          isAdmin: true,
+          isApproved: true,
+          organizationId: 'org-1',
+          canViewTrips: true,
+          canViewExpenses: true,
+        } as any}
+      />
+    );
+
+    // Total income should be only for mockTrips[0] => 50,000
+    expect(screen.getByText('Total Billed Income')).toBeInTheDocument();
+    expect(screen.getAllByText('₹50,000')[0]).toBeInTheDocument();
+
+    // Total outstanding should be for allTrips => (50000-40000) + 30000 = 40,000
+    expect(screen.getByText('Total Outstanding')).toBeInTheDocument();
+    expect(screen.getAllByText('₹40,000')[0]).toBeInTheDocument();
+  });
 });

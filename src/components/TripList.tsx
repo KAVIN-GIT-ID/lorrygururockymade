@@ -578,6 +578,11 @@ export default function TripList({
                             <User className="w-3 h-3 text-slate-400" />
                             {trip.driverName || 'No Driver'}
                           </span>
+                          {m.driverRecovery > 0 && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
+                              Recover: ₹{m.driverRecovery.toLocaleString('en-IN')}
+                            </span>
+                          )}
                         </td>
 
                         {/* TRIP TIMEFRAME */}
@@ -607,8 +612,20 @@ export default function TripList({
                         </td>
 
                         {/* TOTAL OUTSTANDING */}
-                        <td className="px-4 py-4 text-right font-mono font-extrabold text-amber-700 bg-amber-50/5">
-                          ₹{m.outstandingBalance.toLocaleString('en-IN')}
+                        <td className="px-4 py-4 text-right">
+                          {m.outstandingBalance > 0 ? (
+                            <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-red-50 border border-red-200 text-red-700 inline-block font-mono">
+                              ₹{m.outstandingBalance.toLocaleString('en-IN')} Outstanding
+                            </span>
+                          ) : m.outstandingBalance === 0 ? (
+                            <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 border border-emerald-250 text-emerald-700 inline-block">
+                              Fully Settled
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-50 border border-amber-200 text-amber-800 inline-block font-mono">
+                              Return ₹{Math.abs(m.outstandingBalance).toLocaleString('en-IN')}
+                            </span>
+                          )}
                         </td>
 
                         {/* GENERAL STATUS */}
@@ -739,6 +756,12 @@ export default function TripList({
                         {dateFormatted(trip.startDate)} &rarr; {dateFormatted(trip.endDate)}
                       </span>
                     </div>
+                    {m.driverRecovery > 0 && (
+                      <div className="flex justify-between pt-1 border-t border-slate-200/40">
+                        <span className="text-amber-800 font-bold uppercase text-[9px]">Recover from Drv</span>
+                        <span className="font-extrabold text-amber-800 font-mono">₹{m.driverRecovery.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Financials Grid */}
@@ -761,10 +784,30 @@ export default function TripList({
                         ₹{m.profit.toLocaleString('en-IN')}
                       </span>
                     </div>
-                    <div className="bg-amber-50/25 border border-amber-100/60 rounded-lg p-2 flex flex-col justify-between">
-                      <span className="text-amber-700 font-bold uppercase text-[9px]">Outstanding</span>
-                      <span className="font-black text-amber-800 mt-1">
-                        ₹{m.outstandingBalance.toLocaleString('en-IN')}
+                    <div className={`${
+                      m.outstandingBalance > 0 
+                      ? 'bg-rose-50/20 border border-rose-100/40' 
+                      : m.outstandingBalance === 0 
+                      ? 'bg-emerald-50/20 border border-emerald-100/40' 
+                      : 'bg-amber-50/20 border border-amber-100/40'
+                    } rounded-lg p-2 flex flex-col justify-between`}>
+                      <span className={`${
+                        m.outstandingBalance > 0 
+                        ? 'text-rose-700' 
+                        : m.outstandingBalance === 0 
+                        ? 'text-emerald-700' 
+                        : 'text-amber-800'
+                      } font-bold uppercase text-[9px]`}>
+                        {m.outstandingBalance > 0 ? 'Outstanding' : m.outstandingBalance === 0 ? 'Settled' : 'Return Office'}
+                      </span>
+                      <span className={`font-black mt-1 ${
+                        m.outstandingBalance > 0 
+                        ? 'text-rose-850 text-red-600' 
+                        : m.outstandingBalance === 0 
+                        ? 'text-emerald-800' 
+                        : 'text-amber-805 text-amber-800'
+                      }`}>
+                        ₹{Math.abs(m.outstandingBalance).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -1039,11 +1082,27 @@ export default function TripList({
                     </div>
                     <div className="pt-2.5">
                       <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">23. Profit Yield</span>
-                      <span className={`font-black tracking-tight text-xs ${m.profit >= 0 ? 'text-emerald-705 text-emerald-800' : 'text-red-700'}`}>₹{m.profit.toLocaleString()}</span>
+                      <span className={`font-black tracking-tight text-xs ${m.profit >= 0 ? 'text-emerald-750 text-emerald-800' : 'text-red-700'}`}>₹{m.profit.toLocaleString()}</span>
                     </div>
                     <div className="pt-2.5">
                       <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Debit Status</span>
                       <span className="font-sans font-extrabold">{viewingEntry.status}</span>
+                    </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Brokerage (Org)</span>
+                      <span className="text-slate-700">₹{m.brokerageExpense.toLocaleString()}</span>
+                    </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Crossing (Org)</span>
+                      <span className="text-slate-700">₹{m.crossingExpense.toLocaleString()}</span>
+                    </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Rental Deductions</span>
+                      <span className="text-red-705 font-bold text-red-600">₹{m.totalOrgRentalDeductions.toLocaleString()}</span>
+                    </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Driver Recovery</span>
+                      <span className="text-amber-805 font-bold text-amber-800">₹{m.driverRecovery.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -1064,6 +1123,29 @@ export default function TripList({
                             <span className="font-sans font-bold text-slate-500 text-[10px] bg-slate-205 py-0.5 px-2 rounded-md bg-slate-200 uppercase leading-none">Office: {s.officeName}</span>
                           </div>
 
+                          {(s.material || s.noOfTons !== undefined || s.ratePerTon !== undefined) && (
+                            <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
+                              {s.material && (
+                                <div>
+                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Material</span>
+                                  <strong className="text-slate-800">{s.material}</strong>
+                                </div>
+                              )}
+                              {s.noOfTons !== undefined && s.noOfTons > 0 && (
+                                <div>
+                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Weight (Tons)</span>
+                                  <strong className="text-slate-800 font-mono">{s.noOfTons} MT</strong>
+                                </div>
+                              )}
+                              {s.ratePerTon !== undefined && s.ratePerTon > 0 && (
+                                <div>
+                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Rate / Ton</span>
+                                  <strong className="text-slate-800 font-mono">₹{s.ratePerTon.toLocaleString()}</strong>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-1 text-[11px] font-sans">
                             <div className="p-1 px-2 border-l-2 border-emerald-500">
                               <span className="text-slate-450 block font-sans text-[9px] uppercase">Income (₹)</span>
@@ -1073,14 +1155,69 @@ export default function TripList({
                               <span className="text-slate-450 block font-sans text-[9px] uppercase">Diesel Cost / Liters</span>
                               <span className="font-mono font-bold text-slate-800">₹{(s.dieselAmount || 0).toLocaleString()} <span className="text-[10px] font-normal text-slate-450">({s.dieselLiters} L @ ₹{s.dieselRate})</span></span>
                             </div>
-                            <div className="p-1 px-2 border-l-2 border-slate-400">
-                              <span className="text-slate-450 block font-sans text-[9px] uppercase">Loading/Unloading</span>
-                              <span className="font-mono font-bold text-slate-800">₹{(s.loadingExpense + s.unloadingExpense).toLocaleString()}</span>
-                            </div>
-                            <div className="p-1 px-2 border-l-2 border-slate-400">
+                            <div className="p-1 px-2 border-l-2 border-slate-400 col-span-2">
                               <span className="text-slate-450 block font-sans text-[9px] uppercase">Wages + Other</span>
-                              <span className="font-mono font-bold text-slate-800">₹{(s.driverWages + s.otherExpense).toLocaleString()}</span>
+                              <span className="font-mono font-bold text-slate-800">Wages: ₹{(s.driverWages || 0).toLocaleString()} | Other: ₹{(s.otherExpense || 0).toLocaleString()}</span>
                             </div>
+                          </div>
+
+                          {/* Segment Charges Settlement Info */}
+                          <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                            {s.loadingExpense !== undefined && s.loadingExpense > 0 && (() => {
+                              const df = s.loadingDeductedFrom || (s.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+                              const b = s.loadingBears || 'Org';
+                              return (
+                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Loading Expense</span>
+                                  <strong className="text-slate-850 block">₹{s.loadingExpense.toLocaleString()}</strong>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                            
+                            {s.unloadingExpense !== undefined && s.unloadingExpense > 0 && (() => {
+                              const df = s.unloadingDeductedFrom || (s.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+                              const b = s.unloadingBears || 'Org';
+                              return (
+                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Unloading Expense</span>
+                                  <strong className="text-slate-850 block">₹{s.unloadingExpense.toLocaleString()}</strong>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+
+                            {s.brokerageExpense !== undefined && s.brokerageExpense > 0 && (() => {
+                              const df = s.brokerageDeductedFrom || (s.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
+                              const b = s.brokerageBears || 'Driver';
+                              return (
+                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Brokerage Expense</span>
+                                  <strong className="text-slate-855 block">₹{s.brokerageExpense.toLocaleString()}</strong>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+
+                            {s.crossingExpense !== undefined && s.crossingExpense > 0 && (() => {
+                              const df = s.crossingDeductedFrom || (s.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+                              const b = s.crossingBears || 'Org';
+                              return (
+                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Crossing Expense</span>
+                                  <strong className="text-slate-855 block">₹{s.crossingExpense.toLocaleString()}</strong>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))

@@ -86,7 +86,7 @@ describe('DriverMaster Component Tests', () => {
     );
 
     expect(screen.getAllByText('Karan Singh')[0]).toBeInTheDocument();
-    expect(screen.getByText('DL-5555')).toBeInTheDocument();
+    expect(screen.getAllByText('DL-5555')[0]).toBeInTheDocument();
   });
 
   it('should open form and submit a new driver', () => {
@@ -149,5 +149,93 @@ describe('DriverMaster Component Tests', () => {
     expect(screen.getByText('Net Outstanding Settlement')).toBeInTheDocument();
     expect(screen.getByText('₹2,300')).toBeInTheDocument();
     expect(screen.getByText(/Payable to Driver/i)).toBeInTheDocument();
+  });
+
+  it('should calculate live driver settlement ledger with recovery debits correctly when driver bears expense but office deducted it', () => {
+    const mockOrgProfile = {
+      organizationId: 'org-1',
+      organizationName: 'Test Org',
+      ownerEmail: 'owner@example.com',
+      status: 'Active' as const,
+      maxTrucksAllowed: 5,
+      truckRequests: [],
+      brokeragePolicy: 'DriverBears' as const,
+    };
+
+    const recoveryTrips: TripEntry[] = [
+      {
+        id: 't-2',
+        tripNo: 'TRIP-100',
+        startDate: '2026-05-15',
+        endDate: '2026-05-17',
+        truckNo: 'MH-12-1234',
+        driverName: 'Karan Singh',
+        status: 'Completed',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: [
+          {
+            id: 'st-2',
+            loadingDate: '2026-05-15',
+            routeFrom: 'Mumbai',
+            routeTo: 'Pune',
+            officeName: 'Mumbai HQ',
+            income: 40000,
+            driverWages: 3000, // Wages credited to driver
+            loadingExpense: 0,
+            unloadingExpense: 0,
+            brokerageExpense: 1500, // Brokerage deducted from rental, driver bears it
+            brokerageDeductedFrom: 'OrgRental',
+            brokerageBears: 'Driver',
+            startingKM: 0,
+            endingKM: 0
+          }
+        ],
+        advances: [
+          {
+            id: 'adv-2',
+            amount: 1000,
+            date: '2026-05-15',
+            fromAccountId: 'acc-1',
+            receivedByDriverDirectly: true,
+          }
+        ],
+        payments: []
+      }
+    ];
+
+    render(
+      <DriverMaster
+        drivers={mockDrivers}
+        trips={recoveryTrips}
+        expenses={[]}
+        accounts={mockAccounts}
+        onAddDriver={vi.fn()}
+        onUpdateDriver={vi.fn()}
+        onDeleteDriver={vi.fn()}
+        orgProfile={mockOrgProfile}
+      />
+    );
+
+    // Select driver
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dr-1' } });
+
+    // Math:
+    // Total Credits = driverWages (3000) = 3000
+    // Total Advances = 1000
+    // Total Recovery = brokerage (1500) = 1500
+    // Net outstanding = 3000 - (1000 + 1500) = 500 (Payable to driver)
+    expect(screen.getByText('Total Expenses Paid by Driver')).toBeInTheDocument();
+    expect(screen.getByText('₹3,000')).toBeInTheDocument();
+
+    expect(screen.getByText('Total Advances Received')).toBeInTheDocument();
+    expect(screen.getByText('₹1,000')).toBeInTheDocument();
+
+    expect(screen.getByText('Net Outstanding Settlement')).toBeInTheDocument();
+    expect(screen.getByText('₹500')).toBeInTheDocument();
+    expect(screen.getByText(/Payable to Driver/i)).toBeInTheDocument();
+
+    // Verify recovery debit row renders
+    expect(screen.getByText('Driver Recovery (Brokerage)')).toBeInTheDocument();
   });
 });

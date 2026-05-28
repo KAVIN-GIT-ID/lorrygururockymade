@@ -15,8 +15,9 @@ import AppwriteCloudSync from './components/AppwriteCloudSync';
 import LoginScreen from './components/LoginScreen';
 import UserAccessControl from './components/UserAccessControl';
 import BackendDashboard from './components/BackendDashboard';
+import VoiceAssistant from './components/VoiceAssistant';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
-import { 
+import {
   migrateTripsIfNecessary,
   migrateUserPermissions,
   migrateTrucks,
@@ -59,7 +60,8 @@ import {
   Settings,
   ShieldCheck,
   Trash2,
-  X
+  X,
+  Mic
 } from 'lucide-react';
 
 
@@ -124,7 +126,8 @@ const reconcileOrganizationProfiles = (
           ownerEmail: adminUser.email,
           status: 'Active',
           maxTrucksAllowed: 2,
-          truckRequests: []
+          truckRequests: [],
+          brokeragePolicy: 'DriverBears'
         });
       }
     } else {
@@ -219,6 +222,21 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Voice language state
+  const [userVoiceLang, setUserVoiceLang] = useState<string>('en-IN');
+  const [profileVoiceLang, setProfileVoiceLang] = useState<string>('en-IN');
+
+  // Load user's default voice language preference from localStorage
+  useEffect(() => {
+    if (currentUser) {
+      const email = (currentUser.email || '').toLowerCase().trim();
+      const storedLang = localStorage.getItem(`ttt_voice_lang_${email}`) || 'en-IN';
+      setUserVoiceLang(storedLang);
+    } else {
+      setUserVoiceLang('en-IN');
+    }
+  }, [currentUser]);
+
   // Sync profile update inputs when user details or modal state updates
   useEffect(() => {
     if (profileModalOpen && currentUser) {
@@ -226,6 +244,8 @@ export default function App() {
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      const email = (currentUser.email || '').toLowerCase().trim();
+      setProfileVoiceLang(localStorage.getItem(`ttt_voice_lang_${email}`) || 'en-IN');
     }
   }, [profileModalOpen, currentUser]);
 
@@ -689,7 +709,7 @@ export default function App() {
             activeRightsList = [...merged, ...sanitizedLocalOnlyEntries];
             setUserRightsList(activeRightsList);
             localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-            
+
             if (data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
               rawProfiles = data.organizationProfiles;
             }
@@ -948,7 +968,7 @@ export default function App() {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         const storedProfiles = localStorage.getItem('ttt_organization_profiles');
         const profiles = storedProfiles ? JSON.parse(storedProfiles) : organizationProfiles;
-        
+
         for (const ur of nextUserRights) {
           const docId = appwrite.getEmailDocId(ur.email);
           await appwrite.saveGlobalConfig(databaseId, docId, ur);
@@ -1324,11 +1344,25 @@ export default function App() {
         await saveOrganizationProfiles(nextProfiles);
       }
 
+      // Save voice language settings
+      if (currentUser) {
+        const userEmail = (currentUser.email || '').toLowerCase().trim();
+        localStorage.setItem(`ttt_voice_lang_${userEmail}`, profileVoiceLang);
+        setUserVoiceLang(profileVoiceLang);
+      }
+
       showNotification("Profile updated successfully!");
       setProfileModalOpen(false);
     } catch (err: any) {
       alert(`Error updating profile: ${err.message || 'Operation failed'}`);
     }
+  };
+
+  const handleUpdateOrgProfile = async (updatedProfile: OrganizationProfile) => {
+    const nextProfiles = organizationProfiles.map(p =>
+      p.organizationId === updatedProfile.organizationId ? updatedProfile : p
+    );
+    await saveOrganizationProfiles(nextProfiles);
   };
 
   const currentUserOrgId = currentUserRights?.organizationId || '';
@@ -1478,14 +1512,14 @@ export default function App() {
     if (!isAppwriteConfigured()) {
       const localTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
       const localExpenses = JSON.parse(localStorage.getItem('ttt_expenses') || '[]');
-      
-      const filteredTrips = year === 'All Time' 
-        ? localTrips 
+
+      const filteredTrips = year === 'All Time'
+        ? localTrips
         : localTrips.filter((t: any) => t.startDate && t.startDate.startsWith(`${year}-${month}`));
-      const filteredExpenses = year === 'All Time' 
-        ? localExpenses 
+      const filteredExpenses = year === 'All Time'
+        ? localExpenses
         : localExpenses.filter((e: any) => e.date && e.date.startsWith(`${year}-${month}`) && e.status !== 'Declined');
-      
+
       setDashboardTrips(filteredTrips);
       setDashboardExpenses(filteredExpenses);
       return;
@@ -1495,10 +1529,10 @@ export default function App() {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const orgId = currentUserOrgId || 'org_default';
       const { trips: parsedTrips, expenses: parsedExpenses } = await appwrite.fetchMonthlyTripsAndExpenses(databaseId, orgId, year, month);
-      
+
       const mappedTrips = parsedTrips.map(doc => JSON.parse(doc.data));
       const mappedExpenses = parsedExpenses.map(doc => JSON.parse(doc.data));
-      
+
       setDashboardTrips(mappedTrips);
       setDashboardExpenses(mappedExpenses);
     } catch (err) {
@@ -1863,6 +1897,19 @@ export default function App() {
   // Form modal controller states
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<TripEntry | null>(null);
+  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
+
+  // Listen for Alt+V shortcut to toggle Voice Assistant
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        setIsVoiceAssistantOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Notifications systems
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -2084,13 +2131,13 @@ export default function App() {
         migrated.forEach(cloudTruck => {
           const isRelevantOrg = orgId === 'org_backend' || cloudTruck.organizationId === orgId;
           if (isRelevantOrg) {
-            const localTruck = trucks.find(t => 
-              (orgId === 'org_backend' || t.organizationId === orgId) && 
+            const localTruck = trucks.find(t =>
+              (orgId === 'org_backend' || t.organizationId === orgId) &&
               t.truckNo.toUpperCase() === cloudTruck.truckNo.toUpperCase()
             );
             if (localTruck) {
               const wasPendingApproval = localTruck.isApproved === false || localTruck.requestStatus === 'Pending';
-              
+
               if (wasPendingApproval && cloudTruck.isApproved === true) {
                 // Approved transition!
                 showNotification(`Truck ${cloudTruck.truckNo} has been approved by the Admin!`);
@@ -2244,19 +2291,19 @@ export default function App() {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const existingTruck = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
-    
+
     let baseDate = new Date(today);
-    
+
     let monthsToAdd = 12;
     if (duration === '1M') monthsToAdd = 1;
     else if (duration === '3M') monthsToAdd = 3;
     else if (duration === '6M') monthsToAdd = 6;
-    
+
     const nextExpiry = new Date(baseDate);
     nextExpiry.setMonth(nextExpiry.getMonth() + monthsToAdd);
-    
+
     const yyyy = nextExpiry.getFullYear();
     const mm = String(nextExpiry.getMonth() + 1).padStart(2, '0');
     const dd = String(nextExpiry.getDate()).padStart(2, '0');
@@ -2319,7 +2366,7 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        
+
         const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
         const truckId = existing ? existing.id : ('tr_' + Date.now());
         const updatedTruck: Truck = {
@@ -2419,7 +2466,7 @@ export default function App() {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          
+
           const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase());
           const truckId = existing ? existing.id : ('tr_' + Date.now());
           const rejectedTruck: Truck = {
@@ -2470,7 +2517,7 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        
+
         await appwrite.saveFleetDocument(databaseId, 'trucks', updatedTruck.id, targetOrgId, updatedTruck);
 
         const userEmail = currentUser ? (currentUser.email || currentUser.name || 'SuperAdmin') : 'SuperAdmin';
@@ -2691,7 +2738,7 @@ export default function App() {
 
         // 2. Update states
         const currentProfiles = userRightsData?.organizationProfiles || organizationProfilesRef.current;
-        
+
         // Self-healing: Automatically clean up orphaned requests from user_rights_snapshot when a vehicle is deleted
         let profilesChanged = false;
         const cleanedProfiles = currentProfiles.map(profile => {
@@ -3074,11 +3121,11 @@ export default function App() {
         }
       ] as TyreMovementLog[]
     };
-    
+
     // Save locally
     const nextTyres = [...tyres, n];
     saveTyres(nextTyres);
-    
+
     // Save to Appwrite if online
     if (isAppwriteConfigured()) {
       try {
@@ -3107,16 +3154,16 @@ export default function App() {
       };
 
       saveExpenses([...expenses, newExpense]);
-      
+
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           await appwrite.saveFleetDocument(databaseId, 'expenses', newExpense.id, currentUserOrgId, newExpense);
-          await loadDashboardData(activeMonth, activeYear);
         } catch (err) {
           console.warn("Failed to save tyre purchase expense to Appwrite:", err);
         }
       }
+      await loadDashboardData(activeMonth, activeYear);
 
       logAction('Created', 'Expense', expNo, `Auto-created Tyre purchase expense for Serial ${n.tyreNo} charge to vehicle ${newExpense.truckNo} of ₹${newExpense.amount.toLocaleString()}`);
       showNotification(`Tyre ${n.tyreNo} registered and purchase expense voucher added.`);
@@ -3271,7 +3318,7 @@ export default function App() {
       id: 'exp_id_' + Date.now(),
       organizationId: currentUserOrgId
     };
-    
+
     // Save locally
     const nextExpenses = [...expenses, newExp];
     saveExpenses(nextExpenses);
@@ -3280,14 +3327,113 @@ export default function App() {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, currentUserOrgId, newExp);
-        await loadDashboardData(activeMonth, activeYear);
       } catch (err) {
         console.warn("Failed to save expense to Appwrite:", err);
       }
     }
+    await loadDashboardData(activeMonth, activeYear);
 
     logAction('Created', 'Expense', newExp.truckNo, `Vouched ₹${newExp.amount} expense for truck (${newExp.expenseType})`);
     showNotification(`New expense of ₹${newExp.amount.toLocaleString()} registered.`);
+  };
+
+  // --- SERVICE DONE HANDLER ---
+  // Creates up to 2 expense entries (parts + labour) and advances the truck's next-due KM milestone
+  const handleServiceDone = async (payload: import('./types').ServiceDonePayload) => {
+    const { serviceType, serviceDate, truckId, truckNo, newMilestoneKM, notes, partsExpense, labourExpense } = payload;
+    const orgId = currentUserOrgId;
+    const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+
+    // Map service type → truck field key
+    const kmFieldMap: Record<string, string> = {
+      'Engine Oil':    'engineOilKM',
+      'Crown Oil':     'crownOilKM',
+      'Gear Box Oil':  'gearBoxOilKM',
+      'Radiator':      'radiatorKM',
+      'Pinpush Grease':'pinpushKM',
+      'Wheel Grease':  'wheelGreaseKM',
+    };
+    const kmField = kmFieldMap[serviceType];
+
+    const newExpenses: import('./types').ExpenseEntry[] = [];
+
+    // 1. Parts Purchase expense
+    if (partsExpense.amount > 0) {
+      const partsExp: import('./types').ExpenseEntry = {
+        id: 'exp_svc_parts_' + Date.now(),
+        truckNo,
+        expenseType: `Service - ${serviceType}`,
+        shopName: partsExpense.shopName,
+        amount: partsExpense.amount,
+        paymentMode: partsExpense.paymentMode,
+        accountType: partsExpense.accountType,
+        driverName: partsExpense.driverName,
+        status: partsExpense.status,
+        date: serviceDate,
+        notes: notes,
+        organizationId: orgId,
+      };
+      newExpenses.push(partsExp);
+    }
+
+    // 2. Mechanical Labour expense
+    if (labourExpense.amount > 0) {
+      const labourExp: import('./types').ExpenseEntry = {
+        id: 'exp_svc_labour_' + Date.now() + '_1',
+        truckNo,
+        expenseType: `Service - ${serviceType} (Labour)`,
+        shopName: labourExpense.shopName,
+        amount: labourExpense.amount,
+        paymentMode: labourExpense.paymentMode,
+        accountType: labourExpense.accountType,
+        driverName: labourExpense.driverName,
+        status: labourExpense.status,
+        date: serviceDate,
+        notes: notes,
+        organizationId: orgId,
+      };
+      newExpenses.push(labourExp);
+    }
+
+    // 3. Save expenses locally + to Appwrite
+    if (newExpenses.length > 0) {
+      const nextExpenses = [...expenses, ...newExpenses];
+      saveExpenses(nextExpenses);
+      if (isAppwriteConfigured()) {
+        try {
+          for (const exp of newExpenses) {
+            await appwrite.saveFleetDocument(databaseId, 'expenses', exp.id, orgId, exp);
+          }
+        } catch (err) {
+          console.warn('Failed to save service expenses to Appwrite:', err);
+        }
+      }
+      await loadDashboardData(activeMonth, activeYear);
+      newExpenses.forEach(exp => {
+        logAction('Created', 'Expense', exp.truckNo, `Service Done — ₹${exp.amount.toLocaleString()} ${exp.expenseType} at ${exp.shopName}`);
+      });
+    }
+
+    // 4. Advance truck milestone KM
+    if (kmField) {
+      const truck = trucks.find(t => t.id === truckId);
+      if (truck) {
+        const updatedTruck = { ...truck, [kmField]: newMilestoneKM };
+        const next = trucks.map(t => t.id === truckId ? updatedTruck : t);
+        saveTrucks(next);
+        if (isAppwriteConfigured()) {
+          try {
+            await appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, updatedTruck);
+          } catch (err) {
+            console.warn('Failed to sync service-updated truck to Appwrite:', err);
+          }
+        }
+        logAction('Edited', 'Truck', truckNo, `Service Done: ${serviceType} — next due set to ${newMilestoneKM.toLocaleString()} KM${notes ? ` (Note: ${notes})` : ''}`);
+      }
+    }
+
+    const totalCost = (partsExpense.amount || 0) + (labourExpense.amount || 0);
+    showNotification(`${serviceType} service recorded for ${truckNo}${ totalCost > 0 ? ` — ₹${totalCost.toLocaleString()} logged to expense ledger` : '' }.`);
   };
 
   const handleUpdateExpense = async (updated: ExpenseEntry) => {
@@ -3300,11 +3446,11 @@ export default function App() {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, currentUserOrgId, merged);
-        await loadDashboardData(activeMonth, activeYear);
       } catch (err) {
         console.warn("Failed to update expense in Appwrite:", err);
       }
     }
+    await loadDashboardData(activeMonth, activeYear);
 
     const diff = oldExpense ? getExpenseDiff(oldExpense, merged) : `Voucher authorization updated to ${merged.status}`;
     if (diff) {
@@ -3322,11 +3468,11 @@ export default function App() {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'expenses', id);
-        await loadDashboardData(activeMonth, activeYear);
       } catch (err) {
         console.warn("Failed to delete expense from Appwrite:", err);
       }
     }
+    await loadDashboardData(activeMonth, activeYear);
 
     if (exp) {
       logAction('Deleted', 'Expense', exp.truckNo, `Canceled/archived ₹${exp.amount} voucher`);
@@ -3351,11 +3497,11 @@ export default function App() {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, currentUserOrgId, updated);
-          await loadDashboardData(activeMonth, activeYear);
         } catch (err) {
           console.warn("Failed to update trip in Appwrite:", err);
         }
       }
+      await loadDashboardData(activeMonth, activeYear);
 
       setEditingTrip(null);
       const diff = getTripDiff(editingTrip, updated);
@@ -3370,7 +3516,7 @@ export default function App() {
         id: 'trip_ent_' + Date.now(),
         organizationId: currentUserOrgId
       };
-      
+
       const nextTrips = [...trips, newEntry];
       saveTrips(nextTrips);
 
@@ -3378,11 +3524,11 @@ export default function App() {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, currentUserOrgId, newEntry);
-          await loadDashboardData(activeMonth, activeYear);
         } catch (err) {
           console.warn("Failed to save trip to Appwrite:", err);
         }
       }
+      await loadDashboardData(activeMonth, activeYear);
 
       logAction('Created', 'Trip', newEntry.tripNo, `Initiated cargo load ledger (Vehicle: ${newEntry.truckNo}, Driver: ${newEntry.driverName})`);
       showNotification(`Saved segment load posted as master trip.`);
@@ -3398,11 +3544,11 @@ export default function App() {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'trips', id);
-        await loadDashboardData(activeMonth, activeYear);
       } catch (err) {
         console.warn("Failed to delete trip from Appwrite:", err);
       }
     }
+    await loadDashboardData(activeMonth, activeYear);
 
     if (tEntry) {
       logAction('Deleted', 'Trip', tEntry.tripNo, `Voided/deleted trip ID ${tEntry.tripNo} journey database`);
@@ -3486,7 +3632,7 @@ export default function App() {
         localStorage.removeItem('ttt_expenses');
         localStorage.removeItem('ttt_tyres');
         localStorage.removeItem('fleet_audit_logs');
-        
+
         setTrucks([]);
         setDrivers([]);
         setOffices([]);
@@ -3698,7 +3844,7 @@ export default function App() {
         return true;
       }
     }
-    
+
     const cat = category.toLowerCase();
     if (cat.includes('trip')) return !!currentUserRights.canViewTrips;
     if (cat.includes('truck')) return !!currentUserRights.canViewTrucks;
@@ -3714,8 +3860,8 @@ export default function App() {
   };
 
   const orgAuditLogs = auditLogs
-    .filter(l => 
-      (currentUserOrgId === 'org_backend' || l.organizationId === currentUserOrgId) && 
+    .filter(l =>
+      (currentUserOrgId === 'org_backend' || l.organizationId === currentUserOrgId) &&
       canUserViewCategory(l.category, l.reference, l.details)
     )
     .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
@@ -3767,7 +3913,7 @@ export default function App() {
             </div>
             <span>FleetTrack Pro</span>
           </div>
-          
+
           {/* Mobile Menu Toggle Button */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -3793,8 +3939,8 @@ export default function App() {
                 id="tab-btn-dashboard"
                 onClick={() => selectTab('DASHBOARD')}
                 className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                  ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                  : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
               >
                 <BarChart3 className="w-4 h-4" />
@@ -3805,8 +3951,8 @@ export default function App() {
                   id="tab-btn-trips"
                   onClick={() => selectTab('TRIPS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <BookOpen className="w-4 h-4" />
@@ -3818,8 +3964,8 @@ export default function App() {
                   id="tab-btn-trucks"
                   onClick={() => selectTab('TRUCKS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <TruckIcon className="w-4 h-4" />
@@ -3831,8 +3977,8 @@ export default function App() {
                   id="tab-btn-offices"
                   onClick={() => selectTab('OFFICES')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <MapPin className="w-4 h-4" />
@@ -3844,8 +3990,8 @@ export default function App() {
                   id="tab-btn-accounts"
                   onClick={() => selectTab('ACCOUNTS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <Coins className="w-4 h-4" />
@@ -3857,8 +4003,8 @@ export default function App() {
                   id="tab-btn-drivers"
                   onClick={() => selectTab('DRIVERS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <UserCheck className="w-4 h-4" />
@@ -3870,8 +4016,8 @@ export default function App() {
                   id="tab-btn-expenses"
                   onClick={() => selectTab('EXPENSES')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <FileSpreadsheet className="w-4 h-4" />
@@ -3883,8 +4029,8 @@ export default function App() {
                   id="tab-btn-reports"
                   onClick={() => selectTab('REPORTS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <FileText className="w-4 h-4" />
@@ -3896,8 +4042,8 @@ export default function App() {
                   id="tab-btn-audit"
                   onClick={() => selectTab('AUDIT')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <History className="w-4 h-4" />
@@ -3909,8 +4055,8 @@ export default function App() {
                   id="tab-btn-tyres"
                   onClick={() => selectTab('TYRES')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <Disc className="w-4 h-4" />
@@ -3922,8 +4068,8 @@ export default function App() {
                   id="tab-btn-users"
                   onClick={() => selectTab('USERS')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
-                      ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <Users className="w-4 h-4" />
@@ -3935,8 +4081,8 @@ export default function App() {
                   id="tab-btn-backend"
                   onClick={() => selectTab('BACKEND')}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
-                      ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
-                      : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                    ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
+                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
                   <Settings className="w-4 h-4 text-purple-500" />
@@ -3945,7 +4091,7 @@ export default function App() {
               )}
             </nav>
           </div>
-          
+
           {/* User Profile Info Footer Panel */}
           <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-850 space-y-3 shrink-0">
             <div>
@@ -4089,13 +4235,12 @@ export default function App() {
                       orgAuditLogs.slice(0, 8).map((log) => (
                         <div key={log.id} className="text-[11px] p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 space-y-1">
                           <div className="flex justify-between items-center">
-                            <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${
-                                log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
+                            <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
                                 log.action === 'Rejected' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50' :
-                                log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
-                                log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
-                                log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
-                                'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
+                                  log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
+                                    log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
+                                      log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
+                                        'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
                               }`}>
                               {log.action}
                             </span>
@@ -4123,6 +4268,15 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* VOICE ASSISTANT */}
+            <button
+              onClick={() => setIsVoiceAssistantOpen(true)}
+              className="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center shrink-0"
+              title="Voice Assistant (Alt+V)"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
 
             {/* THEME TOGGLE */}
             <button
@@ -4315,6 +4469,7 @@ export default function App() {
           {activeTab === 'DASHBOARD' && (
             <Dashboard
               trips={dashboardTrips}
+              allTrips={orgTrips}
               trucks={approvedOrgTrucks}
               offices={orgOffices}
               accounts={orgAccounts}
@@ -4323,6 +4478,7 @@ export default function App() {
               activeYear={activeYear}
               setActiveMonth={setActiveMonth}
               setActiveYear={setActiveYear}
+              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
             />
           )}
 
@@ -4357,6 +4513,10 @@ export default function App() {
               maxTrucksAllowed={organizationProfiles.find(p => p.organizationId === currentUserOrgId)?.maxTrucksAllowed || 2}
               onAddTruckRequest={handleAddTruckRequest}
               organizationId={currentUserOrgId}
+              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
+              onServiceDone={currentUserRights.canEditTrucks ? handleServiceDone : undefined}
+              accounts={orgAccounts}
+              drivers={orgDrivers}
             />
           )}
 
@@ -4399,6 +4559,7 @@ export default function App() {
               canEditDrivers={currentUserRights.canEditDrivers}
               canDeleteDrivers={currentUserRights.canDeleteDrivers}
               organizationId={currentUserOrgId}
+              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
             />
           )}
 
@@ -4511,6 +4672,8 @@ export default function App() {
               canAddBackend={currentUserRights.canAddBackend}
               canEditBackend={currentUserRights.canEditBackend}
               canDeleteBackend={currentUserRights.canDeleteBackend}
+              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
+              onUpdateOrgProfile={handleUpdateOrgProfile}
             />
           )}
 
@@ -4532,6 +4695,20 @@ export default function App() {
         onSubmit={handlePostTripEntry}
         editingEntry={editingTrip}
         canViewDrivers={currentUserRights.canViewDrivers}
+        orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
+      />
+
+      <VoiceAssistant
+        isOpen={isVoiceAssistantOpen}
+        onClose={() => setIsVoiceAssistantOpen(false)}
+        trucks={approvedOrgTrucks}
+        drivers={orgDrivers}
+        offices={orgOffices}
+        accounts={orgAccounts}
+        existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
+        onSubmitTrip={handlePostTripEntry}
+        onSubmitExpense={handleAddExpense}
+        voiceLang={userVoiceLang}
       />
 
       {profileModalOpen && (
@@ -4600,6 +4777,24 @@ export default function App() {
                   disabled
                   className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
                 />
+              </div>
+
+              {/* VOICE ASSISTANT LANGUAGE */}
+              <div>
+                <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
+                <select
+                  id="voice-lang-select"
+                  value={profileVoiceLang}
+                  onChange={(e) => setProfileVoiceLang(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+                >
+                  <option value="en-IN">English (India) - en-IN</option>
+                  <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
+                  <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
+                  <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
+                  <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
+                  <option value="mr-IN">Marathi (मराठी) - mr-IN</option>
+                </select>
               </div>
 
               <div className="border-t border-slate-100 pt-3">

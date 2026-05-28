@@ -365,6 +365,21 @@ class AppwriteService {
       };
     }
 
+    const fallbackData = {
+      organizationId: orgId,
+      data: JSON.stringify(dataObj)
+    };
+
+    const isSchemaError = (err: any) => {
+      if (!err) return false;
+      const errMsg = (err.message || '').toLowerCase();
+      return err.code === 400 || 
+             errMsg.includes('attribute') || 
+             errMsg.includes('schema') || 
+             errMsg.includes('not found') || 
+             errMsg.includes('invalid document structure');
+    };
+
     try {
       // Upsert: Try updating the document first
       const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
@@ -376,10 +391,31 @@ class AppwriteService {
           const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
           return response.$id;
         } catch (createErr: any) {
+          if (isSchemaError(createErr)) {
+            console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
+            const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
+            return response.$id;
+          }
           console.error(`Appwrite Database create failure for ${docId} in ${collectionId}:`, createErr);
           throw createErr;
         }
       }
+
+      if (isSchemaError(err)) {
+        console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
+        try {
+          const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
+          return response.$id;
+        } catch (fallbackErr: any) {
+          if (fallbackErr.code === 404 || fallbackErr.type === 'document_not_found') {
+            const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
+            return response.$id;
+          }
+          console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackErr);
+          throw fallbackErr;
+        }
+      }
+
       console.error(`Appwrite Database update failure for ${docId} in ${collectionId}:`, err);
       throw err;
     }
@@ -770,6 +806,94 @@ class AppwriteService {
         total: response.total || 0
       };
     } catch (err: any) {
+      const errMsg = (err.message || '').toLowerCase();
+      const isSchemaError = err.code === 400 || 
+                            errMsg.includes('attribute') || 
+                            errMsg.includes('schema') || 
+                            errMsg.includes('not found') ||
+                            errMsg.includes('index');
+      
+      if (isSchemaError) {
+        console.warn("Appwrite queryTrips failed due to schema/attribute mismatch. Falling back to client-side filtering...");
+        // Fetch all documents for this organization
+        const allDocs = await this.listFleetDocuments(dbId, 'trips', orgId);
+        
+        // Parse and filter client-side
+        let parsedList = allDocs.map(doc => {
+          let item = { ...doc };
+          if (doc.data) {
+            try {
+              const parsed = JSON.parse(doc.data);
+              item = { ...item, ...parsed };
+            } catch (e) {
+              console.warn("Failed to parse data for fallback queryTrips:", doc.$id, e);
+            }
+          }
+          return item;
+        });
+
+        // Apply filters
+        if (filters.truckNo) {
+          parsedList = parsedList.filter(t => t.truckNo === filters.truckNo);
+        }
+        if (filters.status) {
+          parsedList = parsedList.filter(t => t.status === filters.status);
+        }
+        if (filters.search) {
+          const s = filters.search.toLowerCase();
+          parsedList = parsedList.filter(t => (t.tripNo || '').toLowerCase().includes(s));
+        }
+        if (filters.startDate) {
+          parsedList = parsedList.filter(t => (t.startDate || '') >= filters.startDate!);
+        }
+        if (filters.endDate) {
+          parsedList = parsedList.filter(t => (t.startDate || '') <= filters.endDate!);
+        }
+
+        // Apply sorting
+        parsedList.sort((a, b) => {
+          let aVal = a[sortField] || '';
+          let bVal = b[sortField] || '';
+          if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+          if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+          if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        });
+
+        const total = parsedList.length;
+        const startIndex = (page - 1) * limit;
+        const paginatedList = parsedList.slice(startIndex, startIndex + limit);
+
+        // Map back to Appwrite document format
+        const documents = paginatedList.map(item => {
+          const { id, $id, $collectionId, $databaseId, $createdAt, $updatedAt, $permissions, ...rest } = item;
+          return {
+            $id: id || $id,
+            $collectionId,
+            $databaseId,
+            $createdAt,
+            $updatedAt,
+            $permissions,
+            organizationId: item.organizationId,
+            tripNo: item.tripNo || '',
+            truckNo: item.truckNo || '',
+            startDate: item.startDate || '',
+            endDate: item.endDate || '',
+            driverName: item.driverName || '',
+            status: item.status || 'Pending',
+            notes: item.notes || '',
+            data: item.data || JSON.stringify(rest),
+            ...rest
+          };
+        });
+
+        return {
+          documents,
+          total
+        };
+      }
+
       console.error("queryTrips failure:", err);
       throw err;
     }
@@ -817,6 +941,89 @@ class AppwriteService {
         total: response.total || 0
       };
     } catch (err: any) {
+      const errMsg = (err.message || '').toLowerCase();
+      const isSchemaError = err.code === 400 || 
+                            errMsg.includes('attribute') || 
+                            errMsg.includes('schema') || 
+                            errMsg.includes('not found') ||
+                            errMsg.includes('index');
+      
+      if (isSchemaError) {
+        console.warn("Appwrite queryExpenses failed due to schema/attribute mismatch. Falling back to client-side filtering...");
+        const allDocs = await this.listFleetDocuments(dbId, 'expenses', orgId);
+        
+        let parsedList = allDocs.map(doc => {
+          let item = { ...doc };
+          if (doc.data) {
+            try {
+              const parsed = JSON.parse(doc.data);
+              item = { ...item, ...parsed };
+            } catch (e) {
+              console.warn("Failed to parse data for fallback queryExpenses:", doc.$id, e);
+            }
+          }
+          return item;
+        });
+
+        if (filters.truckNo) {
+          parsedList = parsedList.filter(e => e.truckNo === filters.truckNo);
+        }
+        if (filters.expenseType) {
+          parsedList = parsedList.filter(e => e.expenseType === filters.expenseType);
+        }
+        if (filters.search) {
+          const s = filters.search.toLowerCase();
+          parsedList = parsedList.filter(e => (e.shopName || '').toLowerCase().includes(s));
+        }
+        if (filters.startDate) {
+          parsedList = parsedList.filter(e => (e.date || '') >= filters.startDate!);
+        }
+        if (filters.endDate) {
+          parsedList = parsedList.filter(e => (e.date || '') <= filters.endDate!);
+        }
+
+        parsedList.sort((a, b) => {
+          const aVal = a.date || '';
+          const bVal = b.date || '';
+          if (aVal < bVal) return 1;
+          if (aVal > bVal) return -1;
+          return 0;
+        });
+
+        const total = parsedList.length;
+        const startIndex = (page - 1) * limit;
+        const paginatedList = parsedList.slice(startIndex, startIndex + limit);
+
+        const documents = paginatedList.map(item => {
+          const { id, $id, $collectionId, $databaseId, $createdAt, $updatedAt, $permissions, ...rest } = item;
+          return {
+            $id: id || $id,
+            $collectionId,
+            $databaseId,
+            $createdAt,
+            $updatedAt,
+            $permissions,
+            organizationId: item.organizationId,
+            truckNo: item.truckNo || '',
+            expenseType: item.expenseType || '',
+            shopName: item.shopName || '',
+            amount: Number(item.amount) || 0,
+            paymentMode: item.paymentMode || '',
+            date: item.date || '',
+            status: item.status || 'Pending',
+            accountType: item.accountType || 'Account',
+            driverName: item.driverName || '',
+            data: item.data || JSON.stringify(rest),
+            ...rest
+          };
+        });
+
+        return {
+          documents,
+          total
+        };
+      }
+
       console.error("queryExpenses failure:", err);
       throw err;
     }
@@ -929,6 +1136,53 @@ class AppwriteService {
 
       return { trips, expenses };
     } catch (err: any) {
+      const errMsg = (err.message || '').toLowerCase();
+      const isSchemaError = err.code === 400 || 
+                            errMsg.includes('attribute') || 
+                            errMsg.includes('schema') || 
+                            errMsg.includes('not found') ||
+                            errMsg.includes('index');
+      
+      if (isSchemaError) {
+        console.warn("fetchMonthlyTripsAndExpenses failed due to schema/attribute/index mismatch. Falling back to client-side filtering...");
+        // 1. Fetch all Trips for the organization
+        const allTripsDocs = await this.listFleetDocuments(dbId, 'trips', orgId);
+        
+        // 2. Fetch all Expenses for the organization
+        const allExpensesDocs = await this.listFleetDocuments(dbId, 'expenses', orgId);
+        
+        const fetchAllTime = year === 'All Time';
+        const monthStr = `${year}-${month}`;
+
+        const filteredTrips = allTripsDocs.filter(doc => {
+          if (fetchAllTime) return true;
+          let startDate = doc.startDate;
+          if (!startDate && doc.data) {
+            try {
+              const parsed = JSON.parse(doc.data);
+              startDate = parsed.startDate;
+            } catch {}
+          }
+          if (!startDate) return false;
+          return startDate >= `${monthStr}-01` && startDate <= `${monthStr}-31`;
+        });
+
+        const filteredExpenses = allExpensesDocs.filter(doc => {
+          if (fetchAllTime) return true;
+          let date = doc.date;
+          if (!date && doc.data) {
+            try {
+              const parsed = JSON.parse(doc.data);
+              date = parsed.date;
+            } catch {}
+          }
+          if (!date) return false;
+          return date >= `${monthStr}-01` && date <= `${monthStr}-31`;
+        });
+
+        return { trips: filteredTrips, expenses: filteredExpenses };
+      }
+
       console.error("fetchMonthlyTripsAndExpenses failure:", err);
       throw err;
     }

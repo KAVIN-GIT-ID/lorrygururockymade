@@ -36,6 +36,12 @@ export interface Truck {
   crownOilKM?: number;         // Crown Oil target milestone KM
   gearBoxOilKM?: number;       // Gear Box target milestone KM
   radiatorKM?: number;         // Radiator target milestone KM
+  engineOilIntervalKM?: number;
+  crownOilIntervalKM?: number;
+  gearBoxOilIntervalKM?: number;
+  radiatorIntervalKM?: number;
+  pinpushIntervalKM?: number;      // Per-vehicle override for pinpush grease interval
+  wheelGreaseIntervalKM?: number;  // Per-vehicle override for wheel grease interval
 }
 
 export interface Driver {
@@ -143,6 +149,25 @@ export interface SubTrip {
   unloadingPaidByDriver?: boolean;
   brokerageExpense?: number;
   brokeragePaidByDriver?: boolean;
+
+  // New settlement fields
+  loadingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  loadingBears?: 'Org' | 'Driver';
+
+  unloadingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  unloadingBears?: 'Org' | 'Driver';
+
+  brokerageDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  brokerageBears?: 'Org' | 'Driver';
+
+  crossingExpense?: number;
+  crossingPaidByDriver?: boolean;
+  crossingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  crossingBears?: 'Org' | 'Driver';
+  
+  noOfTons?: number;
+  material?: string;
+  ratePerTon?: number;
 }
 
 export interface TripEntry {
@@ -183,6 +208,7 @@ export interface TripMetrics {
   loadingExpense: number;
   unloadingExpense: number;
   brokerageExpense: number;
+  crossingExpense: number;
   rtoExpense: number;
   dieselExpense: number;
   addBlueExpense: number;
@@ -198,15 +224,83 @@ export interface TripMetrics {
   profit: number;
   paymentsReceived: number;
   outstandingBalance: number;
+  totalOrgRentalDeductions: number;
+  driverPaidDirect: number;
+  driverRecovery: number;
 }
 
 export function getTripMetrics(trip: TripEntry): TripMetrics {
   const subTrips = trip.subTrips || [];
   
   const income = subTrips.reduce((sum, s) => sum + (Number(s.income) || 0), 0);
-  const loadingExpense = subTrips.reduce((sum, s) => sum + (Number(s.loadingExpense) || 0), 0);
-  const unloadingExpense = subTrips.reduce((sum, s) => sum + (Number(s.unloadingExpense) || 0), 0);
-  const brokerageExpense = subTrips.reduce((sum, s) => sum + (Number(s.brokerageExpense) || 0), 0);
+  
+  // Resolve each sub-trip charge
+  const resolvedCharges = subTrips.map(s => {
+    // 1. Loading
+    const loadAmt = Number(s.loadingExpense) || 0;
+    const loadDeductedFrom = s.loadingDeductedFrom || (s.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+    const loadBears = s.loadingBears || 'Org';
+
+    // 2. Unloading
+    const unloadAmt = Number(s.unloadingExpense) || 0;
+    const unloadDeductedFrom = s.unloadingDeductedFrom || (s.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+    const unloadBears = s.unloadingBears || 'Org';
+
+    // 3. Brokerage
+    const brokerageAmt = Number(s.brokerageExpense) || 0;
+    const brokerageDeductedFrom = s.brokerageDeductedFrom || (s.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
+    const brokerageBears = s.brokerageBears || 'Driver';
+
+    // 4. Crossing
+    const crossingAmt = Number(s.crossingExpense) || 0;
+    const crossingDeductedFrom = s.crossingDeductedFrom || (s.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
+    const crossingBears = s.crossingBears || 'Org';
+
+    return {
+      load: { amount: loadAmt, deductedFrom: loadDeductedFrom, bears: loadBears },
+      unload: { amount: unloadAmt, deductedFrom: unloadDeductedFrom, bears: unloadBears },
+      brokerage: { amount: brokerageAmt, deductedFrom: brokerageDeductedFrom, bears: brokerageBears },
+      crossing: { amount: crossingAmt, deductedFrom: crossingDeductedFrom, bears: crossingBears }
+    };
+  });
+
+  // ─── Org Borne Expenses (reduce profit) ───────────────────────────
+  const loadingExpense = resolvedCharges.reduce((sum, rc) => sum + (rc.load.bears === 'Org' ? rc.load.amount : 0), 0);
+  const unloadingExpense = resolvedCharges.reduce((sum, rc) => sum + (rc.unload.bears === 'Org' ? rc.unload.amount : 0), 0);
+  const brokerageExpense = resolvedCharges.reduce((sum, rc) => sum + (rc.brokerage.bears === 'Org' ? rc.brokerage.amount : 0), 0);
+  const crossingExpense = resolvedCharges.reduce((sum, rc) => sum + (rc.crossing.bears === 'Org' ? rc.crossing.amount : 0), 0);
+
+  // ─── Rental Deductions (deductedFrom === 'OrgRental') ───────────────────────────
+  const totalOrgRentalDeductions = resolvedCharges.reduce((sum, rc) => {
+    let subSum = 0;
+    if (rc.load.deductedFrom === 'OrgRental') subSum += rc.load.amount;
+    if (rc.unload.deductedFrom === 'OrgRental') subSum += rc.unload.amount;
+    if (rc.brokerage.deductedFrom === 'OrgRental') subSum += rc.brokerage.amount;
+    // Crossing/Mamul is always deducted from rental
+    subSum += rc.crossing.amount;
+    return sum + subSum;
+  }, 0);
+
+  // ─── Driver Paid Direct (deductedFrom === 'DriverDirect' && bears === 'Org') ─────
+  const driverPaidDirect = resolvedCharges.reduce((sum, rc) => {
+    let subSum = 0;
+    if (rc.load.deductedFrom === 'DriverDirect' && rc.load.bears === 'Org') subSum += rc.load.amount;
+    if (rc.unload.deductedFrom === 'DriverDirect' && rc.unload.bears === 'Org') subSum += rc.unload.amount;
+    if (rc.brokerage.deductedFrom === 'DriverDirect' && rc.brokerage.bears === 'Org') subSum += rc.brokerage.amount;
+    if (rc.crossing.deductedFrom === 'DriverDirect' && rc.crossing.bears === 'Org') subSum += rc.crossing.amount;
+    return sum + subSum;
+  }, 0);
+
+  // ─── Driver Recovery (deductedFrom === 'OrgRental' && bears === 'Driver') ───────
+  const driverRecovery = resolvedCharges.reduce((sum, rc) => {
+    let subSum = 0;
+    if (rc.load.deductedFrom === 'OrgRental' && rc.load.bears === 'Driver') subSum += rc.load.amount;
+    if (rc.unload.deductedFrom === 'OrgRental' && rc.unload.bears === 'Driver') subSum += rc.unload.amount;
+    if (rc.brokerage.deductedFrom === 'OrgRental' && rc.brokerage.bears === 'Driver') subSum += rc.brokerage.amount;
+    if (rc.crossing.deductedFrom === 'OrgRental' && rc.crossing.bears === 'Driver') subSum += rc.crossing.amount;
+    return sum + subSum;
+  }, 0);
+
   const driverWages = subTrips.reduce((sum, s) => sum + (Number(s.driverWages) || 0), 0);
 
   // Common Trip-level expenses (with fallback to sum subTrips if undefined for compatibility)
@@ -232,7 +326,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
   
   const millage = fuelLiters > 0 ? (totalKM / fuelLiters) : 0;
   
-  const totalExpense = loadingExpense + unloadingExpense + brokerageExpense + rtoExpense + dieselExpense + addBlueExpense + fastagExpense + driverWages + otherExpense;
+  const totalExpense = loadingExpense + unloadingExpense + brokerageExpense + crossingExpense + rtoExpense + dieselExpense + addBlueExpense + fastagExpense + driverWages + otherExpense;
   const profit = income - totalExpense;
   
   const perKM = totalKM > 0 ? (totalExpense / totalKM) : 0;
@@ -248,13 +342,14 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
   }
   
   const paymentsReceived = (trip.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const outstandingBalance = income - paymentsReceived;
+  const outstandingBalance = income - totalOrgRentalDeductions - paymentsReceived;
   
   return {
     income,
     loadingExpense,
     unloadingExpense,
     brokerageExpense,
+    crossingExpense,
     rtoExpense,
     dieselExpense,
     addBlueExpense,
@@ -269,7 +364,10 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
     totalExpense,
     profit,
     paymentsReceived,
-    outstandingBalance
+    outstandingBalance,
+    totalOrgRentalDeductions,
+    driverPaidDirect,
+    driverRecovery
   };
 }
 
@@ -288,6 +386,7 @@ export interface ExpenseEntry {
   status: 'Pending' | 'Paid' | 'Approved' | 'Declined';
   accountType?: 'Account' | 'Driver'; // To select Driver as account type
   driverName?: string; // Driver Name if accountType is 'Driver'
+  notes?: string;      // Optional service notes (e.g. early service reason)
   organizationId?: string;
 }
 
@@ -450,6 +549,43 @@ export interface OrganizationProfile {
   status: 'Active' | 'Disabled';
   maxTrucksAllowed: number;
   truckRequests: TruckRequest[];
+  engineOilIntervalKM?: number;
+  crownOilIntervalKM?: number;
+  gearBoxOilIntervalKM?: number;
+  radiatorIntervalKM?: number;
+  pinpushIntervalKM?: number;      // Org-wide default for pinpush grease
+  wheelGreaseIntervalKM?: number;  // Org-wide default for wheel grease
+  brokeragePolicy?: 'OrgBears' | 'DriverBears'; // Org-wide default brokerage policy
+}
+
+// ─── Service Done Types ────────────────────────────────────────────────────────
+
+export type ServiceType =
+  | 'Engine Oil'
+  | 'Crown Oil'
+  | 'Gear Box Oil'
+  | 'Radiator'
+  | 'Pinpush Grease'
+  | 'Wheel Grease';
+
+export interface ServiceExpenseEntry {
+  shopName: string;
+  amount: number;           // 0 = skip creating this expense entry
+  paymentMode: string;
+  accountType: 'Account' | 'Driver';
+  driverName?: string;
+  status: 'Paid' | 'Pending';
+}
+
+export interface ServiceDonePayload {
+  serviceType: ServiceType;
+  serviceDate: string;          // YYYY-MM-DD
+  truckId: string;
+  truckNo: string;
+  newMilestoneKM: number;       // Updated next-due KM stored on the truck
+  notes?: string;               // Optional reason/remarks (visible on service window)
+  partsExpense: ServiceExpenseEntry;
+  labourExpense: ServiceExpenseEntry;
 }
 
 

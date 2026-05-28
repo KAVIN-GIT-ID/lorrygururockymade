@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Truck, TripEntry, ExpenseEntry, getTripMetrics } from '../types';
+import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType } from '../types';
 import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
 import { formatTruckNumber } from '../lib/formatUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import ServiceDoneModal from './ServiceDoneModal';
 
 interface TruckMasterProps {
   trucks: Truck[];
@@ -19,6 +20,10 @@ interface TruckMasterProps {
   maxTrucksAllowed?: number;
   onAddTruckRequest?: (truck: Omit<Truck, 'id'>) => void;
   organizationId?: string;
+  orgProfile?: OrganizationProfile;
+  onServiceDone?: (payload: ServiceDonePayload) => void;
+  accounts?: Account[];
+  drivers?: Driver[];
 }
 
 export default function TruckMaster({ 
@@ -34,12 +39,17 @@ export default function TruckMaster({
   canDeleteTrucks = true,
   maxTrucksAllowed = 2,
   onAddTruckRequest,
-  organizationId = ''
+  organizationId = '',
+  orgProfile,
+  onServiceDone,
+  accounts = [],
+  drivers = [],
 }: TruckMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
   const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
+  const [serviceDoneTarget, setServiceDoneTarget] = useState<{ truckId: string; truckNo: string; serviceType: ServiceType; currentKM: number; intervalKM: number } | null>(null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +99,14 @@ export default function TruckMaster({
   const [crownOilKM, setCrownOilKM] = useState<number | ''>('');
   const [gearBoxOilKM, setGearBoxOilKM] = useState<number | ''>('');
   const [radiatorKM, setRadiatorKM] = useState<number | ''>('');
+
+  // Custom Service Intervals (per vehicle)
+  const [engineOilIntervalKM, setEngineOilIntervalKM] = useState<number | ''>('');
+  const [crownOilIntervalKM, setCrownOilIntervalKM] = useState<number | ''>('');
+  const [gearBoxOilIntervalKM, setGearBoxOilIntervalKM] = useState<number | ''>('');
+  const [radiatorIntervalKM, setRadiatorIntervalKM] = useState<number | ''>('');
+  const [pinpushIntervalKM, setPinpushIntervalKM] = useState<number | ''>('');
+  const [wheelGreaseIntervalKM, setWheelGreaseIntervalKM] = useState<number | ''>('');
 
   const [rcFileId, setRcFileId] = useState('');
   const [insuranceFileId, setInsuranceFileId] = useState('');
@@ -141,6 +159,12 @@ export default function TruckMaster({
     setCrownOilKM('');
     setGearBoxOilKM('');
     setRadiatorKM('');
+    setEngineOilIntervalKM('');
+    setCrownOilIntervalKM('');
+    setGearBoxOilIntervalKM('');
+    setRadiatorIntervalKM('');
+    setPinpushIntervalKM('');
+    setWheelGreaseIntervalKM('');
     setRcFileId('');
     setInsuranceFileId('');
     setRcFile(null);
@@ -219,6 +243,12 @@ export default function TruckMaster({
       crownOilKM: crownOilKM !== '' ? Number(crownOilKM) : undefined,
       gearBoxOilKM: gearBoxOilKM !== '' ? Number(gearBoxOilKM) : undefined,
       radiatorKM: radiatorKM !== '' ? Number(radiatorKM) : undefined,
+      engineOilIntervalKM: engineOilIntervalKM !== '' ? Number(engineOilIntervalKM) : undefined,
+      crownOilIntervalKM: crownOilIntervalKM !== '' ? Number(crownOilIntervalKM) : undefined,
+      gearBoxOilIntervalKM: gearBoxOilIntervalKM !== '' ? Number(gearBoxOilIntervalKM) : undefined,
+      radiatorIntervalKM: radiatorIntervalKM !== '' ? Number(radiatorIntervalKM) : undefined,
+      pinpushIntervalKM: pinpushIntervalKM !== '' ? Number(pinpushIntervalKM) : undefined,
+      wheelGreaseIntervalKM: wheelGreaseIntervalKM !== '' ? Number(wheelGreaseIntervalKM) : undefined,
       rcFileId: uploadedRcId || undefined,
       insuranceFileId: uploadedInsuranceId || undefined,
     };
@@ -261,6 +291,12 @@ export default function TruckMaster({
     setCrownOilKM(truck.crownOilKM !== undefined ? truck.crownOilKM : '');
     setGearBoxOilKM(truck.gearBoxOilKM !== undefined ? truck.gearBoxOilKM : '');
     setRadiatorKM(truck.radiatorKM !== undefined ? truck.radiatorKM : '');
+    setEngineOilIntervalKM(truck.engineOilIntervalKM !== undefined && truck.engineOilIntervalKM !== null ? truck.engineOilIntervalKM : '');
+    setCrownOilIntervalKM(truck.crownOilIntervalKM !== undefined && truck.crownOilIntervalKM !== null ? truck.crownOilIntervalKM : '');
+    setGearBoxOilIntervalKM(truck.gearBoxOilIntervalKM !== undefined && truck.gearBoxOilIntervalKM !== null ? truck.gearBoxOilIntervalKM : '');
+    setRadiatorIntervalKM(truck.radiatorIntervalKM !== undefined && truck.radiatorIntervalKM !== null ? truck.radiatorIntervalKM : '');
+    setPinpushIntervalKM(truck.pinpushIntervalKM !== undefined && truck.pinpushIntervalKM !== null ? truck.pinpushIntervalKM : '');
+    setWheelGreaseIntervalKM(truck.wheelGreaseIntervalKM !== undefined && truck.wheelGreaseIntervalKM !== null ? truck.wheelGreaseIntervalKM : '');
     setRcFileId(truck.rcFileId || '');
     setInsuranceFileId(truck.insuranceFileId || '');
     setRcFile(null);
@@ -310,21 +346,29 @@ export default function TruckMaster({
     };
   };
 
-  const renderKMLeftBadge = (targetKM?: number, currentKM?: number) => {
+  const renderKMLeftBadge = (targetKM?: number, currentKM?: number, interval?: number) => {
     if (targetKM === undefined || currentKM === undefined) return <span className="text-slate-300 italic font-mono">&mdash;</span>;
     const diff = targetKM - currentKM;
+    const activeInterval = interval || 15000;
+    const lastChanged = targetKM - activeInterval;
+    const travelled = currentKM - lastChanged;
+    const titleText = `Target Milestone: ${targetKM.toLocaleString()} KM\nActive Interval: ${activeInterval.toLocaleString()} KM\nLast Service Odo: ${lastChanged.toLocaleString()} KM\nDistance Travelled: ${travelled.toLocaleString()} KM`;
+
     if (diff <= 0) {
       return (
-        <span className="flex flex-col text-right font-mono pr-1" title={`Target Milestone: ${targetKM}`}>
-          <span className="font-bold text-slate-800 text-[11px]">{targetKM.toLocaleString()}</span>
-          <span className="text-[9px] font-extrabold text-red-650 tracking-tight leading-none uppercase">Due ({Math.abs(diff).toLocaleString()})</span>
+        <span className="flex flex-col text-right font-mono pr-1 animate-pulse" title={titleText}>
+          <span className="font-bold text-red-600 text-[11px]">{targetKM.toLocaleString()}</span>
+          <span className="text-[9px] font-extrabold text-red-650 tracking-tight leading-none uppercase text-red-600">Due ({Math.abs(diff).toLocaleString()})</span>
         </span>
       );
     } else {
+      const isNearDue = diff <= 1000;
       return (
-        <span className="flex flex-col text-right font-mono pr-1" title={`Target Milestone: ${targetKM}`}>
-          <span className="font-bold text-slate-800 text-[11px]">{targetKM.toLocaleString()}</span>
-          <span className="text-[9px] font-semibold text-slate-450 tracking-tight leading-none uppercase">({diff.toLocaleString()} left)</span>
+        <span className="flex flex-col text-right font-mono pr-1" title={titleText}>
+          <span className={`font-bold text-[11px] ${isNearDue ? 'text-amber-600' : 'text-slate-800'}`}>{targetKM.toLocaleString()}</span>
+          <span className={`text-[9px] font-semibold tracking-tight leading-none uppercase ${isNearDue ? 'text-amber-600 font-bold' : 'text-slate-450'}`}>
+            ({diff.toLocaleString()} left)
+          </span>
         </span>
       );
     }
@@ -332,6 +376,91 @@ export default function TruckMaster({
 
   const approvedCount = trucks.filter(t => t.isApproved !== false).length;
   const limitReached = approvedCount >= maxTrucksAllowed;
+
+  const activeEngineOilInterval = Number(engineOilIntervalKM) || orgProfile?.engineOilIntervalKM || 15000;
+  const activeCrownOilInterval = Number(crownOilIntervalKM) || orgProfile?.crownOilIntervalKM || 40000;
+  const activeGearBoxOilInterval = Number(gearBoxOilIntervalKM) || orgProfile?.gearBoxOilIntervalKM || 40000;
+  const activeRadiatorInterval = Number(radiatorIntervalKM) || orgProfile?.radiatorIntervalKM || 20000;
+  const activePinpushInterval = Number(pinpushIntervalKM) || orgProfile?.pinpushIntervalKM || 5000;
+  const activeWheelGreaseInterval = Number(wheelGreaseIntervalKM) || orgProfile?.wheelGreaseIntervalKM || 5000;
+
+  // Helper to open the Service Done modal for a given truck and service
+  const openServiceDone = (truck: Truck, serviceType: ServiceType, targetKM: number | undefined, intervalKM: number) => {
+    if (!onServiceDone) return;
+    setServiceDoneTarget({
+      truckId: truck.id,
+      truckNo: truck.truckNo,
+      serviceType,
+      currentKM: truck.currentKM || 0,
+      intervalKM,
+    });
+  };
+
+  const renderMaintenanceProgressBar = (
+    label: string,
+    targetKM?: number,
+    currentKM?: number,
+    intervalKM?: number,
+    defaultInterval: number = 15000
+  ) => {
+    if (!targetKM) {
+      return (
+        <div>
+          <div className="flex justify-between text-xs font-semibold mb-1">
+            <span className="text-slate-700">{label}</span>
+            <span className="font-mono text-slate-400">Not mapped</span>
+          </div>
+          <div className="text-[10px] text-slate-400 italic">Odometer milestone is not registered in specifications panel.</div>
+        </div>
+      );
+    }
+
+    const current = currentKM || 0;
+    const interval = intervalKM || defaultInterval;
+    const lastChanged = targetKM - interval;
+    const travelled = current - lastChanged;
+    const remaining = targetKM - current;
+    
+    // progress = travelled / interval
+    let progressPercent = 0;
+    if (interval > 0) {
+      progressPercent = Math.max(0, Math.min(100, (travelled / interval) * 100));
+    }
+
+    let barColor = 'bg-emerald-500';
+    if (remaining <= 0) {
+      barColor = 'bg-rose-500';
+    } else if (remaining <= 1000) {
+      barColor = 'bg-amber-500';
+    }
+
+    return (
+      <div>
+        <div className="flex justify-between text-xs font-semibold mb-1">
+          <span className="text-slate-700 font-sans font-semibold">{label}</span>
+          <span className="font-mono text-slate-500">
+            {current.toLocaleString()}/{targetKM.toLocaleString()} KM
+          </span>
+        </div>
+        <div className="w-full bg-slate-100 rounded-full h-2 relative overflow-hidden" title={`Last Service: ${lastChanged.toLocaleString()} KM\nInterval: ${interval.toLocaleString()} KM\nTravelled: ${travelled.toLocaleString()} KM\nRemaining: ${remaining.toLocaleString()} KM`}>
+          <div 
+            className={`h-2 rounded-full ${barColor} transition-all duration-300`} 
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[9px] text-slate-405 mt-1 font-sans">
+          <span>Last Service: {lastChanged.toLocaleString()} KM</span>
+          {remaining <= 0 ? (
+            <span className="text-rose-600 font-bold">Overdue by {Math.abs(remaining).toLocaleString()} KM</span>
+          ) : (
+            <span className={remaining <= 1000 ? 'text-amber-600 font-bold' : ''}>
+              {remaining.toLocaleString()} KM left
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div id="truck-master-panel" className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in space-y-6">
@@ -565,47 +694,217 @@ export default function TruckMaster({
           </div>
 
           {/* SECTION 4: Oil Mileage Milestones */}
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-              <div>
-                <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Engine Oil KM Limit</label>
-                <input
-                  type="number"
-                  placeholder="Future KM"
-                  value={engineOilKM}
-                  onChange={(e) => setEngineOilKM(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-850 border-slate-250 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Engine Oil Change */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-engine-oil-km" className="block text-[9px] font-extrabold text-slate-550 uppercase mb-1">Engine Oil KM Limit</label>
+                  <input
+                    id="input-engine-oil-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={engineOilKM}
+                    onChange={(e) => setEngineOilKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setEngineOilKM(odo + activeEngineOilInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activeEngineOilInterval} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.engineOilIntervalKM || 15000).toLocaleString()} KM`}
+                    value={engineOilIntervalKM}
+                    onChange={(e) => setEngineOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Crown Oil KM Limit</label>
-                <input
-                  type="number"
-                  placeholder="Future KM"
-                  value={crownOilKM}
-                  onChange={(e) => setCrownOilKM(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-850 border-slate-250 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
-                />
+
+              {/* Crown Oil */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-crown-oil-km" className="block text-[9px] font-extrabold text-slate-550 uppercase mb-1">Crown Oil KM Limit</label>
+                  <input
+                    id="input-crown-oil-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={crownOilKM}
+                    onChange={(e) => setCrownOilKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setCrownOilKM(odo + activeCrownOilInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activeCrownOilInterval} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.crownOilIntervalKM || 40000).toLocaleString()} KM`}
+                    value={crownOilIntervalKM}
+                    onChange={(e) => setCrownOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Gear Box Oil KM Limit</label>
-                <input
-                  type="number"
-                  placeholder="Future KM"
-                  value={gearBoxOilKM}
-                  onChange={(e) => setGearBoxOilKM(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-855 border-slate-250 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
-                />
+
+              {/* Gear Box Oil */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-gear-box-oil-km" className="block text-[9px] font-extrabold text-slate-555 uppercase mb-1">Gear Box Oil KM Limit</label>
+                  <input
+                    id="input-gear-box-oil-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={gearBoxOilKM}
+                    onChange={(e) => setGearBoxOilKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setGearBoxOilKM(odo + activeGearBoxOilInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activeGearBoxOilInterval} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.gearBoxOilIntervalKM || 40000).toLocaleString()} KM`}
+                    value={gearBoxOilIntervalKM}
+                    onChange={(e) => setGearBoxOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Radiator Water/Coolant KM</label>
-                <input
-                  type="number"
-                  placeholder="Future KM"
-                  value={radiatorKM}
-                  onChange={(e) => setRadiatorKM(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-855 border-slate-250 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
-                />
+
+              {/* Radiator Service */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-radiator-km" className="block text-[9px] font-extrabold text-slate-555 uppercase mb-1">Radiator Coolant KM</label>
+                  <input
+                    id="input-radiator-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={radiatorKM}
+                    onChange={(e) => setRadiatorKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setRadiatorKM(odo + activeRadiatorInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activeRadiatorInterval} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.radiatorIntervalKM || 20000).toLocaleString()} KM`}
+                    value={radiatorIntervalKM}
+                    onChange={(e) => setRadiatorIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
+
+              {/* Pinpush Grease */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-pinpush-km" className="block text-[9px] font-extrabold text-slate-555 uppercase mb-1">Pinpush Grease KM Limit</label>
+                  <input
+                    id="input-pinpush-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={pinpushKM}
+                    onChange={(e) => setPinpushKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setPinpushKM(odo + activePinpushInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activePinpushInterval.toLocaleString()} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.pinpushIntervalKM || 5000).toLocaleString()} KM`}
+                    value={pinpushIntervalKM}
+                    onChange={(e) => setPinpushIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Wheel Grease */}
+              <div className="space-y-3 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                <div>
+                  <label htmlFor="input-wheel-grease-km" className="block text-[9px] font-extrabold text-slate-555 uppercase mb-1">Wheel Grease KM Limit</label>
+                  <input
+                    id="input-wheel-grease-km"
+                    type="number"
+                    placeholder="Future KM"
+                    value={wheelGreaseKM}
+                    onChange={(e) => setWheelGreaseKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const odo = currentKM !== '' ? Number(currentKM) : 0;
+                      setWheelGreaseKM(odo + activeWheelGreaseInterval);
+                    }}
+                    className="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
+                  >
+                    ✨ Set next due (Odo + {activeWheelGreaseInterval.toLocaleString()} KM)
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Custom Interval (KM)</label>
+                  <input
+                    type="number"
+                    placeholder={`Uses Org Default: ${(orgProfile?.wheelGreaseIntervalKM || 5000).toLocaleString()} KM`}
+                    value={wheelGreaseIntervalKM}
+                    onChange={(e) => setWheelGreaseIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
               {/* SECTION 4: Upload Documents */}
               <div className="col-span-full border-t border-slate-200 pt-3">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2.5">4. Compliance Document Uploads (Optional)</span>
@@ -910,16 +1209,16 @@ export default function TruckMaster({
 
                       {/* Lubes Milestones readings with dynamic badge comparisons */}
                       <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.engineOilKM ? truck.engineOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.engineOilKM, truck.currentKM)}</td>
+                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.engineOilKM, truck.currentKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000)}</td>
 
                       <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.crownOilKM ? truck.crownOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.crownOilKM, truck.currentKM)}</td>
+                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.crownOilKM, truck.currentKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000)}</td>
 
                       <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.gearBoxOilKM ? truck.gearBoxOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM)}</td>
+                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000)}</td>
 
                       <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.radiatorKM ? truck.radiatorKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.radiatorKM, truck.currentKM)}</td>
+                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.radiatorKM, truck.currentKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000)}</td>
 
                       <td className="px-3 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1109,19 +1408,19 @@ export default function TruckMaster({
                       <div className="mt-2.5 pt-2 border-t border-dashed border-slate-150 space-y-2 text-[11px]">
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 font-medium">Engine Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.engineOilKM, truck.currentKM)}</span>
+                          <span>{renderKMLeftBadge(truck.engineOilKM, truck.currentKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 font-medium">Crown Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.crownOilKM, truck.currentKM)}</span>
+                          <span>{renderKMLeftBadge(truck.crownOilKM, truck.currentKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 font-medium">Gearbox Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM)}</span>
+                          <span>{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500 font-medium">Radiator Coolant Left:</span>
-                          <span>{renderKMLeftBadge(truck.radiatorKM, truck.currentKM)}</span>
+                          <span>{renderKMLeftBadge(truck.radiatorKM, truck.currentKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000)}</span>
                         </div>
                       </div>
                     )}
@@ -1335,53 +1634,30 @@ export default function TruckMaster({
                   <p className="text-[10px] text-slate-400 mb-3">Mileage comparisons mapped with current odometer reading: <b className="text-slate-700">{truck.currentKM?.toLocaleString() || '0'} KM</b></p>
                   
                   <div className="space-y-4">
-                    {/* Engine Oil */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold mb-1">
-                        <span className="text-slate-700">Engine Oil Milestone</span>
-                        <span className="font-mono text-slate-500">{truck.engineOilKM ? `${truck.currentKM || 0}/${truck.engineOilKM} KM` : 'Not mapped'}</span>
-                      </div>
-                      {truck.engineOilKM ? (
-                        <div className="w-full bg-slate-155 rounded-full h-2">
-                          <div 
-                            className={`h-2 rounded-full ${((truck.currentKM || 0) / truck.engineOilKM) >= 1 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
-                            style={{ width: `${Math.min(100, (((truck.currentKM || 0) / truck.engineOilKM) * 100))}%` }}
-                          />
-                        </div>
-                      ) : <div className="text-[10px] text-slate-400 italic">Odometer milestone is not registered in specifications panel.</div>}
-                    </div>
-
-                    {/* Crown Oil */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold mb-1">
-                        <span className="text-slate-700">Crown Differential Oil</span>
-                        <span className="font-mono text-slate-500">{truck.crownOilKM ? `${truck.currentKM || 0}/${truck.crownOilKM} KM` : 'Not mapped'}</span>
-                      </div>
-                      {truck.crownOilKM ? (
-                        <div className="w-full bg-slate-155 rounded-full h-1.5">
-                          <div 
-                            className={`h-1.5 rounded-full ${((truck.currentKM || 0) / truck.crownOilKM) >= 1 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
-                            style={{ width: `${Math.min(100, (((truck.currentKM || 0) / truck.crownOilKM) * 105))}%` }}
-                          />
-                        </div>
-                      ) : <div className="text-[10px] text-slate-400 italic">Odometer milestone is not registered in specifications panel.</div>}
-                    </div>
-
-                    {/* Gearbox Oil */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold mb-1">
-                        <span className="text-slate-700">Main Gearbox Oil</span>
-                        <span className="font-mono text-slate-500">{truck.gearBoxOilKM ? `${truck.currentKM || 0}/${truck.gearBoxOilKM} KM` : 'Not mapped'}</span>
-                      </div>
-                      {truck.gearBoxOilKM ? (
-                        <div className="w-full bg-slate-155 rounded-full h-1.5">
-                          <div 
-                            className={`h-1.5 rounded-full ${((truck.currentKM || 0) / truck.gearBoxOilKM) >= 1 ? 'bg-rose-500' : 'bg-emerald-500'}`} 
-                            style={{ width: `${Math.min(100, (((truck.currentKM || 0) / truck.gearBoxOilKM) * 100))}%` }}
-                          />
-                        </div>
-                      ) : <div className="text-[10px] text-slate-400 italic">Odometer milestone is not registered in specifications panel.</div>}
-                    </div>
+                    {renderMaintenanceProgressBar('Engine Oil Milestone', truck.engineOilKM, truck.currentKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM, 15000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Engine Oil', truck.engineOilKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
+                    {renderMaintenanceProgressBar('Crown Differential Oil', truck.crownOilKM, truck.currentKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM, 40000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Crown Oil', truck.crownOilKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
+                    {renderMaintenanceProgressBar('Main Gearbox Oil', truck.gearBoxOilKM, truck.currentKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM, 40000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Gear Box Oil', truck.gearBoxOilKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
+                    {renderMaintenanceProgressBar('Radiator Service', truck.radiatorKM, truck.currentKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM, 20000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Radiator', truck.radiatorKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
+                    {renderMaintenanceProgressBar('Pinpush Grease', truck.pinpushKM, truck.currentKM, truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM, 5000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Pinpush Grease', truck.pinpushKM, truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM || 5000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
+                    {renderMaintenanceProgressBar('Wheel Grease', truck.wheelGreaseKM, truck.currentKM, truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM, 5000)}
+                    {onServiceDone && (
+                      <button type="button" onClick={() => openServiceDone(truck, 'Wheel Grease', truck.wheelGreaseKM, truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM || 5000)} className="w-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg py-1.5 hover:bg-emerald-100 transition cursor-pointer flex items-center justify-center gap-1.5"><Wrench className="w-3 h-3" /> ✔ Service Done</button>
+                    )}
                   </div>
                 </div>
 
@@ -1447,6 +1723,24 @@ export default function TruckMaster({
           </div>
         );
       })()}
+      {/* Service Done Modal */}
+      {serviceDoneTarget && (
+        <ServiceDoneModal
+          isOpen={true}
+          truckNo={serviceDoneTarget.truckNo}
+          truckId={serviceDoneTarget.truckId}
+          serviceType={serviceDoneTarget.serviceType}
+          currentKM={serviceDoneTarget.currentKM}
+          intervalKM={serviceDoneTarget.intervalKM}
+          accounts={accounts}
+          drivers={drivers}
+          onConfirm={(payload) => {
+            if (onServiceDone) onServiceDone(payload);
+            setServiceDoneTarget(null);
+          }}
+          onCancel={() => setServiceDoneTarget(null)}
+        />
+      )}
     </div>
   );
 }

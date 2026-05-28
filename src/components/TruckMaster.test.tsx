@@ -120,4 +120,64 @@ describe('TruckMaster Component Tests', () => {
     expect(handleConfirm).toHaveBeenCalledTimes(1);
     expect(handleDelete).toHaveBeenCalledWith('tr-1');
   });
+
+  it('should use default and custom overrides in Set Next Due pre-fill helpers', () => {
+    const handleAdd = vi.fn();
+    const mockOrgProfile = {
+      organizationId: 'org_test',
+      organizationName: 'Test Org',
+      ownerEmail: 'admin@test.com',
+      status: 'Active' as const,
+      maxTrucksAllowed: 10,
+      truckRequests: [],
+      engineOilIntervalKM: 15000,
+      crownOilIntervalKM: 40000,
+      gearBoxOilIntervalKM: 40000,
+      radiatorIntervalKM: 20000
+    };
+
+    render(
+      <TruckMaster
+        trucks={mockTrucks}
+        trips={[]}
+        expenses={[]}
+        onAddTruck={handleAdd}
+        onUpdateTruck={vi.fn()}
+        onDeleteTruck={vi.fn()}
+        orgProfile={mockOrgProfile}
+      />
+    );
+
+    // Open form
+    const toggleBtn = screen.getByRole('button', { name: /Add\/Edit Truck Specs/i });
+    fireEvent.click(toggleBtn);
+
+    // 1. Enter Current KM
+    fireEvent.change(screen.getByLabelText(/Current Odo KM/i), { target: { value: 120000 } });
+
+    // 2. Locate the Engine Oil milestone set button (default is 15000 KM)
+    const engineHelperBtn = screen.getByRole('button', { name: /Set next due \(Odo \+ 15000 KM\)/i });
+    expect(engineHelperBtn).toBeInTheDocument();
+    
+    // Click helper button
+    fireEvent.click(engineHelperBtn);
+    
+    // Value should be current Odo + 15000 = 135000
+    const engineInput = screen.getByLabelText(/Engine Oil KM Limit/i);
+    expect(engineInput).toHaveValue(135000);
+
+    // 3. Now configure custom interval override (e.g. 12000 KM)
+    const customEngineIntervalInput = screen.getByPlaceholderText(/Uses Org Default: 15,000 KM/i);
+    fireEvent.change(customEngineIntervalInput, { target: { value: 12000 } });
+
+    // Helper button text should update to use the custom override (12000 KM)
+    const engineHelperCustomBtn = screen.getByRole('button', { name: /Set next due \(Odo \+ 12000 KM\)/i });
+    expect(engineHelperCustomBtn).toBeInTheDocument();
+
+    // Click helper button again
+    fireEvent.click(engineHelperCustomBtn);
+
+    // Value should now be current Odo + 12000 = 132000
+    expect(engineInput).toHaveValue(132000);
+  });
 });

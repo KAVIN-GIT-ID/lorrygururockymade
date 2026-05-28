@@ -1,10 +1,11 @@
 import React from 'react';
-import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar } from 'lucide-react';
+import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile } from '../types';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench } from 'lucide-react';
 import { getOutstandingAge, formatToDisplayDate } from '../lib/dateUtils';
 
 interface DashboardProps {
   trips: TripEntry[];
+  allTrips?: TripEntry[];
   trucks: Truck[];
   offices: Office[];
   accounts: Account[];
@@ -13,10 +14,12 @@ interface DashboardProps {
   activeYear: string;
   setActiveMonth: (month: string) => void;
   setActiveYear: (year: string) => void;
+  orgProfile?: OrganizationProfile;
 }
 
 export default function Dashboard({ 
   trips, 
+  allTrips = trips,
   trucks, 
   offices, 
   accounts, 
@@ -24,7 +27,8 @@ export default function Dashboard({
   activeMonth,
   activeYear,
   setActiveMonth,
-  setActiveYear
+  setActiveYear,
+  orgProfile
 }: DashboardProps) {
   const months = [
     { value: '01', label: 'January' },
@@ -55,11 +59,12 @@ export default function Dashboard({
 
   // Pre-calculate metrics for all master trips
   const metricsList = trips.map(t => getTripMetrics(t));
+  const allMetricsList = allTrips.map(t => getTripMetrics(t));
 
   const totalRental = metricsList.reduce((sum, m) => sum + m.income, 0);
   const totalExpenses = metricsList.reduce((sum, m) => sum + m.totalExpense, 0);
   const totalAdvances = metricsList.reduce((sum, m) => sum + m.paymentsReceived, 0);
-  const totalOutstanding = metricsList.reduce((sum, m) => sum + m.outstandingBalance, 0);
+  const totalOutstanding = allMetricsList.reduce((sum, m) => sum + m.outstandingBalance, 0);
   const totalProfit = metricsList.reduce((sum, m) => sum + m.profit, 0);
   const totalDiesel = metricsList.reduce((sum, m) => sum + m.dieselExpense, 0);
 
@@ -72,7 +77,7 @@ export default function Dashboard({
 
 
   // Filter trips with outstanding older than 10 days
-  const overdueTrips = trips.filter(t => {
+  const overdueTrips = allTrips.filter(t => {
     const m = getTripMetrics(t);
     if (m.outstandingBalance <= 0) return false;
     const age = getOutstandingAge(t.endDate || t.startDate);
@@ -104,7 +109,7 @@ export default function Dashboard({
 
   // Group outstanding balance by Truck for risk mitigation
   const truckOutstandingMap: { [key: string]: number } = {};
-  trips.forEach(t => {
+  allTrips.forEach(t => {
     const m = getTripMetrics(t);
     const balAttr = m.outstandingBalance;
     if (balAttr > 0) {
@@ -119,7 +124,7 @@ export default function Dashboard({
 
   // Detailed hover information per truck
   const getTruckHoverDetails = (tNo: string) => {
-    const truckTrips = trips.filter(t => t.truckNo === tNo);
+    const truckTrips = allTrips.filter(t => t.truckNo === tNo);
     let totalIncome = 0;
     let totalPaid = 0;
     const officesUsed = new Set<string>();
@@ -178,6 +183,81 @@ export default function Dashboard({
     : 100;
 
   const validRecoveryRate = isNaN(recoveryRate) ? 0 : Math.min(100, Math.max(0, recoveryRate));
+
+  const serviceAlerts = React.useMemo(() => {
+    const alerts: {
+      truckId: string;
+      truckNo: string;
+      serviceType: string;
+      remainingKM: number;
+      status: 'Overdue' | 'Near Due';
+      targetKM: number;
+      currentKM: number;
+    }[] = [];
+
+    trucks.forEach(truck => {
+      if (truck.status !== 'Active') return;
+      const currentKM = truck.currentKM || 0;
+
+      // Service types and their milestones / resolved intervals
+      const services = [
+        {
+          name: 'Engine Oil Change',
+          targetKM: truck.engineOilKM,
+          interval: truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000,
+        },
+        {
+          name: 'Crown Oil',
+          targetKM: truck.crownOilKM,
+          interval: truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000,
+        },
+        {
+          name: 'Gear Box Oil',
+          targetKM: truck.gearBoxOilKM,
+          interval: truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000,
+        },
+        {
+          name: 'Radiator Service',
+          targetKM: truck.radiatorKM,
+          interval: truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000,
+        },
+        {
+          name: 'Pinpush Grease',
+          targetKM: truck.pinpushKM,
+          interval: truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM || 5000,
+        },
+        {
+          name: 'Wheel Grease',
+          targetKM: truck.wheelGreaseKM,
+          interval: truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM || 5000,
+        }
+      ];
+
+      services.forEach(service => {
+        if (typeof service.targetKM === 'number' && service.targetKM > 0) {
+          const remainingKM = service.targetKM - currentKM;
+          if (remainingKM <= 1000) {
+            alerts.push({
+              truckId: truck.id,
+              truckNo: truck.truckNo,
+              serviceType: service.name,
+              remainingKM,
+              status: remainingKM <= 0 ? 'Overdue' : 'Near Due',
+              targetKM: service.targetKM,
+              currentKM
+            });
+          }
+        }
+      });
+    });
+
+    // Sort: Overdue first, then by remainingKM ascending (most critical first)
+    return alerts.sort((a, b) => {
+      if (a.status === 'Overdue' && b.status !== 'Overdue') return -1;
+      if (a.status !== 'Overdue' && b.status === 'Overdue') return 1;
+      return a.remainingKM - b.remainingKM;
+    });
+  }, [trucks, orgProfile]);
 
   return (
     <div id="dashboard-tab" className="space-y-6 animate-fade-in font-sans">
@@ -531,6 +611,85 @@ export default function Dashboard({
           </div>
         </>
       )}
+
+      {/* SERVICE MAINTENANCE ALERTS PANEL */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1 px-2.5 bg-amber-50 text-amber-705 border border-amber-100 rounded font-extrabold text-[10px] uppercase tracking-wider animate-pulse flex items-center gap-1 shrink-0 text-amber-750">
+                <Wrench className="w-3.5 h-3.5 text-amber-500" /> Maintenance Alerts
+              </span>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
+                Service Maintenance & Odometer Alerts
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-1 font-normal font-sans">
+              Monitors truck mileage against service intervals, warning when a service is overdue or due within 1,000 KM.
+            </p>
+          </div>
+        </div>
+
+        {serviceAlerts.length === 0 ? (
+          <div className="border border-dashed border-slate-200 rounded-xl p-8 py-10 text-center bg-slate-50/50">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">All Vehicles Serviced</h4>
+            <p className="text-xs text-slate-400 mt-0.5 font-normal">
+              Excellent! No active trucks have service intervals overdue or nearing expiration.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-slate-100 rounded-lg">
+            <table className="w-full text-left text-xs whitespace-nowrap divide-y divide-slate-100">
+              <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                <tr>
+                  <th className="p-3 pl-4">Truck Number</th>
+                  <th className="p-3">Service Type</th>
+                  <th className="p-3 text-center">Current Odometer</th>
+                  <th className="p-3 text-center">Due Milestone</th>
+                  <th className="p-3 text-center">Remaining Mileage</th>
+                  <th className="p-3 text-center">Status Flag</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                {serviceAlerts.map((alert, idx) => {
+                  const isOverdue = alert.status === 'Overdue';
+                  return (
+                    <tr key={`${alert.truckId}-${alert.serviceType}-${idx}`} className="hover:bg-slate-50/40 transition">
+                      <td className="p-3 pl-4">
+                        <span className="font-mono font-bold text-slate-900 block">{alert.truckNo}</span>
+                      </td>
+                      <td className="p-3">
+                        <span className="font-sans font-bold text-slate-800 block text-[11px]">{alert.serviceType}</span>
+                      </td>
+                      <td className="p-3 text-center font-mono text-slate-600">
+                        {alert.currentKM.toLocaleString('en-IN')} KM
+                      </td>
+                      <td className="p-3 text-center font-mono text-slate-600">
+                        {alert.targetKM.toLocaleString('en-IN')} KM
+                      </td>
+                      <td className="p-3 text-center">
+                        {isOverdue ? (
+                          <span className="inline-block bg-red-50 border border-red-100 text-red-700 font-bold px-2 py-0.5 rounded shadow-3xs font-mono text-[10px] animate-pulse">
+                            Overdue by {Math.abs(alert.remainingKM).toLocaleString('en-IN')} KM
+                          </span>
+                        ) : (
+                          <span className="inline-block bg-amber-50 border border-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded shadow-3xs font-mono text-[10px]">
+                            Due in {alert.remainingKM.toLocaleString('en-IN')} KM
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={`inline-flex h-2.5 w-2.5 rounded-full shrink-0 shadow-xs ${isOverdue ? 'bg-red-600 animate-ping' : 'bg-amber-500'}`} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {hoveredTruck && (() => {
         const det = getTruckHoverDetails(hoveredTruck);

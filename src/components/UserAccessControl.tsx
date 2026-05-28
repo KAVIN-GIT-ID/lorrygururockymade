@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { UserPermission } from '../types';
+import React, { useState, useEffect } from 'react';
+import { UserPermission, OrganizationProfile } from '../types';
 import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud } from 'lucide-react';
 
 interface TeamMember {
@@ -28,6 +28,8 @@ interface UserAccessControlProps {
   canAddBackend?: boolean;
   canEditBackend?: boolean;
   canDeleteBackend?: boolean;
+  orgProfile?: OrganizationProfile;
+  onUpdateOrgProfile?: (updatedProfile: OrganizationProfile) => void;
 }
 
 export default function UserAccessControl({
@@ -43,14 +45,52 @@ export default function UserAccessControl({
   loadingTeamMembers = false,
   canAddBackend = false,
   canEditBackend = false,
-  canDeleteBackend = false
+  canDeleteBackend = false,
+  orgProfile,
+  onUpdateOrgProfile
 }: UserAccessControlProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'Admin' | 'Custom'>('Custom');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  
+
+  const [engineOilInterval, setEngineOilInterval] = useState<number | ''>('');
+  const [crownOilInterval, setCrownOilInterval] = useState<number | ''>('');
+  const [gearBoxOilInterval, setGearBoxOilInterval] = useState<number | ''>('');
+  const [radiatorInterval, setRadiatorInterval] = useState<number | ''>('');
+  const [pinpushInterval, setPinpushInterval] = useState<number | ''>('');
+  const [wheelGreaseInterval, setWheelGreaseInterval] = useState<number | ''>('');
+  const [brokeragePolicy, setBrokeragePolicy] = useState<'OrgBears' | 'DriverBears'>('DriverBears');
+
+  useEffect(() => {
+    if (orgProfile) {
+      setEngineOilInterval(orgProfile.engineOilIntervalKM !== undefined && orgProfile.engineOilIntervalKM !== null ? orgProfile.engineOilIntervalKM : '');
+      setCrownOilInterval(orgProfile.crownOilIntervalKM !== undefined && orgProfile.crownOilIntervalKM !== null ? orgProfile.crownOilIntervalKM : '');
+      setGearBoxOilInterval(orgProfile.gearBoxOilIntervalKM !== undefined && orgProfile.gearBoxOilIntervalKM !== null ? orgProfile.gearBoxOilIntervalKM : '');
+      setRadiatorInterval(orgProfile.radiatorIntervalKM !== undefined && orgProfile.radiatorIntervalKM !== null ? orgProfile.radiatorIntervalKM : '');
+      setPinpushInterval(orgProfile.pinpushIntervalKM !== undefined && orgProfile.pinpushIntervalKM !== null ? orgProfile.pinpushIntervalKM : '');
+      setWheelGreaseInterval(orgProfile.wheelGreaseIntervalKM !== undefined && orgProfile.wheelGreaseIntervalKM !== null ? orgProfile.wheelGreaseIntervalKM : '');
+      setBrokeragePolicy(orgProfile.brokeragePolicy || 'DriverBears');
+    }
+  }, [orgProfile]);
+
+  const handleSaveOrgDefaults = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgProfile || !onUpdateOrgProfile) return;
+    onUpdateOrgProfile({
+      ...orgProfile,
+      engineOilIntervalKM: engineOilInterval !== '' ? Number(engineOilInterval) : undefined,
+      crownOilIntervalKM: crownOilInterval !== '' ? Number(crownOilInterval) : undefined,
+      gearBoxOilIntervalKM: gearBoxOilInterval !== '' ? Number(gearBoxOilInterval) : undefined,
+      radiatorIntervalKM: radiatorInterval !== '' ? Number(radiatorInterval) : undefined,
+      pinpushIntervalKM: pinpushInterval !== '' ? Number(pinpushInterval) : undefined,
+      wheelGreaseIntervalKM: wheelGreaseInterval !== '' ? Number(wheelGreaseInterval) : undefined,
+      brokeragePolicy: brokeragePolicy,
+    });
+    showNotification("Organization defaults updated successfully!");
+  };
+
   const isBackendOrg = currentUserOrgId === 'org_backend';
   const currentUserPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim());
   const currentUserRole = currentUserPerm?.role || 'Custom';
@@ -271,6 +311,111 @@ export default function UserAccessControl({
           </button>
         </div>
       </div>
+
+      {/* ORGANIZATION DEFAULT MAINTENANCE SETTINGS (ORG DEFAULTS) */}
+      {orgProfile && !isBackendOrg && (
+        <div className="mb-6 p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 text-slate-800">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <Shield className="w-4 h-4 text-blue-600 animate-pulse" />
+            <h3 className="text-xs font-bold text-blue-650 uppercase tracking-widest">
+              Organization Default Maintenance Settings (Org Defaults)
+            </h3>
+          </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Define the organization-wide default service intervals (in kilometers). These thresholds are used across your fleet registry to warn about due maintenance milestones. Individual vehicles can override these defaults in the Truck Registry specs form.
+          </p>
+          <form onSubmit={handleSaveOrgDefaults} className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="input-org-engine-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Engine Oil Change (KM)</label>
+                <input
+                  id="input-org-engine-oil-interval"
+                  type="number"
+                  placeholder="e.g. 15000"
+                  value={engineOilInterval}
+                  onChange={(e) => setEngineOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="input-org-crown-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Crown Oil Change (KM)</label>
+                <input
+                  id="input-org-crown-oil-interval"
+                  type="number"
+                  placeholder="e.g. 40000"
+                  value={crownOilInterval}
+                  onChange={(e) => setCrownOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="input-org-gearbox-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Gear Box Oil Change (KM)</label>
+                <input
+                  id="input-org-gearbox-oil-interval"
+                  type="number"
+                  placeholder="e.g. 40000"
+                  value={gearBoxOilInterval}
+                  onChange={(e) => setGearBoxOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="input-org-radiator-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Radiator Service (KM)</label>
+                <input
+                  id="input-org-radiator-interval"
+                  type="number"
+                  placeholder="e.g. 20000"
+                  value={radiatorInterval}
+                  onChange={(e) => setRadiatorInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="input-org-pinpush-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Pinpush Grease (KM)</label>
+                <input
+                  id="input-org-pinpush-interval"
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={pinpushInterval}
+                  onChange={(e) => setPinpushInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="input-org-wheel-grease-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Wheel Grease (KM)</label>
+                <input
+                  id="input-org-wheel-grease-interval"
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={wheelGreaseInterval}
+                  onChange={(e) => setWheelGreaseInterval(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="select-org-brokerage-policy" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Office Brokerage default policy</label>
+                <select
+                  id="select-org-brokerage-policy"
+                  value={brokeragePolicy}
+                  onChange={(e) => setBrokeragePolicy(e.target.value as 'OrgBears' | 'DriverBears')}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                >
+                  <option value="DriverBears">Collect/Recover from Driver (Policy 2 - Default)</option>
+                  <option value="OrgBears">Bear/Absorb as Org Expense (Policy 1)</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
+              >
+                Save Org Defaults
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showAddForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-4 md:p-5 bg-slate-50 rounded-lg border border-slate-200 animate-fade-in space-y-4">
