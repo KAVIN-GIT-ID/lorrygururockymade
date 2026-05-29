@@ -131,4 +131,88 @@ describe('TripForm Component Tests', () => {
       ])
     }));
   });
+
+  it('should render fuel cards from organization profile as options in Account Mode dropdown', () => {
+    const mockOrgProfileWithCards = {
+      organizationId: 'org_test',
+      organizationName: 'Test Logistics',
+      ownerEmail: 'admin@company.com',
+      status: 'Active' as const,
+      maxTrucksAllowed: 5,
+      truckRequests: [],
+      fuelCards: [
+        {
+          id: 'fc-1',
+          cardName: 'HPCL primary card',
+          cardNumber: '123456789012',
+          status: 'Active' as const
+        }
+      ]
+    };
+
+    render(
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={vi.fn()}
+        orgProfile={mockOrgProfileWithCards}
+      />
+    );
+
+    // Look for option text
+    expect(screen.getByText('HPCL primary card (Fuel Card)')).toBeInTheDocument();
+  });
+
+  it('should auto-calculate fuel amounts and rates and allow adding fuel logs', () => {
+    render(
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={vi.fn()}
+        orgProfile={undefined}
+      />
+    );
+
+    const litersInput = screen.getByLabelText(/Liters/i) as HTMLInputElement;
+    const rateInput = screen.getByLabelText(/Rate \/ Lit/i) as HTMLInputElement;
+    const amountInput = screen.getByLabelText(/Total Amount \(₹\)/i) as HTMLInputElement;
+
+    // 1. Liters and Rate entered -> Amount calculated
+    fireEvent.change(litersInput, { target: { value: '50' } });
+    fireEvent.change(rateInput, { target: { value: '100' } });
+    expect(amountInput.value).toBe('5000');
+
+    // Add fuel log
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Fuel/i }));
+
+    // Reset inputs
+    expect(litersInput.value).toBe('');
+    expect(rateInput.value).toBe('');
+    expect(amountInput.value).toBe('');
+
+    // 2. Liters and Amount entered -> Rate calculated
+    fireEvent.change(litersInput, { target: { value: '40' } });
+    fireEvent.change(amountInput, { target: { value: '3800' } });
+    expect(rateInput.value).toBe('95');
+
+    // Add fuel log
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Fuel/i }));
+
+    // 3. Only Amount entered -> Rate and Liters empty -> Should allow adding
+    fireEvent.change(amountInput, { target: { value: '2500' } });
+    expect(litersInput.value).toBe('');
+    expect(rateInput.value).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Fuel/i }));
+  });
 });

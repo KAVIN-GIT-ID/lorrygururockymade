@@ -643,136 +643,203 @@ export default function DriverMaster({
               t.subTrips.forEach(st => {
                 const segDate = st.loadingDate || t.startDate;
 
-                // 1. Loading
-                const loadAmt = Number(st.loadingExpense) || 0;
-                const loadDF = st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                const loadB = st.loadingBears || 'Org';
-                if (loadAmt > 0) {
-                  if (loadDF === 'DriverDirect' && loadB === 'Org') {
+                if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+                  st.cargoExpenses.forEach(exp => {
+                    const amount = Number(exp.amount) || 0;
+                    const isPaidByDriver = !!exp.paidByDriver;
+                    
+                    if (exp.bears === 'Org' || exp.bears === 'Office') {
+                      if (isPaidByDriver) {
+                        computedTripDriverCredits.push({
+                          id: `seg-exp-${exp.id}`,
+                          date: segDate,
+                          type: `Cargo ${exp.expenseType} Expense`,
+                          amount: amount,
+                          notes: `${exp.expenseType} expense paid by Driver (${exp.bears} bears: ₹${amount}) at ${st.officeName}`,
+                          reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
+                          fromMode: 'Driver Advance Hand cash',
+                          isDirect: false,
+                          badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
+                        });
+                      }
+                    } else if (exp.bears === 'Driver') {
+                      if (!isPaidByDriver) {
+                        recoveryItems.push({
+                          id: `seg-exp-recovery-${exp.id}`,
+                          date: segDate,
+                          type: `Driver Recovery (${exp.expenseType})`,
+                          amount: amount,
+                          notes: `${exp.expenseType} deduction from rental (Driver bears: ₹${amount}) at ${st.officeName}`,
+                          reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
+                          fromMode: 'Driver Recovery Debit',
+                          isDirect: false,
+                          badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
+                        });
+                      }
+                    }
+                  });
+                } else {
+                  // Legacy fallback
+                  // 1. Loading
+                  const loadAmt = Number(st.loadingExpense) || 0;
+                  const loadBearsOrg = st.loadingBearsOrg !== undefined ? Number(st.loadingBearsOrg) : ((st.loadingBears || 'Org') === 'Org' ? loadAmt : 0);
+                  const loadBearsDriver = st.loadingBearsDriver !== undefined ? Number(st.loadingBearsDriver) : ((st.loadingBears || 'Org') === 'Driver' ? loadAmt : 0);
+                  const loadPaid = !!st.loadingPaidByDriver;
+                  if (loadPaid && loadBearsOrg > 0) {
                     computedTripDriverCredits.push({
                       id: `seg-load-${st.id}`,
                       date: segDate,
                       type: 'Cargo Loading Expense',
-                      amount: loadAmt,
-                      notes: `Loading expense paid by Driver (Org bears) at ${st.officeName}`,
+                      amount: loadBearsOrg,
+                      notes: `Loading expense paid by Driver (Org bears: ₹${loadBearsOrg}) at ${st.officeName}`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Advance Hand cash',
                       isDirect: false,
                       badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
                     });
-                  } else if (loadDF === 'OrgRental' && loadB === 'Driver') {
+                  } else if (!loadPaid && loadBearsDriver > 0) {
                     recoveryItems.push({
                       id: `seg-load-recovery-${st.id}`,
                       date: segDate,
                       type: 'Driver Recovery (Loading)',
-                      amount: loadAmt,
-                      notes: `Loading deduction from rental (Driver bears) at ${st.officeName}`,
+                      amount: loadBearsDriver,
+                      notes: `Loading deduction from rental (Driver bears: ₹${loadBearsDriver}) at ${st.officeName}`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Recovery Debit',
                       isDirect: false,
                       badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
                     });
                   }
-                }
 
-                // 2. Unloading
-                const unloadAmt = Number(st.unloadingExpense) || 0;
-                const unloadDF = st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                const unloadB = st.unloadingBears || 'Org';
-                if (unloadAmt > 0) {
-                  if (unloadDF === 'DriverDirect' && unloadB === 'Org') {
+                  // 2. Unloading
+                  const unloadAmt = Number(st.unloadingExpense) || 0;
+                  const unloadBearsOrg = st.unloadingBearsOrg !== undefined ? Number(st.unloadingBearsOrg) : ((st.unloadingBears || 'Org') === 'Org' ? unloadAmt : 0);
+                  const unloadBearsDriver = st.unloadingBearsDriver !== undefined ? Number(st.unloadingBearsDriver) : ((st.unloadingBears || 'Org') === 'Driver' ? unloadAmt : 0);
+                  const unloadPaid = !!st.unloadingPaidByDriver;
+                  if (unloadPaid && unloadBearsOrg > 0) {
                     computedTripDriverCredits.push({
                       id: `seg-unload-${st.id}`,
                       date: segDate,
                       type: 'Cargo Unload Expense',
-                      amount: unloadAmt,
-                      notes: `Unloading expense paid by Driver (Org bears)`,
+                      amount: unloadBearsOrg,
+                      notes: `Unloading expense paid by Driver (Org bears: ₹${unloadBearsOrg})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Advance Hand cash',
                       isDirect: false,
                       badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
                     });
-                  } else if (unloadDF === 'OrgRental' && unloadB === 'Driver') {
+                  } else if (!unloadPaid && unloadBearsDriver > 0) {
                     recoveryItems.push({
                       id: `seg-unload-recovery-${st.id}`,
                       date: segDate,
                       type: 'Driver Recovery (Unloading)',
-                      amount: unloadAmt,
-                      notes: `Unloading deduction from rental (Driver bears)`,
+                      amount: unloadBearsDriver,
+                      notes: `Unloading deduction from rental (Driver bears: ₹${unloadBearsDriver})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Recovery Debit',
                       isDirect: false,
                       badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
                     });
                   }
-                }
 
-                // 3. Brokerage
-                const brokerageAmt = Number(st.brokerageExpense) || 0;
-                const brokerageDF = st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
-                const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-                const brokerageB = st.brokerageBears || defaultBears;
-                if (brokerageAmt > 0) {
-                  if (brokerageDF === 'DriverDirect' && brokerageB === 'Org') {
+                  // 3. Brokerage
+                  const brokerageAmt = Number(st.brokerageExpense) || 0;
+                  const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+                  const brokerageBearsOrg = st.brokerageBearsOrg !== undefined ? Number(st.brokerageBearsOrg) : ((st.brokerageBears || defaultBears) === 'Org' ? brokerageAmt : 0);
+                  const brokerageBearsDriver = st.brokerageBearsDriver !== undefined ? Number(st.brokerageBearsDriver) : ((st.brokerageBears || defaultBears) === 'Driver' ? brokerageAmt : 0);
+                  const brokeragePaid = !!st.brokeragePaidByDriver;
+                  if (brokeragePaid && brokerageBearsOrg > 0) {
                     computedTripDriverCredits.push({
                       id: `seg-brokerage-${st.id}`,
                       date: segDate,
                       type: 'Cargo Brokerage Expense',
-                      amount: brokerageAmt,
-                      notes: `Brokerage expense paid by Driver (Org bears)`,
+                      amount: brokerageBearsOrg,
+                      notes: `Brokerage expense paid by Driver (Org bears: ₹${brokerageBearsOrg})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Advance Hand cash',
                       isDirect: false,
                       badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
                     });
-                  } else if (brokerageDF === 'OrgRental' && brokerageB === 'Driver') {
+                  } else if (!brokeragePaid && brokerageBearsDriver > 0) {
                     recoveryItems.push({
                       id: `seg-brokerage-recovery-${st.id}`,
                       date: segDate,
                       type: 'Driver Recovery (Brokerage)',
-                      amount: brokerageAmt,
-                      notes: `Brokerage deduction from rental (Driver bears)`,
+                      amount: brokerageBearsDriver,
+                      notes: `Brokerage deduction from rental (Driver bears: ₹${brokerageBearsDriver})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Recovery Debit',
                       isDirect: false,
                       badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
                     });
                   }
-                }
 
-                // 4. Crossing
-                const crossingAmt = Number(st.crossingExpense) || 0;
-                const crossingDF = st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                const crossingB = st.crossingBears || 'Org';
-                if (crossingAmt > 0) {
-                  if (crossingDF === 'DriverDirect' && crossingB === 'Org') {
+                  // 4. Crossing
+                  const crossingAmt = Number(st.crossingExpense) || 0;
+                  const crossingBearsOrg = st.crossingBearsOrg !== undefined ? Number(st.crossingBearsOrg) : ((st.crossingBears || 'Org') === 'Org' ? crossingAmt : 0);
+                  const crossingBearsDriver = st.crossingBearsDriver !== undefined ? Number(st.crossingBearsDriver) : ((st.crossingBears || 'Org') === 'Driver' ? crossingAmt : 0);
+                  const crossingPaid = !!st.crossingPaidByDriver;
+                  if (crossingPaid && crossingBearsOrg > 0) {
                     computedTripDriverCredits.push({
                       id: `seg-crossing-${st.id}`,
                       date: segDate,
                       type: 'Cargo Crossing Expense',
-                      amount: crossingAmt,
-                      notes: `Crossing expense paid by Driver (Org bears)`,
+                      amount: crossingBearsOrg,
+                      notes: `Crossing expense paid by Driver (Org bears: ₹${crossingBearsOrg})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Advance Hand cash',
                       isDirect: false,
                       badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
                     });
-                  } else if (crossingDF === 'OrgRental' && crossingB === 'Driver') {
+                  } else if (!crossingPaid && crossingBearsDriver > 0) {
                     recoveryItems.push({
                       id: `seg-crossing-recovery-${st.id}`,
                       date: segDate,
                       type: 'Driver Recovery (Crossing)',
-                      amount: crossingAmt,
-                      notes: `Crossing deduction from rental (Driver bears)`,
+                      amount: crossingBearsDriver,
+                      notes: `Crossing deduction from rental (Driver bears: ₹${crossingBearsDriver})`,
                       reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                       fromMode: 'Driver Recovery Debit',
                       isDirect: false,
                       badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
                     });
                   }
+
+                  // 5. RMC
+                  const rmcAmt = Number(st.rmcExpense) || 0;
+                  const rmcBearsOrg = st.rmcBearsOrg !== undefined ? Number(st.rmcBearsOrg) : ((st.rmcBears || 'Org') === 'Org' ? rmcAmt : 0);
+                  const rmcBearsDriver = st.rmcBearsDriver !== undefined ? Number(st.rmcBearsDriver) : ((st.rmcBears || 'Org') === 'Driver' ? rmcAmt : 0);
+                  const rmcPaid = !!st.rmcPaidByDriver;
+                  if (rmcAmt > 0) {
+                    if (rmcPaid && rmcBearsOrg > 0) {
+                      computedTripDriverCredits.push({
+                        id: `seg-rmc-${st.id}`,
+                        date: segDate,
+                        type: 'RMC Expense',
+                        amount: rmcBearsOrg,
+                        notes: `RMC expense paid by Driver (Org bears: ₹${rmcBearsOrg})`,
+                        reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
+                        fromMode: 'Driver Advance Hand cash',
+                        isDirect: false,
+                        badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
+                      });
+                    } else if (!rmcPaid && rmcBearsDriver > 0) {
+                      recoveryItems.push({
+                        id: `seg-rmc-recovery-${st.id}`,
+                        date: segDate,
+                        type: 'Driver Recovery (RMC)',
+                        amount: rmcBearsDriver,
+                        notes: `RMC deduction from rental (Driver bears: ₹${rmcBearsDriver})`,
+                        reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
+                        fromMode: 'Driver Recovery Debit',
+                        isDirect: false,
+                        badgeStyle: 'bg-rose-50 text-rose-800 border-rose-200'
+                      });
+                    }
+                  }
                 }
 
-                // 5. Driver Wages
+                // 6. Driver Wages
                 if (st.driverWages && st.driverWages > 0) {
                   computedTripDriverCredits.push({
                     id: `seg-wages-${st.id}`,

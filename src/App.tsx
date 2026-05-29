@@ -1542,7 +1542,7 @@ export default function App() {
 
   useEffect(() => {
     loadDashboardData(activeMonth, activeYear);
-  }, [activeMonth, activeYear, currentUserOrgId]);
+  }, [activeMonth, activeYear, currentUserOrgId, trips, expenses]);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -2129,10 +2129,10 @@ export default function App() {
 
         // Detect approval / rejection transitions for notification & audit logging
         migrated.forEach(cloudTruck => {
-          const isRelevantOrg = orgId === 'org_backend' || cloudTruck.organizationId === orgId;
+          const isRelevantOrg = orgId !== 'org_backend' && cloudTruck.organizationId === orgId;
           if (isRelevantOrg) {
             const localTruck = trucks.find(t =>
-              (orgId === 'org_backend' || t.organizationId === orgId) &&
+              t.organizationId === orgId &&
               t.truckNo.toUpperCase() === cloudTruck.truckNo.toUpperCase()
             );
             if (localTruck) {
@@ -3861,7 +3861,7 @@ export default function App() {
 
   const orgAuditLogs = auditLogs
     .filter(l =>
-      (currentUserOrgId === 'org_backend' || l.organizationId === currentUserOrgId) &&
+      l.organizationId === currentUserOrgId &&
       canUserViewCategory(l.category, l.reference, l.details)
     )
     .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
@@ -4495,6 +4495,7 @@ export default function App() {
               canEditTrips={currentUserRights.canEditTrips}
               canDeleteTrips={currentUserRights.canDeleteTrips}
               organizationId={currentUserOrgId}
+              onSaveTrips={saveTrips}
             />
           )}
 
@@ -4593,7 +4594,7 @@ export default function App() {
 
           {activeTab === 'AUDIT' && currentUserRights.isAdmin && (
             <AuditLogView
-              logs={orgAuditLogs}
+              logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
               onClearLogs={handleClearAuditLogs}
               confirmAction={confirmAction}
               organizationProfiles={organizationProfiles}

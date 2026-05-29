@@ -127,6 +127,7 @@ export default function Dashboard({
     const truckTrips = allTrips.filter(t => t.truckNo === tNo);
     let totalIncome = 0;
     let totalPaid = 0;
+    let totalBalance = 0;
     const officesUsed = new Set<string>();
     const detailsList: { office: string; income: number; advance: number; balance: number; date: string }[] = [];
 
@@ -137,9 +138,46 @@ export default function Dashboard({
         (t.subTrips || []).forEach(st => {
           if (st.officeName) officesUsed.add(st.officeName);
           
+          // Calculate segment-specific OrgRental deductions & Office Bears
+          let segDeductions = 0;
+          let segOfficeBears = 0;
+
+          if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+            st.cargoExpenses.forEach(exp => {
+              const amt = Number(exp.amount) || 0;
+              if (exp.deductedFrom === 'OrgRental') {
+                segDeductions += amt;
+              }
+              if (exp.bears === 'Office') {
+                segOfficeBears += amt;
+              }
+            });
+          } else {
+            // Legacy fallbacks for segment
+            const loadAmt = Number(st.loadingExpense) || 0;
+            const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
+            if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
+
+            const unloadAmt = Number(st.unloadingExpense) || 0;
+            const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
+            if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
+
+            const brokerageAmt = Number(st.brokerageExpense) || 0;
+            const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
+            if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
+
+            const crossingAmt = Number(st.crossingExpense) || 0;
+            const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
+            if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
+
+            const rmcAmt = Number(st.rmcExpense) || 0;
+            const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
+            if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+          }
+
           // Calculate segment-specific payments if possible (subTripId matches)
           const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
-          const segBalance = st.income - segPayments;
+          const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
 
           detailsList.push({
             office: st.officeName || 'Indirect/General',
@@ -156,17 +194,18 @@ export default function Dashboard({
           const share = Math.round(unassignedPayments / detailsList.length);
           detailsList.forEach(item => {
             item.advance += share;
-            item.balance = Math.max(0, item.income - item.advance);
+            item.balance = Math.max(0, item.balance - share);
           });
         }
 
         totalIncome += m.income;
         totalPaid += m.paymentsReceived;
+        totalBalance += m.outstandingBalance;
       }
     });
 
     const officeList = Array.from(officesUsed).join(', ') || 'N/A';
-    const totalBalance = Math.max(0, totalIncome - totalPaid);
+    totalBalance = Math.max(0, totalBalance);
 
     return {
       officeList,

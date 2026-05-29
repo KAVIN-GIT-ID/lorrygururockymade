@@ -238,4 +238,112 @@ describe('DriverMaster Component Tests', () => {
     // Verify recovery debit row renders
     expect(screen.getByText('Driver Recovery (Brokerage)')).toBeInTheDocument();
   });
+
+  it('should calculate live driver settlement ledger with dynamic cargo expenses correctly', () => {
+    const dynamicCargoTrips: TripEntry[] = [
+      {
+        id: 't-3',
+        tripNo: 'TRIP-101',
+        startDate: '2026-05-20',
+        endDate: '2026-05-22',
+        truckNo: 'MH-12-1234',
+        driverName: 'Karan Singh',
+        status: 'Completed',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: [
+          {
+            id: 'st-3',
+            loadingDate: '2026-05-20',
+            routeFrom: 'Mumbai',
+            routeTo: 'Pune',
+            officeName: 'Mumbai HQ',
+            income: 40000,
+            driverWages: 3000, // Wages credited to driver
+            loadingExpense: 0,
+            unloadingExpense: 0,
+            startingKM: 0,
+            endingKM: 0,
+            cargoExpenses: [
+              {
+                id: 'exp-dyn-1',
+                expenseType: 'Loading',
+                amount: 1200,
+                paidByDriver: true,
+                deductedFrom: 'DriverDirect',
+                bears: 'Org'
+              },
+              {
+                id: 'exp-dyn-2',
+                expenseType: 'Unloading',
+                amount: 800,
+                paidByDriver: false,
+                deductedFrom: 'OrgRental',
+                bears: 'Driver'
+              },
+              {
+                id: 'exp-dyn-3',
+                expenseType: 'Brokerage',
+                amount: 1500,
+                paidByDriver: true,
+                deductedFrom: 'DriverDirect',
+                bears: 'Office'
+              }
+            ]
+          }
+        ],
+        advances: [
+          {
+            id: 'adv-3',
+            amount: 1000,
+            date: '2026-05-20',
+            fromAccountId: 'acc-1',
+            receivedByDriverDirectly: true,
+          }
+        ],
+        payments: []
+      }
+    ];
+
+    render(
+      <DriverMaster
+        drivers={mockDrivers}
+        trips={dynamicCargoTrips}
+        expenses={[]}
+        accounts={mockAccounts}
+        onAddDriver={vi.fn()}
+        onUpdateDriver={vi.fn()}
+        onDeleteDriver={vi.fn()}
+      />
+    );
+
+    // Select driver
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dr-1' } });
+
+    // Math:
+    // Credits:
+    //   driverWages = 3000
+    //   Loading (Org bears, Driver paid) = 1200
+    //   Brokerage (Office bears, Driver paid) = 1500
+    //   Total Credits = 3000 + 1200 + 1500 = 5700
+    // Debits (Recoveries):
+    //   Unloading (Driver bears, not paid by driver) = 800
+    // Total Advances = 1000
+    // Net outstanding = 5700 - (1000 + 800) = 3900 (Payable to driver)
+    expect(screen.getByText('Total Expenses Paid by Driver')).toBeInTheDocument();
+    expect(screen.getByText('₹5,700')).toBeInTheDocument();
+
+    expect(screen.getByText('Total Advances Received')).toBeInTheDocument();
+    expect(screen.getByText('₹1,000')).toBeInTheDocument();
+
+    expect(screen.getByText('Net Outstanding Settlement')).toBeInTheDocument();
+    expect(screen.getByText('₹3,900')).toBeInTheDocument();
+    expect(screen.getByText(/Payable to Driver/i)).toBeInTheDocument();
+
+    // Verify recovery debit row renders
+    expect(screen.getByText('Driver Recovery (Unloading)')).toBeInTheDocument();
+    // Verify credit rows render
+    expect(screen.getByText('Cargo Loading Expense')).toBeInTheDocument();
+    expect(screen.getByText('Cargo Brokerage Expense')).toBeInTheDocument();
+  });
 });

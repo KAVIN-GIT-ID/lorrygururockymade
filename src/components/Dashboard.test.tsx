@@ -197,4 +197,68 @@ describe('Dashboard Component Tests', () => {
     expect(screen.getByText('Total Outstanding')).toBeInTheDocument();
     expect(screen.getAllByText('₹40,000')[0]).toBeInTheDocument();
   });
+
+  it('should not deduct crossing expense from outstanding balance if crossingDeductedFrom is DriverDirect', () => {
+    const tripWithDriverDirectCrossing: TripEntry = {
+      id: 'trip-crossing-1',
+      tripNo: 'TRIP-CROSS-1',
+      startDate: '2026-05-10',
+      endDate: '2026-05-15',
+      truckNo: 'MH-12-PQ-1234',
+      driverName: 'Ramesh Kumar',
+      status: 'Completed',
+      startingKM: 0,
+      endingKM: 0,
+      subTrips: [
+        {
+          id: 'st-crossing-1',
+          loadingDate: '2026-05-10',
+          routeFrom: 'Mumbai',
+          routeTo: 'Pune',
+          officeName: 'Mumbai HQ',
+          income: 50000,
+          loadingExpense: 0,
+          unloadingExpense: 0,
+          crossingExpense: 2500,
+          crossingDeductedFrom: 'DriverDirect',
+          driverWages: 0,
+          startingKM: 0,
+          endingKM: 0
+        }
+      ],
+      payments: [
+        {
+          id: 'p-crossing-1',
+          amount: 40000,
+          receivedBy: 'acc-1',
+          date: '2026-05-11',
+        }
+      ]
+    };
+
+    render(
+      <Dashboard
+        trips={[tripWithDriverDirectCrossing]}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        activeMonth="ALL"
+        activeYear="2026"
+        setActiveMonth={() => {}}
+        setActiveYear={() => {}}
+        currentUserRights={{
+          isAdmin: true,
+          isApproved: true,
+          organizationId: 'org-1',
+          canViewTrips: true,
+          canViewExpenses: true,
+        } as any}
+      />
+    );
+
+    // Outstanding = income (50000) - totalOrgRentalDeductions (0 because crossing is DriverDirect) - payments (40000) = 10,000
+    // If crossing was deducted from rental, outstanding would be 50000 - 2500 - 40000 = 7,500
+    expect(screen.getByText('Total Outstanding')).toBeInTheDocument();
+    expect(screen.getAllByText('₹10,000')[0]).toBeInTheDocument();
+  });
 });

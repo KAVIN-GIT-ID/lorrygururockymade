@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile } from '../types';
+import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense } from '../types';
 import { indianCities } from './indianCities';
 import { 
   X, Calculator, Calendar, Landmark, Coins, Plus, Trash2, Edit2, 
@@ -19,6 +19,219 @@ interface TripFormProps {
   canViewDrivers?: boolean;
   orgProfile?: OrganizationProfile;
 }
+
+export const importLegacyCargoExpenses = (s: SubTrip, orgProfile?: OrganizationProfile): CargoExpense[] => {
+  const list: CargoExpense[] = [];
+  const genId = (prefix: string) => prefix + '-' + Math.random().toString(36).substring(2, 7);
+
+  // 1. Loading
+  if (s.loadingExpense && Number(s.loadingExpense) > 0) {
+    const amt = Number(s.loadingExpense);
+    const isPaidByDriver = s.loadingPaidByDriver !== undefined ? s.loadingPaidByDriver : true;
+    const deductedFrom = s.loadingDeductedFrom || 'DriverDirect';
+    if (s.loadingBearsOrg !== undefined || s.loadingBearsDriver !== undefined) {
+      const orgAmt = Number(s.loadingBearsOrg) || 0;
+      const drvAmt = Number(s.loadingBearsDriver) || 0;
+      if (orgAmt > 0) {
+        list.push({
+          id: genId('load-org'),
+          expenseType: 'Loading',
+          amount: orgAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Org'
+        });
+      }
+      if (drvAmt > 0) {
+        list.push({
+          id: genId('load-drv'),
+          expenseType: 'Loading',
+          amount: drvAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Driver'
+        });
+      }
+    } else {
+      const bears = s.loadingBears || 'Org';
+      list.push({
+        id: genId('load'),
+        expenseType: 'Loading',
+        amount: amt,
+        paidByDriver: isPaidByDriver,
+        deductedFrom,
+        bears: bears as 'Org' | 'Driver' | 'Office'
+      });
+    }
+  }
+
+  // 2. Unloading
+  if (s.unloadingExpense && Number(s.unloadingExpense) > 0) {
+    const amt = Number(s.unloadingExpense);
+    const isPaidByDriver = s.unloadingPaidByDriver !== undefined ? s.unloadingPaidByDriver : true;
+    const deductedFrom = s.unloadingDeductedFrom || 'DriverDirect';
+    if (s.unloadingBearsOrg !== undefined || s.unloadingBearsDriver !== undefined) {
+      const orgAmt = Number(s.unloadingBearsOrg) || 0;
+      const drvAmt = Number(s.unloadingBearsDriver) || 0;
+      if (orgAmt > 0) {
+        list.push({
+          id: genId('unload-org'),
+          expenseType: 'Unloading',
+          amount: orgAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Org'
+        });
+      }
+      if (drvAmt > 0) {
+        list.push({
+          id: genId('unload-drv'),
+          expenseType: 'Unloading',
+          amount: drvAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Driver'
+        });
+      }
+    } else {
+      const bears = s.unloadingBears || 'Org';
+      list.push({
+        id: genId('unload'),
+        expenseType: 'Unloading',
+        amount: amt,
+        paidByDriver: isPaidByDriver,
+        deductedFrom,
+        bears: bears as 'Org' | 'Driver' | 'Office'
+      });
+    }
+  }
+
+  // 3. Brokerage
+  if (s.brokerageExpense && Number(s.brokerageExpense) > 0) {
+    const amt = Number(s.brokerageExpense);
+    const isPaidByDriver = s.brokeragePaidByDriver !== undefined ? s.brokeragePaidByDriver : true;
+    const deductedFrom = s.brokerageDeductedFrom || 'DriverDirect';
+    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+    if (s.brokerageBearsOrg !== undefined || s.brokerageBearsDriver !== undefined) {
+      const orgAmt = Number(s.brokerageBearsOrg) || 0;
+      const drvAmt = Number(s.brokerageBearsDriver) || 0;
+      if (orgAmt > 0) {
+        list.push({
+          id: genId('broke-org'),
+          expenseType: 'Brokerage',
+          amount: orgAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Org'
+        });
+      }
+      if (drvAmt > 0) {
+        list.push({
+          id: genId('broke-drv'),
+          expenseType: 'Brokerage',
+          amount: drvAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Driver'
+        });
+      }
+    } else {
+      const bears = s.brokerageBears || defaultBears;
+      list.push({
+        id: genId('broke'),
+        expenseType: 'Brokerage',
+        amount: amt,
+        paidByDriver: isPaidByDriver,
+        deductedFrom,
+        bears: bears as 'Org' | 'Driver' | 'Office'
+      });
+    }
+  }
+
+  // 4. Crossing
+  if (s.crossingExpense && Number(s.crossingExpense) > 0) {
+    const amt = Number(s.crossingExpense);
+    const isPaidByDriver = s.crossingPaidByDriver !== undefined ? s.crossingPaidByDriver : true;
+    const deductedFrom = s.crossingDeductedFrom || 'DriverDirect';
+    if (s.crossingBearsOrg !== undefined || s.crossingBearsDriver !== undefined) {
+      const orgAmt = Number(s.crossingBearsOrg) || 0;
+      const drvAmt = Number(s.crossingBearsDriver) || 0;
+      if (orgAmt > 0) {
+        list.push({
+          id: genId('cross-org'),
+          expenseType: 'Crossing',
+          amount: orgAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Org'
+        });
+      }
+      if (drvAmt > 0) {
+        list.push({
+          id: genId('cross-drv'),
+          expenseType: 'Crossing',
+          amount: drvAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Driver'
+        });
+      }
+    } else {
+      const bears = s.crossingBears || 'Org';
+      list.push({
+        id: genId('cross'),
+        expenseType: 'Crossing',
+        amount: amt,
+        paidByDriver: isPaidByDriver,
+        deductedFrom,
+        bears: bears as 'Org' | 'Driver' | 'Office'
+      });
+    }
+  }
+
+  // 5. RMC
+  if (s.rmcExpense && Number(s.rmcExpense) > 0) {
+    const amt = Number(s.rmcExpense);
+    const isPaidByDriver = s.rmcPaidByDriver !== undefined ? s.rmcPaidByDriver : true;
+    const deductedFrom = s.rmcDeductedFrom || 'DriverDirect';
+    if (s.rmcBearsOrg !== undefined || s.rmcBearsDriver !== undefined) {
+      const orgAmt = Number(s.rmcBearsOrg) || 0;
+      const drvAmt = Number(s.rmcBearsDriver) || 0;
+      if (orgAmt > 0) {
+        list.push({
+          id: genId('rmc-org'),
+          expenseType: 'RMC',
+          amount: orgAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Org'
+        });
+      }
+      if (drvAmt > 0) {
+        list.push({
+          id: genId('rmc-drv'),
+          expenseType: 'RMC',
+          amount: drvAmt,
+          paidByDriver: isPaidByDriver,
+          deductedFrom,
+          bears: 'Driver'
+        });
+      }
+    } else {
+      const bears = s.rmcBears || 'Org';
+      list.push({
+        id: genId('rmc'),
+        expenseType: 'RMC',
+        amount: amt,
+        paidByDriver: isPaidByDriver,
+        deductedFrom,
+        bears: bears as 'Org' | 'Driver' | 'Office'
+      });
+    }
+  }
+
+  return list;
+};
 
 export default function TripForm({
   isOpen,
@@ -73,6 +286,7 @@ export default function TripForm({
   const [newFuelDate, setNewFuelDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [newFuelLiters, setNewFuelLiters] = useState<number | ''>('');
   const [newFuelRate, setNewFuelRate] = useState<number | ''>('');
+  const [newFuelAmount, setNewFuelAmount] = useState<number | ''>('');
   const [newFuelShop, setNewFuelShop] = useState('');
   const [newFuelPaymentMode, setNewFuelPaymentMode] = useState('');
 
@@ -85,27 +299,11 @@ export default function TripForm({
   const [stRouteFrom, setStRouteFrom] = useState('');
   const [stRouteTo, setStRouteTo] = useState('');
   const [stIncome, setStIncome] = useState<number>(0);
-  const [stLoadingExpense, setStLoadingExpense] = useState<number>(0);
-  const [stUnloadingExpense, setStUnloadingExpense] = useState<number>(0);
-  const [stLoadingPaidByDriver, setStLoadingPaidByDriver] = useState<boolean>(true);
-  const [stUnloadingPaidByDriver, setStUnloadingPaidByDriver] = useState<boolean>(true);
-  const [stBrokerageExpense, setStBrokerageExpense] = useState<number>(0);
-  const [stBrokeragePaidByDriver, setStBrokeragePaidByDriver] = useState<boolean>(true);
-
-  // New settlement state variables
-  const [stLoadingDeductedFrom, setStLoadingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
-  const [stLoadingBears, setStLoadingBears] = useState<'Org' | 'Driver'>('Org');
-
-  const [stUnloadingDeductedFrom, setStUnloadingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
-  const [stUnloadingBears, setStUnloadingBears] = useState<'Org' | 'Driver'>('Org');
-
-  const [stBrokerageDeductedFrom, setStBrokerageDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
-  const [stBrokerageBears, setStBrokerageBears] = useState<'Org' | 'Driver'>('Driver');
-
-  const [stCrossingExpense, setStCrossingExpense] = useState<number>(0);
-  const [stCrossingPaidByDriver, setStCrossingPaidByDriver] = useState<boolean>(true);
-  const [stCrossingDeductedFrom, setStCrossingDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
-  const [stCrossingBears, setStCrossingBears] = useState<'Org' | 'Driver'>('Org');
+  const [stCargoExpenses, setStCargoExpenses] = useState<CargoExpense[]>([]);
+  const [newCargoExpType, setNewCargoExpType] = useState<'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC'>('Loading');
+  const [newCargoExpAmount, setNewCargoExpAmount] = useState<number | ''>('');
+  const [newCargoExpDeductedFrom, setNewCargoExpDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [newCargoExpBears, setNewCargoExpBears] = useState<'Org' | 'Driver' | 'Office'>('Org');
 
   const [stDriverWages, setStDriverWages] = useState<number>(0);
   const [stStartingKM, setStStartingKM] = useState<number>(0);
@@ -266,14 +464,49 @@ export default function TripForm({
     setDieselAmount(Math.max(0, Number(dieselLiters) * Number(dieselRate)));
   }, [dieselLiters, dieselRate]);
 
+  const handleLitersChange = (val: number | '') => {
+    setNewFuelLiters(val);
+    if (val !== '' && val > 0) {
+      if (newFuelRate !== '' && newFuelRate > 0) {
+        setNewFuelAmount(Math.round(val * newFuelRate));
+      } else if (newFuelAmount !== '' && newFuelAmount > 0) {
+        setNewFuelRate(Number((newFuelAmount / val).toFixed(2)));
+      }
+    }
+  };
+
+  const handleRateChange = (val: number | '') => {
+    setNewFuelRate(val);
+    if (val !== '' && val > 0) {
+      if (newFuelLiters !== '' && newFuelLiters > 0) {
+        setNewFuelAmount(Math.round(newFuelLiters * val));
+      } else if (newFuelAmount !== '' && newFuelAmount > 0) {
+        setNewFuelLiters(Number((newFuelAmount / val).toFixed(2)));
+      }
+    }
+  };
+
+  const handleAmountChange = (val: number | '') => {
+    setNewFuelAmount(val);
+    if (val !== '' && val > 0) {
+      if (newFuelLiters !== '' && newFuelLiters > 0) {
+        setNewFuelRate(Number((val / newFuelLiters).toFixed(2)));
+      } else if (newFuelRate !== '' && newFuelRate > 0) {
+        setNewFuelLiters(Number((val / newFuelRate).toFixed(2)));
+      }
+    }
+  };
+
   const handleAddFuel = () => {
     const lts = Number(newFuelLiters) || 0;
     const rt = Number(newFuelRate) || 0;
-    if (lts <= 0 || rt <= 0) {
-      alert("Please enter valid Fuel Liters and Rate.");
+    const amt = Number(newFuelAmount) || 0;
+
+    if (amt <= 0) {
+      alert("Please enter a valid Fuel Amount.");
       return;
     }
-    const amt = Math.round(lts * rt);
+
     const f: FuelEntry = {
       id: 'fuel-' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
       date: newFuelDate,
@@ -288,6 +521,7 @@ export default function TripForm({
     // Reset inputs
     setNewFuelLiters('');
     setNewFuelRate('');
+    setNewFuelAmount('');
     setNewFuelShop('');
   };
 
@@ -326,7 +560,8 @@ export default function TripForm({
   const metrics = draftTripMetrics();
 
   // Driver spends and balance calculation (Requirement 4)
-  const calculateDriverBalance = () => {
+  // Driver spends and balance calculation (Requirement 4)
+  const calculateDriverMetrics = () => {
     // 1. Fuels paid by driver
     const fuelsDriverSpend = (fuels || []).reduce((sum, f) => {
       if (f.paymentMode === 'driver' || f.paymentMode === 'Driver') {
@@ -355,41 +590,73 @@ export default function TripForm({
     let driverRecovery = 0;
 
     (subTrips || []).forEach((st) => {
-      // Resolve Loading
-      const loadAmt = Number(st.loadingExpense) || 0;
-      const loadDF = st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-      const loadB = st.loadingBears || 'Org';
-      if (loadAmt > 0) {
-        if (loadDF === 'DriverDirect' && loadB === 'Org') subTripsDriverSpend += loadAmt;
-        if (loadDF === 'OrgRental' && loadB === 'Driver') driverRecovery += loadAmt;
-      }
+      if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+        for (const exp of st.cargoExpenses) {
+          const amount = Number(exp.amount) || 0;
+          const isPaidByDriver = !!exp.paidByDriver;
+          
+          if (exp.bears === 'Org' || exp.bears === 'Office') {
+            if (isPaidByDriver) {
+              subTripsDriverSpend += amount;
+            }
+          } else if (exp.bears === 'Driver') {
+            if (!isPaidByDriver) {
+              driverRecovery += amount;
+            }
+          }
+        }
+      } else {
+        // Legacy fallback
+        // 1. Loading
+        const loadAmt = Number(st.loadingExpense) || 0;
+        const loadBearsOrg = st.loadingBearsOrg !== undefined ? Number(st.loadingBearsOrg) : (st.loadingBears === 'Org' ? loadAmt : 0);
+        const loadBearsDriver = st.loadingBearsDriver !== undefined ? Number(st.loadingBearsDriver) : (st.loadingBears === 'Driver' ? loadAmt : 0);
+        if (st.loadingPaidByDriver) {
+          subTripsDriverSpend += loadBearsOrg;
+        } else {
+          driverRecovery += loadBearsDriver;
+        }
 
-      // Resolve Unloading
-      const unloadAmt = Number(st.unloadingExpense) || 0;
-      const unloadDF = st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-      const unloadB = st.unloadingBears || 'Org';
-      if (unloadAmt > 0) {
-        if (unloadDF === 'DriverDirect' && unloadB === 'Org') subTripsDriverSpend += unloadAmt;
-        if (unloadDF === 'OrgRental' && unloadB === 'Driver') driverRecovery += unloadAmt;
-      }
+        // 2. Unloading
+        const unloadAmt = Number(st.unloadingExpense) || 0;
+        const unloadBearsOrg = st.unloadingBearsOrg !== undefined ? Number(st.unloadingBearsOrg) : (st.unloadingBears === 'Org' ? unloadAmt : 0);
+        const unloadBearsDriver = st.unloadingBearsDriver !== undefined ? Number(st.unloadingBearsDriver) : (st.unloadingBears === 'Driver' ? unloadAmt : 0);
+        if (st.unloadingPaidByDriver) {
+          subTripsDriverSpend += unloadBearsOrg;
+        } else {
+          driverRecovery += unloadBearsDriver;
+        }
 
-      // Resolve Brokerage
-      const brokerageAmt = Number(st.brokerageExpense) || 0;
-      const brokerageDF = st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
-      const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-      const brokerageB = st.brokerageBears || defaultBears;
-      if (brokerageAmt > 0) {
-        if (brokerageDF === 'DriverDirect' && brokerageB === 'Org') subTripsDriverSpend += brokerageAmt;
-        if (brokerageDF === 'OrgRental' && brokerageB === 'Driver') driverRecovery += brokerageAmt;
-      }
+        // 3. Brokerage
+        const brokerageAmt = Number(st.brokerageExpense) || 0;
+        const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
+        const brokerageBearsOrg = st.brokerageBearsOrg !== undefined ? Number(st.brokerageBearsOrg) : ((st.brokerageBears || defaultBears) === 'Org' ? brokerageAmt : 0);
+        const brokerageBearsDriver = st.brokerageBearsDriver !== undefined ? Number(st.brokerageBearsDriver) : ((st.brokerageBears || defaultBears) === 'Driver' ? brokerageAmt : 0);
+        if (st.brokeragePaidByDriver) {
+          subTripsDriverSpend += brokerageBearsOrg;
+        } else {
+          driverRecovery += brokerageBearsDriver;
+        }
 
-      // Resolve Crossing
-      const crossingAmt = Number(st.crossingExpense) || 0;
-      const crossingDF = st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-      const crossingB = st.crossingBears || 'Org';
-      if (crossingAmt > 0) {
-        if (crossingDF === 'DriverDirect' && crossingB === 'Org') subTripsDriverSpend += crossingAmt;
-        if (crossingDF === 'OrgRental' && crossingB === 'Driver') driverRecovery += crossingAmt;
+        // 4. Crossing
+        const crossingAmt = Number(st.crossingExpense) || 0;
+        const crossingBearsOrg = st.crossingBearsOrg !== undefined ? Number(st.crossingBearsOrg) : (st.crossingBears === 'Org' ? crossingAmt : 0);
+        const crossingBearsDriver = st.crossingBearsDriver !== undefined ? Number(st.crossingBearsDriver) : (st.crossingBears === 'Driver' ? crossingAmt : 0);
+        if (st.crossingPaidByDriver) {
+          subTripsDriverSpend += crossingBearsOrg;
+        } else {
+          driverRecovery += crossingBearsDriver;
+        }
+
+        // 5. RMC
+        const rmcAmt = Number(st.rmcExpense) || 0;
+        const rmcBearsOrg = st.rmcBearsOrg !== undefined ? Number(st.rmcBearsOrg) : (st.rmcBears === 'Org' ? rmcAmt : 0);
+        const rmcBearsDriver = st.rmcBearsDriver !== undefined ? Number(st.rmcBearsDriver) : (st.rmcBears === 'Driver' ? rmcAmt : 0);
+        if (st.rmcPaidByDriver) {
+          subTripsDriverSpend += rmcBearsOrg;
+        } else {
+          driverRecovery += rmcBearsDriver;
+        }
       }
 
       // Driver wages (always credited to driver)
@@ -411,10 +678,14 @@ export default function TripForm({
     // Total received by driver
     const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
 
-    return totalDriverSpend - (totalIssuedToDriver + driverRecovery);
+    return {
+      driverBalance: totalDriverSpend - (totalIssuedToDriver + driverRecovery),
+      totalDriverSpend,
+      totalIssuedToDriver
+    };
   };
 
-  const driverBalance = calculateDriverBalance();
+  const { driverBalance, totalDriverSpend, totalIssuedToDriver } = calculateDriverMetrics();
 
   // Handle drafting payments
   const handleAddPayment = () => {
@@ -455,32 +726,16 @@ export default function TripForm({
     setStRouteFrom('');
     setStRouteTo('');
     setStIncome(0);
-    setStLoadingExpense(0);
-    setStUnloadingExpense(0);
-    setStLoadingPaidByDriver(true);
-    setStUnloadingPaidByDriver(true);
-    setStBrokerageExpense(0);
-    setStBrokeragePaidByDriver(true);
+    setStCargoExpenses([]);
+    setNewCargoExpType('Loading');
+    setNewCargoExpAmount('');
+    setNewCargoExpDeductedFrom('DriverDirect');
+    setNewCargoExpBears('Org');
     
     setStNoOfTons(0);
     setStMaterial('');
     setStRatePerTon(0);
     
-    // Default Bears policy
-    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-    const isPolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
-
-    setStLoadingDeductedFrom('DriverDirect');
-    setStLoadingBears('Org');
-    setStUnloadingDeductedFrom('DriverDirect');
-    setStUnloadingBears('Org');
-    setStBrokerageDeductedFrom(isPolicy2 ? 'OrgRental' : 'DriverDirect');
-    setStBrokerageBears(defaultBears);
-    setStCrossingExpense(0);
-    setStCrossingPaidByDriver(true);
-    setStCrossingDeductedFrom('DriverDirect');
-    setStCrossingBears('Org');
-
     setStDriverWages(0);
     // Align segment mileage to main odometer reads to reduce user friction
     setStStartingKM(startingKM || 0);
@@ -494,29 +749,14 @@ export default function TripForm({
       routeFrom: '',
       routeTo: '',
       income: 0,
-      loadingExpense: 0,
-      unloadingExpense: 0,
-      loadingPaidByDriver: true,
-      unloadingPaidByDriver: true,
-      brokerageExpense: 0,
-      brokeragePaidByDriver: !isPolicy2,
-      loadingDeductedFrom: 'DriverDirect',
-      loadingBears: 'Org',
-      unloadingDeductedFrom: 'DriverDirect',
-      unloadingBears: 'Org',
-      brokerageDeductedFrom: isPolicy2 ? 'OrgRental' : 'DriverDirect',
-      brokerageBears: defaultBears,
-      crossingExpense: 0,
-      crossingPaidByDriver: true,
-      crossingDeductedFrom: 'DriverDirect',
-      crossingBears: 'Org',
       driverWages: 0,
       startingKM: startingKM || 0,
       endingKM: endingKM || 0,
       notes: '',
       noOfTons: 0,
       material: '',
-      ratePerTon: 0
+      ratePerTon: 0,
+      cargoExpenses: []
     };
     setOriginalSubTripSnapshot(snapshot);
     setShowSubTripForm(true);
@@ -529,30 +769,17 @@ export default function TripForm({
     setStRouteFrom(st.routeFrom || '');
     setStRouteTo(st.routeTo || '');
     setStIncome(st.income || 0);
-    setStLoadingExpense(st.loadingExpense || 0);
-    setStUnloadingExpense(st.unloadingExpense || 0);
-    setStLoadingPaidByDriver(st.loadingPaidByDriver !== undefined ? st.loadingPaidByDriver : true);
-    setStUnloadingPaidByDriver(st.unloadingPaidByDriver !== undefined ? st.unloadingPaidByDriver : true);
-    setStBrokerageExpense(st.brokerageExpense || 0);
-    setStBrokeragePaidByDriver(st.brokeragePaidByDriver !== undefined ? st.brokeragePaidByDriver : true);
+
+    const importedExpenses = st.cargoExpenses || importLegacyCargoExpenses(st, orgProfile);
+    setStCargoExpenses(importedExpenses);
+    setNewCargoExpType('Loading');
+    setNewCargoExpAmount('');
+    setNewCargoExpDeductedFrom('DriverDirect');
+    setNewCargoExpBears('Org');
 
     setStNoOfTons(st.noOfTons || 0);
     setStMaterial(st.material || '');
     setStRatePerTon(st.ratePerTon || 0);
-
-    setStLoadingDeductedFrom(st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
-    setStLoadingBears(st.loadingBears || 'Org');
-    setStUnloadingDeductedFrom(st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
-    setStUnloadingBears(st.unloadingBears || 'Org');
-    
-    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-    setStBrokerageDeductedFrom(st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental'));
-    setStBrokerageBears(st.brokerageBears || defaultBears);
-
-    setStCrossingExpense(st.crossingExpense || 0);
-    setStCrossingPaidByDriver(st.crossingPaidByDriver || false);
-    setStCrossingDeductedFrom(st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental'));
-    setStCrossingBears(st.crossingBears || 'Org');
 
     setStDriverWages(st.driverWages || 0);
     setStStartingKM(st.startingKM || 0);
@@ -568,69 +795,34 @@ export default function TripForm({
       routeFrom: st.routeFrom || '',
       routeTo: st.routeTo || '',
       income: st.income || 0,
-      loadingExpense: st.loadingExpense || 0,
-      unloadingExpense: st.unloadingExpense || 0,
-      loadingPaidByDriver: st.loadingPaidByDriver !== undefined ? st.loadingPaidByDriver : true,
-      unloadingPaidByDriver: st.unloadingPaidByDriver !== undefined ? st.unloadingPaidByDriver : true,
-      brokerageExpense: st.brokerageExpense || 0,
-      brokeragePaidByDriver: st.brokeragePaidByDriver !== undefined ? st.brokeragePaidByDriver : true,
-      loadingDeductedFrom: st.loadingDeductedFrom || (st.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
-      loadingBears: 'Org',
-      unloadingDeductedFrom: st.unloadingDeductedFrom || (st.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
-      unloadingBears: 'Org',
-      brokerageDeductedFrom: st.brokerageDeductedFrom || (st.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental'),
-      brokerageBears: st.brokerageBears || defaultBears,
-      crossingExpense: st.crossingExpense || 0,
-      crossingPaidByDriver: st.crossingPaidByDriver || false,
-      crossingDeductedFrom: st.crossingDeductedFrom || (st.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental'),
-      crossingBears: 'Org',
       driverWages: st.driverWages || 0,
       startingKM: st.startingKM || 0,
       endingKM: st.endingKM || 0,
       notes: st.notes || '',
       noOfTons: st.noOfTons || 0,
       material: st.material || '',
-      ratePerTon: st.ratePerTon || 0
+      ratePerTon: st.ratePerTon || 0,
+      cargoExpenses: importedExpenses
     };
     setOriginalSubTripSnapshot(snapshot);
     setShowSubTripForm(true);
   };
 
   const checkIfSubTripHasChanges = () => {
-    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-    const isPolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
-    const finalBrokerageDeductedFrom = isPolicy2 ? 'OrgRental' : stBrokerageDeductedFrom;
-    const finalBrokeragePaidByDriver = isPolicy2 ? false : stBrokeragePaidByDriver;
-
     const currentSnapshot = {
       loadingDate: stLoadingDate,
       officeName: stOfficeName,
       routeFrom: stRouteFrom,
       routeTo: stRouteTo,
       income: Number(stIncome) || 0,
-      loadingExpense: Number(stLoadingExpense) || 0,
-      unloadingExpense: Number(stUnloadingExpense) || 0,
-      loadingPaidByDriver: stLoadingPaidByDriver,
-      unloadingPaidByDriver: stUnloadingPaidByDriver,
-      brokerageExpense: Number(stBrokerageExpense) || 0,
-      brokeragePaidByDriver: finalBrokeragePaidByDriver,
-      loadingDeductedFrom: stLoadingDeductedFrom,
-      loadingBears: 'Org',
-      unloadingDeductedFrom: stUnloadingDeductedFrom,
-      unloadingBears: 'Org',
-      brokerageDeductedFrom: finalBrokerageDeductedFrom,
-      brokerageBears: orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver',
-      crossingExpense: Number(stCrossingExpense) || 0,
-      crossingPaidByDriver: stCrossingPaidByDriver,
-      crossingDeductedFrom: stCrossingDeductedFrom,
-      crossingBears: 'Org',
       driverWages: Number(stDriverWages) || 0,
       startingKM: Number(stStartingKM) || 0,
       endingKM: Number(stEndingKM) || 0,
       notes: stNotes,
       noOfTons: Number(stNoOfTons) || 0,
       material: stMaterial,
-      ratePerTon: Number(stRatePerTon) || 0
+      ratePerTon: Number(stRatePerTon) || 0,
+      cargoExpenses: stCargoExpenses
     };
     return originalSubTripSnapshot && JSON.stringify(originalSubTripSnapshot) !== JSON.stringify(currentSnapshot);
   };
@@ -656,11 +848,36 @@ export default function TripForm({
       return;
     }
 
-    const isBrokeragePolicy2 = orgProfile?.brokeragePolicy !== 'OrgBears';
-    const finalBrokerageDeductedFrom = isBrokeragePolicy2 ? 'OrgRental' : stBrokerageDeductedFrom;
-    const finalBrokeragePaidByDriver = isBrokeragePolicy2 ? false : stBrokeragePaidByDriver;
-
     const originalSubTrip = editingSubTripId ? subTrips.find(item => item.id === editingSubTripId) : null;
+    
+    // Compile category totals for legacy views compatibility
+    const compileCategory = (type: 'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC') => {
+      const filtered = stCargoExpenses.filter(e => e.expenseType === type);
+      const amount = filtered.reduce((sum, e) => sum + e.amount, 0);
+      const paidByDriver = filtered.some(e => e.paidByDriver);
+      const deductedFrom = filtered.some(e => e.deductedFrom === 'OrgRental') ? 'OrgRental' : 'DriverDirect';
+      
+      const bearsOrg = filtered.filter(e => e.bears === 'Org').reduce((sum, e) => sum + e.amount, 0);
+      const bearsDriver = filtered.filter(e => e.bears === 'Driver').reduce((sum, e) => sum + e.amount, 0);
+      
+      const bears = (bearsOrg === 0 && bearsDriver > 0) ? 'Driver' : 'Org';
+      
+      return {
+        amount,
+        paidByDriver,
+        deductedFrom,
+        bears,
+        bearsOrg: bearsOrg > 0 || bearsDriver > 0 ? bearsOrg : undefined,
+        bearsDriver: bearsOrg > 0 || bearsDriver > 0 ? bearsDriver : undefined
+      };
+    };
+
+    const loadData = compileCategory('Loading');
+    const unloadData = compileCategory('Unloading');
+    const brokerageData = compileCategory('Brokerage');
+    const crossingData = compileCategory('Crossing');
+    const rmcData = compileCategory('RMC');
+
     const segmentObj: SubTrip = {
       ...(originalSubTrip || {}),
       id: editingSubTripId || 'sub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
@@ -669,28 +886,49 @@ export default function TripForm({
       routeFrom: stRouteFrom.trim(),
       routeTo: stRouteTo.trim(),
       income: Number(stIncome) || 0,
-      loadingExpense: Number(stLoadingExpense) || 0,
-      unloadingExpense: Number(stUnloadingExpense) || 0,
-      brokerageExpense: Number(stBrokerageExpense) || 0,
       driverWages: Number(stDriverWages) || 0,
-      loadingPaidByDriver: stLoadingPaidByDriver,
-      unloadingPaidByDriver: stUnloadingPaidByDriver,
-      brokeragePaidByDriver: finalBrokeragePaidByDriver,
       startingKM: Number(stStartingKM) || 0,
       endingKM: Number(stEndingKM) || 0,
       notes: stNotes.trim() || undefined,
       
-      loadingDeductedFrom: stLoadingDeductedFrom,
-      loadingBears: 'Org',
-      unloadingDeductedFrom: stUnloadingDeductedFrom,
-      unloadingBears: 'Org',
-      brokerageDeductedFrom: finalBrokerageDeductedFrom,
-      brokerageBears: orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver',
-      crossingExpense: Number(stCrossingExpense) || 0,
-      crossingPaidByDriver: stCrossingPaidByDriver,
-      crossingDeductedFrom: stCrossingDeductedFrom,
-      crossingBears: 'Org',
-      
+      cargoExpenses: stCargoExpenses,
+
+      // Legacy fallback fields
+      loadingExpense: loadData.amount,
+      loadingPaidByDriver: loadData.paidByDriver,
+      loadingDeductedFrom: loadData.deductedFrom,
+      loadingBears: loadData.bears as 'Org' | 'Driver',
+      loadingBearsOrg: loadData.bearsOrg,
+      loadingBearsDriver: loadData.bearsDriver,
+
+      unloadingExpense: unloadData.amount,
+      unloadingPaidByDriver: unloadData.paidByDriver,
+      unloadingDeductedFrom: unloadData.deductedFrom,
+      unloadingBears: unloadData.bears as 'Org' | 'Driver',
+      unloadingBearsOrg: unloadData.bearsOrg,
+      unloadingBearsDriver: unloadData.bearsDriver,
+
+      brokerageExpense: brokerageData.amount,
+      brokeragePaidByDriver: brokerageData.paidByDriver,
+      brokerageDeductedFrom: brokerageData.deductedFrom,
+      brokerageBears: brokerageData.bears as 'Org' | 'Driver',
+      brokerageBearsOrg: brokerageData.bearsOrg,
+      brokerageBearsDriver: brokerageData.bearsDriver,
+
+      crossingExpense: crossingData.amount,
+      crossingPaidByDriver: crossingData.paidByDriver,
+      crossingDeductedFrom: crossingData.deductedFrom,
+      crossingBears: crossingData.bears as 'Org' | 'Driver',
+      crossingBearsOrg: crossingData.bearsOrg,
+      crossingBearsDriver: crossingData.bearsDriver,
+
+      rmcExpense: rmcData.amount,
+      rmcPaidByDriver: rmcData.paidByDriver,
+      rmcDeductedFrom: rmcData.deductedFrom,
+      rmcBears: rmcData.bears as 'Org' | 'Driver',
+      rmcBearsOrg: rmcData.bearsOrg,
+      rmcBearsDriver: rmcData.bearsDriver,
+
       noOfTons: Number(stNoOfTons) || undefined,
       material: stMaterial.trim() || undefined,
       ratePerTon: Number(stRatePerTon) || undefined
@@ -700,7 +938,6 @@ export default function TripForm({
       setSubTrips(prev => prev.map(item => item.id === editingSubTripId ? segmentObj : item));
     } else {
       setSubTrips(prev => [...prev, segmentObj]);
-      // Increment master ending KM if segment ending KM is higher
       if (segmentObj.endingKM > endingKM) {
         setEndingKM(segmentObj.endingKM);
       }
@@ -711,6 +948,28 @@ export default function TripForm({
 
     setShowSubTripForm(false);
     setEditingSubTripId(null);
+  };
+
+  const handleAddCargoExpense = () => {
+    const amt = Number(newCargoExpAmount) || 0;
+    if (amt <= 0) {
+      alert("Please enter a valid amount greater than 0.");
+      return;
+    }
+    const item: CargoExpense = {
+      id: 'exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+      expenseType: newCargoExpType,
+      amount: amt,
+      paidByDriver: newCargoExpDeductedFrom === 'DriverDirect',
+      deductedFrom: newCargoExpDeductedFrom,
+      bears: newCargoExpBears
+    };
+    setStCargoExpenses(prev => [...prev, item]);
+    setNewCargoExpAmount('');
+  };
+
+  const handleRemoveCargoExpense = (id: string) => {
+    setStCargoExpenses(prev => prev.filter(e => e.id !== id));
   };
 
   const handleDeleteSubTripSegment = (id: string) => {
@@ -1079,7 +1338,9 @@ export default function TripForm({
                         {fuels.map(f => {
                           const acctName = f.paymentMode === 'driver' 
                             ? 'Paid by Driver (from Advance)' 
-                            : (accounts.find(a => a.id === f.paymentMode)?.accountName || 'Cash/General');
+                            : (accounts.find(a => a.id === f.paymentMode)?.accountName || 
+                               orgProfile?.fuelCards?.find(fc => fc.id === f.paymentMode)?.cardName || 
+                               'Cash/General');
                           return (
                             <tr key={f.id} className="hover:bg-amber-50/20">
                               <td className="p-2 pl-3 font-mono text-[10px]">{f.date}</td>
@@ -1106,7 +1367,7 @@ export default function TripForm({
                 )}
 
                 {/* Inline fuels Quick Builder tool */}
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 bg-white/70 rounded-lg p-2 border border-amber-200/50">
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-2 bg-white/70 rounded-lg p-2 border border-amber-200/50">
                   <div>
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Fuel Date</label>
                     <input
@@ -1117,26 +1378,41 @@ export default function TripForm({
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-slate-500 mb-1">Liters</label>
+                    <label htmlFor="input-new-fuel-liters" className="block text-[9px] font-bold text-slate-500 mb-1">Liters</label>
                     <input
+                      id="input-new-fuel-liters"
                       type="number"
                       min="0"
                       step="any"
                       placeholder="0.00"
                       value={newFuelLiters}
-                      onChange={(e) => setNewFuelLiters(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      onChange={(e) => handleLitersChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
                       className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-slate-500 mb-1">Rate / Lit</label>
+                    <label htmlFor="input-new-fuel-rate" className="block text-[9px] font-bold text-slate-500 mb-1">Rate / Lit</label>
                     <input
+                      id="input-new-fuel-rate"
                       type="number"
                       min="0"
                       step="any"
                       placeholder="0.00"
                       value={newFuelRate}
-                      onChange={(e) => setNewFuelRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      onChange={(e) => handleRateChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="input-new-fuel-amount" className="block text-[9px] font-bold text-slate-500 mb-1">Total Amount (₹)</label>
+                    <input
+                      id="input-new-fuel-amount"
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={newFuelAmount}
+                      onChange={(e) => handleAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
                       className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
                     />
                   </div>
@@ -1161,6 +1437,9 @@ export default function TripForm({
                       <option value="driver">Paid by Driver (from Advance)</option>
                       {activeAccounts.map(a => (
                         <option key={a.id} value={a.id}>{a.accountName}</option>
+                      ))}
+                      {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newFuelPaymentMode).map(c => (
+                        <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
                       ))}
                     </select>
                   </div>
@@ -1297,20 +1576,22 @@ export default function TripForm({
                       <th className="p-3">Office Name</th>
                       <th className="p-3">Route Path</th>
                       <th className="p-3 text-right">Income (₹)</th>
-                      <th className="p-3 text-right">Fuel spent (₹)</th>
-                      <th className="p-3 text-right">Other EXP (₹)</th>
+                      <th className="p-3 text-right">Wages (₹)</th>
+                      <th className="p-3 text-right">All EXP (₹)</th>
                       <th className="p-3 text-right pr-4">Edit / Delete</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {subTrips.map((st, sidx) => {
-                      const fuelExp = st.dieselAmount || 0;
-                      // Sum other sub-trip specific costs
-                      const otherCol = (
+                      const wagesAmt = st.driverWages || 0;
+                      // Sum all sub-trip specific costs including fuel, wages, and other expenses
+                      const allCol = (
+                        (st.dieselAmount || 0) +
                         (st.loadingExpense || 0) + 
                         (st.unloadingExpense || 0) + 
                         (st.brokerageExpense || 0) +
                         (st.crossingExpense || 0) +
+                        (st.rmcExpense || 0) +
                         (st.rtoExpense || 0) + 
                         (st.addBlueExpense || 0) + 
                         (st.fastagExpense || 0) + 
@@ -1324,8 +1605,8 @@ export default function TripForm({
                           <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
                           <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
                           <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
-                          <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{fuelExp.toLocaleString()}</td>
-                          <td className="p-3 text-right font-medium text-red-600 font-mono">₹{otherCol.toLocaleString()}</td>
+                          <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
+                          <td className="p-3 text-right font-medium text-red-600 font-mono">₹{allCol.toLocaleString()}</td>
                           <td className="p-3 text-right pr-4 flex justify-end gap-2">
                             <button
                               type="button"
@@ -1364,396 +1645,408 @@ export default function TripForm({
 
             {/* NESTED DYNAMIC PANEL SEGMENT FORM BUILDER (HIDDEN BY DEFAULT) */}
             {showSubTripForm && (
-              <div className="bg-slate-50 rounded-xl border border-slate-205 p-5 space-y-4 shadow-3xs border-slate-300 animate-scale-up font-sans">
-                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
-                    <ListCollapse className="w-4 h-4 text-blue-650" />
-                    {editingSubTripId ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
-                  </span>
-                  <button
-                    type="button"
-                    title="Close"
-                    onClick={handleCancelSubTripSegment}
-                    className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                  {/* SEG DATES */}
-                  <div>
-                    <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Cargo Loading Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={stLoadingDate}
-                      onChange={(e) => setStLoadingDate(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
-                    />
-                  </div>
-
-                  {/* LOADING OFFICE PLACE */}
-                  <div>
-                    <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Loading Office <span className="text-red-500">*</span></label>
-                    <select
-                      value={stOfficeName}
-                      onChange={(e) => setStOfficeName(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print">
+                <div className="bg-white rounded-2xl border border-slate-205 p-6 space-y-4 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
+                      <ListCollapse className="w-4 h-4 text-blue-650" />
+                      {editingSubTripId ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
+                    </span>
+                    <button
+                      type="button"
+                      title="Close"
+                      onClick={handleCancelSubTripSegment}
+                      className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
                     >
-                      <option value="">-- Choose Office --</option>
-                      {activeOffices.map(o => (
-                        <option key={o.id} value={o.officeName}>{o.officeName}</option>
-                      ))}
-                    </select>
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  {/* ROUTE ORIGIN */}
-                  <div>
-                    <label htmlFor="input-stRouteFrom" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Origin <span className="text-red-500">*</span></label>
-                    <input
-                      id="input-stRouteFrom"
-                      type="text"
-                      list="indian_cities_list"
-                      placeholder="e.g. Bangalore"
-                      value={stRouteFrom}
-                      onChange={(e) => setStRouteFrom(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-                    />
-                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* SEG DATES */}
+                    <div>
+                      <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Cargo Loading Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={stLoadingDate}
+                        onChange={(e) => setStLoadingDate(e.target.value)}
+                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
+                      />
+                    </div>
 
-                  {/* ROUTE END DESTINATION */}
-                  <div>
-                    <label htmlFor="input-stRouteTo" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Destination <span className="text-red-500">*</span></label>
-                    <input
-                      id="input-stRouteTo"
-                      type="text"
-                      list="indian_cities_list"
-                      placeholder="e.g. Mumbai Port"
-                      value={stRouteTo}
-                      onChange={(e) => setStRouteTo(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-                    />
-                  </div>
-                  
-                  {/* INDIAN CITIES DATALIST */}
-                  <datalist id="indian_cities_list">
-                    {indianCities.map(city => (
-                      <option key={city} value={city} />
-                    ))}
-                  </datalist>
-                </div>
-
-                {/* CARGO SPECS: MATERIAL, NO OF TONS, RATE PER TON */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 mt-2">
-                  <div>
-                    <label htmlFor="input_st_material" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Material Description</label>
-                    <input
-                      id="input_st_material"
-                      type="text"
-                      placeholder="e.g. Steel Pipe, Cement, Coal"
-                      value={stMaterial}
-                      onChange={(e) => setStMaterial(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 font-sans"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="input_st_noOfTons" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">No of Tons</label>
-                    <input
-                      id="input_st_noOfTons"
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0.00"
-                      value={stNoOfTons || ''}
-                      onChange={(e) => {
-                        const tons = parseFloat(e.target.value) || 0;
-                        setStNoOfTons(tons);
-                        const calculatedIncome = tons * (stRatePerTon || 0);
-                        if (calculatedIncome > 0) {
-                          setStIncome(calculatedIncome);
-                          if (stWagePct) {
-                            const pct = parseFloat(stWagePct);
-                            if (!isNaN(pct) && pct > 0) {
-                              setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
-                            }
-                          }
-                        }
-                      }}
-                      className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="input_st_ratePerTon" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Rate per Ton</label>
-                    <input
-                      id="input_st_ratePerTon"
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0.00"
-                      value={stRatePerTon || ''}
-                      onChange={(e) => {
-                        const rate = parseFloat(e.target.value) || 0;
-                        setStRatePerTon(rate);
-                        const calculatedIncome = (stNoOfTons || 0) * rate;
-                        if (calculatedIncome > 0) {
-                          setStIncome(calculatedIncome);
-                          if (stWagePct) {
-                            const pct = parseFloat(stWagePct);
-                            if (!isNaN(pct) && pct > 0) {
-                              setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
-                            }
-                          }
-                        }
-                      }}
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* COSTINGS METALS EXPENSES CHIPS */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-2">
-                  {/* SEG FREIGHT INCOME */}
-                  <div>
-                    <label htmlFor="input_st_income" className="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Billed Freight Income <span className="text-red-500">*</span></label>
-                    <input
-                      id="input_st_income"
-                      type="number"
-                      min="0"
-                      value={stIncome || ''}
-                      onChange={(e) => {
-                        const newIncome = parseFloat(e.target.value) || 0;
-                        setStIncome(newIncome);
-                        if (stWagePct) {
-                          const pct = parseFloat(stWagePct);
-                          if (!isNaN(pct) && pct > 0) {
-                            setStDriverWages(Math.round(newIncome * (pct / 100)));
-                          }
-                        }
-                      }}
-                      placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
-                    />
-                  </div>
-
-                  {/* LOADING COST */}
-                  <div>
-                    <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">₹ Cargo Loading Expense</label>
-                    <input
-                      id="input_st_loading"
-                      type="number"
-                      min="0"
-                      value={stLoadingExpense || ''}
-                      onChange={(e) => setStLoadingExpense(parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
-                    />
-                    {stLoadingExpense > 0 && (
-                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
-                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
-                        <select
-                          value={stLoadingDeductedFrom}
-                          onChange={(e) => {
-                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
-                            setStLoadingDeductedFrom(val);
-                            setStLoadingPaidByDriver(val === 'DriverDirect');
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
-                        >
-                          <option value="OrgRental">Org Rental (Office Deduct)</option>
-                          <option value="DriverDirect">Driver Direct (Advance)</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* UNLOADING COST */}
-                  <div>
-                    <label className="block text-[10px] text-slate-455 font-bold uppercase mb-1">₹ Unload Expense</label>
-                    <input
-                      id="input_st_unloading"
-                      type="number"
-                      min="0"
-                      value={stUnloadingExpense || ''}
-                      onChange={(e) => setStUnloadingExpense(parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
-                    />
-                    {stUnloadingExpense > 0 && (
-                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
-                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
-                        <select
-                          value={stUnloadingDeductedFrom}
-                          onChange={(e) => {
-                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
-                            setStUnloadingDeductedFrom(val);
-                            setStUnloadingPaidByDriver(val === 'DriverDirect');
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
-                        >
-                          <option value="OrgRental">Org Rental (Office Deduct)</option>
-                          <option value="DriverDirect">Driver Direct (Advance)</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* BROKERAGE COST */}
-                  <div>
-                    <label className="block text-[10px] text-slate-455 font-bold uppercase mb-1">₹ Brokerage Expense</label>
-                    <input
-                      id="input_st_brokerage"
-                      type="number"
-                      min="0"
-                      value={stBrokerageExpense || ''}
-                      onChange={(e) => setStBrokerageExpense(parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
-                    />
-                    {stBrokerageExpense > 0 && orgProfile?.brokeragePolicy === 'OrgBears' && (
-                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
-                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
-                        <select
-                          value={stBrokerageDeductedFrom}
-                          onChange={(e) => {
-                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
-                            setStBrokerageDeductedFrom(val);
-                            setStBrokeragePaidByDriver(val === 'DriverDirect');
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
-                        >
-                          <option value="OrgRental">Org Rental (Office Deduct)</option>
-                          <option value="DriverDirect">Driver Direct (Advance)</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* CROSSING COST */}
-                  <div>
-                    <label className="block text-[10px] text-slate-455 font-bold uppercase mb-1">₹ Crossing / Mamul</label>
-                    <input
-                      id="input_st_crossing"
-                      type="number"
-                      min="0"
-                      value={stCrossingExpense || ''}
-                      onChange={(e) => setStCrossingExpense(parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705 font-bold"
-                    />
-                    {stCrossingExpense > 0 && (
-                      <div className="mt-1.5 bg-slate-100 p-1.5 rounded border border-slate-200">
-                        <label className="block text-[8px] font-bold text-slate-500 uppercase">Paid/Deducted From</label>
-                        <select
-                          value={stCrossingDeductedFrom}
-                          onChange={(e) => {
-                            const val = e.target.value as 'OrgRental' | 'DriverDirect';
-                            setStCrossingDeductedFrom(val);
-                            setStCrossingPaidByDriver(val === 'DriverDirect');
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded px-1 py-0.5 text-[9px] font-semibold"
-                        >
-                          <option value="OrgRental">Org Rental (Office Deduct)</option>
-                          <option value="DriverDirect">Driver Direct (Advance)</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* WAGES */}
-                  <div>
-                    <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Driver Wages / Allowance</label>
-                    <div className="flex gap-1.5">
+                    {/* LOADING OFFICE PLACE */}
+                    <div>
+                      <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Loading Office <span className="text-red-500">*</span></label>
                       <select
-                        id="select_st_wage_percentage"
-                        value={stWagePct}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setStWagePct(val);
-                          const numVal = Number(val);
-                          if (numVal > 0) {
-                            const calculatedWages = Math.round(Number(stIncome) * (numVal / 100));
-                            setStDriverWages(calculatedWages);
-                          }
-                        }}
-                        className="bg-slate-50 border border-slate-250 text-slate-700 rounded-lg px-1 text-[10px] focus:outline-none"
-                        style={{ width: '65px' }}
+                        value={stOfficeName}
+                        onChange={(e) => setStOfficeName(e.target.value)}
+                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
                       >
-                        <option value="">% Calc</option>
-                        {Array.from({ length: 20 }, (_, idx) => idx + 1).map(p => (
-                          <option key={p} value={p.toString()}>{p}%</option>
+                        <option value="">-- Choose Office --</option>
+                        {activeOffices.map(o => (
+                          <option key={o.id} value={o.officeName}>{o.officeName}</option>
                         ))}
                       </select>
+                    </div>
+
+                    {/* ROUTE ORIGIN */}
+                    <div>
+                      <label htmlFor="input-stRouteFrom" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Origin <span className="text-red-500">*</span></label>
                       <input
-                        id="input_st_driverwages"
+                        id="input-stRouteFrom"
+                        type="text"
+                        list="indian_cities_list"
+                        placeholder="e.g. Bangalore"
+                        value={stRouteFrom}
+                        onChange={(e) => setStRouteFrom(e.target.value)}
+                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                      />
+                    </div>
+
+                    {/* ROUTE END DESTINATION */}
+                    <div>
+                      <label htmlFor="input-stRouteTo" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Destination <span className="text-red-500">*</span></label>
+                      <input
+                        id="input-stRouteTo"
+                        type="text"
+                        list="indian_cities_list"
+                        placeholder="e.g. Mumbai Port"
+                        value={stRouteTo}
+                        onChange={(e) => setStRouteTo(e.target.value)}
+                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                      />
+                    </div>
+                    
+                    {/* INDIAN CITIES DATALIST */}
+                    <datalist id="indian_cities_list">
+                      {indianCities.map(city => (
+                        <option key={city} value={city} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* CARGO SPECS: MATERIAL, NO OF TONS, RATE PER TON */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 mt-2">
+                    <div>
+                      <label htmlFor="input_st_material" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Material Description</label>
+                      <input
+                        id="input_st_material"
+                        type="text"
+                        placeholder="e.g. Steel Pipe, Cement, Coal"
+                        value={stMaterial}
+                        onChange={(e) => setStMaterial(e.target.value)}
+                        className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 font-sans"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="input_st_noOfTons" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">No of Tons</label>
+                      <input
+                        id="input_st_noOfTons"
                         type="number"
                         min="0"
-                        value={stDriverWages || ''}
+                        step="any"
+                        placeholder="0.00"
+                        value={stNoOfTons || ''}
                         onChange={(e) => {
-                          setStDriverWages(parseFloat(e.target.value) || 0);
-                          setStWagePct(''); // Break linkage if manually typed
+                          const tons = parseFloat(e.target.value) || 0;
+                          setStNoOfTons(tons);
+                          const calculatedIncome = tons * (stRatePerTon || 0);
+                          if (calculatedIncome > 0) {
+                            setStIncome(calculatedIncome);
+                            if (stWagePct) {
+                              const pct = parseFloat(stWagePct);
+                              if (!isNaN(pct) && pct > 0) {
+                                setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
+                              }
+                            }
+                          }
                         }}
-                        placeholder="0"
-                        className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                        className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="input_st_ratePerTon" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Rate per Ton</label>
+                      <input
+                        id="input_st_ratePerTon"
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="0.00"
+                        value={stRatePerTon || ''}
+                        onChange={(e) => {
+                          const rate = parseFloat(e.target.value) || 0;
+                          setStRatePerTon(rate);
+                          const calculatedIncome = (stNoOfTons || 0) * rate;
+                          if (calculatedIncome > 0) {
+                            setStIncome(calculatedIncome);
+                            if (stWagePct) {
+                              const pct = parseFloat(stWagePct);
+                              if (!isNaN(pct) && pct > 0) {
+                                setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
+                              }
+                            }
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
                       />
                     </div>
                   </div>
-                </div>
 
-                {/* SEG ODOMETER KM SPEC */}        {/* SEG ODOMETER KM SPEC */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 bg-slate-100 rounded-lg p-3.5 border border-slate-150">
+                  {/* CARGO REVENUE & DRIVER WAGES */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                    {/* SEG FREIGHT INCOME */}
+                    <div>
+                      <label htmlFor="input_st_income" className="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Billed Freight Income <span className="text-red-500">*</span></label>
+                      <input
+                        id="input_st_income"
+                        type="number"
+                        min="0"
+                        value={stIncome || ''}
+                        onChange={(e) => {
+                          const newIncome = parseFloat(e.target.value) || 0;
+                          setStIncome(newIncome);
+                          if (stWagePct) {
+                            const pct = parseFloat(stWagePct);
+                            if (!isNaN(pct) && pct > 0) {
+                              setStDriverWages(Math.round(newIncome * (pct / 100)));
+                            }
+                          }
+                        }}
+                        placeholder="0"
+                        className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
+                      />
+                    </div>
+
+                    {/* WAGES */}
+                    <div>
+                      <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Driver Wages / Allowance</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          id="select_st_wage_percentage"
+                          value={stWagePct}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStWagePct(val);
+                            const numVal = Number(val);
+                            if (numVal > 0) {
+                              const calculatedWages = Math.round(Number(stIncome) * (numVal / 100));
+                              setStDriverWages(calculatedWages);
+                            }
+                          }}
+                          className="bg-slate-50 border border-slate-250 text-slate-700 rounded-lg px-1 text-[10px] focus:outline-none"
+                          style={{ width: '75px' }}
+                        >
+                          <option value="">% Calc</option>
+                          {Array.from({ length: 20 }, (_, idx) => idx + 1).map(p => (
+                            <option key={p} value={p.toString()}>{p}%</option>
+                          ))}
+                        </select>
+                        <input
+                          id="input_st_driverwages"
+                          type="number"
+                          min="0"
+                          value={stDriverWages || ''}
+                          onChange={(e) => {
+                            setStDriverWages(parseFloat(e.target.value) || 0);
+                            setStWagePct(''); // Break linkage if manually typed
+                          }}
+                          placeholder="0"
+                          className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DYNAMIC LEG EXPENSES (CARGO LIST) */}
+                  <div className="pt-4 border-t border-slate-100 space-y-4">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Leg Expenses (Dynamic Cargo List)</span>
+                      <span className="text-[10px] font-semibold text-slate-505 bg-slate-100 px-2 py-0.5 rounded">
+                        Total Added: {stCargoExpenses.length}
+                      </span>
+                    </div>
+
+                    {/* 1. List of currently added cargo expenses */}
+                    <div className="border border-slate-205 rounded-xl overflow-hidden shadow-3xs bg-white text-xs">
+                      {stCargoExpenses.length === 0 ? (
+                        <div className="p-6 text-center text-slate-500 font-medium">
+                          No cargo expenses added to this segment yet. Use the form below to add them one-by-one.
+                        </div>
+                      ) : (
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                              <th className="p-2.5 pl-4">Type</th>
+                              <th className="p-2.5 text-right">Amount</th>
+                              <th className="p-2.5">Paid By / Deduct</th>
+                              <th className="p-2.5">Who Bears?</th>
+                              <th className="p-2.5 text-center pr-4">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                            {stCargoExpenses.map((exp) => (
+                              <tr key={exp.id} className="hover:bg-slate-50/85 transition-colors">
+                                <td className="p-2.5 pl-4 font-bold text-slate-800">{exp.expenseType}</td>
+                                <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{exp.amount.toLocaleString()}</td>
+                                <td className="p-2.5 text-slate-600 font-semibold">
+                                  {exp.deductedFrom === 'OrgRental' ? 'Org Rental (Office Paid)' : 'Driver Paid (Advance)'}
+                                </td>
+                                <td className="p-2.5">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                    exp.bears === 'Org' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                                    exp.bears === 'Driver' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                    'bg-purple-50 text-purple-700 border border-purple-100'
+                                  }`}>
+                                    {exp.bears === 'Org' ? 'Organization' : exp.bears === 'Driver' ? 'Driver' : 'Office'}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-center pr-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCargoExpense(exp.id)}
+                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
+                                    title="Delete Expense"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    {/* 2. Controls to add a new cargo expense */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">Add Leg Expense</span>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* Expense Type */}
+                        <div>
+                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Expense Type</label>
+                          <select
+                            value={newCargoExpType}
+                            onChange={(e) => setNewCargoExpType(e.target.value as any)}
+                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="Loading">Loading</option>
+                            <option value="Unloading">Unloading</option>
+                            <option value="Brokerage">Brokerage</option>
+                            <option value="Crossing">Crossing (Mamul)</option>
+                            <option value="RMC">RMC Expense</option>
+                          </select>
+                        </div>
+
+                        {/* Amount */}
+                        <div>
+                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={newCargoExpAmount}
+                            onChange={(e) => setNewCargoExpAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                            placeholder="e.g. 1500"
+                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-right focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        {/* Paid By */}
+                        <div>
+                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Paid By / Deduct</label>
+                          <select
+                            value={newCargoExpDeductedFrom}
+                            onChange={(e) => setNewCargoExpDeductedFrom(e.target.value as any)}
+                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="DriverDirect">Driver Paid (Advance)</option>
+                            <option value="OrgRental">Org Rental (Office Paid)</option>
+                          </select>
+                        </div>
+
+                        {/* Who Bears */}
+                        <div>
+                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Who Bears?</label>
+                          <select
+                            value={newCargoExpBears}
+                            onChange={(e) => setNewCargoExpBears(e.target.value as any)}
+                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="Org">Organization</option>
+                            <option value="Driver">Driver</option>
+                            <option value="Office">Office</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleAddCargoExpense}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-4 py-1.5 rounded-lg cursor-pointer transition shadow-3xs flex items-center gap-1 border border-blue-550"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Add Leg Expense
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEG ODOMETER KM SPEC */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 bg-slate-100 rounded-lg p-3.5 border border-slate-150">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Starting KM</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={stStartingKM || ''}
+                        onChange={(e) => setStStartingKM(parseInt(e.target.value) || 0)}
+                        placeholder="Odo start"
+                        className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Ending KM</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={stEndingKM || ''}
+                        onChange={(e) => setStEndingKM(parseInt(e.target.value) || 0)}
+                        placeholder="Odo end"
+                        className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
+                      />
+                    </div>
+                  </div>
+
+                  {/* SEG NOTES */}
                   <div>
-                    <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Starting KM</label>
+                    <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Segment remarks / Consignment detail</label>
                     <input
-                      type="number"
-                      min="0"
-                      value={stStartingKM || ''}
-                      onChange={(e) => setStStartingKM(parseInt(e.target.value) || 0)}
-                      placeholder="Odo start"
-                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
+                      type="text"
+                      placeholder="e.g. Iron rods loaded at Bangalore yard. Clear highway transit."
+                      value={stNotes}
+                      onChange={(e) => setStNotes(e.target.value)}
+                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-3 py-2 text-xs"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Ending KM</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={stEndingKM || ''}
-                      onChange={(e) => setStEndingKM(parseInt(e.target.value) || 0)}
-                      placeholder="Odo end"
-                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
-                    />
+
+                  {/* ACTION SEGMENT POSTS */}
+                  <div className="flex justify-end gap-2.5 border-t border-slate-200 pt-3.5">
+                    <button
+                      type="button"
+                      onClick={handleCancelSubTripSegment}
+                      className="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveSubTripSegmentConfirm}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2 rounded-lg cursor-pointer transition shadow-2xs border border-emerald-550"
+                    >
+                      Save
+                    </button>
                   </div>
-                </div>
-
-                {/* SEG NOTES */}
-                <div>
-                  <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Segment remarks / Consignment detail</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Iron rods loaded at Bangalore yard. Clear highway transit."
-                    value={stNotes}
-                    onChange={(e) => setStNotes(e.target.value)}
-                    className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-3 py-2 text-xs"
-                  />
-                </div>
-
-                {/* ACTION SEGMENT POSTS */}
-                <div className="flex justify-end gap-2.5 border-t border-slate-200 pt-3.5">
-                  <button
-                    type="button"
-                    onClick={handleCancelSubTripSegment}
-                    className="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveSubTripSegmentConfirm}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2 rounded-lg cursor-pointer transition shadow-2xs border border-emerald-550"
-                  >
-                    Save
-                  </button>
                 </div>
               </div>
             )}
@@ -2025,7 +2318,7 @@ export default function TripForm({
               <div className="p-3 bg-slate-804 bg-slate-800 rounded-xl text-blue-400">
                 <Calculator className="w-6 h-6" />
               </div>
-              <div className="space-y-0.5">
+              <div className="space-y-1.5">
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest font-sans">Accumulated Journey Financial Ledger</span>
                 <div className="flex flex-wrap gap-x-3.5 text-xs text-slate-300">
                   <span>Gross Billings: <strong className="text-white font-mono">₹{metrics.income.toLocaleString()}</strong></span>
@@ -2033,6 +2326,11 @@ export default function TripForm({
                   <span>Expenses Outflow: <strong className="text-red-300 font-mono">₹{metrics.totalExpense.toLocaleString()}</strong></span>
                   <span>&bull;</span>
                   <span>Advances Received: <strong className="text-emerald-400 font-mono">₹{metrics.paymentsReceived.toLocaleString()}</strong></span>
+                </div>
+                <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-3.5">
+                  <span>Total Expense by Driver: <strong className="text-amber-300 font-mono">₹{totalDriverSpend.toLocaleString()}</strong></span>
+                  <span>&bull;</span>
+                  <span>Total Driver Advance: <strong className="text-emerald-400 font-mono">₹{totalIssuedToDriver.toLocaleString()}</strong></span>
                 </div>
               </div>
             </div>

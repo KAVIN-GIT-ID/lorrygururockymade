@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance } from '../types';
+import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance } from '../types';
 import { 
   Search, Edit2, Trash2, Calendar, Filter, FileSpreadsheet, 
   Eye, ChevronRight, ChevronDown, X, AlertCircle, Fuel, 
@@ -22,6 +22,7 @@ interface TripListProps {
   canEditTrips?: boolean;
   canDeleteTrips?: boolean;
   organizationId?: string;
+  onSaveTrips?: (newTrips: TripEntry[]) => void;
 }
 
 export default function TripList({
@@ -35,7 +36,8 @@ export default function TripList({
   canViewTrips = true,
   canEditTrips = true,
   canDeleteTrips = true,
-  organizationId
+  organizationId,
+  onSaveTrips
 }: TripListProps) {
   // Mouse hover scroll redirection for horizontal overflow
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -219,7 +221,7 @@ export default function TripList({
 
       return () => clearTimeout(delayDebounce);
     }
-  }, [search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online, organizationId]);
+  }, [trips, search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online, organizationId]);
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
@@ -235,6 +237,20 @@ export default function TripList({
   
   // Master Details modal state for viewing full list of 21+ columns cleanly
   const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
+  
+  // Selected next trip ID for forwarding deficit/surplus
+  const [selectedFwdTripId, setSelectedFwdTripId] = useState<string>('');
+  const [selectedFwdMode, setSelectedFwdMode] = useState<'trip' | 'account'>('trip');
+  const [selectedFwdAccountId, setSelectedFwdAccountId] = useState<string>('');
+  const [selectedFwdDate, setSelectedFwdDate] = useState<string>(new Date().toISOString().substring(0, 10));
+
+  // Reset forward options when viewingEntry changes
+  useEffect(() => {
+    setSelectedFwdTripId('');
+    setSelectedFwdAccountId('');
+    setSelectedFwdMode('trip');
+    setSelectedFwdDate(new Date().toISOString().substring(0, 10));
+  }, [viewingEntry]);
 
 
   // Calculate totals of matched items for footer reporting
@@ -578,11 +594,23 @@ export default function TripList({
                             <User className="w-3 h-3 text-slate-400" />
                             {trip.driverName || 'No Driver'}
                           </span>
-                          {m.driverRecovery > 0 && (
-                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
-                              Recover: ₹{m.driverRecovery.toLocaleString('en-IN')}
-                            </span>
-                          )}
+                          {(() => {
+                             const balance = m.driverBalance;
+                             if (balance < 0) {
+                               return (
+                                 <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
+                                   Recover: ₹{Math.abs(balance).toLocaleString('en-IN')}
+                                 </span>
+                               );
+                             } else if (balance > 0) {
+                               return (
+                                 <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
+                                   Pay: ₹{balance.toLocaleString('en-IN')}
+                                 </span>
+                               );
+                             }
+                             return null;
+                           })()}
                         </td>
 
                         {/* TRIP TIMEFRAME */}
@@ -756,12 +784,25 @@ export default function TripList({
                         {dateFormatted(trip.startDate)} &rarr; {dateFormatted(trip.endDate)}
                       </span>
                     </div>
-                    {m.driverRecovery > 0 && (
-                      <div className="flex justify-between pt-1 border-t border-slate-200/40">
-                        <span className="text-amber-800 font-bold uppercase text-[9px]">Recover from Drv</span>
-                        <span className="font-extrabold text-amber-800 font-mono">₹{m.driverRecovery.toLocaleString('en-IN')}</span>
-                      </div>
-                    )}
+                    {(() => {
+                      const balance = m.driverBalance;
+                      if (balance < 0) {
+                        return (
+                          <div className="flex justify-between pt-1 border-t border-slate-200/40">
+                            <span className="text-amber-805 font-bold uppercase text-[9px]">Recover</span>
+                            <span className="font-extrabold text-amber-800 font-mono">₹{Math.abs(balance).toLocaleString('en-IN')}</span>
+                          </div>
+                        );
+                      } else if (balance > 0) {
+                        return (
+                          <div className="flex justify-between pt-1 border-t border-slate-200/40">
+                            <span className="text-emerald-800 font-bold uppercase text-[9px]">Pay</span>
+                            <span className="font-extrabold text-emerald-800 font-mono">₹{balance.toLocaleString('en-IN')}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
                   {/* Financials Grid */}
@@ -965,7 +1006,7 @@ export default function TripList({
 
               <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
                 {/* primary bento grid details */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
                   <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200">
                     <span className="text-[9px] text-slate-500 uppercase block font-bold leading-tight">Driver Person</span>
                     <span className="text-xs font-semibold text-slate-900 block mt-1">{viewingEntry.driverName || 'No Driver'}</span>
@@ -982,12 +1023,16 @@ export default function TripList({
                     <span className="text-[9px] text-slate-500 uppercase block font-bold leading-tight">Distance Logged</span>
                     <span className="text-xs font-extrabold text-blue-650 font-mono block mt-1 text-blue-600">{m.totalKM} KM Range</span>
                   </div>
+                  <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200">
+                    <span className="text-[9px] text-slate-500 uppercase block font-bold leading-tight">Fuel Mileage</span>
+                    <span className="text-xs font-extrabold text-amber-700 font-mono block mt-1">{m.fuelLiters > 0 ? `${m.millage.toFixed(2)} KM/L` : '0.00 KM/L'}</span>
+                  </div>
                 </div>
 
-                {/* 23 flat parameters audit section */}
+                {/* 24 flat parameters audit section */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-3xs bg-white">
                   <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold uppercase text-[10px] tracking-widest text-slate-655 flex justify-between">
-                    <span>Flat Consolidated Specifications (23 Columns Schema)</span>
+                    <span>Flat Consolidated Specifications (24 Columns Schema)</span>
                     <span className="font-mono text-blue-600 text-xs font-extrabold">{viewingEntry.tripNo}</span>
                   </div>
 
@@ -1073,15 +1118,19 @@ export default function TripList({
                       <span className="text-slate-800 font-bold">₹{m.perKM.toFixed(2)} / KM</span>
                     </div>
                     <div className="pt-2.5">
-                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">21. Days Duration</span>
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">21. Profit Per KM</span>
+                      <span className={`font-bold ${m.profit >= 0 ? 'text-emerald-805 text-emerald-800' : 'text-red-700'}`}>₹{m.profitPerKM.toFixed(2)} / KM</span>
+                    </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">22. Days Duration</span>
                       <span className="text-slate-800 font-bold">{m.noOfDays} Days</span>
                     </div>
                     <div className="pt-2.5">
-                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">22. Total Outflow</span>
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">23. Total Outflow</span>
                       <span className="font-bold text-red-600">₹{m.totalExpense.toLocaleString()}</span>
                     </div>
                     <div className="pt-2.5">
-                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">23. Profit Yield</span>
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">24. Profit Yield</span>
                       <span className={`font-black tracking-tight text-xs ${m.profit >= 0 ? 'text-emerald-750 text-emerald-800' : 'text-red-700'}`}>₹{m.profit.toLocaleString()}</span>
                     </div>
                     <div className="pt-2.5">
@@ -1104,7 +1153,319 @@ export default function TripList({
                       <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Driver Recovery</span>
                       <span className="text-amber-805 font-bold text-amber-800">₹{m.driverRecovery.toLocaleString()}</span>
                     </div>
+                    <div className="pt-2.5">
+                      <span className="text-slate-450 block font-sans text-[10px] uppercase font-bold">Driver Balance</span>
+                      {(() => {
+                        const balance = m.driverBalance;
+                        if (balance < 0) {
+                          return (
+                            <span className="text-amber-800 font-extrabold">
+                              Recover: ₹{Math.abs(balance).toLocaleString('en-IN')}
+                            </span>
+                          );
+                        } else if (balance > 0) {
+                          return (
+                            <span className="text-emerald-800 font-extrabold">
+                              Pay: ₹{balance.toLocaleString('en-IN')}
+                            </span>
+                          );
+                        }
+                        return <span className="text-slate-500 font-bold">₹0</span>;
+                      })()}
+                    </div>
                   </div>
+
+                  {/* Carry Forward / Settle Option Banner */}
+                  {m.driverBalance !== 0 && onSaveTrips && (() => {
+                    const isDeficit = m.driverBalance < 0;
+                    const balanceAmt = Math.abs(m.driverBalance);
+                    const activeMode = isDeficit ? selectedFwdMode : 'account';
+
+                    const eligibleFwdTrips = trips.filter(
+                      t => t.id !== viewingEntry.id &&
+                           t.status !== 'Completed' &&
+                           t.status !== 'Paid'
+                    ).sort((a, b) => {
+                      const aSame = a.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
+                      const bSame = b.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
+                      if (aSame && !bSame) return -1;
+                      if (!aSame && bSame) return 1;
+                      return a.tripNo.localeCompare(b.tripNo);
+                    });
+
+                    const hasSameDriverActiveTrip = eligibleFwdTrips.some(
+                      t => t.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim()
+                    );
+
+                    return (
+                      <div className="bg-amber-50/50 border-t border-slate-200/85 p-4 flex flex-col gap-3.5 text-xs font-sans">
+                        {/* Tab Headers for Deficit Mode */}
+                        {isDeficit && (
+                          <div className="flex border-b border-amber-200/40 pb-2 gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFwdMode('trip')}
+                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                                activeMode === 'trip'
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Move to Another Trip
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFwdMode('account')}
+                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                                activeMode === 'account'
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Settle with Company Account
+                            </button>
+                          </div>
+                        )}
+
+                        {activeMode === 'trip' && (() => {
+                          if (eligibleFwdTrips.length === 0) {
+                            return (
+                              <div className="text-slate-600">
+                                <span className="text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">Carry Forward Driver Deficit</span>
+                                <span className="block mt-0.5">
+                                  No other active/in-progress trips are currently registered in FleetTrack Pro. Create another active trip first to carry forward this deficit.
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-3">
+                              {/* Same Driver Warning */}
+                              {!hasSameDriverActiveTrip && (
+                                <div className="bg-amber-100/70 border border-amber-200 text-amber-900 px-3.5 py-2.5 rounded-lg font-medium flex items-start gap-2">
+                                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                  <span>⚠️ There is no active trip under the same driver name ({viewingEntry.driverName || 'N/A'}). Create an active trip for this driver to move funds.</span>
+                                </div>
+                              )}
+
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-amber-855 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">Carry Forward Driver Deficit</span>
+                                  <span className="text-slate-600 font-sans block mt-0.5">
+                                    Move this negative balance of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> to another active trip.
+                                  </span>
+                                </div>
+                                <div className="flex items-end gap-2 shrink-0">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                                    <input
+                                      type="date"
+                                      value={selectedFwdDate}
+                                      onChange={(e) => setSelectedFwdDate(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Target Trip</span>
+                                    <select
+                                      value={selectedFwdTripId}
+                                      onChange={(e) => setSelectedFwdTripId(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
+                                    >
+                                      <option value="">-- Select Next Trip --</option>
+                                      {eligibleFwdTrips.map(t => {
+                                        const isSameDrv = t.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
+                                        return (
+                                          <option key={t.id} value={t.id}>
+                                            {t.tripNo} - {t.driverName || 'No Driver'} ({t.truckNo}){isSameDrv ? ' (Same Driver)' : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      if (!selectedFwdTripId) {
+                                        alert("Please select a target trip first.");
+                                        return;
+                                      }
+                                      const destTrip = trips.find(t => t.id === selectedFwdTripId);
+                                      if (!destTrip) return;
+
+                                      const confirmMsg = `Are you sure you want to carry forward the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to ${destTrip.tripNo}?\n\nThis will offset the negative balance on ${viewingEntry.tripNo} and add it as a new advance on ${destTrip.tripNo}.`;
+                                      
+                                      const performFwd = () => {
+                                        const fwdAdvanceSource: TripAdvance = {
+                                          id: 'fwd_out_' + Date.now(),
+                                          amount: -balanceAmt,
+                                          date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                          fromAccountId: 'Direct Driver',
+                                          notes: `Negative balance carried forward to ${destTrip.tripNo}`,
+                                          receivedByDriverDirectly: true
+                                        };
+
+                                        const fwdAdvanceDest: TripAdvance = {
+                                          id: 'fwd_in_' + Date.now(),
+                                          amount: balanceAmt,
+                                          date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                          fromAccountId: 'Direct Driver',
+                                          notes: `Negative balance carried forward from ${viewingEntry.tripNo}`,
+                                          receivedByDriverDirectly: true
+                                        };
+
+                                        const updatedSource = {
+                                          ...viewingEntry,
+                                          advances: [...(viewingEntry.advances || []), fwdAdvanceSource]
+                                        };
+
+                                        const updatedDest = {
+                                          ...destTrip,
+                                          advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                                        };
+
+                                        const updatedTrips = trips.map(t => {
+                                          if (t.id === updatedSource.id) return updatedSource;
+                                          if (t.id === updatedDest.id) return updatedDest;
+                                          return t;
+                                        });
+
+                                        onSaveTrips(updatedTrips);
+                                        setViewingEntry(updatedSource);
+                                        setSelectedFwdTripId('');
+                                        alert(`Successfully carried forward ₹${balanceAmt.toLocaleString('en-IN')} to ${destTrip.tripNo}.`);
+                                      };
+
+                                      if (confirmAction) {
+                                        confirmAction(confirmMsg, performFwd, "Carry Forward Balance");
+                                      } else if (confirm(confirmMsg)) {
+                                        performFwd();
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
+                                  >
+                                    Move Funds
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {activeMode === 'account' && (() => {
+                          const activeAccounts = accounts.filter(a => a.status === 'Active');
+                          return (
+                            <div className="space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className={`${isDeficit ? 'text-amber-800' : 'text-emerald-805 text-emerald-800'} font-extrabold uppercase text-[9px] tracking-wider block`}>
+                                    {isDeficit ? 'Settle Deficit to Company Account' : 'Pay Driver Surplus from Company Account'}
+                                  </span>
+                                  <span className="text-slate-600 font-sans block mt-0.5">
+                                    {isDeficit ? (
+                                      <span>
+                                        Receive driver returned funds of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> into a company account.
+                                      </span>
+                                    ) : (
+                                      <span>
+                                        Pay driver out-of-pocket surplus of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> from a company account.
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-end gap-2 shrink-0">
+                                  {activeAccounts.length === 0 ? (
+                                    <span className="text-rose-600 font-bold text-xs">No active company accounts found.</span>
+                                  ) : (
+                                    <>
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                                        <input
+                                          type="date"
+                                          value={selectedFwdDate}
+                                          onChange={(e) => setSelectedFwdDate(e.target.value)}
+                                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
+                                        />
+                                      </div>
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
+                                        <select
+                                          value={selectedFwdAccountId}
+                                          onChange={(e) => setSelectedFwdAccountId(e.target.value)}
+                                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
+                                        >
+                                          <option value="">-- Select Company Account --</option>
+                                          {activeAccounts.map(a => (
+                                            <option key={a.id} value={a.id}>
+                                              {a.accountName} ({a.type})
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          if (!selectedFwdAccountId) {
+                                            alert("Please select a target company account first.");
+                                            return;
+                                          }
+                                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
+                                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
+
+                                          const confirmMsg = isDeficit
+                                            ? `Are you sure you want to move the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to company account "${accountName}"?\n\nThis will record a negative advance on this trip to zero out the driver's balance.`
+                                            : `Are you sure you want to pay the driver surplus of ₹${balanceAmt.toLocaleString('en-IN')} from company account "${accountName}" for ${viewingEntry.tripNo}?\n\nThis will record a positive advance on this trip to zero out the driver's balance.`;
+
+                                          const performAccountSettle = () => {
+                                            const settleAdvance: TripAdvance = {
+                                              id: 'fwd_settle_' + Date.now(),
+                                              amount: isDeficit ? -balanceAmt : balanceAmt,
+                                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                              fromAccountId: selectedFwdAccountId,
+                                              notes: isDeficit 
+                                                ? `Negative balance moved/returned to company account: ${accountName}`
+                                                : `Positive balance paid to driver from company account: ${accountName}`,
+                                              receivedByDriverDirectly: false
+                                            };
+
+                                            const updatedSource = {
+                                              ...viewingEntry,
+                                              advances: [...(viewingEntry.advances || []), settleAdvance]
+                                            };
+
+                                            const updatedTrips = trips.map(t => {
+                                              if (t.id === updatedSource.id) return updatedSource;
+                                              return t;
+                                            });
+
+                                            onSaveTrips(updatedTrips);
+                                            setViewingEntry(updatedSource);
+                                            setSelectedFwdAccountId('');
+                                            alert(isDeficit
+                                              ? `Successfully settled ₹${balanceAmt.toLocaleString('en-IN')} deficit to account: ${accountName}.`
+                                              : `Successfully paid ₹${balanceAmt.toLocaleString('en-IN')} surplus from account: ${accountName}.`
+                                            );
+                                          };
+
+                                          if (confirmAction) {
+                                            confirmAction(confirmMsg, performAccountSettle, isDeficit ? "Settle Deficit" : "Pay Driver");
+                                          } else if (confirm(confirmMsg)) {
+                                            performAccountSettle();
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
+                                      >
+                                        Move Funds
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* sub trip details segments table inside the modal */}
@@ -1162,62 +1523,122 @@ export default function TripList({
                           </div>
 
                           {/* Segment Charges Settlement Info */}
-                          <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
-                            {s.loadingExpense !== undefined && s.loadingExpense > 0 && (() => {
-                              const df = s.loadingDeductedFrom || (s.loadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                              const b = s.loadingBears || 'Org';
-                              return (
-                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Loading Expense</span>
-                                  <strong className="text-slate-850 block">₹{s.loadingExpense.toLocaleString()}</strong>
-                                  <span className="text-[9px] text-slate-400 block mt-0.5">
-                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
+                          <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]">
+                            {s.cargoExpenses && s.cargoExpenses.length > 0 ? (
+                              s.cargoExpenses.map((exp) => (
+                                <div key={exp.id} className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">{exp.expenseType} Expense</span>
+                                  <strong className="text-slate-855 block">₹{exp.amount.toLocaleString()}</strong>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                    {exp.paidByDriver ? 'Driver Paid' : 'Office Deduct'}
+                                  </span>
+                                  <span className={`text-[9px] font-semibold block mt-0.5 font-mono ${
+                                    exp.bears === 'Org' ? 'text-blue-650' :
+                                    exp.bears === 'Driver' ? 'text-amber-600' :
+                                    'text-purple-600'
+                                  }`}>
+                                    {exp.bears === 'Org' ? 'Fully Org' : exp.bears === 'Driver' ? 'Fully Driver' : 'Fully Office'}
                                   </span>
                                 </div>
-                              );
-                            })()}
-                            
-                            {s.unloadingExpense !== undefined && s.unloadingExpense > 0 && (() => {
-                              const df = s.unloadingDeductedFrom || (s.unloadingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                              const b = s.unloadingBears || 'Org';
-                              return (
-                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Unloading Expense</span>
-                                  <strong className="text-slate-850 block">₹{s.unloadingExpense.toLocaleString()}</strong>
-                                  <span className="text-[9px] text-slate-400 block mt-0.5">
-                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
-                                  </span>
-                                </div>
-                              );
-                            })()}
+                              ))
+                            ) : (
+                              <>
+                                {s.loadingExpense !== undefined && s.loadingExpense > 0 && (() => {
+                                  const df = s.loadingDeductedFrom || 'DriverDirect';
+                                  const isSplit = s.loadingBearsOrg !== undefined || s.loadingBearsDriver !== undefined;
+                                  const bearsOrg = s.loadingBearsOrg !== undefined ? s.loadingBearsOrg : (s.loadingBears === 'Org' ? s.loadingExpense : 0);
+                                  const bearsDriver = s.loadingBearsDriver !== undefined ? s.loadingBearsDriver : (s.loadingBears === 'Driver' ? s.loadingExpense : 0);
+                                  return (
+                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Loading Expense</span>
+                                      <strong className="text-slate-855 block">₹{s.loadingExpense.toLocaleString()}</strong>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.loadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                                
+                                {s.unloadingExpense !== undefined && s.unloadingExpense > 0 && (() => {
+                                  const df = s.unloadingDeductedFrom || 'DriverDirect';
+                                  const isSplit = s.unloadingBearsOrg !== undefined || s.unloadingBearsDriver !== undefined;
+                                  const bearsOrg = s.unloadingBearsOrg !== undefined ? s.unloadingBearsOrg : (s.unloadingBears === 'Org' ? s.unloadingExpense : 0);
+                                  const bearsDriver = s.unloadingBearsDriver !== undefined ? s.unloadingBearsDriver : (s.unloadingBears === 'Driver' ? s.unloadingExpense : 0);
+                                  return (
+                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Unloading Expense</span>
+                                      <strong className="text-slate-855 block">₹{s.unloadingExpense.toLocaleString()}</strong>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.unloadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
 
-                            {s.brokerageExpense !== undefined && s.brokerageExpense > 0 && (() => {
-                              const df = s.brokerageDeductedFrom || (s.brokeragePaidByDriver ? 'DriverDirect' : 'OrgRental');
-                              const b = s.brokerageBears || 'Driver';
-                              return (
-                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Brokerage Expense</span>
-                                  <strong className="text-slate-855 block">₹{s.brokerageExpense.toLocaleString()}</strong>
-                                  <span className="text-[9px] text-slate-400 block mt-0.5">
-                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
-                                  </span>
-                                </div>
-                              );
-                            })()}
+                                {s.brokerageExpense !== undefined && s.brokerageExpense > 0 && (() => {
+                                  const df = s.brokerageDeductedFrom || 'DriverDirect';
+                                  const isSplit = s.brokerageBearsOrg !== undefined || s.brokerageBearsDriver !== undefined;
+                                  const bearsOrg = s.brokerageBearsOrg !== undefined ? s.brokerageBearsOrg : (s.brokerageBears === 'Org' ? s.brokerageExpense : 0);
+                                  const bearsDriver = s.brokerageBearsDriver !== undefined ? s.brokerageBearsDriver : (s.brokerageBears === 'Driver' ? s.brokerageExpense : 0);
+                                  return (
+                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Brokerage Expense</span>
+                                      <strong className="text-slate-855 block">₹{s.brokerageExpense.toLocaleString()}</strong>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.brokerageBears === 'Org' ? 'Fully Org' : 'Fully Driver')}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
 
-                            {s.crossingExpense !== undefined && s.crossingExpense > 0 && (() => {
-                              const df = s.crossingDeductedFrom || (s.crossingPaidByDriver ? 'DriverDirect' : 'OrgRental');
-                              const b = s.crossingBears || 'Org';
-                              return (
-                                <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">Crossing Expense</span>
-                                  <strong className="text-slate-855 block">₹{s.crossingExpense.toLocaleString()}</strong>
-                                  <span className="text-[9px] text-slate-400 block mt-0.5">
-                                    {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'} &bull; {b === 'Org' ? 'Org Bears' : 'Driver Bears'}
-                                  </span>
-                                </div>
-                              );
-                            })()}
+                                {s.crossingExpense !== undefined && s.crossingExpense > 0 && (() => {
+                                  const df = s.crossingDeductedFrom || 'DriverDirect';
+                                  const isSplit = s.crossingBearsOrg !== undefined || s.crossingBearsDriver !== undefined;
+                                  const bearsOrg = s.crossingBearsOrg !== undefined ? s.crossingBearsOrg : (s.crossingBears === 'Org' ? s.crossingExpense : 0);
+                                  const bearsDriver = s.crossingBearsDriver !== undefined ? s.crossingBearsDriver : (s.crossingBears === 'Driver' ? s.crossingExpense : 0);
+                                  return (
+                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Crossing Expense</span>
+                                      <strong className="text-slate-855 block">₹{s.crossingExpense.toLocaleString()}</strong>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.crossingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+
+                                {s.rmcExpense !== undefined && s.rmcExpense > 0 && (() => {
+                                  const df = s.rmcDeductedFrom || 'DriverDirect';
+                                  const isSplit = s.rmcBearsOrg !== undefined || s.rmcBearsDriver !== undefined;
+                                  const bearsOrg = s.rmcBearsOrg !== undefined ? s.rmcBearsOrg : (s.rmcBears === 'Org' ? s.rmcExpense : 0);
+                                  const bearsDriver = s.rmcBearsDriver !== undefined ? s.rmcBearsDriver : (s.rmcBears === 'Driver' ? s.rmcExpense : 0);
+                                  return (
+                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">RMC Expense</span>
+                                      <strong className="text-slate-855 block">₹{s.rmcExpense.toLocaleString()}</strong>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.rmcBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            )}
                           </div>
                         </div>
                       ))

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPermission, OrganizationProfile } from '../types';
-import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud } from 'lucide-react';
+import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard } from 'lucide-react';
 
 interface TeamMember {
   $id: string;
@@ -89,6 +89,60 @@ export default function UserAccessControl({
       brokeragePolicy: brokeragePolicy,
     });
     showNotification("Organization defaults updated successfully!");
+  };
+
+  const [fuelCardName, setFuelCardName] = useState('');
+  const [fuelCardNo, setFuelCardNo] = useState('');
+  const [fuelCardStatus, setFuelCardStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [editingFuelCardId, setEditingFuelCardId] = useState<string | null>(null);
+  const [showFuelCardForm, setShowFuelCardForm] = useState(false);
+
+  const handleSaveFuelCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgProfile || !onUpdateOrgProfile || !fuelCardName.trim()) return;
+
+    const currentCards = orgProfile.fuelCards || [];
+    let updatedCards;
+
+    if (editingFuelCardId) {
+      updatedCards = currentCards.map(c => 
+        c.id === editingFuelCardId 
+          ? { ...c, cardName: fuelCardName.trim(), cardNumber: fuelCardNo.trim() || undefined, status: fuelCardStatus }
+          : c
+      );
+    } else {
+      const newCard = {
+        id: 'fc_' + Date.now(),
+        cardName: fuelCardName.trim(),
+        cardNumber: fuelCardNo.trim() || undefined,
+        status: fuelCardStatus
+      };
+      updatedCards = [...currentCards, newCard];
+    }
+
+    onUpdateOrgProfile({
+      ...orgProfile,
+      fuelCards: updatedCards
+    });
+
+    setFuelCardName('');
+    setFuelCardNo('');
+    setFuelCardStatus('Active');
+    setEditingFuelCardId(null);
+    setShowFuelCardForm(false);
+    showNotification(editingFuelCardId ? "Fuel card updated successfully!" : "Fuel card added successfully!");
+  };
+
+  const handleDeleteFuelCard = (cardId: string) => {
+    if (!orgProfile || !onUpdateOrgProfile) return;
+    const currentCards = orgProfile.fuelCards || [];
+    const updatedCards = currentCards.filter(c => c.id !== cardId);
+
+    onUpdateOrgProfile({
+      ...orgProfile,
+      fuelCards: updatedCards
+    });
+    showNotification("Fuel card deleted successfully!");
   };
 
   const isBackendOrg = currentUserOrgId === 'org_backend';
@@ -414,6 +468,137 @@ export default function UserAccessControl({
               </button>
             </div>
           </form>
+
+          {/* FUEL CARDS SECTION */}
+          <div className="border-t border-slate-200 pt-4 mt-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-blue-650" />
+                <h3 className="text-xs font-bold text-blue-650 uppercase tracking-widest">
+                  Organization Fuel Cards (Accounts)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFuelCardName('');
+                  setFuelCardNo('');
+                  setFuelCardStatus('Active');
+                  setEditingFuelCardId(null);
+                  setShowFuelCardForm(!showFuelCardForm);
+                }}
+                className="bg-white hover:bg-slate-50 border border-slate-350 text-slate-705 font-bold text-[10px] py-1.5 px-2.5 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1"
+              >
+                {showFuelCardForm ? 'Close Form' : '+ Add Fuel Card'}
+              </button>
+            </div>
+
+            {showFuelCardForm && (
+              <form onSubmit={handleSaveFuelCard} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3 shadow-3xs">
+                <h4 className="text-[10px] font-bold text-blue-655 uppercase tracking-wider">
+                  {editingFuelCardId ? 'Edit Fuel Card' : 'Add New Fuel Card'}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label htmlFor="input-fuel-card-name" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Name / Account</label>
+                    <input
+                      id="input-fuel-card-name"
+                      type="text"
+                      required
+                      placeholder="e.g. HPCL Card #1"
+                      value={fuelCardName}
+                      onChange={(e) => setFuelCardName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="input-fuel-card-no" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Number (Optional)</label>
+                    <input
+                      id="input-fuel-card-no"
+                      type="text"
+                      placeholder="e.g. 700012345678"
+                      value={fuelCardNo}
+                      onChange={(e) => setFuelCardNo(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Status</label>
+                    <select
+                      value={fuelCardStatus}
+                      onChange={(e) => setFuelCardStatus(e.target.value as 'Active' | 'Inactive')}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowFuelCardForm(false)}
+                    className="px-3 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    {editingFuelCardId ? 'Save Changes' : 'Add Card'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* List of Fuel Cards */}
+            {(!orgProfile.fuelCards || orgProfile.fuelCards.length === 0) ? (
+              <p className="text-[11px] text-slate-400 italic text-center py-2">No fuel cards configured for this organization.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {orgProfile.fuelCards.map((card) => (
+                  <div key={card.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-3xs">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-800 text-xs">{card.cardName}</span>
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${card.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-350'}`}></span>
+                      </div>
+                      {card.cardNumber && (
+                        <code className="text-[10px] text-slate-400 font-mono select-all block">{card.cardNumber}</code>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingFuelCardId(card.id);
+                          setFuelCardName(card.cardName);
+                          setFuelCardNo(card.cardNumber || '');
+                          setFuelCardStatus(card.status);
+                          setShowFuelCardForm(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-800 text-[10px] font-bold cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Remove fuel card "${card.cardName}"?`)) {
+                            handleDeleteFuelCard(card.id);
+                          }
+                        }}
+                        className="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
