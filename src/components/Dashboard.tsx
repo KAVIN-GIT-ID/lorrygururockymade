@@ -50,6 +50,45 @@ export default function Dashboard({
   // Tooltip interactive state
   const [hoveredTruck, setHoveredTruck] = React.useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = React.useState({ x: 0, y: 0 });
+  const closeTimeoutRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleMouseEnterRow = (truckNo: string, e: React.MouseEvent) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const showOnRight = rect.left < 340;
+    setHoveredTruck(truckNo);
+    setHoverPosition({
+      x: showOnRight ? rect.right + 12 : rect.left - 332,
+      y: rect.top + window.scrollY - 30
+    });
+  };
+
+  const handleMouseLeaveRowOrTooltip = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+    }
+    closeTimeoutRef.current = setTimeout(() => {
+      setHoveredTruck(null);
+    }, 150);
+  };
+
+  const handleMouseEnterTooltip = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  };
 
   const {
     isAdmin = true,
@@ -507,16 +546,8 @@ export default function Dashboard({
                   <div 
                     key={truckNo} 
                     className="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
-                    onMouseEnter={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const showOnRight = rect.left < 340;
-                      setHoveredTruck(truckNo);
-                      setHoverPosition({
-                        x: showOnRight ? rect.right + 12 : rect.left - 332,
-                        y: rect.top + window.scrollY - 30
-                      });
-                    }}
-                    onMouseLeave={() => setHoveredTruck(null)}
+                    onMouseEnter={(e) => handleMouseEnterRow(truckNo, e)}
+                    onMouseLeave={handleMouseLeaveRowOrTooltip}
                   >
                     <span className="text-xs font-bold text-slate-705 uppercase font-mono tracking-wider flex items-center gap-1.5">
                       <Navigation className="w-3 h-3 text-slate-400 rotate-45" />
@@ -734,12 +765,14 @@ export default function Dashboard({
         const det = getTruckHoverDetails(hoveredTruck);
         return (
           <div 
-            className="fixed z-50 w-80 bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs pointer-events-none transition-all duration-150 animate-fade-in"
+            className="fixed z-50 w-80 bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs pointer-events-auto transition-all duration-150 animate-fade-in"
             style={{ 
               left: `${hoverPosition.x}px`, 
               top: `${hoverPosition.y}px`,
               boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3)'
             }}
+            onMouseEnter={handleMouseEnterTooltip}
+            onMouseLeave={handleMouseLeaveRowOrTooltip}
           >
             <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center">
               <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
@@ -770,7 +803,7 @@ export default function Dashboard({
             {det.detailsList.length > 0 && (
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Segment Ledger Logs</span>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5">
+                <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
                   {det.detailsList.map((seg, sIdx) => (
                     <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
                       <div className="flex justify-between font-bold text-slate-350">

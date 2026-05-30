@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import App from './App';
 import * as appwriteModule from './lib/appwrite';
 
@@ -202,7 +202,7 @@ describe('App Component Root Integration Tests', () => {
   it('should allow organization admin to update and persist organization default maintenance intervals in Access Control', async () => {
     vi.spyOn(appwriteModule, 'isAppwriteConfigured').mockReturnValue(true);
     localStorage.setItem('ttt_login_method', 'appwrite');
-    localStorage.setItem('ttt_user_rights', JSON.stringify([
+    const initialUserRights = [
       {
         id: 'ur-admin',
         email: 'admin@test.com',
@@ -218,8 +218,8 @@ describe('App Component Root Integration Tests', () => {
         canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
         canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
       }
-    ]));
-    localStorage.setItem('ttt_organization_profiles', JSON.stringify([
+    ];
+    const initialProfiles = [
       {
         organizationId: 'org_test',
         organizationName: 'Test Logistics Corp',
@@ -228,11 +228,22 @@ describe('App Component Root Integration Tests', () => {
         maxTrucksAllowed: 10,
         truckRequests: []
       }
-    ]));
+    ];
+    localStorage.setItem('ttt_user_rights', JSON.stringify(initialUserRights));
+    localStorage.setItem('ttt_organization_profiles', JSON.stringify(initialProfiles));
 
     const mockUser = { $id: 'usr-admin-id', email: 'admin@test.com', name: 'Test Admin' };
     vi.spyOn(appwriteModule.appwrite, 'getCurrentUser').mockResolvedValue(mockUser as any);
     vi.spyOn(appwriteModule.appwrite, 'getUserTeams').mockResolvedValue([{ $id: 'org_test', name: 'Test Logistics Corp' }] as any);
+    vi.spyOn(appwriteModule.appwrite, 'listGlobalConfigs').mockImplementation(async () => {
+      const storedProfiles = JSON.parse(localStorage.getItem('ttt_organization_profiles') || '[]');
+      const storedRights = JSON.parse(localStorage.getItem('ttt_user_rights') || '[]');
+      return [
+        ...storedRights.map((r: any) => ({ key: 'usr_' + (r.id || 'admin'), data: JSON.stringify(r) })),
+        ...storedProfiles.map((p: any) => ({ key: 'prf_' + p.organizationId, data: JSON.stringify(p) }))
+      ];
+    });
+    vi.spyOn(appwriteModule.appwrite, 'saveGlobalConfig').mockResolvedValue('success');
 
     render(<App />);
 
@@ -273,6 +284,235 @@ describe('App Component Root Integration Tests', () => {
       expect(testOrg.crownOilIntervalKM).toBe(45000);
       expect(testOrg.gearBoxOilIntervalKM).toBe(45000);
       expect(testOrg.radiatorIntervalKM).toBe(25000);
+    });
+  });
+
+  it('should auto-heal broken carried-forward advances on startup', async () => {
+    vi.spyOn(appwriteModule, 'isAppwriteConfigured').mockReturnValue(false);
+    
+    const initialTrips = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-A-01',
+        organizationId: 'org_test',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh Driver',
+        status: 'Completed',
+        startingKM: 1000,
+        endingKM: 1500,
+        subTrips: [],
+        payments: [],
+        advances: [
+          {
+            id: 'fwd_out_12345',
+            amount: -2000,
+            date: '2026-05-05',
+            fromAccountId: 'Direct Driver',
+            notes: 'Negative balance carried forward to TRIP-B-02',
+            receivedByDriverDirectly: true
+          }
+        ]
+      },
+      {
+        id: 't-2',
+        tripNo: 'TRIP-B-02',
+        organizationId: 'org_test',
+        startDate: '2026-05-06',
+        endDate: '2026-05-10',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh Driver',
+        status: 'In Progress',
+        startingKM: 1500,
+        endingKM: 2000,
+        subTrips: [],
+        payments: [],
+        advances: [] // missing matching fwd_in_ advance!
+      }
+    ];
+
+    localStorage.setItem('ttt_trips', JSON.stringify(initialTrips));
+    localStorage.setItem('ttt_login_method', 'local');
+
+    render(<App />);
+
+    await waitFor(() => {
+      const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+      const tripA = storedTrips.find((t: any) => t.id === 't-1');
+      expect(tripA.advances).toHaveLength(0);
+    });
+  });
+
+  it('should cascade delete matching carried-forward advances when the source trip is deleted', async () => {
+    vi.spyOn(appwriteModule, 'isAppwriteConfigured').mockReturnValue(true);
+    localStorage.setItem('ttt_login_method', 'appwrite');
+    const initialUserRights = [
+      {
+        id: 'ur-admin',
+        email: 'admin@company.com',
+        name: 'Local Admin',
+        role: 'Admin',
+        organizationId: 'org_test',
+        isApproved: true,
+        canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
+        canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
+        canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
+        canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: true,
+        canViewOffices: true, canEditOffices: true, canDeleteOffices: true,
+        canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
+        canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
+      }
+    ];
+    const initialProfiles = [
+      {
+        organizationId: 'org_test',
+        organizationName: 'Test Logistics Corp',
+        ownerEmail: 'admin@company.com',
+        status: 'Active',
+        maxTrucksAllowed: 10,
+        truckRequests: []
+      }
+    ];
+    localStorage.setItem('ttt_user_rights', JSON.stringify(initialUserRights));
+    localStorage.setItem('ttt_organization_profiles', JSON.stringify(initialProfiles));
+
+    const mockUser = { $id: 'usr-admin-id', email: 'admin@company.com', name: 'Local Admin' };
+    vi.spyOn(appwriteModule.appwrite, 'getCurrentUser').mockResolvedValue(mockUser as any);
+    vi.spyOn(appwriteModule.appwrite, 'getUserTeams').mockResolvedValue([{ $id: 'org_test', name: 'Test Logistics Corp' }] as any);
+    vi.spyOn(appwriteModule.appwrite, 'listGlobalConfigs').mockImplementation(async () => {
+      const storedProfiles = JSON.parse(localStorage.getItem('ttt_organization_profiles') || '[]');
+      const storedRights = JSON.parse(localStorage.getItem('ttt_user_rights') || '[]');
+      return [
+        ...storedRights.map((r: any) => ({ key: 'usr_' + (r.id || 'admin'), data: JSON.stringify(r) })),
+        ...storedProfiles.map((p: any) => ({ key: 'prf_' + p.organizationId, data: JSON.stringify(p) }))
+      ];
+    });
+    vi.spyOn(appwriteModule.appwrite, 'saveGlobalConfig').mockResolvedValue('success');
+    vi.spyOn(appwriteModule.appwrite, 'saveFleetDocument').mockResolvedValue('success');
+    vi.spyOn(appwriteModule.appwrite, 'deleteFleetDocument').mockResolvedValue(true);
+
+    const linkedTrips = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-A-01',
+        organizationId: 'org_test',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh Driver',
+        status: 'Completed',
+        startingKM: 1000,
+        endingKM: 1500,
+        subTrips: [
+          {
+            id: 'st-1',
+            loadingDate: '2026-05-01',
+            routeFrom: 'Mumbai',
+            routeTo: 'Pune',
+            officeName: 'Mumbai HQ',
+            income: 40000,
+            loadingExpense: 0,
+            unloadingExpense: 0,
+            driverWages: 0,
+            startingKM: 0,
+            endingKM: 0
+          }
+        ],
+        payments: [],
+        advances: [
+          {
+            id: 'fwd_out_12345',
+            amount: -2000,
+            date: '2026-05-05',
+            fromAccountId: 'Direct Driver',
+            notes: 'Negative balance carried forward to TRIP-B-02',
+            receivedByDriverDirectly: true
+          }
+        ]
+      },
+      {
+        id: 't-2',
+        tripNo: 'TRIP-B-02',
+        organizationId: 'org_test',
+        startDate: '2026-05-06',
+        endDate: '2026-05-10',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh Driver',
+        status: 'In Progress',
+        startingKM: 1500,
+        endingKM: 2000,
+        subTrips: [
+          {
+            id: 'st-2',
+            loadingDate: '2026-05-06',
+            routeFrom: 'Mumbai',
+            routeTo: 'Pune',
+            officeName: 'Mumbai HQ',
+            income: 40000,
+            loadingExpense: 0,
+            unloadingExpense: 0,
+            driverWages: 0,
+            startingKM: 0,
+            endingKM: 0
+          }
+        ],
+        payments: [],
+        advances: [
+          {
+            id: 'fwd_in_12345',
+            amount: 2000,
+            date: '2026-05-05',
+            fromAccountId: 'Direct Driver',
+            notes: 'Negative balance carried forward from TRIP-A-01',
+            receivedByDriverDirectly: true
+          }
+        ]
+      }
+    ];
+
+    localStorage.setItem('ttt_trips', JSON.stringify(linkedTrips));
+    vi.spyOn(appwriteModule.appwrite, 'listFleetDocuments').mockImplementation(async (dbId, collectionId, orgId) => {
+      if (collectionId === 'trips') {
+        const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+        return storedTrips.map((t: any) => ({
+          $id: t.id,
+          organizationId: orgId,
+          data: JSON.stringify(t)
+        }));
+      }
+      return [];
+    });
+    vi.spyOn(appwriteModule.appwrite, 'queryTrips').mockImplementation(async (dbId, orgId, filters, page, limit) => {
+      const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+      return {
+        documents: storedTrips.map((t: any) => ({
+          $id: t.id,
+          organizationId: orgId,
+          data: JSON.stringify(t)
+        })),
+        total: storedTrips.length
+      };
+    });
+
+    render(<App />);
+
+    await screen.findByText('Trip Management');
+    const tripTabBtn = screen.getByRole('button', { name: /Trip Management/i });
+    fireEvent.click(tripTabBtn);
+
+    await screen.findAllByText('TRIP-A-01');
+    const deleteBtn = within(document.getElementById('trip-row-t-1')!).getByTitle('Wipe Cargo Entry record');
+    fireEvent.click(deleteBtn);
+
+    const confirmBtn = await screen.findByRole('button', { name: /Confirm Action/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+      expect(storedTrips).toHaveLength(1);
+      expect(storedTrips[0].tripNo).toBe('TRIP-B-02');
+      expect(storedTrips[0].advances).toHaveLength(0);
     });
   });
 });

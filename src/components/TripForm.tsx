@@ -18,6 +18,7 @@ interface TripFormProps {
   editingEntry?: TripEntry | null;
   canViewDrivers?: boolean;
   orgProfile?: OrganizationProfile;
+  trips?: TripEntry[];
 }
 
 export const importLegacyCargoExpenses = (s: SubTrip, orgProfile?: OrganizationProfile): CargoExpense[] => {
@@ -244,7 +245,8 @@ export default function TripForm({
   onSubmit,
   editingEntry,
   canViewDrivers = true,
-  orgProfile
+  orgProfile,
+  trips
 }: TripFormProps) {
   // Trip group keying
   const [tripNoOption, setTripNoOption] = useState<'AUTO' | 'EXISTING'>('AUTO');
@@ -323,6 +325,21 @@ export default function TripForm({
   const [newPayNotes, setNewPayNotes] = useState('');
   const [newPaySubTripId, setNewPaySubTripId] = useState<string>('general');
 
+  // Live sub-trip receivable balance calculations for the sub-trip drawer
+  const liveSegmentDeductions = stCargoExpenses
+    .filter(exp => exp.deductedFrom === 'OrgRental')
+    .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+
+  const liveSegmentOfficeBears = stCargoExpenses
+    .filter(exp => exp.bears === 'Office')
+    .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+
+  const liveSegmentPayments = editingSubTripId
+    ? (payments || []).filter(p => p.subTripId === editingSubTripId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    : 0;
+
+  const liveSegmentReceivable = (stIncome || 0) - liveSegmentDeductions + liveSegmentOfficeBears - liveSegmentPayments;
+
   // Draft states for advances list
   const [newAdvAmount, setNewAdvAmount] = useState<number | ''>('');
   const [newAdvDate, setNewAdvDate] = useState(() => new Date().toISOString().substring(0, 10));
@@ -336,6 +353,27 @@ export default function TripForm({
   const activeOffices = offices.filter(o => o.status === 'Active');
   const activeAccounts = accounts.filter(a => a.status === 'Active');
   const activeDrivers = drivers.filter(d => d.status === 'Active');
+
+  const getLatestKMForTruck = (selectedTruckNo: string): number => {
+    if (!selectedTruckNo) return 0;
+    const truckObj = trucks.find(t => t.truckNo === selectedTruckNo);
+    let latestKM = truckObj?.currentKM || 0;
+
+    const truckTrips = (trips || []).filter(t => t.truckNo === selectedTruckNo);
+    if (truckTrips.length > 0) {
+      const sorted = [...truckTrips].sort((a, b) => {
+        const dateA = a.endDate || a.startDate || '';
+        const dateB = b.endDate || b.startDate || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return (b.tripNo || '').localeCompare(a.tripNo || '');
+      });
+      const lastTripEndingKM = sorted[0].endingKM || 0;
+      if (lastTripEndingKM > latestKM) {
+        latestKM = lastTripEndingKM;
+      }
+    }
+    return latestKM;
+  };
 
   // Year prefix sequence for Auto trip identifiers
   useEffect(() => {
@@ -410,14 +448,15 @@ export default function TripForm({
     } else if (isOpen) {
       // Create resetting defaults
       const firstTruck = activeTrucks[0];
-      setTruckNo(firstTruck?.truckNo || '');
+      const defaultTruckNo = firstTruck?.truckNo || '';
+      setTruckNo(defaultTruckNo);
       
       // Choose first active driver as default
       setDriverName(activeDrivers[0]?.driverName || '');
 
       setStartDate(new Date().toISOString().substring(0, 10));
       setEndDate(new Date().toISOString().substring(0, 10));
-      setStartingKM(0);
+      setStartingKM(getLatestKMForTruck(defaultTruckNo));
       setEndingKM(0);
       setStatus('Pending');
       setNotes('');
@@ -832,6 +871,22 @@ export default function TripForm({
     setEditingSubTripId(null);
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showSubTripForm) {
+          handleCancelSubTripSegment();
+        } else if (isOpen) {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showSubTripForm, isOpen, onClose]);
+
   const handleSaveSubTripSegmentConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     handleSaveSubTripSegment(e);
@@ -1070,8 +1125,14 @@ export default function TripForm({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
+      >
         
         {/* HEADER SPEC CHIPS */}
         <div className="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
@@ -1173,7 +1234,13 @@ export default function TripForm({
                 <select
                   id="select-truckNo"
                   value={truckNo}
-                  onChange={(e) => setTruckNo(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTruckNo(val);
+                    if (!editingEntry) {
+                      setStartingKM(getLatestKMForTruck(val));
+                    }
+                  }}
                   required
                   className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
                 >
@@ -1567,8 +1634,8 @@ export default function TripForm({
 
             {/* Dynamic drafting sub-trips list visual list table */}
             {subTrips.length > 0 ? (
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-150 shadow-3xs max-h-[220px] overflow-y-auto font-sans">
-                <table className="w-full text-xs text-left">
+              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs font-sans">
+                <table className="w-full min-w-[800px] text-xs text-left">
                   <thead className="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                     <tr>
                       <th className="p-3 pl-4"># Seg</th>
@@ -1576,6 +1643,7 @@ export default function TripForm({
                       <th className="p-3">Office Name</th>
                       <th className="p-3">Route Path</th>
                       <th className="p-3 text-right">Income (₹)</th>
+                      <th className="p-3 text-right">Receivable (₹)</th>
                       <th className="p-3 text-right">Wages (₹)</th>
                       <th className="p-3 text-right">All EXP (₹)</th>
                       <th className="p-3 text-right pr-4">Edit / Delete</th>
@@ -1598,6 +1666,47 @@ export default function TripForm({
                         (st.driverWages || 0) + 
                         (st.otherExpense || 0)
                       );
+
+                      const segmentDeductions = (() => {
+                        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+                          return st.cargoExpenses
+                            .filter(exp => exp.deductedFrom === 'OrgRental')
+                            .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                        }
+                        let legacyDeductions = 0;
+                        const loadAmt = Number(st.loadingExpense) || 0;
+                        if (st.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
+
+                        const unloadAmt = Number(st.unloadingExpense) || 0;
+                        if (st.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
+
+                        const brokerageAmt = Number(st.brokerageExpense) || 0;
+                        if (st.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
+
+                        const crossingAmt = Number(st.crossingExpense) || 0;
+                        if (st.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
+
+                        const rmcAmt = Number(st.rmcExpense) || 0;
+                        if (st.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
+
+                        return legacyDeductions;
+                      })();
+
+                      const segmentOfficeBears = (() => {
+                        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+                          return st.cargoExpenses
+                            .filter(exp => exp.bears === 'Office')
+                            .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                        }
+                        return 0;
+                      })();
+
+                      const segmentPayments = (payments || [])
+                        .filter(p => p.subTripId === st.id)
+                        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+                      const segmentReceivable = st.income - segmentDeductions + segmentOfficeBears - segmentPayments;
+
                       return (
                         <tr key={st.id} className="hover:bg-slate-50/70 transition">
                           <td className="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
@@ -1605,6 +1714,13 @@ export default function TripForm({
                           <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
                           <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
                           <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
+                          <td className={`p-3 text-right font-bold font-mono ${
+                            segmentReceivable > 0 ? 'text-blue-700' :
+                            segmentReceivable === 0 ? 'text-slate-400 font-normal' :
+                            'text-amber-700'
+                          }`}>
+                            ₹{segmentReceivable.toLocaleString()}
+                          </td>
                           <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
                           <td className="p-3 text-right font-medium text-red-600 font-mono">₹{allCol.toLocaleString()}</td>
                           <td className="p-3 text-right pr-4 flex justify-end gap-2">
@@ -1643,15 +1759,29 @@ export default function TripForm({
               </div>
             )}
 
-            {/* NESTED DYNAMIC PANEL SEGMENT FORM BUILDER (HIDDEN BY DEFAULT) */}
             {showSubTripForm && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print">
-                <div className="bg-white rounded-2xl border border-slate-205 p-6 space-y-4 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans">
+              <div 
+                onClick={handleCancelSubTripSegment}
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print"
+              >
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-2xl border border-slate-205 p-6 space-y-4 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans"
+                >
                   <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
-                      <ListCollapse className="w-4 h-4 text-blue-650" />
-                      {editingSubTripId ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
-                    </span>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
+                        <ListCollapse className="w-4 h-4 text-blue-650" />
+                        {editingSubTripId ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border font-mono ${
+                        liveSegmentReceivable > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        liveSegmentReceivable === 0 ? 'bg-slate-50 text-slate-600 border-slate-200' :
+                        'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        Est. Receivable: ₹{liveSegmentReceivable.toLocaleString()}
+                      </span>
+                    </div>
                     <button
                       type="button"
                       title="Close"
@@ -1816,6 +1946,13 @@ export default function TripForm({
                         placeholder="0"
                         className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
                       />
+                      <span className="text-[10px] text-slate-500 block mt-1">
+                        Est. Net Receivable: <strong className={
+                          liveSegmentReceivable > 0 ? 'text-blue-700 font-bold' :
+                          liveSegmentReceivable === 0 ? 'text-slate-500 font-semibold' :
+                          'text-amber-700 font-bold'
+                        }>₹{liveSegmentReceivable.toLocaleString()}</strong> (freight income less rental deductions)
+                      </span>
                     </div>
 
                     {/* WAGES */}
@@ -2058,8 +2195,8 @@ export default function TripForm({
             </span>
 
             {payments.length > 0 ? (
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-150 font-sans shadow-3xs text-xs max-h-[220px] overflow-y-auto">
-                <table className="w-full text-left">
+              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs text-xs font-sans">
+                <table className="w-full min-w-[800px] text-left">
                   <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase font-bold text-slate-505 tracking-wider">
                     <tr>
                       <th className="p-2.5 pl-4">#</th>
@@ -2110,8 +2247,8 @@ export default function TripForm({
             )}
 
             {/* Receipt Registrator Input Line */}
-            <div className="bg-slate-50 rounded-xl border border-slate-200 border-dashed p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end shadow-3xs font-sans">
-              <div>
+            <div className="bg-slate-50 rounded-xl border border-slate-200 border-dashed p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-end shadow-3xs font-sans">
+              <div className="md:col-span-2">
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Receipt Date</label>
                 <input
                   type="date"
@@ -2121,7 +2258,7 @@ export default function TripForm({
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Receipts Ledger Account</label>
                 <select
                   value={newPayReceivedBy}
@@ -2137,7 +2274,7 @@ export default function TripForm({
               </div>
 
               {/* Leg / Destination Balance Selector */}
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Track segment</label>
                 <select
                   value={newPaySubTripId}
@@ -2153,7 +2290,7 @@ export default function TripForm({
                 </select>
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Settled Amount (₹)</label>
                 <input
                   type="number"
@@ -2162,11 +2299,11 @@ export default function TripForm({
                   value={newPayAmount}
                   onChange={(e) => setNewPayAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                   placeholder="₹0.00"
-                  className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2 py-1.5 text-xs text-right font-mono font-bold"
+                  className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2 py-1.5 text-xs text-right font-mono font-bold"
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-4">
                 <label className="block text-[9px] text-slate-555 font-extrabold uppercase mb-1">Payment Notes / Cargo ref</label>
                 <div className="flex gap-2">
                   <input
@@ -2174,12 +2311,12 @@ export default function TripForm({
                     placeholder="e.g. Hand cash advance"
                     value={newPayNotes}
                     onChange={(e) => setNewPayNotes(e.target.value)}
-                    className="flex-1 bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs"
+                    className="flex-1 bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs"
                   />
                   <button
                     type="button"
                     onClick={handleAddPayment}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shrink-0 cursor-pointer shadow-3xs bg-blue-600 shrink-0 h-8"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shrink-0 cursor-pointer shadow-3xs h-8"
                   >
                     + Register
                   </button>
@@ -2195,8 +2332,8 @@ export default function TripForm({
             </span>
 
             {advances && advances.length > 0 ? (
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-150 font-sans shadow-3xs text-xs max-h-[180px] overflow-y-auto">
-                <table className="w-full text-left">
+              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs text-xs font-sans">
+                <table className="w-full min-w-[800px] text-left">
                   <thead className="bg-slate-50 text-[10px] text-slate-505 uppercase font-bold tracking-wider">
                     <tr>
                       <th className="p-2.5 pl-4">#</th>

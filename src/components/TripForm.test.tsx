@@ -215,4 +215,116 @@ describe('TripForm Component Tests', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /\+ Add Fuel/i }));
   });
+
+  it('should auto-populate starting KM based on the latest trip ending KM or truck currentKM when selecting a truck in new trip mode', () => {
+    const mockTrips: TripEntry[] = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-2026-0001',
+        truckNo: 'MH-12-PQ-1234',
+        startDate: '2026-05-10',
+        endDate: '2026-05-12',
+        driverName: 'Ramesh Kumar',
+        startingKM: 1000,
+        endingKM: 1500, // last ending KM is 1500
+        subTrips: [],
+        payments: [],
+        status: 'Completed',
+      },
+      {
+        id: 't-2',
+        tripNo: 'TRIP-2026-0002',
+        truckNo: 'MH-12-PQ-1234',
+        startDate: '2026-05-15',
+        endDate: '2026-05-20',
+        driverName: 'Ramesh Kumar',
+        startingKM: 1600,
+        endingKM: 2200, // most recent ending KM is 2200
+        subTrips: [],
+        payments: [],
+        status: 'Completed',
+      }
+    ];
+
+    const trucksWithKM = [
+      { id: 'tr-1', truckNo: 'MH-12-PQ-1234', model: 'Tata Prime', status: 'Active' as const, isApproved: true, currentKM: 2000 },
+      { id: 'tr-2', truckNo: 'KA-51-AB-9999', model: 'Leyland', status: 'Active' as const, isApproved: true, currentKM: 3500 }
+    ];
+
+    render(
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={trucksWithKM}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={vi.fn()}
+        trips={mockTrips}
+      />
+    );
+
+    const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
+
+    // Default truck MH-12-PQ-1234 is selected first on load.
+    // The max of last trip endingKM (2200) and truck's currentKM (2000) is 2200.
+    expect(startingKMInput.value).toBe('2200');
+
+    // Change truck to KA-51-AB-9999
+    // It has no previous trips, so it should fall back to its currentKM (3500)
+    fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'KA-51-AB-9999' } });
+    expect(startingKMInput.value).toBe('3500');
+  });
+
+  it('should not overwrite starting KM when editing an existing trip', () => {
+    const mockTrips: TripEntry[] = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-2026-0001',
+        truckNo: 'MH-12-PQ-1234',
+        startDate: '2026-05-10',
+        endDate: '2026-05-12',
+        driverName: 'Ramesh Kumar',
+        startingKM: 1000,
+        endingKM: 1500,
+        subTrips: [],
+        payments: [],
+        status: 'Completed',
+      }
+    ];
+
+    const editingTrip: TripEntry = {
+      id: 't-edit',
+      tripNo: 'TRIP-2026-0002',
+      truckNo: 'MH-12-PQ-1234',
+      startDate: '2026-05-15',
+      endDate: '2026-05-20',
+      driverName: 'Ramesh Kumar',
+      startingKM: 1800, // Manually set starting KM
+      endingKM: 2500,
+      subTrips: [],
+      payments: [],
+      status: 'In Progress',
+    };
+
+    render(
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={vi.fn()}
+        editingEntry={editingTrip}
+        trips={mockTrips}
+      />
+    );
+
+    const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
+    // When editing, starting KM should remain as the editing entry's value (1800) and not be auto-calculated to 1500
+    expect(startingKMInput.value).toBe('1800');
+  });
 });

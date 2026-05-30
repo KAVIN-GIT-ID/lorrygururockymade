@@ -91,6 +91,18 @@ export default function ServiceDoneModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, truckId, serviceType]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
   const colors = SERVICE_COLORS[serviceType];

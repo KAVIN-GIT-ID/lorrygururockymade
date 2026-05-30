@@ -17,6 +17,14 @@ import UserAccessControl from './components/UserAccessControl';
 import BackendDashboard from './components/BackendDashboard';
 import VoiceAssistant from './components/VoiceAssistant';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
+import { useDrivers } from './hooks/useDrivers';
+import { useOffices } from './hooks/useOffices';
+import { useAccounts } from './hooks/useAccounts';
+import { useExpenses } from './hooks/useExpenses';
+import { useTyres } from './hooks/useTyres';
+import { useTrucks } from './hooks/useTrucks';
+import { useTrips } from './hooks/useTrips';
+import { useAuditLogs } from './hooks/useAuditLogs';
 import {
   migrateTripsIfNecessary,
   migrateUserPermissions,
@@ -197,6 +205,14 @@ export default function App() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  const [activeMonth, setActiveMonth] = useState(() => {
+    const today = new Date();
+    return String(today.getMonth() + 1).padStart(2, '0');
+  });
+  const [activeYear, setActiveYear] = useState(() => {
+    return String(new Date().getFullYear());
+  });
 
   const [changeOrgIdInput, setChangeOrgIdInput] = useState('');
   const [changeOrgLoading, setChangeOrgLoading] = useState(false);
@@ -1423,92 +1439,77 @@ export default function App() {
       setActiveTab(fallbackTab);
     }
   }, [activeTab, currentUserRights]);
+  // Custom hooks managing operational states
+  const { auditLogs, setAuditLogs, logAction, handleClearAuditLogs } = useAuditLogs({
+    currentUser,
+    currentUserOrgId,
+    showNotification
+  });
+  const saveAuditLogs = setAuditLogs;
 
-  // Data States
-  const [trucks, setTrucks] = useState<Truck[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_trucks');
-      return stored ? migrateTrucks(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [drivers, setDrivers] = useState<Driver[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_drivers');
-      return stored ? migrateDrivers(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [offices, setOffices] = useState<Office[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_offices');
-      return stored ? migrateOffices(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_accounts');
-      return stored ? migrateAccounts(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [trips, setTrips] = useState<TripEntry[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_trips');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const migrated = migrateTrips(migrateTripsIfNecessary(parsed));
-        localStorage.setItem('ttt_trips', JSON.stringify(migrated));
-        return migrated;
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  });
-  const [expenses, setExpenses] = useState<ExpenseEntry[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_expenses');
-      return stored ? migrateExpenses(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [tyres, setTyres] = useState<Tyre[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_tyres');
-      return stored ? migrateTyres(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
+  const { trips, setTrips, orgTrips, saveTrips, postTripEntry, deleteTripEntry } = useTrips({
+    orgId: currentUserOrgId,
+    showNotification,
+    logAction,
+    loadDashboardData,
+    activeMonth,
+    activeYear
   });
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    try {
-      const saved = localStorage.getItem('fleet_audit_logs');
-      if (saved) return migrateAuditLogs(JSON.parse(saved));
-      return [];
-    } catch {
-      return [];
-    }
+  const { accounts, setAccounts, orgAccounts, saveAccounts, addAccount, updateAccount, deleteAccount } = useAccounts({
+    orgId: currentUserOrgId,
+    trips,
+    showNotification,
+    logAction
   });
 
+  const { drivers, setDrivers, orgDrivers, saveDrivers, addDriver, updateDriver, deleteDriver } = useDrivers({
+    orgId: currentUserOrgId,
+    trips,
+    showNotification,
+    logAction
+  });
+
+  const { offices, setOffices, orgOffices, saveOffices, addOffice, updateOffice, deleteOffice } = useOffices({
+    orgId: currentUserOrgId,
+    trips,
+    showNotification,
+    logAction
+  });
+
+  const { expenses, setExpenses, orgExpenses, saveExpenses, addExpense, updateExpense, deleteExpense } = useExpenses({
+    orgId: currentUserOrgId,
+    showNotification,
+    logAction,
+    loadDashboardData,
+    activeMonth,
+    activeYear
+  });
+
+  const { tyres, setTyres, orgTyres, saveTyres, addTyre, updateTyre, deleteTyre } = useTyres({
+    orgId: currentUserOrgId,
+    expenses,
+    saveExpenses,
+    showNotification,
+    logAction,
+    loadDashboardData,
+    activeMonth,
+    activeYear
+  });
+
+  const { trucks, setTrucks, orgTrucks, saveTrucks, addTruck, updateTruck, deleteTruck } = useTrucks({
+    orgId: currentUserOrgId,
+    trips,
+    organizationProfiles,
+    saveOrganizationProfiles,
+    showNotification,
+    logAction,
+    pushFleetSnapshotNow
+  });
   const [dashboardTrips, setDashboardTrips] = useState<TripEntry[]>([]);
   const [dashboardExpenses, setDashboardExpenses] = useState<ExpenseEntry[]>([]);
-  const [activeMonth, setActiveMonth] = useState(() => {
-    const today = new Date();
-    return String(today.getMonth() + 1).padStart(2, '0');
-  });
-  const [activeYear, setActiveYear] = useState(() => {
-    return String(new Date().getFullYear());
-  });
 
-  const loadDashboardData = async (month: string, year: string) => {
+  async function loadDashboardData(month: string, year: string) {
     if (!isAppwriteConfigured()) {
       const localTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
       const localExpenses = JSON.parse(localStorage.getItem('ttt_expenses') || '[]');
@@ -1538,7 +1539,7 @@ export default function App() {
     } catch (err) {
       console.warn("Failed to load monthly dashboard data from Appwrite:", err);
     }
-  };
+  }
 
   useEffect(() => {
     loadDashboardData(activeMonth, activeYear);
@@ -1563,336 +1564,11 @@ export default function App() {
     });
   };
 
-  const logAction = (action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected', category: string, reference: string, details: string, targetOrgId?: string) => {
-    const userEmail = currentUser ? (currentUser.email || currentUser.name || 'Anonymous User') : 'Anonymous User';
-    const newLog: AuditLog = {
-      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      user: userEmail,
-      action,
-      category,
-      reference,
-      details,
-      organizationId: targetOrgId || currentUserOrgId || 'org_default'
-    };
-    setAuditLogs(prev => {
-      const updated = [newLog, ...prev];
-      localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
-      touchLastModified();
-      return updated;
-    });
-  };
 
-  const generateDiffText = <T extends Record<string, any>>(
-    oldObj: T,
-    newObj: T,
-    labels: Partial<Record<keyof T, string>>,
-    ignoreKeys: string[] = ['id']
-  ): string => {
-    const changes: string[] = [];
-    const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)])) as Array<keyof T & string>;
 
-    for (const key of allKeys) {
-      if (ignoreKeys.includes(key)) continue;
 
-      const oldValue = oldObj[key];
-      const newValue = newObj[key];
 
-      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-        const label = labels[key] || (key as string);
-        const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-        const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-        changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-      }
-    }
 
-    if (changes.length === 0) {
-      return "";
-    }
-    return changes.join(" | ");
-  };
-
-  const getDriverDiff = (oldDriver: Driver, newDriver: Driver): string => {
-    const labels: Partial<Record<keyof Driver, string>> = {
-      driverName: 'Driver Name',
-      phone: 'Phone Number',
-      licenseNo: 'License Number',
-      status: 'Active Status'
-    };
-    return generateDiffText(oldDriver, newDriver, labels);
-  };
-
-  const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
-    const labels: Partial<Record<keyof Truck, string>> = {
-      truckNo: 'Vehicle No',
-      ownerName: 'Owner Name',
-      status: 'Active Status',
-      make: 'Manufacturer Make',
-      model: 'Vehicle Model',
-      type: 'Vehicle Type',
-      insuranceDate: 'Insurance Expiry Date',
-      fcDate: 'Fitness Cert Expiry',
-      pinpushKM: 'Pinpush Milestone',
-      wheelGreaseKM: 'Wheel Grease Milestone',
-      alignmentNextDate: 'Next Alignment Date',
-      qTaxDate: 'Q Tax Expiry',
-      greenTaxDate: 'Green Tax Expiry',
-      npTaxDate: 'NP Tax Expiry',
-      fiveYearPermitDate: '5-Yr Permit Expiry',
-      currentKM: 'Current Odometer',
-      engineOilKM: 'Engine Oil Target',
-      crownOilKM: 'Crown Oil Target',
-      gearBoxOilKM: 'Gear Box Oil Target',
-      radiatorKM: 'Radiator Target'
-    };
-    return generateDiffText(oldTruck, newTruck, labels);
-  };
-
-  const getOfficeDiff = (oldOffice: Office, newOffice: Office): string => {
-    const labels: Partial<Record<keyof Office, string>> = {
-      officeName: 'Office Name',
-      city: 'Location/City',
-      contactPerson: 'Contact Person',
-      phone: 'Phone No',
-      status: 'Active Status'
-    };
-    return generateDiffText(oldOffice, newOffice, labels);
-  };
-
-  const getAccountDiff = (oldAccount: Account, newAccount: Account): string => {
-    const labels: Partial<Record<keyof Account, string>> = {
-      accountName: 'Account Name',
-      type: 'Account Type',
-      holderName: 'Account Holder Name',
-      status: 'Ledger Status'
-    };
-    return generateDiffText(oldAccount, newAccount, labels);
-  };
-
-  const getExpenseDiff = (oldExpense: ExpenseEntry, newExpense: ExpenseEntry): string => {
-    const labels: Partial<Record<keyof ExpenseEntry, string>> = {
-      truckNo: 'Vehicle No',
-      expenseType: 'Expense Type',
-      shopName: 'Vendor/Shop Name',
-      amount: 'Expense Amount',
-      paymentMode: 'Payment Account',
-      date: 'Record Date',
-      status: 'Approval Status',
-      accountType: 'Payer Type',
-      driverName: 'Paid By Operator'
-    };
-    return generateDiffText(oldExpense, newExpense, labels);
-  };
-
-  const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
-    const changes: string[] = [];
-    const simpleLabels: Partial<Record<keyof TripEntry, string>> = {
-      tripNo: 'Trip ID',
-      truckNo: 'Vehicle No',
-      startDate: 'Start Date',
-      endDate: 'End Date',
-      driverName: 'Operator Name',
-      startingKM: 'Start Odometer KM',
-      endingKM: 'End Odometer KM',
-      status: 'Trip Status',
-      notes: 'General Remarks',
-      rtoExpense: 'RTO Expense',
-      dieselLiters: 'Diesel Liters',
-      dieselRate: 'Diesel Rate',
-      dieselAmount: 'Diesel Amount',
-      addBlueExpense: 'Add Blue Expense',
-      fastagExpense: 'Fastag Expense',
-      otherExpense: 'Misc Other Expense',
-      rtoPaidByDriver: 'RTO Paid by Driver',
-      addBluePaidByDriver: 'Add Blue Paid by Driver',
-      fastagPaidByDriver: 'Fastag Paid by Driver',
-      otherPaidByDriver: 'Other Paid by Driver'
-    };
-
-    for (const k of Object.keys(simpleLabels) as Array<keyof TripEntry>) {
-      const oldValue = oldTrip[k];
-      const newValue = newTrip[k];
-      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-        const label = simpleLabels[k] || (k as string);
-        const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-        const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-        changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-      }
-    }
-
-    const oldSub = oldTrip.subTrips || [];
-    const newSub = newTrip.subTrips || [];
-
-    // Added cargo segments
-    const addedSubs = newSub.filter(nS => !oldSub.some(oS => oS.id === nS.id));
-    for (const s of addedSubs) {
-      changes.push(`Added Cargo Segment: "(None)" ➔ "${s.routeFrom} to ${s.routeTo} (Wages: ₹${s.driverWages}, Income: ₹${s.income})"`);
-    }
-
-    // Deleted cargo segments
-    const deletedSubs = oldSub.filter(oS => !newSub.some(nS => nS.id === oS.id));
-    for (const s of deletedSubs) {
-      changes.push(`Deleted Cargo Segment: "${s.routeFrom} to ${s.routeTo} (Wages: ₹${s.driverWages}, Income: ₹${s.income})" ➔ "(None)"`);
-    }
-
-    // Modified cargo segments
-    const modifiedSubs = newSub.filter(nS => oldSub.some(oS => oS.id === nS.id));
-    for (const nS of modifiedSubs) {
-      const oS = oldSub.find(o => o.id === nS.id)!;
-      if (JSON.stringify(oS) !== JSON.stringify(nS)) {
-        const subLabels: Partial<Record<keyof SubTrip, string>> = {
-          loadingDate: 'Date',
-          officeName: 'Office',
-          routeFrom: 'Source',
-          routeTo: 'Dest',
-          income: 'Income',
-          loadingExpense: 'Load Exp',
-          unloadingExpense: 'Unload Exp',
-          driverWages: 'Wages',
-          startingKM: 'Start KM',
-          endingKM: 'End KM',
-          notes: 'Notes'
-        };
-        for (const key of Object.keys(subLabels) as Array<keyof SubTrip>) {
-          const oldValue = oS[key];
-          const newValue = nS[key];
-          if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-            const label = `Seg [${oS.routeFrom} to ${oS.routeTo}] ${subLabels[key]}`;
-            const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-            const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-            changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-          }
-        }
-      }
-    }
-
-    const oldPay = oldTrip.payments || [];
-    const newPay = newTrip.payments || [];
-
-    // Added Payments
-    const addedPays = newPay.filter(nP => !oldPay.some(oP => oP.id === nP.id));
-    for (const p of addedPays) {
-      changes.push(`Added Payment: "(None)" ➔ "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})"`);
-    }
-
-    // Deleted Payments
-    const deletedPays = oldPay.filter(oP => !newPay.some(nP => nP.id === oP.id));
-    for (const p of deletedPays) {
-      changes.push(`Deleted Payment: "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})" ➔ "(None)"`);
-    }
-
-    // Modified Payments
-    const modifiedPays = newPay.filter(nP => oldPay.some(oP => oP.id === nP.id));
-    for (const nP of modifiedPays) {
-      const oP = oldPay.find(o => o.id === nP.id)!;
-      if (JSON.stringify(oP) !== JSON.stringify(nP)) {
-        const payLabels: Partial<Record<keyof TripPayment, string>> = {
-          amount: 'Amount',
-          date: 'Date',
-          notes: 'Notes'
-        };
-        for (const key of Object.keys(payLabels) as Array<keyof TripPayment>) {
-          const oldValue = oP[key];
-          const newValue = nP[key];
-          if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-            const label = `Payment [₹${oP.amount}] ${payLabels[key]}`;
-            const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-            const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-            changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-          }
-        }
-      }
-    }
-
-    const oldAdv = oldTrip.advances || [];
-    const newAdv = newTrip.advances || [];
-
-    // Added Advances
-    const addedAdvs = newAdv.filter(nA => !oldAdv.some(oA => oA.id === nA.id));
-    for (const a of addedAdvs) {
-      changes.push(`Added Advance: "(None)" ➔ "₹${a.amount} on ${a.date} (${a.notes || 'No Notes'})"`);
-    }
-
-    // Deleted Advances
-    const deletedAdvs = oldAdv.filter(oA => !newAdv.some(nA => nA.id === oA.id));
-    for (const a of deletedAdvs) {
-      changes.push(`Deleted Advance: "₹${a.amount} on ${a.date} (${a.notes || 'No Notes'})" ➔ "(None)"`);
-    }
-
-    // Modified Advances
-    const modifiedAdvs = newAdv.filter(nA => oldAdv.some(oA => oA.id === nA.id));
-    for (const nA of modifiedAdvs) {
-      const oA = oldAdv.find(o => o.id === nA.id)!;
-      if (JSON.stringify(oA) !== JSON.stringify(nA)) {
-        const advLabels: Partial<Record<keyof TripAdvance, string>> = {
-          amount: 'Amount',
-          date: 'Date',
-          notes: 'Notes'
-        };
-        for (const key of Object.keys(advLabels) as Array<keyof TripAdvance>) {
-          const oldValue = oA[key];
-          const newValue = nA[key];
-          if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-            const label = `Advance [₹${oA.amount}] ${advLabels[key]}`;
-            const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-            const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-            changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-          }
-        }
-      }
-    }
-
-    const oldFuel = oldTrip.fuels || [];
-    const newFuel = newTrip.fuels || [];
-
-    // Added Fuels
-    const addedFuels = newFuel.filter(nF => !oldFuel.some(oF => oF.id === nF.id));
-    for (const f of addedFuels) {
-      changes.push(`Added Fuel: "(None)" ➔ "${f.liters}L @ ₹${f.rate}/L = ₹${f.amount} at ${f.shopName || 'Bunk'}"`);
-    }
-
-    // Deleted Fuels
-    const deletedFuels = oldFuel.filter(oF => !newFuel.some(nF => nF.id === oF.id));
-    for (const f of deletedFuels) {
-      changes.push(`Deleted Fuel: "${f.liters}L @ ₹${f.rate}/L = ₹${f.amount} at ${f.shopName || 'Bunk'}" ➔ "(None)"`);
-    }
-
-    // Modified Fuels
-    const modifiedFuels = newFuel.filter(nF => oldFuel.some(oF => oF.id === nF.id));
-    for (const nF of modifiedFuels) {
-      const oF = oldFuel.find(o => o.id === nF.id)!;
-      if (JSON.stringify(oF) !== JSON.stringify(nF)) {
-        const fuelLabels: Partial<Record<keyof FuelEntry, string>> = {
-          liters: 'Liters',
-          rate: 'Rate',
-          amount: 'Amount',
-          shopName: 'Bunk Name',
-          date: 'Date'
-        };
-        for (const key of Object.keys(fuelLabels) as Array<keyof FuelEntry>) {
-          const oldValue = oF[key];
-          const newValue = nF[key];
-          if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-            const label = `Fuel [₹${oF.amount}] ${fuelLabels[key]}`;
-            const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-            const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
-            changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
-          }
-        }
-      }
-    }
-
-    if (changes.length === 0) {
-      return "";
-    }
-    return changes.join(" | ");
-  };
-
-  const handleClearAuditLogs = () => {
-    setAuditLogs([]);
-    localStorage.removeItem('fleet_audit_logs');
-    showNotification("Audit logs history successfully cleared.");
-  };
 
   // Form modal controller states
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
@@ -1914,22 +1590,15 @@ export default function App() {
   // Notifications systems
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const touchLastModified = () => {
+  function touchLastModified() {
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
-  };
+  }
 
-  // Immediately pushes the org's fleet snapshot to cloud, bypassing the 3-second debounce.
-  // Used after critical deletions so the admin's WebSocket fires instantly instead of waiting.
-  const pushFleetSnapshotNow = async (overrideTrucks?: Truck[]) => {
+  async function pushFleetSnapshotNow(overrideTrucks?: Truck[]) {
     touchLastModified();
-  };
+  }
 
-  // Sync to database triggers
-  const saveTrucks = (newTrucks: Truck[]) => {
-    setTrucks(newTrucks);
-    localStorage.setItem('ttt_trucks', JSON.stringify(newTrucks));
-    touchLastModified();
-  };
+
 
   useEffect(() => {
     if (trucks.length === 0) return;
@@ -1948,47 +1617,65 @@ export default function App() {
     }
   }, [trucks]);
 
-  const saveDrivers = (newDrivers: Driver[]) => {
-    setDrivers(newDrivers);
-    localStorage.setItem('ttt_drivers', JSON.stringify(newDrivers));
-    touchLastModified();
-  };
+  const hasHealedRef = useRef(false);
 
-  const saveOffices = (newOffices: Office[]) => {
-    setOffices(newOffices);
-    localStorage.setItem('ttt_offices', JSON.stringify(newOffices));
-    touchLastModified();
-  };
+  useEffect(() => {
+    if (!initialPullDone || trips.length === 0 || hasHealedRef.current) return;
+    hasHealedRef.current = true;
 
-  const saveAccounts = (newAccounts: Account[]) => {
-    setAccounts(newAccounts);
-    localStorage.setItem('ttt_accounts', JSON.stringify(newAccounts));
-    touchLastModified();
-  };
+    let changed = false;
+    const nextTrips = trips.map(t => {
+      const originalCount = t.advances?.length || 0;
+      const cleanedAdvances = (t.advances || []).filter(adv => {
+        const isFwd = adv.id.startsWith('fwd_in_') || adv.id.startsWith('fwd_out_');
+        if (!isFwd) return true;
 
-  const saveTrips = (newTrips: TripEntry[]) => {
-    setTrips(newTrips);
-    localStorage.setItem('ttt_trips', JSON.stringify(newTrips));
-    touchLastModified();
-  };
+        const isDest = adv.id.startsWith('fwd_in_');
+        const targetTripNo = adv.notes
+          ? adv.notes
+              .replace('Negative balance carried forward from ', '')
+              .replace('Negative balance carried forward to ', '')
+              .trim()
+          : '';
 
-  const saveExpenses = (newExpenses: ExpenseEntry[]) => {
-    setExpenses(newExpenses);
-    localStorage.setItem('ttt_expenses', JSON.stringify(newExpenses));
-    touchLastModified();
-  };
+        if (!targetTripNo) return true;
 
-  const saveTyres = (newTyres: Tyre[]) => {
-    setTyres(newTyres);
-    localStorage.setItem('ttt_tyres', JSON.stringify(newTyres));
-    touchLastModified();
-  };
+        const targetTrip = trips.find(x => x.tripNo === targetTripNo);
+        if (!targetTrip) {
+          changed = true;
+          return false;
+        }
 
-  const saveAuditLogs = (newLogs: AuditLog[]) => {
-    setAuditLogs(newLogs);
-    localStorage.setItem('fleet_audit_logs', JSON.stringify(newLogs));
-    touchLastModified();
-  };
+        const matchingNotes = isDest
+          ? `Negative balance carried forward to ${t.tripNo}`
+          : `Negative balance carried forward from ${t.tripNo}`;
+
+        const hasMatching = (targetTrip.advances || []).some(x => {
+          const isMatchingFwd = isDest ? x.id.startsWith('fwd_out_') : x.id.startsWith('fwd_in_');
+          return isMatchingFwd && x.notes === matchingNotes;
+        });
+
+        if (!hasMatching) {
+          changed = true;
+          return false;
+        }
+
+        return true;
+      });
+
+      if (cleanedAdvances.length !== originalCount) {
+        return { ...t, advances: cleanedAdvances };
+      }
+      return t;
+    });
+
+    if (changed) {
+      console.info("Auto-healing broken carried-forward advances.");
+      saveTrips(nextTrips);
+    }
+  }, [trips, initialPullDone]);
+
+
 
   const saveUserRightsListWithSync = (newList: UserPermission[]) => {
     saveUserRightsList(newList);
@@ -2258,12 +1945,12 @@ export default function App() {
 
 
 
-  const showNotification = (msg: string) => {
+  function showNotification(msg: string) {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
-  };
+  }
 
   const handleUpdateOrgStatus = async (orgId: string, status: 'Active' | 'Disabled') => {
     const nextProfiles = organizationProfiles.map(p =>
@@ -2936,406 +2623,13 @@ export default function App() {
     };
   }, [currentUserRights.isSuperAdmin]);
 
-  // --- DRIVER CRUD HANDLERS ---
-  const handleAddDriver = (driverInput: Omit<Driver, 'id'>) => {
-    const isDup = orgDrivers.some(d => d.driverName.toUpperCase().trim() === driverInput.driverName.toUpperCase().trim());
-    if (isDup) {
-      alert("Driver Name is already registered.");
-      return;
-    }
-    const d = { ...driverInput, id: 'd_id_' + Date.now(), organizationId: currentUserOrgId };
-    saveDrivers([...drivers, d]);
-    logAction('Created', 'Driver', d.driverName, `Added operator driver ${d.driverName} (License: ${d.licenseNo || 'N/A'})`);
-    showNotification(`Driver ${d.driverName} added successfully.`);
-  };
 
-  const handleUpdateDriver = (updated: Driver) => {
-    const oldDriver = drivers.find(d => d.id === updated.id);
-    const merged: Driver = oldDriver ? { ...oldDriver, ...updated } : updated;
-    const next = drivers.map(d => d.id === updated.id ? merged : d);
-    saveDrivers(next);
 
-    if (isAppwriteConfigured() && oldDriver && oldDriver.licenseFileId && oldDriver.licenseFileId !== merged.licenseFileId) {
-      appwrite.deleteFile(oldDriver.licenseFileId).catch(err => {
-        console.warn("Failed to delete replaced driver license file:", err);
-      });
-    }
 
-    const diff = oldDriver ? getDriverDiff(oldDriver, merged) : `Updated driver specs or active status to ${merged.status}`;
-    if (diff) {
-      logAction('Edited', 'Driver', merged.driverName, diff);
-    }
-    showNotification(`Driver details updated.`);
-  };
 
-  const handleDeleteDriver = (id: string) => {
-    const dr = drivers.find(d => d.id === id);
-    const inUse = orgTrips.some(tr => tr.driverName === dr?.driverName);
-    if (inUse) {
-      alert(`Cannot delete Driver ${dr?.driverName}. This driver is assigned to historical journeys.`);
-      return;
-    }
-    const next = drivers.filter(d => d.id !== id);
-    saveDrivers(next);
 
-    if (isAppwriteConfigured() && dr?.licenseFileId) {
-      appwrite.deleteFile(dr.licenseFileId).catch(err => {
-        console.warn("Failed to delete driver license file on driver removal:", err);
-      });
-    }
 
-    if (dr) {
-      logAction('Deleted', 'Driver', dr.driverName, `Permanently deleted driver ${dr.driverName} record`);
-    }
-    showNotification(`Driver deleted from records.`);
-  };
 
-  // --- TRUCK CRUD HANDLERS ---
-  const handleAddTruck = (truckInput: Omit<Truck, 'id'>) => {
-    const isDup = orgTrucks.some(t => t.truckNo.toUpperCase().trim() === truckInput.truckNo.toUpperCase().trim());
-    if (isDup) {
-      alert("Truck Number already registered in active datasheets.");
-      return;
-    }
-    const d = new Date();
-    d.setFullYear(d.getFullYear() + 1);
-    const expiryStr = d.toISOString().split('T')[0];
-
-    const n = {
-      ...truckInput,
-      id: 't_id_' + Date.now(),
-      organizationId: currentUserOrgId,
-      isApproved: true,
-      registrationExpiryDate: expiryStr
-    };
-    saveTrucks([...trucks, n]);
-    logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
-    showNotification(`Truck ${n.truckNo} added successfully.`);
-  };
-
-  const handleUpdateTruck = (updated: Truck) => {
-    const oldTruck = trucks.find(t => t.id === updated.id);
-    const merged: Truck = oldTruck ? { ...oldTruck, ...updated } : updated;
-    const next = trucks.map(t => t.id === updated.id ? merged : t);
-    saveTrucks(next);
-
-    if (isAppwriteConfigured() && oldTruck) {
-      if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
-        appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
-          console.warn("Failed to delete replaced RC file:", err);
-        });
-      }
-      if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
-        appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
-          console.warn("Failed to delete replaced Insurance file:", err);
-        });
-      }
-    }
-
-    const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
-    if (diff) {
-      logAction('Edited', 'Truck', merged.truckNo, diff);
-    }
-    showNotification(`Truck ${merged.truckNo} database specifications updated.`);
-  };
-
-  const handleDeleteTruck = (id: string) => {
-    const truckToDelete = trucks.find(t => t.id === id);
-    const inUse = orgTrips.some(tr => tr.truckNo === truckToDelete?.truckNo);
-    if (inUse) {
-      alert(`Cannot delete Truck ${truckToDelete?.truckNo}. It is associated with active trip registers.`);
-      return;
-    }
-    const next = trucks.filter(t => t.id !== id);
-    saveTrucks(next);
-
-    if (isAppwriteConfigured() && truckToDelete) {
-      if (truckToDelete.rcFileId) {
-        appwrite.deleteFile(truckToDelete.rcFileId).catch(err => {
-          console.warn("Failed to delete RC file on truck removal:", err);
-        });
-      }
-      if (truckToDelete.insuranceFileId) {
-        appwrite.deleteFile(truckToDelete.insuranceFileId).catch(err => {
-          console.warn("Failed to delete Insurance file on truck removal:", err);
-        });
-      }
-    }
-
-    // Remove pending or rejected approval request if it exists
-    const targetOrgId = truckToDelete?.organizationId || currentUserOrgId;
-    if (truckToDelete && (truckToDelete.isApproved === false || truckToDelete.requestStatus === 'Rejected') && targetOrgId) {
-      const targetProfile = organizationProfiles.find(p => p.organizationId === targetOrgId);
-      if (targetProfile) {
-        const nextRequests = (targetProfile.truckRequests || []).filter(
-          r => !(r.truckNo.toUpperCase() === truckToDelete.truckNo.toUpperCase() && (r.status === 'Pending' || r.status === 'Rejected'))
-        );
-        const nextProfiles = organizationProfiles.map(p =>
-          p.organizationId === targetOrgId
-            ? { ...p, truckRequests: nextRequests }
-            : p
-        );
-        saveOrganizationProfiles(nextProfiles);
-      }
-    }
-
-    if (truckToDelete) {
-      logAction('Deleted', 'Truck', truckToDelete.truckNo, `Archived vehicle registration datasheet`);
-    }
-    showNotification(`Truck archived from list.`);
-
-    // Immediately push fleet snapshot so the admin's WebSocket fires without waiting for the 3-second debounce
-    pushFleetSnapshotNow(next);
-  };
-
-  // --- TYRE CRUD HANDLERS ---
-  const handleAddTyre = async (
-    tyreInput: Omit<Tyre, 'id' | 'movementHistory' | 'accumulatedKM'>,
-    expenseDetails?: {
-      createExpense: boolean;
-      truckNo?: string;
-      paymentMode?: string;
-    }
-  ) => {
-    const isDup = orgTyres.some(t => t.tyreNo.toUpperCase().trim() === tyreInput.tyreNo.toUpperCase().trim());
-    if (isDup) {
-      alert("Tyre Serial Number already registered in warehouse database.");
-      return;
-    }
-
-    const isMountedImmediately = tyreInput.status === 'Active' && tyreInput.currentTruckNo;
-
-    const n: Tyre = {
-      ...tyreInput,
-      id: 'tyre_' + Date.now(),
-      organizationId: currentUserOrgId,
-      accumulatedKM: 0,
-      movementHistory: [
-        {
-          id: 'mvt_init',
-          action: isMountedImmediately ? 'Installed' : 'Removed',
-          date: tyreInput.purchaseDate || '2026-05-23',
-          remarks: isMountedImmediately
-            ? `Initial purchase & direct installation on Truck ${tyreInput.currentTruckNo} at install ODO ${tyreInput.installationKM || 0} KM`
-            : `Registered new stock purchase specifications in warehouse ledger.`
-        }
-      ] as TyreMovementLog[]
-    };
-
-    // Save locally
-    const nextTyres = [...tyres, n];
-    saveTyres(nextTyres);
-
-    // Save to Appwrite if online
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'tyres', n.id, currentUserOrgId, n);
-      } catch (err) {
-        console.warn("Failed to save tyre to Appwrite:", err);
-      }
-    }
-
-    logAction('Created', 'Tyre', n.tyreNo, `Registered brand new ${n.manufacturer} (${n.size}) tyre to yard warehouse.`);
-
-    // Automatically create matching expense entry in the ledger
-    if (expenseDetails?.createExpense && tyreInput.purchaseAmount && tyreInput.purchaseAmount > 0) {
-      const expNo = 'EXP_' + Date.now();
-      const newExpense: ExpenseEntry = {
-        id: expNo,
-        truckNo: expenseDetails.truckNo || 'YARD / WH',
-        expenseType: 'Tyre Purchase',
-        shopName: `${tyreInput.manufacturer} (Tyre Serial: ${tyreInput.tyreNo})`,
-        amount: tyreInput.purchaseAmount,
-        paymentMode: expenseDetails.paymentMode || 'Cash',
-        date: tyreInput.purchaseDate || '2026-05-23',
-        status: 'Paid',
-        organizationId: currentUserOrgId
-      };
-
-      saveExpenses([...expenses, newExpense]);
-
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'expenses', newExpense.id, currentUserOrgId, newExpense);
-        } catch (err) {
-          console.warn("Failed to save tyre purchase expense to Appwrite:", err);
-        }
-      }
-      await loadDashboardData(activeMonth, activeYear);
-
-      logAction('Created', 'Expense', expNo, `Auto-created Tyre purchase expense for Serial ${n.tyreNo} charge to vehicle ${newExpense.truckNo} of ₹${newExpense.amount.toLocaleString()}`);
-      showNotification(`Tyre ${n.tyreNo} registered and purchase expense voucher added.`);
-    } else {
-      showNotification(`Tyre ${n.tyreNo} registered successfully.`);
-    }
-  };
-
-  const handleUpdateTyre = async (updated: Tyre) => {
-    const oldTyre = tyres.find(t => t.id === updated.id);
-    const merged: Tyre = oldTyre ? { ...oldTyre, ...updated } : updated;
-    const next = tyres.map(t => t.id === updated.id ? merged : t);
-    saveTyres(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'tyres', merged.id, currentUserOrgId, merged);
-      } catch (err) {
-        console.warn("Failed to update tyre in Appwrite:", err);
-      }
-    }
-
-    let actionD = `Updated tyre specifications`;
-    if (oldTyre && oldTyre.status !== merged.status) {
-      actionD = `Status transitioned from ${oldTyre.status} to ${merged.status}`;
-      if (merged.status === 'Active' && merged.currentTruckNo) {
-        actionD += ` (Mounted on truck ${merged.currentTruckNo} at odo ${merged.installationKM} KM)`;
-      } else if (merged.status === 'Available' && oldTyre.status === 'Active') {
-        const movementLog = merged.movementHistory[0];
-        actionD += ` (Dismounted from truck ${oldTyre.currentTruckNo}. ${movementLog?.remarks})`;
-      } else if (merged.status === 'Sold') {
-        actionD += ` (Disposed for ₹${merged.saleAmount} on ${merged.saleDate})`;
-      } else if (merged.status === 'Scrapped') {
-        actionD += ` (Permanently decommissioned and recycled)`;
-      }
-    }
-    logAction('Edited', 'Tyre', merged.tyreNo, actionD);
-    showNotification(`Tyre ${merged.tyreNo} status updated.`);
-  };
-
-  const handleDeleteTyre = async (id: string) => {
-    const tyreToDelete = tyres.find(t => t.id === id);
-    if (!tyreToDelete) return;
-    if (tyreToDelete.status === 'Active') {
-      alert("Cannot delete an active tyre currently mounted on a running vehicle. Dismount it first.");
-      return;
-    }
-    const next = tyres.filter(t => t.id !== id);
-    saveTyres(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'tyres', id);
-      } catch (err) {
-        console.warn("Failed to delete tyre from Appwrite:", err);
-      }
-    }
-
-    logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre datasheet from registry`);
-    showNotification(`Tyre record deleted.`);
-  };
-
-  // --- OFFICE CRUD HANDLERS ---
-  const handleAddOffice = (officeInput: Omit<Office, 'id'>) => {
-    const isDup = orgOffices.some(o => o.officeName.toLowerCase().trim() === officeInput.officeName.toLowerCase().trim());
-    if (isDup) {
-      alert("Trading office with historical name already exists.");
-      return;
-    }
-    const n = { ...officeInput, id: 'o_id_' + Date.now(), organizationId: currentUserOrgId };
-    saveOffices([...offices, n]);
-    logAction('Created', 'Office', n.officeName, `Opened trading office branch at ${n.officeName} (${n.city || 'N/A'})`);
-    showNotification(`Office branch ${n.officeName} created.`);
-  };
-
-  const handleUpdateOffice = (updated: Office) => {
-    const oldOffice = offices.find(o => o.id === updated.id);
-    const merged: Office = oldOffice ? { ...oldOffice, ...updated } : updated;
-    const next = offices.map(o => o.id === updated.id ? merged : o);
-    saveOffices(next);
-    const diff = oldOffice ? getOfficeDiff(oldOffice, merged) : `Updated branch details or manager settings`;
-    if (diff) {
-      logAction('Edited', 'Office', merged.officeName, diff);
-    }
-    showNotification(`Office branch record updated.`);
-  };
-
-  const handleDeleteOffice = (id: string) => {
-    const off = offices.find(o => o.id === id);
-    const inUse = orgTrips.some(tr => tr.subTrips?.some(st => st.officeName === off?.officeName));
-    if (inUse) {
-      alert(`Cannot delete Office ${off?.officeName}. This office has historical load consignments associated.`);
-      return;
-    }
-    const next = offices.filter(o => o.id !== id);
-    saveOffices(next);
-    if (off) {
-      logAction('Deleted', 'Office', off.officeName, `Removed office branch ${off.officeName}`);
-    }
-    showNotification(`Office location removed.`);
-  };
-
-  // --- ACCOUNT CRUD HANDLERS ---
-  const handleAddAccount = (accountInput: Omit<Account, 'id'>) => {
-    const isDup = orgAccounts.some(a => a.accountName.toLowerCase().trim() === accountInput.accountName.toLowerCase().trim());
-    if (isDup) {
-      alert("Accounting ledger with identical name already exists.");
-      return;
-    }
-    const n = { ...accountInput, id: 'a_id_' + Date.now(), organizationId: currentUserOrgId };
-    saveAccounts([...accounts, n]);
-    logAction('Created', 'Account', n.accountName, `Opened account register for ${n.accountName} (Type: ${n.type})`);
-    showNotification(`Account ledger ${n.accountName} registered.`);
-  };
-
-  const handleUpdateAccount = (updated: Account) => {
-    const oldAccount = accounts.find(a => a.id === updated.id);
-    const merged: Account = oldAccount ? { ...oldAccount, ...updated } : updated;
-    const next = accounts.map(a => a.id === updated.id ? merged : a);
-    saveAccounts(next);
-    const diff = oldAccount ? getAccountDiff(oldAccount, merged) : `Adjusted ledger account balances or info`;
-    if (diff) {
-      logAction('Edited', 'Account', merged.accountName, diff);
-    }
-    showNotification(`Accounting ledger records adjusted.`);
-  };
-
-  const handleDeleteAccount = (id: string) => {
-    const current = accounts.find(a => a.id === id);
-    // Safe check if any trip payment uses this account
-    const inUse = orgTrips.some(t =>
-      t.payments?.some(p => p.receivedBy === id)
-    );
-    if (inUse) {
-      alert(`Cannot delete Account ${current?.accountName}. It represents outstanding or past receipts.`);
-      return;
-    }
-    const next = accounts.filter(a => a.id !== id);
-    saveAccounts(next);
-    if (current) {
-      logAction('Deleted', 'Account', current.accountName, `Removed ledger account ${current.accountName}`);
-    }
-    showNotification(`Ledger account detached.`);
-  };
-
-  // --- EXPENSES CRUD HANDLERS ---
-  const handleAddExpense = async (expenseInput: Omit<ExpenseEntry, 'id'>) => {
-    const newExp = {
-      ...expenseInput,
-      id: 'exp_id_' + Date.now(),
-      organizationId: currentUserOrgId
-    };
-
-    // Save locally
-    const nextExpenses = [...expenses, newExp];
-    saveExpenses(nextExpenses);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, currentUserOrgId, newExp);
-      } catch (err) {
-        console.warn("Failed to save expense to Appwrite:", err);
-      }
-    }
-    await loadDashboardData(activeMonth, activeYear);
-
-    logAction('Created', 'Expense', newExp.truckNo, `Vouched ₹${newExp.amount} expense for truck (${newExp.expenseType})`);
-    showNotification(`New expense of ₹${newExp.amount.toLocaleString()} registered.`);
-  };
 
   // --- SERVICE DONE HANDLER ---
   // Creates up to 2 expense entries (parts + labour) and advances the truck's next-due KM milestone
@@ -3436,124 +2730,12 @@ export default function App() {
     showNotification(`${serviceType} service recorded for ${truckNo}${ totalCost > 0 ? ` — ₹${totalCost.toLocaleString()} logged to expense ledger` : '' }.`);
   };
 
-  const handleUpdateExpense = async (updated: ExpenseEntry) => {
-    const oldExpense = expenses.find(e => e.id === updated.id);
-    const merged: ExpenseEntry = oldExpense ? { ...oldExpense, ...updated } : updated;
-    const next = expenses.map(e => e.id === updated.id ? merged : e);
-    saveExpenses(next);
 
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, currentUserOrgId, merged);
-      } catch (err) {
-        console.warn("Failed to update expense in Appwrite:", err);
-      }
-    }
-    await loadDashboardData(activeMonth, activeYear);
-
-    const diff = oldExpense ? getExpenseDiff(oldExpense, merged) : `Voucher authorization updated to ${merged.status}`;
-    if (diff) {
-      logAction('Edited', 'Expense', merged.truckNo, diff);
-    }
-    showNotification(`Expense record has been updated.`);
-  };
-
-  const handleDeleteExpense = async (id: string) => {
-    const exp = expenses.find(e => e.id === id);
-    const next = expenses.filter(e => e.id !== id);
-    saveExpenses(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'expenses', id);
-      } catch (err) {
-        console.warn("Failed to delete expense from Appwrite:", err);
-      }
-    }
-    await loadDashboardData(activeMonth, activeYear);
-
-    if (exp) {
-      logAction('Deleted', 'Expense', exp.truckNo, `Canceled/archived ₹${exp.amount} voucher`);
-    }
-    showNotification(`Expense record deleted.`);
-  };
 
   // --- TRIP ENTRIES CRUD SYSTEM ---
   const handlePostTripEntry = async (entryInput: Omit<TripEntry, 'id'>) => {
-    if (editingTrip) {
-      // Update logic
-      const updated: TripEntry = {
-        ...entryInput,
-        id: editingTrip.id,
-        organizationId: editingTrip.organizationId || currentUserOrgId
-      };
-
-      const next = trips.map(t => t.id === editingTrip.id ? updated : t);
-      saveTrips(next);
-
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, currentUserOrgId, updated);
-        } catch (err) {
-          console.warn("Failed to update trip in Appwrite:", err);
-        }
-      }
-      await loadDashboardData(activeMonth, activeYear);
-
-      setEditingTrip(null);
-      const diff = getTripDiff(editingTrip, updated);
-      if (diff) {
-        logAction('Edited', 'Trip', updated.tripNo, diff);
-      }
-      showNotification(`Master trip ledger updated successfully.`);
-    } else {
-      // Add logic
-      const newEntry: TripEntry = {
-        ...entryInput,
-        id: 'trip_ent_' + Date.now(),
-        organizationId: currentUserOrgId
-      };
-
-      const nextTrips = [...trips, newEntry];
-      saveTrips(nextTrips);
-
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, currentUserOrgId, newEntry);
-        } catch (err) {
-          console.warn("Failed to save trip to Appwrite:", err);
-        }
-      }
-      await loadDashboardData(activeMonth, activeYear);
-
-      logAction('Created', 'Trip', newEntry.tripNo, `Initiated cargo load ledger (Vehicle: ${newEntry.truckNo}, Driver: ${newEntry.driverName})`);
-      showNotification(`Saved segment load posted as master trip.`);
-    }
-  };
-
-  const handleDeleteTripEntry = async (id: string) => {
-    const tEntry = trips.find(t => t.id === id);
-    const next = trips.filter(t => t.id !== id);
-    saveTrips(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'trips', id);
-      } catch (err) {
-        console.warn("Failed to delete trip from Appwrite:", err);
-      }
-    }
-    await loadDashboardData(activeMonth, activeYear);
-
-    if (tEntry) {
-      logAction('Deleted', 'Trip', tEntry.tripNo, `Voided/deleted trip ID ${tEntry.tripNo} journey database`);
-    }
-    showNotification(`Trip entry permanently voided.`);
+    await postTripEntry(entryInput, editingTrip);
+    setEditingTrip(null);
   };
 
   const handleEditTripTrigger = (entry: TripEntry) => {
@@ -3823,14 +3005,7 @@ export default function App() {
     );
   }
 
-  const orgTrips = trips.filter(t => t.organizationId === currentUserOrgId);
-  const orgTrucks = trucks.filter(t => t.organizationId === currentUserOrgId);
   const approvedOrgTrucks = orgTrucks.filter(t => t.isApproved !== false);
-  const orgDrivers = drivers.filter(d => d.organizationId === currentUserOrgId);
-  const orgOffices = offices.filter(o => o.organizationId === currentUserOrgId);
-  const orgAccounts = accounts.filter(a => a.organizationId === currentUserOrgId);
-  const orgExpenses = expenses.filter(e => e.organizationId === currentUserOrgId);
-  const orgTyres = tyres.filter(t => t.organizationId === currentUserOrgId);
   const orgUserRights = userRightsList.filter(u => u.organizationId === currentUserOrgId);
   const canUserViewCategory = (category: string, logUserOrReference?: string, logDetails?: string): boolean => {
     if (currentUserRights.isSuperAdmin) return true;
@@ -4489,7 +3664,7 @@ export default function App() {
               offices={orgOffices}
               accounts={orgAccounts}
               onEditEntry={handleEditTripTrigger}
-              onDeleteEntry={handleDeleteTripEntry}
+              onDeleteEntry={deleteTripEntry}
               confirmAction={confirmAction}
               canViewTrips={currentUserRights.canViewTrips}
               canEditTrips={currentUserRights.canEditTrips}
@@ -4504,9 +3679,9 @@ export default function App() {
               trucks={orgTrucks}
               trips={orgTrips}
               expenses={orgExpenses}
-              onAddTruck={handleAddTruck}
-              onUpdateTruck={handleUpdateTruck}
-              onDeleteTruck={handleDeleteTruck}
+              onAddTruck={addTruck}
+              onUpdateTruck={updateTruck}
+              onDeleteTruck={deleteTruck}
               confirmAction={confirmAction}
               canViewTrucks={currentUserRights.canViewTrucks}
               canEditTrucks={currentUserRights.canEditTrucks}
@@ -4524,9 +3699,9 @@ export default function App() {
           {activeTab === 'OFFICES' && currentUserRights.canViewOffices && (
             <OfficeMaster
               offices={orgOffices}
-              onAddOffice={handleAddOffice}
-              onUpdateOffice={handleUpdateOffice}
-              onDeleteOffice={handleDeleteOffice}
+              onAddOffice={addOffice}
+              onUpdateOffice={updateOffice}
+              onDeleteOffice={deleteOffice}
               confirmAction={confirmAction}
               canViewOffices={currentUserRights.canViewOffices}
               canEditOffices={currentUserRights.canEditOffices}
@@ -4537,9 +3712,9 @@ export default function App() {
           {activeTab === 'ACCOUNTS' && currentUserRights.canViewAccounts && (
             <AccountMaster
               accounts={orgAccounts}
-              onAddAccount={handleAddAccount}
-              onUpdateAccount={handleUpdateAccount}
-              onDeleteAccount={handleDeleteAccount}
+              onAddAccount={addAccount}
+              onUpdateAccount={updateAccount}
+              onDeleteAccount={deleteAccount}
               confirmAction={confirmAction}
               canViewAccounts={currentUserRights.canViewAccounts}
               canEditAccounts={currentUserRights.canEditAccounts}
@@ -4553,9 +3728,9 @@ export default function App() {
               trips={orgTrips}
               expenses={orgExpenses}
               accounts={orgAccounts}
-              onAddDriver={handleAddDriver}
-              onUpdateDriver={handleUpdateDriver}
-              onDeleteDriver={handleDeleteDriver}
+              onAddDriver={addDriver}
+              onUpdateDriver={updateDriver}
+              onDeleteDriver={deleteDriver}
               canViewDrivers={currentUserRights.canViewDrivers}
               canEditDrivers={currentUserRights.canEditDrivers}
               canDeleteDrivers={currentUserRights.canDeleteDrivers}
@@ -4570,9 +3745,9 @@ export default function App() {
               trucks={approvedOrgTrucks}
               accounts={orgAccounts}
               drivers={orgDrivers}
-              onAddExpense={handleAddExpense}
-              onUpdateExpense={handleUpdateExpense}
-              onDeleteExpense={handleDeleteExpense}
+              onAddExpense={addExpense}
+              onUpdateExpense={updateExpense}
+              onDeleteExpense={deleteExpense}
               canViewExpenses={currentUserRights.canViewExpenses}
               canEditExpenses={currentUserRights.canEditExpenses}
               canDeleteExpenses={currentUserRights.canDeleteExpenses}
@@ -4607,9 +3782,9 @@ export default function App() {
               tyres={orgTyres}
               trucks={approvedOrgTrucks}
               accounts={orgAccounts}
-              onAddTyre={handleAddTyre}
-              onUpdateTyre={handleUpdateTyre}
-              onDeleteTyre={handleDeleteTyre}
+              onAddTyre={addTyre}
+              onUpdateTyre={updateTyre}
+              onDeleteTyre={deleteTyre}
               confirmAction={confirmAction}
               canViewTyres={currentUserRights.canViewTyres}
               canEditTyres={currentUserRights.canEditTyres}
@@ -4697,6 +3872,7 @@ export default function App() {
         editingEntry={editingTrip}
         canViewDrivers={currentUserRights.canViewDrivers}
         orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
+        trips={orgTrips}
       />
 
       <VoiceAssistant
@@ -4708,7 +3884,7 @@ export default function App() {
         accounts={orgAccounts}
         existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
         onSubmitTrip={handlePostTripEntry}
-        onSubmitExpense={handleAddExpense}
+        onSubmitExpense={addExpense}
         voiceLang={userVoiceLang}
       />
 

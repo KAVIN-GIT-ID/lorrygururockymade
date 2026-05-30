@@ -1,0 +1,74 @@
+import { useState } from 'react';
+import { Account, TripEntry } from '../types';
+import { migrateAccounts } from '../lib/migrations';
+import { getAccountDiff } from '../utils/diffUtils';
+
+interface UseAccountsParams {
+  orgId: string;
+  trips: TripEntry[];
+  showNotification: (msg: string) => void;
+  logAction: (action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected', category: string, reference: string, details: string) => void;
+}
+
+export function useAccounts({ orgId, trips, showNotification, logAction }: UseAccountsParams) {
+  const [accounts, setAccounts] = useState<Account[]>(() => {
+    try {
+      const stored = localStorage.getItem('ttt_accounts');
+      return stored ? migrateAccounts(JSON.parse(stored)) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveAccounts = (newAccounts: Account[]) => {
+    setAccounts(newAccounts);
+    localStorage.setItem('ttt_accounts', JSON.stringify(newAccounts));
+    localStorage.setItem('ttt_last_modified_at', Date.now().toString());
+  };
+
+  const orgAccounts = orgId === 'org_backend' ? accounts : accounts.filter(a => a.organizationId === orgId);
+
+  const addAccount = (accountInput: Omit<Account, 'id'>) => {
+    const isDup = orgAccounts.some(a => a.accountName.toLowerCase().trim() === accountInput.accountName.toLowerCase().trim());
+    if (isDup) {
+      alert("Accounting ledger with identical name already exists.");
+      return;
+    }
+    const n = { ...accountInput, id: 'a_id_' + Date.now(), organizationId: orgId };
+    saveAccounts([...accounts, n]);
+    logAction('Created', 'Account', n.accountName, `Opened account register for ${n.accountName} (Type: ${n.type})`);
+    showNotification(`Account ledger ${n.accountName} registered.`);
+  };
+
+  const updateAccount = (updated: Account) => {
+    const oldAccount = accounts.find(a => a.id === updated.id);
+    const merged: Account = oldAccount ? { ...oldAccount, ...updated } : updated;
+    const next = accounts.map(a => a.id === updated.id ? merged : a);
+    saveAccounts(next);
+    const diff = oldAccount ? getAccountDiff(oldAccount, merged) : `Adjusted ledger account balances or info`;
+    if (diff) {
+      logAction('Edited', 'Account', merged.accountName, diff);
+    }
+    showNotification(`Accounting ledger records adjusted.`);
+  };
+
+  const deleteAccount = (id: string) => {
+    const current = accounts.find(a => a.id === id);
+    const orgTrips = orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId);
+    const inUse = orgTrips.some(t =>
+      t.payments?.some(p => p.receivedBy === id)
+    );
+    if (inUse) {
+      alert(`Cannot delete Account ${current?.accountName}. It represents outstanding or past receipts.`);
+      return;
+    }
+    const next = accounts.filter(a => a.id !== id);
+    saveAccounts(next);
+    if (current) {
+      logAction('Deleted', 'Account', current.accountName, `Removed ledger account ${current.accountName}`);
+    }
+    showNotification(`Ledger account detached.`);
+  };
+
+  return { accounts, setAccounts, orgAccounts, saveAccounts, addAccount, updateAccount, deleteAccount };
+}

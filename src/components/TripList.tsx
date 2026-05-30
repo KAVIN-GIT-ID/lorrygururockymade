@@ -252,6 +252,18 @@ export default function TripList({
     setSelectedFwdDate(new Date().toISOString().substring(0, 10));
   }, [viewingEntry]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && viewingEntry) {
+        setViewingEntry(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewingEntry]);
+
 
   // Calculate totals of matched items for footer reporting
   const totals = (online ? displayedTrips : trips.filter(trip => {
@@ -1477,50 +1489,105 @@ export default function TripList({
                     {(!viewingEntry.subTrips || viewingEntry.subTrips.length === 0) ? (
                       <p className="p-4 text-center text-slate-400 italic">No sub-trip segments logged.</p>
                     ) : (
-                      viewingEntry.subTrips.map((s, idx) => (
-                        <div key={s.id} className="p-4 hover:bg-slate-50/50 transition">
-                          <div className="flex justify-between items-center bg-slate-50/70 p-2 rounded-lg border border-slate-150 mb-3">
-                            <span className="text-slate-800 font-mono font-bold font-sans">Segment #{idx + 1} &bull; {s.routeFrom} &rarr; {s.routeTo}</span>
-                            <span className="font-sans font-bold text-slate-500 text-[10px] bg-slate-205 py-0.5 px-2 rounded-md bg-slate-200 uppercase leading-none">Office: {s.officeName}</span>
-                          </div>
+                      viewingEntry.subTrips.map((s, idx) => {
+                        const segmentDeductions = (() => {
+                          if (s.cargoExpenses && s.cargoExpenses.length > 0) {
+                            return s.cargoExpenses
+                              .filter(exp => exp.deductedFrom === 'OrgRental')
+                              .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                          }
+                          let legacyDeductions = 0;
+                          const loadAmt = Number(s.loadingExpense) || 0;
+                          if (s.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
 
-                          {(s.material || s.noOfTons !== undefined || s.ratePerTon !== undefined) && (
-                            <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
-                              {s.material && (
-                                <div>
-                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Material</span>
-                                  <strong className="text-slate-800">{s.material}</strong>
-                                </div>
-                              )}
-                              {s.noOfTons !== undefined && s.noOfTons > 0 && (
-                                <div>
-                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Weight (Tons)</span>
-                                  <strong className="text-slate-800 font-mono">{s.noOfTons} MT</strong>
-                                </div>
-                              )}
-                              {s.ratePerTon !== undefined && s.ratePerTon > 0 && (
-                                <div>
-                                  <span className="text-slate-400 block uppercase text-[8px] font-bold">Rate / Ton</span>
-                                  <strong className="text-slate-800 font-mono">₹{s.ratePerTon.toLocaleString()}</strong>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          const unloadAmt = Number(s.unloadingExpense) || 0;
+                          if (s.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
 
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-1 text-[11px] font-sans">
-                            <div className="p-1 px-2 border-l-2 border-emerald-500">
-                              <span className="text-slate-450 block font-sans text-[9px] uppercase">Income (₹)</span>
-                              <span className="font-mono font-bold text-emerald-800">₹{s.income.toLocaleString()}</span>
+                          const brokerageAmt = Number(s.brokerageExpense) || 0;
+                          if (s.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
+
+                          const crossingAmt = Number(s.crossingExpense) || 0;
+                          if (s.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
+
+                          const rmcAmt = Number(s.rmcExpense) || 0;
+                          if (s.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
+
+                          return legacyDeductions;
+                        })();
+
+                        const segmentOfficeBears = (() => {
+                          if (s.cargoExpenses && s.cargoExpenses.length > 0) {
+                            return s.cargoExpenses
+                              .filter(exp => exp.bears === 'Office')
+                              .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                          }
+                          return 0;
+                        })();
+
+                        const segmentPayments = (viewingEntry.payments || [])
+                          .filter(p => p.subTripId === s.id)
+                          .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+                        const segmentReceivable = s.income - segmentDeductions + segmentOfficeBears - segmentPayments;
+
+                        return (
+                          <div key={s.id} className="p-4 hover:bg-slate-50/50 transition">
+                            <div className="flex justify-between items-center bg-slate-50/70 p-2 rounded-lg border border-slate-150 mb-3">
+                              <span className="text-slate-800 font-mono font-bold font-sans">Segment #{idx + 1} &bull; {s.routeFrom} &rarr; {s.routeTo}</span>
+                              <span className="font-sans font-bold text-slate-500 text-[10px] bg-slate-205 py-0.5 px-2 rounded-md bg-slate-200 uppercase leading-none">Office: {s.officeName}</span>
                             </div>
-                            <div className="p-1 px-2 border-l-2 border-red-500">
-                              <span className="text-slate-450 block font-sans text-[9px] uppercase">Diesel Cost / Liters</span>
-                              <span className="font-mono font-bold text-slate-800">₹{(s.dieselAmount || 0).toLocaleString()} <span className="text-[10px] font-normal text-slate-450">({s.dieselLiters} L @ ₹{s.dieselRate})</span></span>
+
+                            {(s.material || s.noOfTons !== undefined || s.ratePerTon !== undefined) && (
+                              <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
+                                {s.material && (
+                                  <div>
+                                    <span className="text-slate-400 block uppercase text-[8px] font-bold">Material</span>
+                                    <strong className="text-slate-800">{s.material}</strong>
+                                  </div>
+                                )}
+                                {s.noOfTons !== undefined && s.noOfTons > 0 && (
+                                  <div>
+                                    <span className="text-slate-400 block uppercase text-[8px] font-bold">Weight (Tons)</span>
+                                    <strong className="text-slate-800 font-mono">{s.noOfTons} MT</strong>
+                                  </div>
+                                )}
+                                {s.ratePerTon !== undefined && s.ratePerTon > 0 && (
+                                  <div>
+                                    <span className="text-slate-400 block uppercase text-[8px] font-bold">Rate / Ton</span>
+                                    <strong className="text-slate-800 font-mono">₹{s.ratePerTon.toLocaleString()}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-1 text-[11px] font-sans">
+                              <div className="p-1 px-2 border-l-2 border-emerald-500">
+                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Income (₹)</span>
+                                <span className="font-mono font-bold text-emerald-800">₹{s.income.toLocaleString()}</span>
+                              </div>
+                              <div className={`p-1 px-2 border-l-2 ${
+                                segmentReceivable > 0 ? 'border-blue-500' :
+                                segmentReceivable === 0 ? 'border-slate-300' :
+                                'border-amber-500'
+                              }`}>
+                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Receivable (₹)</span>
+                                <span className={`font-mono font-bold ${
+                                  segmentReceivable > 0 ? 'text-blue-800' :
+                                  segmentReceivable === 0 ? 'text-slate-500' :
+                                  'text-amber-805 text-amber-800'
+                                }`}>
+                                  ₹{segmentReceivable.toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="p-1 px-2 border-l-2 border-red-500">
+                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Diesel Cost / Liters</span>
+                                <span className="font-mono font-bold text-slate-800">₹{(s.dieselAmount || 0).toLocaleString()} <span className="text-[10px] font-normal text-slate-450">({s.dieselLiters} L @ ₹{s.dieselRate})</span></span>
+                              </div>
+                              <div className="p-1 px-2 border-l-2 border-slate-400">
+                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Wages + Other</span>
+                                <span className="font-mono font-bold text-slate-800">Wages: ₹{(s.driverWages || 0).toLocaleString()} | Other: ₹{(s.otherExpense || 0).toLocaleString()}</span>
+                              </div>
                             </div>
-                            <div className="p-1 px-2 border-l-2 border-slate-400 col-span-2">
-                              <span className="text-slate-450 block font-sans text-[9px] uppercase">Wages + Other</span>
-                              <span className="font-mono font-bold text-slate-800">Wages: ₹{(s.driverWages || 0).toLocaleString()} | Other: ₹{(s.otherExpense || 0).toLocaleString()}</span>
-                            </div>
-                          </div>
 
                           {/* Segment Charges Settlement Info */}
                           <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]">
@@ -1641,8 +1708,9 @@ export default function TripList({
                             )}
                           </div>
                         </div>
-                      ))
-                    )}
+                      );
+                      }))
+                    }
                   </div>
                 </div>
 

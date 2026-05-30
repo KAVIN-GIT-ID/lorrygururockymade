@@ -172,6 +172,7 @@ describe('TripList Component Tests', () => {
 
     expect(screen.getByText('Ultimate Fleet-Book Document Ledger')).toBeInTheDocument();
     expect(screen.getByText('1. Truck No')).toBeInTheDocument();
+    expect(screen.getByText('Receivable (₹)')).toBeInTheDocument();
   });
 
   it('should refresh displayed trips when trips prop changes', () => {
