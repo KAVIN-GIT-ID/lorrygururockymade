@@ -1,7 +1,9 @@
 import React from 'react';
-import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench } from 'lucide-react';
-import { getOutstandingAge, formatToDisplayDate } from '../lib/dateUtils';
+import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile, ExpenseEntry } from '../types';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield } from 'lucide-react';
+import { getOutstandingAge, formatToDisplayDate, calculateDaysLeft } from '../lib/dateUtils';
+import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './TruckMaster';
+import PayEmiModal from './PayEmiModal';
 
 interface DashboardProps {
   trips: TripEntry[];
@@ -15,6 +17,8 @@ interface DashboardProps {
   setActiveMonth: (month: string) => void;
   setActiveYear: (year: string) => void;
   orgProfile?: OrganizationProfile;
+  expenses?: ExpenseEntry[];
+  onAddExpense?: (expense: Omit<ExpenseEntry, 'id'>) => void;
 }
 
 export default function Dashboard({ 
@@ -28,7 +32,9 @@ export default function Dashboard({
   activeYear,
   setActiveMonth,
   setActiveYear,
-  orgProfile
+  orgProfile,
+  expenses = [],
+  onAddExpense
 }: DashboardProps) {
   const months = [
     { value: '01', label: 'January' },
@@ -51,6 +57,15 @@ export default function Dashboard({
   const [hoveredTruck, setHoveredTruck] = React.useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = React.useState({ x: 0, y: 0 });
   const closeTimeoutRef = React.useRef<any>(null);
+
+  // Pay EMI state
+  const [payEmiTarget, setPayEmiTarget] = React.useState<{
+    truckNo: string;
+    emiAmount: number;
+    bankName: string;
+    dueDateStr: string;
+    loanType?: string;
+  } | null>(null);
 
   React.useEffect(() => {
     return () => {
@@ -262,53 +277,53 @@ export default function Dashboard({
 
   const validRecoveryRate = isNaN(recoveryRate) ? 0 : Math.min(100, Math.max(0, recoveryRate));
 
-  const serviceAlerts = React.useMemo(() => {
-    const alerts: {
-      truckId: string;
-      truckNo: string;
-      serviceType: string;
-      remainingKM: number;
-      status: 'Overdue' | 'Near Due';
-      targetKM: number;
-      currentKM: number;
-    }[] = [];
+  const combinedAlerts = React.useMemo(() => {
+    const alerts: any[] = [];
+    const anchor = new Date('2026-05-23');
 
     trucks.forEach(truck => {
       if (truck.status !== 'Active') return;
       const currentKM = truck.currentKM || 0;
 
-      // Service types and their milestones / resolved intervals
-      const services = [
-        {
-          name: 'Engine Oil Change',
-          targetKM: truck.engineOilKM,
-          interval: truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000,
-        },
-        {
-          name: 'Crown Oil',
-          targetKM: truck.crownOilKM,
-          interval: truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000,
-        },
-        {
-          name: 'Gear Box Oil',
-          targetKM: truck.gearBoxOilKM,
-          interval: truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000,
-        },
-        {
-          name: 'Radiator Service',
-          targetKM: truck.radiatorKM,
-          interval: truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000,
-        },
-        {
-          name: 'Pinpush Grease',
-          targetKM: truck.pinpushKM,
-          interval: truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM || 5000,
-        },
-        {
-          name: 'Wheel Grease',
-          targetKM: truck.wheelGreaseKM,
-          interval: truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM || 5000,
+      // 1. Loan alerts
+      const activeLoans = getTruckLoans(truck).filter(l => l.loanStatus !== 'Closed');
+      activeLoans.forEach(loan => {
+        const stats = calculateSingleLoanStats(loan, truck.truckNo, expenses);
+        if (stats && stats.nextDueDateStr !== 'Fully Settled') {
+          const daysLeft = calculateDaysLeft(stats.nextDueDateStr, anchor);
+          if (daysLeft !== null) {
+            const isOverdue = stats.isOverdue || daysLeft <= 0;
+            if (isOverdue || daysLeft <= 15) {
+              alerts.push({
+                id: `loan-${truck.id}-${loan.id}-${stats.nextDueDateStr}`,
+                type: 'loan',
+                truckNo: truck.truckNo,
+                title: `${truck.truckNo}: ${loan.loanType || 'Loan'} EMI`,
+                urgency: isOverdue ? 'Overdue' : 'Near Due',
+                daysLeft,
+                description: `₹${Number(loan.loanEmiAmount).toLocaleString('en-IN')} due on ${formatToDisplayDate(stats.nextDueDateStr)} (${loan.loanBankName || 'Bank'})`,
+                dueDate: stats.nextDueDateStr,
+                metadata: {
+                  emiAmount: loan.loanEmiAmount,
+                  bankName: loan.loanBankName || 'Bank',
+                  dueDateStr: stats.nextDueDateStr,
+                  truckNo: truck.truckNo,
+                  loanType: loan.loanType,
+                }
+              });
+            }
+          }
         }
+      });
+
+      // 2. Service alerts
+      const services = [
+        { name: 'Engine Oil Change', targetKM: truck.engineOilKM, interval: truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000 },
+        { name: 'Crown Oil', targetKM: truck.crownOilKM, interval: truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000 },
+        { name: 'Gear Box Oil', targetKM: truck.gearBoxOilKM, interval: truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000 },
+        { name: 'Radiator Service', targetKM: truck.radiatorKM, interval: truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000 },
+        { name: 'Pinpush Grease', targetKM: truck.pinpushKM, interval: truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM || 5000 },
+        { name: 'Wheel Grease', targetKM: truck.wheelGreaseKM, interval: truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM || 5000 }
       ];
 
       services.forEach(service => {
@@ -316,26 +331,70 @@ export default function Dashboard({
           const remainingKM = service.targetKM - currentKM;
           if (remainingKM <= 1000) {
             alerts.push({
-              truckId: truck.id,
+              id: `service-${truck.id}-${service.name}`,
+              type: 'service',
               truckNo: truck.truckNo,
-              serviceType: service.name,
+              title: `${truck.truckNo}: ${service.name}`,
+              urgency: remainingKM <= 0 ? 'Overdue' : 'Near Due',
               remainingKM,
-              status: remainingKM <= 0 ? 'Overdue' : 'Near Due',
-              targetKM: service.targetKM,
-              currentKM
+              description: remainingKM <= 0 
+                ? `Overdue by ${Math.abs(remainingKM).toLocaleString()} KM (Current: ${currentKM.toLocaleString()} KM / Milestone: ${service.targetKM.toLocaleString()} KM)`
+                : `Due in ${remainingKM.toLocaleString()} KM (Current: ${currentKM.toLocaleString()} KM / Milestone: ${service.targetKM.toLocaleString()} KM)`,
+            });
+          }
+        }
+      });
+
+      // 3. Document Expiry alerts
+      const docs = [
+        { label: 'Insurance Expiry', date: truck.insuranceDate },
+        { label: 'Fitness Cert (FC)', date: truck.fcDate },
+        { label: 'Quarterly Tax (Q Tax)', date: truck.qTaxDate },
+        { label: 'Green Tax Cert', date: truck.greenTaxDate },
+        { label: 'National Permit Tax', date: truck.npTaxDate },
+        { label: '5 Year Permit Date', date: truck.fiveYearPermitDate },
+        { label: 'Registration Expiry', date: truck.registrationExpiryDate }
+      ];
+
+      docs.forEach(doc => {
+        if (doc.date) {
+          const daysLeft = calculateDaysLeft(doc.date, anchor);
+          if (daysLeft !== null && daysLeft <= 30) {
+            alerts.push({
+              id: `doc-${truck.id}-${doc.label}`,
+              type: 'document',
+              truckNo: truck.truckNo,
+              title: `${truck.truckNo}: ${doc.label}`,
+              urgency: daysLeft <= 0 ? 'Overdue' : 'Near Due',
+              daysLeft,
+              description: daysLeft <= 0
+                ? `Expired ${Math.abs(daysLeft)} days ago (on ${formatToDisplayDate(doc.date)})`
+                 : `Expires in ${daysLeft} days (on ${formatToDisplayDate(doc.date)})`,
+              dueDate: doc.date
             });
           }
         }
       });
     });
 
-    // Sort: Overdue first, then by remainingKM ascending (most critical first)
+    // Sort combined alerts
     return alerts.sort((a, b) => {
-      if (a.status === 'Overdue' && b.status !== 'Overdue') return -1;
-      if (a.status !== 'Overdue' && b.status === 'Overdue') return 1;
-      return a.remainingKM - b.remainingKM;
+      // 1. Overdue first
+      if (a.urgency === 'Overdue' && b.urgency !== 'Overdue') return -1;
+      if (a.urgency !== 'Overdue' && b.urgency === 'Overdue') return 1;
+
+      // 2. If both overdue or both near due
+      const getUrgencyValue = (item: any) => {
+        if (item.type === 'service') {
+          return item.remainingKM / 30;
+        } else {
+          return item.daysLeft !== null ? item.daysLeft : 999;
+        }
+      };
+
+      return getUrgencyValue(a) - getUrgencyValue(b);
     });
-  }, [trucks, orgProfile]);
+  }, [trucks, expenses, orgProfile]);
 
   return (
     <div id="dashboard-tab" className="space-y-6 animate-fade-in font-sans">
@@ -370,6 +429,82 @@ export default function Dashboard({
             ))}
           </select>
         </div>
+      </div>
+
+      {/* LATEST UPDATES & FLEET ALERTS */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-blue-600" />
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
+              Latest Updates & Fleet Alerts
+            </h3>
+          </div>
+          <span className="bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full text-[10px]">
+            {combinedAlerts.length} Active Alerts
+          </span>
+        </div>
+
+        {combinedAlerts.length === 0 ? (
+          <div className="border border-dashed border-slate-150 rounded-xl p-8 py-10 text-center bg-slate-50/50 flex flex-col items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-2" />
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">All Systems Nominal</h4>
+            <p className="text-xs text-slate-405 mt-1 max-w-sm">
+              All compliance documents, technical lubricants, and active loans are up to date.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[360px] overflow-y-auto pr-1 modern-scrollbar animate-in fade-in duration-300">
+            {combinedAlerts.map((alert) => {
+              const isOverdue = alert.urgency === 'Overdue';
+              return (
+                <div
+                  key={alert.id}
+                  className={`flex items-start justify-between p-4 rounded-xl border transition duration-150 ${
+                    isOverdue 
+                      ? 'bg-rose-50/40 border-rose-100 hover:border-rose-200 border-l-4 border-l-rose-500 shadow-3xs' 
+                      : 'bg-amber-50/30 border-amber-100 hover:border-amber-200 border-l-4 border-l-amber-500 shadow-3xs'
+                  }`}
+                >
+                  <div className="flex gap-3 items-start flex-1 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      alert.type === 'loan' ? 'bg-blue-50 text-blue-600' :
+                      alert.type === 'service' ? 'bg-emerald-50 text-emerald-600' :
+                      'bg-indigo-50 text-indigo-600'
+                    }`}>
+                      {alert.type === 'loan' && <Landmark className="w-4 h-4" />}
+                      {alert.type === 'service' && <Wrench className="w-4 h-4" />}
+                      {alert.type === 'document' && <Calendar className="w-4 h-4" />}
+                    </div>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-extrabold text-slate-900 text-xs truncate">{alert.title}</span>
+                        <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                          isOverdue 
+                            ? 'bg-rose-100 text-rose-700 animate-pulse' 
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {alert.urgency}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-650 leading-normal font-sans">{alert.description}</p>
+                    </div>
+                  </div>
+
+                  {alert.type === 'loan' && currentUserRights?.canEditExpenses && (
+                    <button
+                      type="button"
+                      onClick={() => setPayEmiTarget(alert.metadata)}
+                      className="ml-3 shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg transition shadow-3xs cursor-pointer uppercase tracking-wider"
+                    >
+                      Pay EMI
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* STATS OVERVIEW CARDS */}
@@ -682,84 +817,35 @@ export default function Dashboard({
         </>
       )}
 
-      {/* SERVICE MAINTENANCE ALERTS PANEL */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="p-1 px-2.5 bg-amber-50 text-amber-705 border border-amber-100 rounded font-extrabold text-[10px] uppercase tracking-wider animate-pulse flex items-center gap-1 shrink-0 text-amber-750">
-                <Wrench className="w-3.5 h-3.5 text-amber-500" /> Maintenance Alerts
-              </span>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">
-                Service Maintenance & Odometer Alerts
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mt-1 font-normal font-sans">
-              Monitors truck mileage against service intervals, warning when a service is overdue or due within 1,000 KM.
-            </p>
-          </div>
-        </div>
-
-        {serviceAlerts.length === 0 ? (
-          <div className="border border-dashed border-slate-200 rounded-xl p-8 py-10 text-center bg-slate-50/50">
-            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">All Vehicles Serviced</h4>
-            <p className="text-xs text-slate-400 mt-0.5 font-normal">
-              Excellent! No active trucks have service intervals overdue or nearing expiration.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto border border-slate-100 rounded-lg">
-            <table className="w-full text-left text-xs whitespace-nowrap divide-y divide-slate-100">
-              <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider font-bold">
-                <tr>
-                  <th className="p-3 pl-4">Truck Number</th>
-                  <th className="p-3">Service Type</th>
-                  <th className="p-3 text-center">Current Odometer</th>
-                  <th className="p-3 text-center">Due Milestone</th>
-                  <th className="p-3 text-center">Remaining Mileage</th>
-                  <th className="p-3 text-center">Status Flag</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {serviceAlerts.map((alert, idx) => {
-                  const isOverdue = alert.status === 'Overdue';
-                  return (
-                    <tr key={`${alert.truckId}-${alert.serviceType}-${idx}`} className="hover:bg-slate-50/40 transition">
-                      <td className="p-3 pl-4">
-                        <span className="font-mono font-bold text-slate-900 block">{alert.truckNo}</span>
-                      </td>
-                      <td className="p-3">
-                        <span className="font-sans font-bold text-slate-800 block text-[11px]">{alert.serviceType}</span>
-                      </td>
-                      <td className="p-3 text-center font-mono text-slate-600">
-                        {alert.currentKM.toLocaleString('en-IN')} KM
-                      </td>
-                      <td className="p-3 text-center font-mono text-slate-600">
-                        {alert.targetKM.toLocaleString('en-IN')} KM
-                      </td>
-                      <td className="p-3 text-center">
-                        {isOverdue ? (
-                          <span className="inline-block bg-red-50 border border-red-100 text-red-700 font-bold px-2 py-0.5 rounded shadow-3xs font-mono text-[10px] animate-pulse">
-                            Overdue by {Math.abs(alert.remainingKM).toLocaleString('en-IN')} KM
-                          </span>
-                        ) : (
-                          <span className="inline-block bg-amber-50 border border-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded shadow-3xs font-mono text-[10px]">
-                            Due in {alert.remainingKM.toLocaleString('en-IN')} KM
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`inline-flex h-2.5 w-2.5 rounded-full shrink-0 shadow-xs ${isOverdue ? 'bg-red-600 animate-ping' : 'bg-amber-500'}`} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Pay EMI Modal */}
+      {payEmiTarget && (
+        <PayEmiModal
+          isOpen={true}
+          onClose={() => setPayEmiTarget(null)}
+          truckNo={payEmiTarget.truckNo}
+          emiAmount={payEmiTarget.emiAmount}
+          bankName={payEmiTarget.bankName}
+          dueDateStr={payEmiTarget.dueDateStr}
+          accounts={accounts}
+          loanType={payEmiTarget.loanType}
+          onConfirm={(paymentDate, accountId) => {
+            if (onAddExpense) {
+              onAddExpense({
+                truckNo: payEmiTarget.truckNo,
+                expenseType: 'Loan EMI',
+                shopName: payEmiTarget.bankName,
+                amount: payEmiTarget.emiAmount,
+                paymentMode: accountId,
+                date: paymentDate,
+                status: 'Paid',
+                notes: `EMI payment due date: ${payEmiTarget.dueDateStr}${payEmiTarget.loanType ? ` (${payEmiTarget.loanType})` : ''}`,
+              });
+              alert(`EMI Payment of ₹${payEmiTarget.emiAmount.toLocaleString('en-IN')} for ${payEmiTarget.truckNo} recorded successfully.`);
+            }
+            setPayEmiTarget(null);
+          }}
+        />
+      )}
 
       {hoveredTruck && (() => {
         const det = getTruckHoverDetails(hoveredTruck);

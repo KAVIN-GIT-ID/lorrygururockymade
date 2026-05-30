@@ -162,6 +162,7 @@ export default function AppwriteCloudSync({
       };
       
       let userRightsData: any = null;
+      let maxUpdatedAt = 0;
 
       const categories: { key: keyof typeof loadedState; collection: string }[] = [
         { key: 'trucks', collection: 'trucks' },
@@ -182,6 +183,12 @@ export default function AppwriteCloudSync({
             try {
               const record = JSON.parse(doc.data);
               parsedRecords.push(record);
+              if (doc.$updatedAt) {
+                const docTime = new Date(doc.$updatedAt).getTime();
+                if (docTime > maxUpdatedAt) {
+                  maxUpdatedAt = docTime;
+                }
+              }
             } catch (e) {
               console.warn(`Failed to parse document payload for ${doc.$id} in ${cat.collection}:`, e);
             }
@@ -215,6 +222,10 @@ export default function AppwriteCloudSync({
 
       await Promise.all([...fetchPromises, loadRightsPromise]);
 
+      if (maxUpdatedAt > 0) {
+        loadedState.exportDate = maxUpdatedAt;
+      }
+
       // Sync local baseline — IMPORTANT: always filter by orgId.
       // For org_backend, listFleetDocuments returns ALL records across ALL orgs
       // (no org filter). If we stored them unfiltered here, the delta sync would
@@ -234,7 +245,7 @@ export default function AppwriteCloudSync({
       // Load state into local UI
       const didChange = onLoadCloudState(loadedState, userRightsData);
       
-      previousFingerprint.current = getScopedFingerprint(currentLocalStateRef.current);
+      previousFingerprint.current = getScopedFingerprint(loadedState);
       
       if (!quiet) {
         setSuccessMsg('Active registers successfully loaded from Appwrite Database!');
@@ -373,7 +384,9 @@ export default function AppwriteCloudSync({
     }
   };
 
-  // Debounced auto-sync trigger on fingerprint changes
+  // Automatic background delta sync is disabled to use direct database interaction on hook mutations.
+  // This prevents race conditions and data-overwrite issues on page reloads or network glitches.
+  /*
   useEffect(() => {
     if (!isConfigured || !initialPullDone) return;
     if (previousFingerprint.current === stateFingerprint) return;
@@ -386,6 +399,7 @@ export default function AppwriteCloudSync({
 
     return () => clearTimeout(timer);
   }, [stateFingerprint, isConfigured, initialPullDone]);
+  */
 
   // Real-Time Web Socket subscription using Appwrite real-time channel
   useEffect(() => {

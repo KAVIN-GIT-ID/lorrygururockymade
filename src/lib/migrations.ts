@@ -69,6 +69,8 @@ export const migrateUserPermissions = (list: any[]): UserPermission[] => {
   return list.map(item => {
     if ('canViewTrips' in item) {
       return {
+        canEditLoans: item.canEditLoans !== undefined ? item.canEditLoans : false,
+        canDeleteLoans: item.canDeleteLoans !== undefined ? item.canDeleteLoans : false,
         ...item,
         organizationId: item.organizationId || 'org_default',
         isApproved: item.isApproved !== undefined ? item.isApproved : true
@@ -101,7 +103,9 @@ export const migrateUserPermissions = (list: any[]): UserPermission[] => {
       canDeleteAccounts: !!item.canManageAccounts,
       canViewExpenses: !!item.canManageExpenses,
       canEditExpenses: !!item.canManageExpenses,
-      canDeleteExpenses: !!item.canManageExpenses
+      canDeleteExpenses: !!item.canManageExpenses,
+      canEditLoans: !!item.canManageTrucks,
+      canDeleteLoans: !!item.canManageTrucks
     };
   });
 };

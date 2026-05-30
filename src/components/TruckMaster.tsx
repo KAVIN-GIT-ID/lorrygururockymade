@@ -1,10 +1,152 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType } from '../types';
-import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
+import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry } from '../types';
+import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark } from 'lucide-react';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
 import { formatTruckNumber } from '../lib/formatUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import ServiceDoneModal from './ServiceDoneModal';
+import PayEmiModal from './PayEmiModal';
+
+export const getTruckLoans = (truck: Truck): LoanEntry[] => {
+  if (truck.loans && truck.loans.length > 0) {
+    return truck.loans;
+  }
+  const list: LoanEntry[] = [];
+  if (truck.loanStartDate || truck.loanEmiAmount || truck.loanTenureMonths) {
+    list.push({
+      id: 'legacy-loan',
+      loanType: 'Chassis Loan',
+      loanBankName: truck.loanBankName,
+      loanStartDate: truck.loanStartDate,
+      loanRegisteredDate: truck.loanRegisteredDate,
+      loanTenureMonths: truck.loanTenureMonths,
+      loanEmiAmount: truck.loanEmiAmount,
+      loanStatus: truck.loanStatus || 'Active',
+      loanNotes: truck.loanNotes
+    });
+  }
+  return list;
+};
+
+export const calculateSingleLoanStats = (
+  loan: {
+    id: string;
+    loanStartDate?: string;
+    loanEmiAmount?: number;
+    loanTenureMonths?: number;
+    loanRegisteredDate?: string;
+    loanBankName?: string;
+    loanStatus?: string;
+    loanType?: string;
+  },
+  truckNo: string,
+  expenses: ExpenseEntry[]
+) => {
+  if (!loan.loanStartDate || !loan.loanEmiAmount || !loan.loanTenureMonths) return null;
+  
+  const emiAmount = loan.loanEmiAmount;
+  const tenure = loan.loanTenureMonths;
+  const startDateStr = loan.loanStartDate;
+  
+  // Parse start date
+  const parts = startDateStr.split('-');
+  const startY = parseInt(parts[0], 10);
+  const startM = parseInt(parts[1], 10) - 1;
+  const startD = parseInt(parts[2], 10);
+  
+  // Parse registered date or default to today's date if not specified
+  const registeredDateStr = loan.loanRegisteredDate || new Date().toISOString().split('T')[0];
+  const regParts = registeredDateStr.split('-');
+  const regY = parseInt(regParts[0], 10);
+  const regM = parseInt(regParts[1], 10) - 1;
+  const regD = parseInt(regParts[2], 10);
+  const regDate = new Date(regY, regM, regD);
+  regDate.setHours(0,0,0,0);
+  
+  const dueDates: string[] = [];
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  
+  for (let i = 1; i <= tenure; i++) {
+    // calculate due date (the first installment is paid on the loan start date itself)
+    const targetMonth = startM + i - 1;
+    const targetYear = startY + Math.floor(targetMonth / 12);
+    const targetMonthMod = ((targetMonth % 12) + 12) % 12;
+    const maxDays = new Date(targetYear, targetMonthMod + 1, 0).getDate();
+    const targetDay = Math.min(startD, maxDays);
+    
+    const yyyy = targetYear;
+    const mm = String(targetMonthMod + 1).padStart(2, '0');
+    const dd = String(targetDay).padStart(2, '0');
+    const dueDateStr = `${yyyy}-${mm}-${dd}`;
+    dueDates.push(dueDateStr);
+  }
+  
+  let paidInstallments = 0;
+  for (let i = 1; i <= tenure; i++) {
+    const dueDateStr = dueDates[i-1];
+    
+    // Check if paid in expenses
+    const isPaidInExpenses = expenses.some(e => 
+      e.truckNo === truckNo && 
+      (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
+      e.status === 'Paid' && 
+      e.notes?.includes(dueDateStr) &&
+      (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
+    );
+    
+    const parts = dueDateStr.split('-');
+    const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    const isPast = dueD < regDate;
+    
+    if (isPaidInExpenses || isPast || dueDateStr === startDateStr) {
+      paidInstallments++;
+    }
+  }
+  
+  const totalPaid = paidInstallments * emiAmount;
+  const totalRemaining = (tenure - paidInstallments) * emiAmount;
+  
+  // Next due date: first unpaid
+  let nextDueDateStr = 'Fully Settled';
+  let isOverdue = false;
+  
+  for (let i = 1; i <= tenure; i++) {
+    const dueDateStr = dueDates[i-1];
+    const isPaidInExpenses = expenses.some(e => 
+      e.truckNo === truckNo && 
+      (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
+      e.status === 'Paid' && 
+      e.notes?.includes(dueDateStr) &&
+      (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
+    );
+    
+    const parts = dueDateStr.split('-');
+    const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    const isPast = dueD < regDate;
+    const isPaid = isPaidInExpenses || isPast || dueDateStr === startDateStr;
+    
+    if (!isPaid) {
+      nextDueDateStr = dueDateStr;
+      isOverdue = dueD <= today;
+      break;
+    }
+  }
+  
+  return {
+    paidInstallments,
+    totalPaid,
+    totalRemaining,
+    nextDueDateStr,
+    isOverdue
+  };
+};
+
+export const calculateLoanStats = (truck: Truck, expenses: ExpenseEntry[]) => {
+  const loans = getTruckLoans(truck);
+  if (loans.length === 0) return null;
+  return calculateSingleLoanStats(loans[0], truck.truckNo, expenses);
+};
 
 interface TruckMasterProps {
   trucks: Truck[];
@@ -24,6 +166,10 @@ interface TruckMasterProps {
   onServiceDone?: (payload: ServiceDonePayload) => void;
   accounts?: Account[];
   drivers?: Driver[];
+  onAddExpense?: (expense: Omit<ExpenseEntry, 'id'>) => Promise<void>;
+  canEditLoans?: boolean;
+  canDeleteLoans?: boolean;
+  canEditExpenses?: boolean;
 }
 
 export default function TruckMaster({ 
@@ -44,12 +190,60 @@ export default function TruckMaster({
   onServiceDone,
   accounts = [],
   drivers = [],
+  onAddExpense,
+  canEditLoans = true,
+  canDeleteLoans = true,
+  canEditExpenses = true,
 }: TruckMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
   const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
   const [serviceDoneTarget, setServiceDoneTarget] = useState<{ truckId: string; truckNo: string; serviceType: ServiceType; currentKM: number; intervalKM: number } | null>(null);
+  const [payEmiTarget, setPayEmiTarget] = useState<{ truckNo: string; emiAmount: number; bankName: string; dueDateStr: string; loanType?: string } | null>(null);
+  const [editingLoanTarget, setEditingLoanTarget] = useState<{ truck: Truck; loan: LoanEntry } | null>(null);
+
+  // Multiple loan states for edit/add form
+  const [loans, setLoans] = useState<LoanEntry[]>([]);
+  const [tempLoanType, setTempLoanType] = useState('Chassis Loan');
+  const [tempCustomLoanType, setTempCustomLoanType] = useState('');
+  const [tempLoanBank, setTempLoanBank] = useState('');
+  const [tempLoanStart, setTempLoanStart] = useState('');
+  const [tempLoanTenure, setTempLoanTenure] = useState<number | ''>('');
+  const [tempLoanEmi, setTempLoanEmi] = useState<number | ''>('');
+  const [tempLoanRegisteredDate, setTempLoanRegisteredDate] = useState('');
+  const [tempLoanStatus, setTempLoanStatus] = useState<'Active' | 'Closed'>('Active');
+  const [tempLoanNotes, setTempLoanNotes] = useState('');
+
+  const handleAddLoanToForm = () => {
+    if (!tempLoanStart || !tempLoanEmi || !tempLoanTenure) {
+      alert("Please fill in Loan Start Date, Tenure, and EMI Amount.");
+      return;
+    }
+    const finalType = tempLoanType === 'Other' ? (tempCustomLoanType.trim() || 'Other Loan') : tempLoanType;
+    const newLoan: LoanEntry = {
+      id: 'loan_' + Date.now(),
+      loanType: finalType,
+      loanBankName: tempLoanBank.trim() || undefined,
+      loanStartDate: tempLoanStart,
+      loanRegisteredDate: tempLoanRegisteredDate || new Date().toISOString().split('T')[0],
+      loanTenureMonths: Number(tempLoanTenure),
+      loanEmiAmount: Number(tempLoanEmi),
+      loanStatus: tempLoanStatus,
+      loanNotes: tempLoanNotes.trim() || undefined
+    };
+    setLoans([...loans, newLoan]);
+
+    // Clear builder inputs
+    setTempLoanBank('');
+    setTempLoanStart('');
+    setTempCustomLoanType('');
+    setTempLoanTenure('');
+    setTempLoanEmi('');
+    setTempLoanRegisteredDate('');
+    setTempLoanStatus('Active');
+    setTempLoanNotes('');
+  };
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +273,15 @@ export default function TruckMaster({
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [type, setType] = useState('');
+
+  // Loan Specifications
+  const [loanStartDate, setLoanStartDate] = useState('');
+  const [loanRegisteredDate, setLoanRegisteredDate] = useState('');
+  const [loanTenureMonths, setLoanTenureMonths] = useState<number | ''>('');
+  const [loanEmiAmount, setLoanEmiAmount] = useState<number | ''>('');
+  const [loanBankName, setLoanBankName] = useState('');
+  const [loanStatus, setLoanStatus] = useState<'Active' | 'Closed'>('Active');
+  const [loanNotes, setLoanNotes] = useState('');
   
   // Tax & Compliance Dates
   const [insuranceDate, setInsuranceDate] = useState('');
@@ -173,6 +376,25 @@ export default function TruckMaster({
     setInsuranceUploading(false);
     setIsSubmitting(false);
     setIsEditing(null);
+    
+    // Clear Loan details
+    setLoanStartDate('');
+    setLoanRegisteredDate('');
+    setLoanTenureMonths('');
+    setLoanEmiAmount('');
+    setLoanBankName('');
+    setLoanStatus('Active');
+    setLoanNotes('');
+    setLoans([]);
+    setTempLoanType('Chassis Loan');
+    setTempCustomLoanType('');
+    setTempLoanBank('');
+    setTempLoanStart('');
+    setTempLoanTenure('');
+    setTempLoanEmi('');
+    setTempLoanRegisteredDate('');
+    setTempLoanStatus('Active');
+    setTempLoanNotes('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -222,6 +444,41 @@ export default function TruckMaster({
     const approvedCount = trucks.filter(t => t.isApproved !== false).length;
     const limitReached = approvedCount >= maxTrucksAllowed;
 
+    let finalLoans = [...loans];
+    if (tempLoanStart && tempLoanEmi && tempLoanTenure) {
+      const finalType = tempLoanType === 'Other' ? (tempCustomLoanType.trim() || 'Other Loan') : tempLoanType;
+      finalLoans.push({
+        id: 'loan_' + Date.now(),
+        loanType: finalType,
+        loanBankName: tempLoanBank.trim() || undefined,
+        loanStartDate: tempLoanStart,
+        loanRegisteredDate: tempLoanRegisteredDate || new Date().toISOString().split('T')[0],
+        loanTenureMonths: Number(tempLoanTenure),
+        loanEmiAmount: Number(tempLoanEmi),
+        loanStatus: tempLoanStatus,
+        loanNotes: tempLoanNotes.trim() || undefined
+      });
+    }
+
+    const primaryLoan = finalLoans[0];
+    const legacyLoanFields = primaryLoan ? {
+      loanStartDate: primaryLoan.loanStartDate || undefined,
+      loanRegisteredDate: primaryLoan.loanRegisteredDate || undefined,
+      loanTenureMonths: primaryLoan.loanTenureMonths || undefined,
+      loanEmiAmount: primaryLoan.loanEmiAmount || undefined,
+      loanBankName: primaryLoan.loanBankName || undefined,
+      loanStatus: primaryLoan.loanStatus || undefined,
+      loanNotes: primaryLoan.loanNotes || undefined,
+    } : {
+      loanStartDate: undefined,
+      loanRegisteredDate: undefined,
+      loanTenureMonths: undefined,
+      loanEmiAmount: undefined,
+      loanBankName: undefined,
+      loanStatus: undefined,
+      loanNotes: undefined,
+    };
+
     const truckPayload = {
       truckNo: formatTruckNumber(truckNo),
       ownerName: ownerName || undefined,
@@ -251,6 +508,8 @@ export default function TruckMaster({
       wheelGreaseIntervalKM: wheelGreaseIntervalKM !== '' ? Number(wheelGreaseIntervalKM) : undefined,
       rcFileId: uploadedRcId || undefined,
       insuranceFileId: uploadedInsuranceId || undefined,
+      ...legacyLoanFields,
+      loans: finalLoans
     };
 
     if (isEditing) {
@@ -302,6 +561,33 @@ export default function TruckMaster({
     setRcFile(null);
     setInsuranceFile(null);
     setShowAddForm(true);
+
+    // Set Loan details
+    setLoanStartDate(truck.loanStartDate || '');
+    setLoanRegisteredDate(truck.loanRegisteredDate || '');
+    setLoanTenureMonths(truck.loanTenureMonths !== undefined ? truck.loanTenureMonths : '');
+    setLoanEmiAmount(truck.loanEmiAmount !== undefined ? truck.loanEmiAmount : '');
+    setLoanBankName(truck.loanBankName || '');
+    setLoanStatus(truck.loanStatus || 'Active');
+    setLoanNotes(truck.loanNotes || '');
+
+    if (truck.loans && truck.loans.length > 0) {
+      setLoans(truck.loans);
+    } else if (truck.loanStartDate || truck.loanEmiAmount || truck.loanTenureMonths) {
+      setLoans([{
+        id: 'legacy-loan',
+        loanType: 'Chassis Loan',
+        loanBankName: truck.loanBankName || '',
+        loanStartDate: truck.loanStartDate || '',
+        loanRegisteredDate: truck.loanRegisteredDate || '',
+        loanTenureMonths: truck.loanTenureMonths !== undefined ? truck.loanTenureMonths : 0,
+        loanEmiAmount: truck.loanEmiAmount !== undefined ? truck.loanEmiAmount : 0,
+        loanStatus: truck.loanStatus || 'Active',
+        loanNotes: truck.loanNotes || '',
+      }]);
+    } else {
+      setLoans([]);
+    }
   };
 
   // Days left calculation relative to standard anchor date
@@ -905,10 +1191,177 @@ export default function TruckMaster({
                 </div>
               </div>
 
+              {/* SECTION 3.5: Loan & EMI Settings */}
+              <div className="col-span-full border-t border-slate-200 pt-3">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">3.5 Loan & EMI Settings (Multiple Loans Supported)</span>
+                
+                {/* List of current loans in form */}
+                {loans.length > 0 && (
+                  <div className="mb-3 overflow-x-auto border border-slate-200 rounded-lg bg-white">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[9px] font-extrabold text-slate-500 uppercase">
+                        <tr>
+                          <th className="p-2 pl-3">Type</th>
+                          <th className="p-2">Bank</th>
+                          <th className="p-2">First EMI Paid Date</th>
+                          <th className="p-2">Tenure</th>
+                          <th className="p-2 font-mono">EMI</th>
+                          <th className="p-2">Status</th>
+                          <th className="p-2 text-right pr-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                        {loans.map((l, index) => (
+                          <tr key={l.id || index} className="hover:bg-slate-50/50">
+                            <td className="p-2 pl-3 text-slate-800 font-bold">{l.loanType || 'General Loan'}</td>
+                            <td className="p-2">{l.loanBankName || '—'}</td>
+                            <td className="p-2 font-mono">{l.loanStartDate || '—'}</td>
+                            <td className="p-2 font-mono">{l.loanTenureMonths ? `${l.loanTenureMonths} Mos` : '—'}</td>
+                            <td className="p-2 font-mono text-blue-600">₹{l.loanEmiAmount?.toLocaleString('en-IN') || 0}</td>
+                            <td className="p-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${l.loanStatus === 'Closed' ? 'bg-slate-100 text-slate-600' : 'bg-blue-50 text-blue-700'}`}>
+                                {l.loanStatus || 'Active'}
+                              </span>
+                            </td>
+                            <td className="p-2 text-right pr-3">
+                              {canDeleteLoans && (
+                                <button
+                                  type="button"
+                                  onClick={() => setLoans(loans.filter((_, idx) => idx !== index))}
+                                  className="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Add New Loan Form (Quick Builder) */}
+                {canEditLoans ? (
+                  <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-3 space-y-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Add a Loan Entry</div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">Loan Type</label>
+                        <select
+                          value={tempLoanType}
+                          onChange={(e) => setTempLoanType(e.target.value)}
+                          className="w-full bg-white border border-slate-250 text-slate-850 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                        >
+                          <option value="Chassis Loan">Chassis Loan</option>
+                          <option value="Body Loan">Body Loan</option>
+                          <option value="Other">Other Loan</option>
+                        </select>
+                      </div>
+                      {tempLoanType === 'Other' && (
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-1">Custom Type Name</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Body Building"
+                            value={tempCustomLoanType}
+                            onChange={(e) => setTempCustomLoanType(e.target.value)}
+                            className="w-full bg-white border border-slate-200 text-slate-800 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">Bank Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. HDFC Bank"
+                          value={tempLoanBank}
+                          onChange={(e) => setTempLoanBank(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-slate-850 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">First EMI Paid Date</label>
+                        <input
+                          type="date"
+                          value={tempLoanStart}
+                          onChange={(e) => setTempLoanStart(e.target.value)}
+                          className="w-full bg-white border border-slate-200 text-slate-850 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">Tenure (Months)</label>
+                        <input
+                          type="number"
+                          placeholder="Tenure"
+                          value={tempLoanTenure}
+                          onChange={(e) => setTempLoanTenure(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full bg-white border border-slate-200 text-slate-850 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">Monthly EMI</label>
+                        <input
+                          type="number"
+                          placeholder="EMI Amount"
+                          value={tempLoanEmi}
+                          onChange={(e) => setTempLoanEmi(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full bg-white border border-slate-200 text-slate-850 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 mb-1">Registered Date</label>
+                        <input
+                          type="date"
+                          value={tempLoanRegisteredDate}
+                          onChange={(e) => setTempLoanRegisteredDate(e.target.value)}
+                          placeholder="Defaults to Start Date"
+                          className="w-full bg-white border border-slate-200 text-slate-850 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center text-xs pt-1">
+                      <div className="flex gap-4">
+                        <div>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={tempLoanStatus === 'Closed'}
+                              onChange={(e) => setTempLoanStatus(e.target.checked ? 'Closed' : 'Active')}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">Mark Closed</span>
+                          </label>
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            placeholder="Loan Notes / Remarks"
+                            value={tempLoanNotes}
+                            onChange={(e) => setTempLoanNotes(e.target.value)}
+                            className="bg-white border border-slate-205 text-slate-805 rounded px-2 py-1 text-xs w-64 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddLoanToForm}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3 py-1.5 rounded transition cursor-pointer"
+                      >
+                        Add Loan
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic text-[11px] p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                    You do not have permissions to modify loan details.
+                  </p>
+                )}
+              </div>
+
               {/* SECTION 4: Upload Documents */}
               <div className="col-span-full border-t border-slate-200 pt-3">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2.5">4. Compliance Document Uploads (Optional)</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">RC Document File</label>
                     <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
@@ -973,7 +1426,6 @@ export default function TruckMaster({
                       <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Appwrite bucket connection required for document uploads.</span>
                     )}
                   </div>
-                </div>
               </div>
 
               <div>
@@ -1174,6 +1626,9 @@ export default function TruckMaster({
                           <span className="flex items-center gap-1.5 text-xs text-blue-600 group-hover/cell:text-blue-800 transition-colors">
                             <Shield className={`w-3.5 h-3.5 ${truck.isApproved === false ? 'text-amber-500 animate-pulse' : 'text-blue-500'} group-hover/cell:scale-110 transition-transform`} />
                             <span className={truck.isApproved !== false ? "underline decoration-dotted decoration-blue-405 group-hover/cell:decoration-solid" : ""}>{truck.truckNo}</span>
+                            {truck.loanStartDate && truck.loanEmiAmount && truck.loanStatus !== 'Closed' && (
+                              <Landmark className="w-3.5 h-3.5 text-amber-500 shrink-0 animate-pulse" title={`Active loan with ${truck.loanBankName || 'bank'}`} />
+                            )}
                           </span>
                           {truck.isApproved === false && (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider max-w-max ${
@@ -1385,6 +1840,21 @@ export default function TruckMaster({
                       <span className={`${npProps.className} font-semibold text-[11px]`}>{npProps.displayText}</span>
                     </div>
                   </div>
+
+                  {/* Loan summary if present */}
+                  {truck.loanStartDate && truck.loanEmiAmount && (
+                    <div className="bg-amber-50 border border-amber-200/60 rounded-lg p-2.5 space-y-1.5 text-xs mb-3.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-bold uppercase text-[9px] flex items-center gap-1">
+                          <Landmark className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Loan EMI ({truck.loanStatus || 'Active'})</span>
+                        </span>
+                        <span className="font-semibold text-[11px] text-slate-800">
+                          ₹{Number(truck.loanEmiAmount).toLocaleString('en-IN')} /mo
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Mileage & Lubes Toggle */}
                   <div className="border border-slate-150 rounded-lg p-2 mb-3.5 bg-white">
@@ -1628,6 +2098,156 @@ export default function TruckMaster({
                   </div>
                 </div>
 
+                {/* Section B.5: Loan & EMI Progress */}
+                {(() => {
+                  const activeLoansList = getTruckLoans(truck);
+                  if (activeLoansList.length === 0) return null;
+                  
+                  return (
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
+                        <Landmark className="w-4 h-4 text-blue-600" />
+                        <span>Loan & EMI Progress</span>
+                      </h3>
+                      {activeLoansList.map((loan, idx) => {
+                        const stats = calculateSingleLoanStats(loan, truck.truckNo, expenses);
+                        if (!stats) return null;
+                        const progressPercent = Math.min(100, Math.max(0, (stats.paidInstallments / (loan.loanTenureMonths || 1)) * 100));
+
+                        const handleDeleteLoan = () => {
+                          if (!confirm(`Are you sure you want to delete the ${loan.loanType || 'Loan'}? This will permanently remove it from the vehicle records.`)) return;
+                          const nextLoans = activeLoansList.filter(l => l.id !== loan.id);
+                          const primaryLoan = nextLoans[0];
+                          onUpdateTruck({
+                            ...truck,
+                            loans: nextLoans,
+                            loanStartDate: primaryLoan?.loanStartDate || '',
+                            loanRegisteredDate: primaryLoan?.loanRegisteredDate || '',
+                            loanTenureMonths: primaryLoan?.loanTenureMonths !== undefined ? primaryLoan.loanTenureMonths : '',
+                            loanEmiAmount: primaryLoan?.loanEmiAmount !== undefined ? primaryLoan.loanEmiAmount : '',
+                            loanBankName: primaryLoan?.loanBankName || '',
+                            loanStatus: primaryLoan?.loanStatus || 'Active',
+                            loanNotes: primaryLoan?.loanNotes || '',
+                          } as any);
+                          alert("Loan deleted successfully.");
+                        };
+
+                        const handleEditLoan = () => {
+                          setEditingLoanTarget({ truck, loan });
+                        };
+                        
+                        return (
+                          <div key={loan.id || idx} className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-3 shadow-3xs hover:shadow-2xs transition">
+                            <div className="flex justify-between items-center border-b border-slate-200/60 pb-1.5 mb-1">
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                {loan.loanType || 'General Loan'}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${loan.loanStatus === 'Closed' ? 'bg-slate-200 text-slate-600' : 'bg-blue-50 text-blue-700'}`}>
+                                  {loan.loanStatus || 'Active'}
+                                </span>
+                                {canEditLoans && (
+                                  <button
+                                    type="button"
+                                    onClick={handleEditLoan}
+                                    className="text-blue-600 hover:text-blue-800 p-0.5 rounded hover:bg-slate-100 transition cursor-pointer"
+                                    title="Edit Loan"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                                {canDeleteLoans && (
+                                  <button
+                                    type="button"
+                                    onClick={handleDeleteLoan}
+                                    className="text-rose-600 hover:text-rose-805 p-0.5 rounded hover:bg-slate-100 transition cursor-pointer"
+                                    title="Delete Loan"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-4 text-xs">
+                              <div>
+                                <span className="text-slate-400 font-bold uppercase text-[9px] block">Lending Institution</span>
+                                <span className="font-semibold text-slate-800">{loan.loanBankName || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold uppercase text-[9px] block">Total Loan & Interest</span>
+                                <span className="font-semibold text-slate-850">
+                                  ₹{((loan.loanTenureMonths || 0) * (loan.loanEmiAmount || 0)).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 font-bold uppercase text-[9px] block">First EMI Date & Tenure</span>
+                                <span className="font-semibold text-slate-800">{loan.loanStartDate} ({loan.loanTenureMonths} Months)</span>
+                              </div>
+                              {loan.loanRegisteredDate && (
+                                <div className="col-span-3 border-t border-slate-200/40 pt-1">
+                                  <span className="text-slate-400 font-bold uppercase text-[9px] block">Loan Registered Date</span>
+                                  <span className="font-semibold text-slate-800 font-mono text-[11px]">{loan.loanRegisteredDate}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="border-t border-slate-200/60 pt-2.5">
+                              <div className="flex justify-between text-xs font-semibold mb-1">
+                                <span className="text-slate-700 font-sans font-semibold">Installments Cleared</span>
+                                <span className="font-mono text-slate-500">
+                                  {stats.paidInstallments} / {loan.loanTenureMonths} Paid ({progressPercent.toFixed(0)}%)
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-200/60 rounded-full h-2 overflow-hidden">
+                                <div 
+                                  className="h-2 rounded-full bg-blue-600 transition-all duration-300"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                                <span>Total Paid: ₹{stats.totalPaid.toLocaleString('en-IN')}</span>
+                                <span>Remaining: ₹{stats.totalRemaining.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+
+                            <div className="border-t border-slate-200/60 pt-2.5 flex justify-between items-center text-xs">
+                              <div>
+                                <span className="text-slate-400 font-bold uppercase text-[9px] block">Next Due Date</span>
+                                <span className={`font-semibold font-mono ${stats.isOverdue ? 'text-rose-600 font-bold animate-pulse' : 'text-slate-800'}`}>
+                                  {stats.nextDueDateStr}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {stats.isOverdue && (
+                                  <span className="bg-rose-50 text-rose-700 font-bold text-[9px] px-2 py-0.5 rounded border border-rose-200 uppercase tracking-wider animate-pulse">
+                                    Overdue
+                                  </span>
+                                )}
+                                {stats.nextDueDateStr !== 'Fully Settled' && canEditExpenses && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPayEmiTarget({
+                                      truckNo: truck.truckNo,
+                                      emiAmount: loan.loanEmiAmount || 0,
+                                      bankName: loan.loanBankName || '',
+                                      dueDateStr: stats.nextDueDateStr,
+                                      loanType: loan.loanType,
+                                    })}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3 py-1 rounded shadow-sm hover:shadow-md transition cursor-pointer"
+                                  >
+                                    Pay EMI
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 {/* Section C: Technical Lubricants Life expectancy */}
                 <div>
                   <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-2">Engines & Lubricants Lifespan</h3>
@@ -1741,6 +2361,233 @@ export default function TruckMaster({
           onCancel={() => setServiceDoneTarget(null)}
         />
       )}
+      {/* Pay EMI Modal */}
+      {payEmiTarget && (
+        <PayEmiModal
+          isOpen={true}
+          onClose={() => setPayEmiTarget(null)}
+          truckNo={payEmiTarget.truckNo}
+          emiAmount={payEmiTarget.emiAmount}
+          bankName={payEmiTarget.bankName}
+          dueDateStr={payEmiTarget.dueDateStr}
+          accounts={accounts}
+          loanType={payEmiTarget.loanType}
+          onConfirm={async (paymentDate, accountId) => {
+            if (onAddExpense) {
+              await onAddExpense({
+                truckNo: payEmiTarget.truckNo,
+                expenseType: 'Loan EMI',
+                shopName: payEmiTarget.bankName,
+                amount: payEmiTarget.emiAmount,
+                paymentMode: accountId,
+                date: paymentDate,
+                status: 'Paid',
+                notes: `EMI payment due date: ${payEmiTarget.dueDateStr}${payEmiTarget.loanType ? ` (${payEmiTarget.loanType})` : ''}`,
+              });
+              alert(`EMI Payment of ₹${payEmiTarget.emiAmount.toLocaleString('en-IN')} for ${payEmiTarget.truckNo} recorded successfully.`);
+            }
+            setPayEmiTarget(null);
+          }}
+        />
+      )}
+      {/* Edit Loan Modal */}
+      {editingLoanTarget && (
+        <EditLoanModal
+          isOpen={true}
+          loan={editingLoanTarget.loan}
+          onCancel={() => setEditingLoanTarget(null)}
+          onConfirm={(updatedLoan) => {
+            const currentLoans = getTruckLoans(editingLoanTarget.truck);
+            const nextLoans = currentLoans.map(l => l.id === updatedLoan.id ? updatedLoan : l);
+            const primaryLoan = nextLoans[0];
+            onUpdateTruck({
+              ...editingLoanTarget.truck,
+              loans: nextLoans,
+              loanStartDate: primaryLoan?.loanStartDate || '',
+              loanRegisteredDate: primaryLoan?.loanRegisteredDate || '',
+              loanTenureMonths: primaryLoan?.loanTenureMonths !== undefined ? primaryLoan.loanTenureMonths : '',
+              loanEmiAmount: primaryLoan?.loanEmiAmount !== undefined ? primaryLoan.loanEmiAmount : '',
+              loanBankName: primaryLoan?.loanBankName || '',
+              loanStatus: primaryLoan?.loanStatus || 'Active',
+              loanNotes: primaryLoan?.loanNotes || '',
+            } as any);
+            setEditingLoanTarget(null);
+            alert("Loan details updated successfully.");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface EditLoanModalProps {
+  isOpen: boolean;
+  loan: LoanEntry;
+  onConfirm: (updatedLoan: LoanEntry) => void;
+  onCancel: () => void;
+}
+
+function EditLoanModal({ isOpen, loan, onConfirm, onCancel }: EditLoanModalProps) {
+  const [loanType, setLoanType] = useState(
+    ['Chassis Loan', 'Body Loan'].includes(loan.loanType || '') ? (loan.loanType || 'Chassis Loan') : 'Other'
+  );
+  const [customLoanType, setCustomLoanType] = useState(
+    ['Chassis Loan', 'Body Loan'].includes(loan.loanType || '') ? '' : (loan.loanType || '')
+  );
+  const [loanBankName, setLoanBankName] = useState(loan.loanBankName || '');
+  const [loanStartDate, setLoanStartDate] = useState(loan.loanStartDate || '');
+  const [loanRegisteredDate, setLoanRegisteredDate] = useState(loan.loanRegisteredDate || '');
+  const [loanTenureMonths, setLoanTenureMonths] = useState<number | ''>(loan.loanTenureMonths || '');
+  const [loanEmiAmount, setLoanEmiAmount] = useState<number | ''>(loan.loanEmiAmount || '');
+  const [loanStatus, setLoanStatus] = useState<'Active' | 'Closed'>(loan.loanStatus || 'Active');
+  const [loanNotes, setLoanNotes] = useState(loan.loanNotes || '');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loanStartDate || !loanEmiAmount || !loanTenureMonths) {
+      alert("Please fill in Loan Start Date, Tenure, and EMI Amount.");
+      return;
+    }
+    const finalType = loanType === 'Other' ? (customLoanType.trim() || 'Other Loan') : loanType;
+    onConfirm({
+      ...loan,
+      loanType: finalType,
+      loanBankName: loanBankName.trim() || undefined,
+      loanStartDate,
+      loanRegisteredDate: loanRegisteredDate || loanStartDate,
+      loanTenureMonths: Number(loanTenureMonths),
+      loanEmiAmount: Number(loanEmiAmount),
+      loanStatus,
+      loanNotes: loanNotes.trim() || undefined
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
+      <div className="w-full max-w-lg bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-slate-800">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <Landmark className="w-4 h-4 text-blue-600" />
+            <h3 className="font-bold text-sm text-slate-900 font-sans uppercase tracking-wider">Edit Loan Details</h3>
+          </div>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Loan Type</label>
+              <select
+                value={loanType}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLoanType(val);
+                  if (val !== 'Other') setCustomLoanType('');
+                }}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+              >
+                <option value="Chassis Loan">Chassis Loan</option>
+                <option value="Body Loan">Body Loan</option>
+                <option value="Other">Other Loan</option>
+              </select>
+            </div>
+            {loanType === 'Other' ? (
+              <div>
+                <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Custom Loan Type</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Trailer Loan"
+                  value={customLoanType}
+                  onChange={(e) => setCustomLoanType(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                />
+              </div>
+            ) : <div />}
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Lending Institution</label>
+              <input
+                type="text"
+                placeholder="e.g. HDFC Bank"
+                value={loanBankName}
+                onChange={(e) => setLoanBankName(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">First EMI Paid Date</label>
+              <input
+                type="date"
+                value={loanStartDate}
+                onChange={(e) => setLoanStartDate(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Tenure (Months)</label>
+              <input
+                type="number"
+                placeholder="Tenure"
+                value={loanTenureMonths}
+                onChange={(e) => setLoanTenureMonths(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Monthly EMI</label>
+              <input
+                type="number"
+                placeholder="EMI Amount"
+                value={loanEmiAmount}
+                onChange={(e) => setLoanEmiAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Registered Date</label>
+              <input
+                type="date"
+                value={loanRegisteredDate}
+                onChange={(e) => setLoanRegisteredDate(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Status</label>
+              <select
+                value={loanStatus}
+                onChange={(e) => setLoanStatus(e.target.value as any)}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+              >
+                <option value="Active">Active Loan</option>
+                <option value="Closed">Closed / Settled</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[9px] font-bold text-slate-555 uppercase mb-1">Notes / Remarks</label>
+              <input
+                type="text"
+                placeholder="Notes"
+                value={loanNotes}
+                onChange={(e) => setLoanNotes(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 font-sans">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer">
+              Cancel
+            </button>
+            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded-lg text-xs transition cursor-pointer">
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

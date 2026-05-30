@@ -102,6 +102,10 @@ const reconcileOrganizationProfiles = (
   const orgIds = Array.from(new Set(rights.map(r => r.organizationId).filter(Boolean)))
     .filter(orgId => orgId !== 'org_backend' && (!isAppwriteConfigured() || orgId !== 'org_default'));
 
+  // Filter profiles to only keep those that have at least one active user permission in rights.
+  // This prevents resurrection of organization profiles whose corresponding users have been deleted.
+  profiles = profiles.filter(p => orgIds.includes(p.organizationId));
+
   for (const orgId of orgIds) {
     const existing = profiles.find(p => p.organizationId === orgId);
     if (!existing) {
@@ -464,7 +468,8 @@ export default function App() {
         canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
         canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
         canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-        canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+                canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+        canEditLoans: false, canDeleteLoans: false
       };
     }
     const email = (currentUser.email || '').toLowerCase().trim();
@@ -512,9 +517,11 @@ export default function App() {
         canDeleteTruckRequests: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteTruckRequests) : false,
         canViewBackendTeam: isSuper ? (isPrimarySuperAdmin || !!match.canViewBackendTeam) : false,
         canDeleteBackendTeam: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteBackendTeam) : false,
-        canViewDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canViewDatabaseConsole) : false,
+                canViewDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canViewDatabaseConsole) : false,
         canEditDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canEditDatabaseConsole) : false,
-        canDeleteDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteDatabaseConsole) : false
+        canDeleteDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteDatabaseConsole) : false,
+        canEditLoans: isSuper ? false : (match.role === 'Admin' || !!match.canEditLoans),
+        canDeleteLoans: isSuper ? false : (match.role === 'Admin' || !!match.canDeleteLoans)
       };
     }
 
@@ -531,7 +538,8 @@ export default function App() {
       canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
       canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+            canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+      canEditLoans: false, canDeleteLoans: false
     };
   };
 
@@ -693,10 +701,50 @@ export default function App() {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           const data = await fetchAllGlobalConfigs(databaseId);
           let rawProfiles = organizationProfiles;
+          if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
+            rawProfiles = data.organizationProfiles;
+          }
+
           if (data && data.userRightsList && data.userRightsList.length > 0) {
             let cloudRights: UserPermission[] = migrateUserPermissions(data.userRightsList);
             const localStored = localStorage.getItem('ttt_user_rights');
             let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
+            
+            // Filter out user permissions for which the corresponding organization profile does not exist
+            const existingOrgIds = new Set(rawProfiles.map(p => p.organizationId));
+            const email = (user.email || '').toLowerCase().trim();
+            const myCloudRights = cloudRights.find(ur => ur.email.toLowerCase().trim() === email);
+            const isSuper = myCloudRights?.role === 'SuperAdmin' || myCloudRights?.organizationId === 'org_backend';
+
+            const orphanedCloudKeys: string[] = [];
+            cloudRights = cloudRights.filter(ur => {
+              if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
+                return true;
+              }
+              const exists = existingOrgIds.has(ur.organizationId);
+              if (!exists) {
+                orphanedCloudKeys.push(appwrite.getEmailDocId(ur.email));
+              }
+              return exists;
+            });
+
+            // Asynchronously delete orphaned user rights from Appwrite DB if current user is Super Admin
+            if (isSuper && orphanedCloudKeys.length > 0) {
+              console.info("Super Admin cleaning up orphaned user permissions from DB:", orphanedCloudKeys);
+              for (const key of orphanedCloudKeys) {
+                appwrite.deleteGlobalConfig(databaseId, key).catch(err => {
+                  console.warn("Failed to delete orphaned user permission:", key, err);
+                });
+              }
+            }
+
+            localRights = localRights.filter(ur => {
+              if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
+                return true;
+              }
+              return existingOrgIds.has(ur.organizationId);
+            });
+
             const merged = cloudRights.map(cloudEntry => {
               const localEntry = localRights.find(l => l.email.toLowerCase() === cloudEntry.email.toLowerCase());
               if (localEntry) {
@@ -705,30 +753,14 @@ export default function App() {
               return cloudEntry;
             });
             const localOnlyEntries = localRights.filter(lr => !merged.some(m => m.email.toLowerCase() === lr.email.toLowerCase()));
-            const sanitizedLocalOnlyEntries = localOnlyEntries.map(lr => {
-              const isSuper = lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
-              if (isSuper) return lr;
-              return {
-                ...lr,
-                role: 'Custom' as const,
-                isApproved: false,
-                canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
-                canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
-                canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
-                canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
-                canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
-                canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-                canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
-                canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false
-              };
+            // Only keep Super Admin / Backend team members to avoid accidental lockout.
+            // Standard organization accounts/members that were deleted from the database should be deleted locally too.
+            const preservedLocalOnlyEntries = localOnlyEntries.filter(lr => {
+              return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
             });
-            activeRightsList = [...merged, ...sanitizedLocalOnlyEntries];
+            activeRightsList = [...merged, ...preservedLocalOnlyEntries];
             setUserRightsList(activeRightsList);
             localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-
-            if (data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
-              rawProfiles = data.organizationProfiles;
-            }
           } else {
             // Fresh/empty cloud database - clear active permissions
             // Safety: if the current user has local Super Admin / org_backend permissions, preserve them so they are not locked out
@@ -772,10 +804,25 @@ export default function App() {
       const localProfilesStr = localStorage.getItem('ttt_organization_profiles');
       let localProfiles = localProfilesStr ? JSON.parse(localProfilesStr) : organizationProfiles;
       let reconciled = reconcileOrganizationProfiles(activeRightsList, localProfiles);
+
+      const email = (user.email || '').toLowerCase().trim();
+      const myRights = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
+      if (myRights) {
+        const isSuper = myRights.role === 'SuperAdmin' || myRights.organizationId === 'org_backend';
+        if (!isSuper) {
+          // Filter user rights list to only contain current org users
+          activeRightsList = activeRightsList.filter(ur => ur.organizationId === myRights.organizationId || ur.email.toLowerCase().trim() === email);
+          setUserRightsList(activeRightsList);
+          localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
+
+          // Filter organization profiles to only contain current org profile
+          reconciled = reconciled.filter(p => p.organizationId === myRights.organizationId);
+        }
+      }
+
       setOrganizationProfiles(reconciled);
       localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
 
-      const email = (user.email || '').toLowerCase().trim();
       let match = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
 
       // ── Appwrite Teams sync (RUN FIRST) ───────────────────────────────
@@ -982,15 +1029,28 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-        const profiles = storedProfiles ? JSON.parse(storedProfiles) : organizationProfiles;
+        const userRights = getCurrentUserRights();
+        const loggedInEmail = (currentUser?.email || '').toLowerCase().trim();
+        const isNotLoggedIn = !currentUser;
 
         for (const ur of nextUserRights) {
+          // Rule: Only push the user permission to cloud if:
+          // 1. We are not logged in yet (e.g. initial setup or registration path)
+          // 2. The logged-in user is a Super Admin
+          // 3. The permission belongs to the logged-in user's own organization
+          // 4. The permission belongs to the logged-in user themselves (self update)
+          const isOwnOrg = ur.organizationId && ur.organizationId === userRights.organizationId;
+          const isSelf = ur.email.toLowerCase().trim() === loggedInEmail;
+
+          if (!isNotLoggedIn && !userRights.isSuperAdmin && !isOwnOrg && !isSelf) {
+            continue;
+          }
+
           const docId = appwrite.getEmailDocId(ur.email);
           await appwrite.saveGlobalConfig(databaseId, docId, ur);
         }
 
-        console.log('Successfully synced registration user permissions & profiles to Appwrite Database.');
+        console.log('Successfully synced registration user permissions to Appwrite Database.');
       } catch (e: any) {
         console.warn("Could not sync registration user permissions to database:", e);
         showNotification(`Database Sync Alert: Failed to write permissions. Make sure database schemas are bootstrapped.`);
@@ -1755,10 +1815,60 @@ export default function App() {
     if (userRightsChanged) hasRelevantChanges = true;
 
     if (userRightsData) {
-      if (userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)) {
-        const cloudRights = migrateUserPermissions(userRightsData.userRightsList);
+      const isSuper = currentUserRights?.isSuperAdmin || currentUserOrgId === 'org_backend';
+      const email = (currentUser?.email || '').toLowerCase().trim();
+
+      let cloudProfiles = userRightsData.organizationProfiles || [];
+      let cloudRightsSource = userRightsData.userRightsList || [];
+
+      if (!isSuper) {
+        // Filter profiles to only contain our own organization
+        cloudProfiles = cloudProfiles.filter((p: any) => p.organizationId === currentUserOrgId);
+        
+        // Filter cloud rights list to only contain our own organization or self
+        cloudRightsSource = cloudRightsSource.filter((ur: any) => 
+          ur.organizationId === currentUserOrgId || ur.email.toLowerCase().trim() === email
+        );
+      }
+
+      const existingOrgIds = new Set(cloudProfiles.map((p: any) => p.organizationId));
+
+      if (cloudRightsSource && Array.isArray(cloudRightsSource)) {
+        let cloudRights = migrateUserPermissions(cloudRightsSource);
         const localStored = localStorage.getItem('ttt_user_rights');
         let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
+        
+        // Identify orphaned user permissions in the cloud
+        const orphanedCloudKeys: string[] = [];
+        cloudRights = cloudRights.filter(ur => {
+          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
+            return true;
+          }
+          const exists = existingOrgIds.has(ur.organizationId);
+          if (!exists) {
+            orphanedCloudKeys.push(appwrite.getEmailDocId(ur.email));
+          }
+          return exists;
+        });
+
+        // Asynchronously delete orphaned user rights from Appwrite DB if current user is Super Admin
+        if (isSuper && orphanedCloudKeys.length > 0) {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          console.info("Super Admin cleaning up orphaned user permissions from DB (onLoadCloudState):", orphanedCloudKeys);
+          for (const key of orphanedCloudKeys) {
+            appwrite.deleteGlobalConfig(databaseId, key).catch(err => {
+              console.warn("Failed to delete orphaned user permission:", key, err);
+            });
+          }
+        }
+
+        localRights = localRights.filter(ur => {
+          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
+            return true;
+          }
+          return existingOrgIds.has(ur.organizationId);
+        });
+
         const merged = cloudRights.map(cloudEntry => {
           const localEntry = localRights.find(l => l.email.toLowerCase() === cloudEntry.email.toLowerCase());
           if (localEntry) {
@@ -1767,34 +1877,32 @@ export default function App() {
           return cloudEntry;
         });
         const localOnlyEntries = localRights.filter(lr => !merged.some(m => m.email.toLowerCase() === lr.email.toLowerCase()));
-        const sanitizedLocalOnlyEntries = localOnlyEntries.map(lr => {
-          const isSuper = lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
-          if (isSuper) return lr;
-          return {
-            ...lr,
-            role: 'Custom' as const,
-            isApproved: false,
-            canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
-            canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
-            canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
-            canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
-            canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
-            canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-            canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
-            canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false
-          };
+        // Only keep Super Admin / Backend team members to avoid accidental lockout.
+        // Standard organization accounts/members that were deleted from the database should be deleted locally too.
+        const preservedLocalOnlyEntries = localOnlyEntries.filter(lr => {
+          return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
         });
-        const activeRightsList = [...merged, ...sanitizedLocalOnlyEntries];
+        const activeRightsList = [...merged, ...preservedLocalOnlyEntries];
         setUserRightsList(activeRightsList);
         localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
       }
 
-      if (userRightsData.organizationProfiles && Array.isArray(userRightsData.organizationProfiles)) {
+      if (cloudProfiles && Array.isArray(cloudProfiles)) {
+        const activeRights = cloudRightsSource && Array.isArray(cloudRightsSource)
+          ? migrateUserPermissions(cloudRightsSource)
+          : userRightsList;
+
+        // Filter activeRights by existingOrgIds to avoid recreating profiles for deleted orgs
+        const filteredActiveRights = activeRights.filter(ur => {
+          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
+            return true;
+          }
+          return existingOrgIds.has(ur.organizationId);
+        });
+
         const reconciled = reconcileOrganizationProfiles(
-          userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)
-            ? migrateUserPermissions(userRightsData.userRightsList)
-            : userRightsList,
-          userRightsData.organizationProfiles
+          filteredActiveRights,
+          cloudProfiles
         );
         setOrganizationProfiles(reconciled);
         localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
@@ -2251,23 +2359,26 @@ export default function App() {
     const expiryStr = d.toISOString().split('T')[0];
 
     let targetTruckId: string;
+    let newTruckObj: Truck;
+
     if (existingRejectedTruck) {
       targetTruckId = existingRejectedTruck.id;
+      newTruckObj = {
+        ...existingRejectedTruck,
+        ...truckPayload,
+        isApproved: false,
+        requestStatus: 'Pending' as const,
+        status: 'Inactive' as const,
+        registrationExpiryDate: expiryStr
+      };
       setTrucks(prev => {
-        const next = prev.map(t => t.id === targetTruckId ? {
-          ...t,
-          ...truckPayload,
-          isApproved: false,
-          requestStatus: 'Pending' as const,
-          status: 'Inactive' as const,
-          registrationExpiryDate: expiryStr
-        } : t);
+        const next = prev.map(t => t.id === targetTruckId ? newTruckObj : t);
         localStorage.setItem('ttt_trucks', JSON.stringify(next));
         return next;
       });
     } else {
       targetTruckId = 'tr_' + Date.now();
-      const newTruck: Truck = {
+      newTruckObj = {
         ...truckPayload,
         id: targetTruckId,
         organizationId: currentUserOrgId,
@@ -2277,7 +2388,7 @@ export default function App() {
         registrationExpiryDate: expiryStr
       };
       setTrucks(prev => {
-        const next = [...prev, newTruck];
+        const next = [...prev, newTruckObj];
         localStorage.setItem('ttt_trucks', JSON.stringify(next));
         return next;
       });
@@ -2305,6 +2416,18 @@ export default function App() {
       }
       return p;
     });
+
+    if (isAppwriteConfigured() && currentUserOrgId) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trucks', targetTruckId, currentUserOrgId, newTruckObj);
+        console.log("Successfully pushed new truck request document to Appwrite.");
+      } catch (err) {
+        console.warn("Could not push new truck request document to database:", err);
+        alert("Failed to request truck activation: Appwrite database connection error. Please try again.");
+        return;
+      }
+    }
 
     await saveOrganizationProfiles(nextProfiles);
 
@@ -2442,6 +2565,17 @@ export default function App() {
               (t: any) => t.truckNo.toUpperCase() === req.truckNo.toUpperCase()
             );
             if (truckExists) return true;
+
+            // Grace period: do not delete newly created requests (less than 60 seconds old)
+            // to allow asynchronous DB writes and replication to complete.
+            const reqTimestampMatch = req.id.match(/^req_(\d+)/);
+            const isNewRequest = reqTimestampMatch
+              ? (Date.now() - Number(reqTimestampMatch[1]) < 60000)
+              : false;
+
+            if (isNewRequest) {
+              return true;
+            }
 
             if (req.status === 'Pending' || req.status === 'Rejected') {
               console.info(`Self-Healing: Removing orphaned ${req.status} request for truck ${req.truckNo} in org ${profile.organizationId} because the vehicle registry record was deleted.`);
@@ -3654,6 +3788,8 @@ export default function App() {
               setActiveMonth={setActiveMonth}
               setActiveYear={setActiveYear}
               orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
+              expenses={orgExpenses}
+              onAddExpense={addExpense}
             />
           )}
 
@@ -3690,9 +3826,13 @@ export default function App() {
               onAddTruckRequest={handleAddTruckRequest}
               organizationId={currentUserOrgId}
               orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-              onServiceDone={currentUserRights.canEditTrucks ? handleServiceDone : undefined}
+              onServiceDone={(currentUserRights.canEditTrucks || currentUserRights.canEditExpenses) ? handleServiceDone : undefined}
               accounts={orgAccounts}
               drivers={orgDrivers}
+              onAddExpense={addExpense}
+              canEditLoans={currentUserRights.canEditLoans !== false}
+              canDeleteLoans={currentUserRights.canDeleteLoans !== false}
+              canEditExpenses={currentUserRights.canEditExpenses !== false}
             />
           )}
 

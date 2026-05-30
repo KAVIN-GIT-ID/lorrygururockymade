@@ -327,4 +327,74 @@ describe('TripForm Component Tests', () => {
     // When editing, starting KM should remain as the editing entry's value (1800) and not be auto-calculated to 1500
     expect(startingKMInput.value).toBe('1800');
   });
+
+  it('should compute and render line item totals in the cargo segments table footer', () => {
+    const { container } = render(
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={vi.fn()}
+      />
+    );
+
+    // Add first cargo segment: Mumbai to Pune
+    fireEvent.click(screen.getByRole('button', { name: /Add Cargo Segment/i }));
+    fireEvent.change(screen.getByLabelText(/Route Origin/i), { target: { value: 'Mumbai' } });
+    fireEvent.change(screen.getByLabelText(/Route Destination/i), { target: { value: 'Pune' } });
+    fireEvent.change(screen.getByLabelText(/Billed Freight Income/i), { target: { value: 45000 } });
+    
+    const driverWagesInput1 = container.querySelector('#input_st_driverwages') as HTMLInputElement;
+    fireEvent.change(driverWagesInput1, { target: { value: 6750 } });
+
+    // Add a Brokerage expense of 2000 paid by driver
+    const typeSelect1 = Array.from(container.querySelectorAll('select')).find(s => Array.from((s as HTMLSelectElement).options).some(o => o.value === 'Brokerage')) as HTMLSelectElement;
+    fireEvent.change(typeSelect1, { target: { value: 'Brokerage' } });
+    fireEvent.change(screen.getByPlaceholderText('e.g. 1500'), { target: { value: '2000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add Leg Expense/i }));
+    
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    // Add second cargo segment: Warangal to Dharapuram
+    fireEvent.click(screen.getByRole('button', { name: /Add Cargo Segment/i }));
+    fireEvent.change(screen.getByLabelText(/Route Origin/i), { target: { value: 'Warangal' } });
+    fireEvent.change(screen.getByLabelText(/Route Destination/i), { target: { value: 'Dharapuram' } });
+    fireEvent.change(screen.getByLabelText(/Billed Freight Income/i), { target: { value: 94500 } });
+
+    const driverWagesInput2 = container.querySelector('#input_st_driverwages') as HTMLInputElement;
+    fireEvent.change(driverWagesInput2, { target: { value: 14175 } });
+
+    // Add a Loading expense of 1500 paid by driver
+    const typeSelect2 = Array.from(container.querySelectorAll('select')).find(s => Array.from((s as HTMLSelectElement).options).some(o => o.value === 'Brokerage')) as HTMLSelectElement;
+    fireEvent.change(typeSelect2, { target: { value: 'Loading' } });
+    fireEvent.change(screen.getByPlaceholderText('e.g. 1500'), { target: { value: '1500' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add Leg Expense/i }));
+
+    // Add a Brokerage expense of 1000 NOT paid by driver (OrgRental)
+    fireEvent.change(typeSelect2, { target: { value: 'Brokerage' } });
+    fireEvent.change(screen.getByPlaceholderText('e.g. 1500'), { target: { value: '1000' } });
+    const paidBySelect = Array.from(container.querySelectorAll('select')).find(s => Array.from((s as HTMLSelectElement).options).some(o => o.value === 'OrgRental')) as HTMLSelectElement;
+    fireEvent.change(paidBySelect, { target: { value: 'OrgRental' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add Leg Expense/i }));
+    
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    // Total income should be 45000 + 94500 = 139500
+    // Total wages should be 6750 + 14175 = 20925
+    // Total driver spend should be 2000 (Seg 1 Brokerage) + 1500 (Seg 2 Loading) = 3500
+    // Total brokerage should be 1000 (Seg 2 Brokerage)
+    
+    // We check that the footer elements have the correct text
+    const totalRow = screen.getByText('Total').closest('tr');
+    expect(totalRow).toBeInTheDocument();
+    
+    expect(totalRow).toHaveTextContent('₹1,39,500'); // Total Income
+    expect(totalRow).toHaveTextContent('₹20,925');  // Total Wages
+    expect(totalRow).toHaveTextContent('₹3,500');   // Total Driver Spend
+    expect(totalRow).toHaveTextContent('₹1,000');   // Total Brokerage (only the one NOT paid by driver)
+  });
 });

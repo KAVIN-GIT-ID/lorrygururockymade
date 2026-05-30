@@ -157,10 +157,11 @@ export default function UserAccessControl({
     canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
     canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
     canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-    canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+        canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
     canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
     canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-    canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+    canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+    canEditLoans: false, canDeleteLoans: false
   });
 
   const toggleFormRight = (key: keyof typeof rights) => {
@@ -178,10 +179,11 @@ export default function UserAccessControl({
       canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
       canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
       canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-      canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+            canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
       canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+      canEditLoans: false, canDeleteLoans: false
     });
   };
 
@@ -218,10 +220,11 @@ export default function UserAccessControl({
         canViewDrivers: !isBackendOrg, canEditDrivers: !isBackendOrg, canDeleteDrivers: !isBackendOrg,
         canViewOffices: !isBackendOrg, canEditOffices: !isBackendOrg, canDeleteOffices: !isBackendOrg,
         canViewAccounts: !isBackendOrg, canEditAccounts: !isBackendOrg, canDeleteAccounts: !isBackendOrg,
-        canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
+                canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
-        canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg
+        canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
       });
     } else {
       setRights({
@@ -231,10 +234,11 @@ export default function UserAccessControl({
         canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
         canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
         canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-        canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+                canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
         canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
         canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-        canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+        canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+        canEditLoans: false, canDeleteLoans: false
       });
     }
   };
@@ -277,10 +281,11 @@ export default function UserAccessControl({
         canViewDrivers: !isBackendOrg, canEditDrivers: !isBackendOrg, canDeleteDrivers: !isBackendOrg,
         canViewOffices: !isBackendOrg, canEditOffices: !isBackendOrg, canDeleteOffices: !isBackendOrg,
         canViewAccounts: !isBackendOrg, canEditAccounts: !isBackendOrg, canDeleteAccounts: !isBackendOrg,
-        canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
+                canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
-        canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg
+        canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
       } : {})
     };
 
@@ -304,11 +309,12 @@ export default function UserAccessControl({
       canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
       canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
       // Backend-specific rights: all start at false — admin must grant each explicitly
-      canViewBackend: isBackendOrg ? false : false,
+            canViewBackend: isBackendOrg ? false : false,
       canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false,
       canViewBackendTeam: false, canDeleteBackendTeam: false,
-      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false
+      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
+      canEditLoans: false, canDeleteLoans: false
     };
     onUpdatePermission(updated);
     showNotification(`Approved ${userPerm.name}. Please grant specific permissions as needed.`);
@@ -670,7 +676,8 @@ export default function UserAccessControl({
                   { label: 'Driver Database', view: 'canViewDrivers', edit: 'canEditDrivers', del: 'canDeleteDrivers' },
                   { label: 'Offices Directory', view: 'canViewOffices', edit: 'canEditOffices', del: 'canDeleteOffices' },
                   { label: 'Ledger Accounts', view: 'canViewAccounts', edit: 'canEditAccounts', del: 'canDeleteAccounts' },
-                  { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' }
+                  { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' },
+                  { label: 'Vehicle Loan Details', view: '', edit: 'canEditLoans', del: 'canDeleteLoans' }
                 ] : [
                   { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                   { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
@@ -680,13 +687,17 @@ export default function UserAccessControl({
                   <div key={mod.label} className="grid grid-cols-4 gap-2 py-2 items-center text-xs">
                     <span className="font-semibold text-slate-700">{mod.label}</span>
                     <div className="text-center">
-                      <input
-                        type="checkbox"
-                        checked={!!(rights as any)[mod.view]}
-                        onChange={() => toggleFormRight(mod.view as any)}
-                        disabled={isBackendOrg && !canAddBackend}
-                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
-                      />
+                      {mod.view ? (
+                        <input
+                          type="checkbox"
+                          checked={!!(rights as any)[mod.view]}
+                          onChange={() => toggleFormRight(mod.view as any)}
+                          disabled={isBackendOrg && !canAddBackend}
+                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                        />
+                      ) : (
+                        <span className="text-slate-350 font-sans font-bold">—</span>
+                      )}
                     </div>
                     <div className="text-center">
                       <input
@@ -897,7 +908,8 @@ export default function UserAccessControl({
                       { label: 'Driver Database', view: 'canViewDrivers', edit: 'canEditDrivers', del: 'canDeleteDrivers' },
                       { label: 'Offices Directory', view: 'canViewOffices', edit: 'canEditOffices', del: 'canDeleteOffices' },
                       { label: 'Ledger Accounts', view: 'canViewAccounts', edit: 'canEditAccounts', del: 'canDeleteAccounts' },
-                      { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' }
+                      { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' },
+                      { label: 'Vehicle Loan Details', view: '', edit: 'canEditLoans', del: 'canDeleteLoans' }
                     ] : [
                       { label: 'Customer Org Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                       { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
@@ -907,16 +919,20 @@ export default function UserAccessControl({
                       <div key={mod.label} className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
                         <span className="text-xs font-bold text-slate-700 block mb-2">{mod.label}</span>
                         <div className="flex gap-4">
-                          <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={!!(p as any)[mod.view]}
-                              onChange={() => toggleUserRight(p, mod.view as any)}
-                              disabled={isBackendOrg && !canEditBackend}
-                              className="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
-                            />
-                            View
-                          </label>
+                          {mod.view ? (
+                            <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!(p as any)[mod.view]}
+                                onChange={() => toggleUserRight(p, mod.view as any)}
+                                disabled={isBackendOrg && !canEditBackend}
+                                className="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
+                              />
+                              View
+                            </label>
+                          ) : (
+                            <span className="text-slate-350 font-sans font-bold text-[11px]">View: —</span>
+                          )}
                           <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
                             <input
                               type="checkbox"
@@ -1155,7 +1171,8 @@ export default function UserAccessControl({
                                 { label: 'Driver Database', view: 'canViewDrivers', edit: 'canEditDrivers', del: 'canDeleteDrivers' },
                                 { label: 'Offices Directory', view: 'canViewOffices', edit: 'canEditOffices', del: 'canDeleteOffices' },
                                 { label: 'Ledger Accounts', view: 'canViewAccounts', edit: 'canEditAccounts', del: 'canDeleteAccounts' },
-                                { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' }
+                                { label: 'Expense Vouchers', view: 'canViewExpenses', edit: 'canEditExpenses', del: 'canDeleteExpenses' },
+                                { label: 'Vehicle Loan Details', view: '', edit: 'canEditLoans', del: 'canDeleteLoans' }
                               ] : [
                                 { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                                 { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
@@ -1165,13 +1182,17 @@ export default function UserAccessControl({
                                 <div key={mod.label} className="grid grid-cols-4 gap-2 py-2.5 items-center text-xs">
                                   <span className="font-bold text-slate-800">{mod.label}</span>
                                   <div className="text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!(p as any)[mod.view]}
-                                      onChange={() => toggleUserRight(p, mod.view as any)}
-                                      disabled={isBackendOrg && !canEditBackend}
-                                      className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    />
+                                    {mod.view ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={!!(p as any)[mod.view]}
+                                        onChange={() => toggleUserRight(p, mod.view as any)}
+                                        disabled={isBackendOrg && !canEditBackend}
+                                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      />
+                                    ) : (
+                                      <span className="text-slate-350 font-sans font-bold">—</span>
+                                    )}
                                   </div>
                                   <div className="text-center">
                                     <input

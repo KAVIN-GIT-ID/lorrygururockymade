@@ -29,7 +29,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
 
   const orgDrivers = orgId === 'org_backend' ? drivers : drivers.filter(d => d.organizationId === orgId);
 
-  const addDriver = (driverInput: Omit<Driver, 'id'>) => {
+  const addDriver = async (driverInput: Omit<Driver, 'id'>) => {
     const isDup = orgDrivers.some(d => d.driverName.toUpperCase().trim() === driverInput.driverName.toUpperCase().trim());
     if (isDup) {
       alert("Driver Name is already registered.");
@@ -37,20 +37,39 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
     }
     const d = { ...driverInput, id: 'd_id_' + Date.now(), organizationId: orgId };
     saveDrivers([...drivers, d]);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'drivers', d.id, orgId, d);
+      } catch (err) {
+        console.warn("Failed to save driver to Appwrite:", err);
+      }
+    }
+
     logAction('Created', 'Driver', d.driverName, `Added operator driver ${d.driverName} (License: ${d.licenseNo || 'N/A'})`);
     showNotification(`Driver ${d.driverName} added successfully.`);
   };
 
-  const updateDriver = (updated: Driver) => {
+  const updateDriver = async (updated: Driver) => {
     const oldDriver = drivers.find(d => d.id === updated.id);
     const merged: Driver = oldDriver ? { ...oldDriver, ...updated } : updated;
     const next = drivers.map(d => d.id === updated.id ? merged : d);
     saveDrivers(next);
 
-    if (isAppwriteConfigured() && oldDriver && oldDriver.licenseFileId && oldDriver.licenseFileId !== merged.licenseFileId) {
-      appwrite.deleteFile(oldDriver.licenseFileId).catch(err => {
-        console.warn("Failed to delete replaced driver license file:", err);
-      });
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'drivers', merged.id, orgId, merged);
+      } catch (err) {
+        console.warn("Failed to update driver in Appwrite:", err);
+      }
+
+      if (oldDriver && oldDriver.licenseFileId && oldDriver.licenseFileId !== merged.licenseFileId) {
+        appwrite.deleteFile(oldDriver.licenseFileId).catch(err => {
+          console.warn("Failed to delete replaced driver license file:", err);
+        });
+      }
     }
 
     const diff = oldDriver ? getDriverDiff(oldDriver, merged) : `Updated driver specs or active status to ${merged.status}`;
@@ -60,7 +79,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
     showNotification(`Driver details updated.`);
   };
 
-  const deleteDriver = (id: string) => {
+  const deleteDriver = async (id: string) => {
     const dr = drivers.find(d => d.id === id);
     const orgTrips = orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId);
     const inUse = orgTrips.some(tr => tr.driverName === dr?.driverName);
@@ -71,10 +90,19 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
     const next = drivers.filter(d => d.id !== id);
     saveDrivers(next);
 
-    if (isAppwriteConfigured() && dr?.licenseFileId) {
-      appwrite.deleteFile(dr.licenseFileId).catch(err => {
-        console.warn("Failed to delete driver license file on driver removal:", err);
-      });
+    if (isAppwriteConfigured() && dr) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'drivers', id);
+      } catch (err) {
+        console.warn("Failed to delete driver from Appwrite:", err);
+      }
+
+      if (dr.licenseFileId) {
+        appwrite.deleteFile(dr.licenseFileId).catch(err => {
+          console.warn("Failed to delete driver license file on driver removal:", err);
+        });
+      }
     }
 
     if (dr) {

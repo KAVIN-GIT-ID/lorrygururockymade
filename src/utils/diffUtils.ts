@@ -60,7 +60,14 @@ export const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
     engineOilKM: 'Engine Oil Target',
     crownOilKM: 'Crown Oil Target',
     gearBoxOilKM: 'Gear Box Oil Target',
-    radiatorKM: 'Radiator Target'
+    radiatorKM: 'Radiator Target',
+    loanStartDate: 'Loan Start Date',
+    loanRegisteredDate: 'Loan Registered Date',
+    loanTenureMonths: 'Loan Tenure (Months)',
+    loanEmiAmount: 'Loan EMI Amount',
+    loanBankName: 'Loan Bank Name',
+    loanStatus: 'Loan Status',
+    loanNotes: 'Loan Notes'
   };
   return generateDiffText(oldTruck, newTruck, labels);
 };

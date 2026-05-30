@@ -249,7 +249,6 @@ describe('TripList Component Tests', () => {
       advances: [
         {
           id: 'a-1',
-          tripNo: 'TRIP-RECOV-01',
           amount: 5000,
           date: '2026-05-01',
           fromAccountId: 'acc-1',
@@ -290,7 +289,6 @@ describe('TripList Component Tests', () => {
       advances: [
         {
           id: 'adv-a',
-          tripNo: 'TRIP-A',
           amount: 2000,
           date: '2026-05-01',
           fromAccountId: 'acc-1',

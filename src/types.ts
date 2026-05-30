@@ -3,6 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface LoanEntry {
+  id: string;
+  loanType?: string;               // Type of loan (e.g. 'Chassis Loan', 'Body Loan')
+  loanStartDate?: string;          // Start date of loan (YYYY-MM-DD)
+  loanRegisteredDate?: string;     // Date loan was registered in system (YYYY-MM-DD)
+  loanTenureMonths?: number;       // Tenure in months
+  loanEmiAmount?: number;          // EMI monthly installment amount
+  loanBankName?: string;           // Loan provider bank name
+  loanStatus?: 'Active' | 'Closed'; // Loan status
+  loanNotes?: string;              // Optional remarks/notes
+}
+
 export interface Truck {
   id: string;
   truckNo: string;
@@ -42,6 +54,16 @@ export interface Truck {
   radiatorIntervalKM?: number;
   pinpushIntervalKM?: number;      // Per-vehicle override for pinpush grease interval
   wheelGreaseIntervalKM?: number;  // Per-vehicle override for wheel grease interval
+  
+  // Loan details
+  loanStartDate?: string;          // Start date of loan (YYYY-MM-DD)
+  loanRegisteredDate?: string;     // Date loan was registered in system (YYYY-MM-DD)
+  loanTenureMonths?: number;       // Tenure in months
+  loanEmiAmount?: number;          // EMI monthly installment amount
+  loanBankName?: string;           // Loan provider bank name
+  loanStatus?: 'Active' | 'Closed'; // Loan status
+  loanNotes?: string;              // Optional remarks/notes
+  loans?: LoanEntry[];             // Multiple loans support
 }
 
 export interface Driver {
@@ -600,6 +622,8 @@ export interface UserPermission {
   canViewDatabaseConsole?: boolean;
   canEditDatabaseConsole?: boolean;
   canDeleteDatabaseConsole?: boolean;
+  canEditLoans?: boolean;
+  canDeleteLoans?: boolean;
 }
 
 export interface UserRights {
@@ -649,6 +673,8 @@ export interface UserRights {
   canViewDatabaseConsole?: boolean;
   canEditDatabaseConsole?: boolean;
   canDeleteDatabaseConsole?: boolean;
+  canEditLoans?: boolean;
+  canDeleteLoans?: boolean;
 }
 
 export interface TruckRequest {

@@ -876,8 +876,6 @@ export default function TripForm({
       if (e.key === 'Escape') {
         if (showSubTripForm) {
           handleCancelSubTripSegment();
-        } else if (isOpen) {
-          onClose();
         }
       }
     };
@@ -885,7 +883,7 @@ export default function TripForm({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showSubTripForm, isOpen, onClose]);
+  }, [showSubTripForm]);
 
   const handleSaveSubTripSegmentConfirm = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1126,11 +1124,9 @@ export default function TripForm({
 
   return (
     <div 
-      onClick={onClose}
       className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
     >
       <div 
-        onClick={(e) => e.stopPropagation()}
         className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
       >
         
@@ -1633,119 +1629,167 @@ export default function TripForm({
             </div>
 
             {/* Dynamic drafting sub-trips list visual list table */}
-            {subTrips.length > 0 ? (
-              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs font-sans">
-                <table className="w-full min-w-[800px] text-xs text-left">
-                  <thead className="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3 pl-4"># Seg</th>
-                      <th className="p-3">Load Date</th>
-                      <th className="p-3">Office Name</th>
-                      <th className="p-3">Route Path</th>
-                      <th className="p-3 text-right">Income (₹)</th>
-                      <th className="p-3 text-right">Receivable (₹)</th>
-                      <th className="p-3 text-right">Wages (₹)</th>
-                      <th className="p-3 text-right">All EXP (₹)</th>
-                      <th className="p-3 text-right pr-4">Edit / Delete</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {subTrips.map((st, sidx) => {
-                      const wagesAmt = st.driverWages || 0;
-                      // Sum all sub-trip specific costs including fuel, wages, and other expenses
-                      const allCol = (
-                        (st.dieselAmount || 0) +
-                        (st.loadingExpense || 0) + 
-                        (st.unloadingExpense || 0) + 
-                        (st.brokerageExpense || 0) +
-                        (st.crossingExpense || 0) +
-                        (st.rmcExpense || 0) +
-                        (st.rtoExpense || 0) + 
-                        (st.addBlueExpense || 0) + 
-                        (st.fastagExpense || 0) + 
-                        (st.driverWages || 0) + 
-                        (st.otherExpense || 0)
-                      );
+            {subTrips.length > 0 ? (() => {
+              const calculatedSubTrips = subTrips.map(st => {
+                const wagesAmt = st.driverWages || 0;
 
-                      const segmentDeductions = (() => {
-                        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-                          return st.cargoExpenses
-                            .filter(exp => exp.deductedFrom === 'OrgRental')
-                            .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                        }
-                        let legacyDeductions = 0;
-                        const loadAmt = Number(st.loadingExpense) || 0;
-                        if (st.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
+                const segmentDeductions = (() => {
+                  if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+                    return st.cargoExpenses
+                      .filter(exp => exp.deductedFrom === 'OrgRental')
+                      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                  }
+                  let legacyDeductions = 0;
+                  const loadAmt = Number(st.loadingExpense) || 0;
+                  if (st.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
 
-                        const unloadAmt = Number(st.unloadingExpense) || 0;
-                        if (st.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
+                  const unloadAmt = Number(st.unloadingExpense) || 0;
+                  if (st.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
 
-                        const brokerageAmt = Number(st.brokerageExpense) || 0;
-                        if (st.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
+                  const brokerageAmt = Number(st.brokerageExpense) || 0;
+                  if (st.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
 
-                        const crossingAmt = Number(st.crossingExpense) || 0;
-                        if (st.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
+                  const crossingAmt = Number(st.crossingExpense) || 0;
+                  if (st.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
 
-                        const rmcAmt = Number(st.rmcExpense) || 0;
-                        if (st.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
+                  const rmcAmt = Number(st.rmcExpense) || 0;
+                  if (st.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
 
-                        return legacyDeductions;
-                      })();
+                  return legacyDeductions;
+                })();
 
-                      const segmentOfficeBears = (() => {
-                        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-                          return st.cargoExpenses
-                            .filter(exp => exp.bears === 'Office')
-                            .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                        }
-                        return 0;
-                      })();
+                const segmentOfficeBears = (() => {
+                  if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+                    return st.cargoExpenses
+                      .filter(exp => exp.bears === 'Office')
+                      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+                  }
+                  return 0;
+                })();
 
-                      const segmentPayments = (payments || [])
-                        .filter(p => p.subTripId === st.id)
-                        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                const segmentPayments = (payments || [])
+                  .filter(p => p.subTripId === st.id)
+                  .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-                      const segmentReceivable = st.income - segmentDeductions + segmentOfficeBears - segmentPayments;
+                const segmentReceivable = st.income - segmentDeductions + segmentOfficeBears - segmentPayments;
 
-                      return (
-                        <tr key={st.id} className="hover:bg-slate-50/70 transition">
-                          <td className="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
-                          <td className="p-3 font-mono text-slate-650">{st.loadingDate}</td>
-                          <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
-                          <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
-                          <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
-                          <td className={`p-3 text-right font-bold font-mono ${
-                            segmentReceivable > 0 ? 'text-blue-700' :
-                            segmentReceivable === 0 ? 'text-slate-400 font-normal' :
-                            'text-amber-700'
-                          }`}>
-                            ₹{segmentReceivable.toLocaleString()}
-                          </td>
-                          <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
-                          <td className="p-3 text-right font-medium text-red-600 font-mono">₹{allCol.toLocaleString()}</td>
-                          <td className="p-3 text-right pr-4 flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditSubTrip(st)}
-                              className="text-blue-600 hover:text-blue-800 font-bold text-[11px] flex items-center gap-0.5"
-                            >
-                              <Edit2 className="w-3 h-3" /> Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSubTripSegment(st.id)}
-                              className="text-rose-600 hover:text-rose-800 font-bold text-[11px] flex items-center gap-0.5"
-                            >
-                              <Trash2 className="w-3 h-3" /> Delete
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
+                const legacyDriverSpend = (() => {
+                  let sum = 0;
+                  if (st.loadingPaidByDriver) sum += Number(st.loadingExpense) || 0;
+                  if (st.unloadingPaidByDriver) sum += Number(st.unloadingExpense) || 0;
+                  if (st.brokeragePaidByDriver) sum += Number(st.brokerageExpense) || 0;
+                  if (st.crossingPaidByDriver) sum += Number(st.crossingExpense) || 0;
+                  if (st.rmcPaidByDriver) sum += Number(st.rmcExpense) || 0;
+                  return sum;
+                })();
+
+                const driverSpend = st.cargoExpenses && st.cargoExpenses.length > 0
+                  ? st.cargoExpenses.filter(e => e.paidByDriver).reduce((sum, e) => sum + e.amount, 0)
+                  : legacyDriverSpend;
+
+                const brokerage = st.cargoExpenses && st.cargoExpenses.length > 0
+                  ? st.cargoExpenses.filter(e => e.expenseType === 'Brokerage' && !e.paidByDriver).reduce((sum, e) => sum + e.amount, 0)
+                  : (st.brokeragePaidByDriver ? 0 : (st.brokerageExpense || 0));
+
+                return {
+                  st,
+                  wagesAmt,
+                  segmentReceivable,
+                  driverSpend,
+                  brokerage
+                };
+              });
+
+              const totals = calculatedSubTrips.reduce(
+                (acc, item) => {
+                  acc.income += item.st.income;
+                  acc.receivable += item.segmentReceivable;
+                  acc.wages += item.wagesAmt;
+                  acc.driverSpend += item.driverSpend;
+                  acc.brokerage += item.brokerage;
+                  return acc;
+                },
+                { income: 0, receivable: 0, wages: 0, driverSpend: 0, brokerage: 0 }
+              );
+
+              return (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs font-sans">
+                  <table className="w-full min-w-[800px] text-xs text-left">
+                    <thead className="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="p-3 pl-4"># Seg</th>
+                        <th className="p-3">Load Date</th>
+                        <th className="p-3">Office Name</th>
+                        <th className="p-3">Route Path</th>
+                        <th className="p-3 text-right">Income (₹)</th>
+                        <th className="p-3 text-right">Receivable (₹)</th>
+                        <th className="p-3 text-right">Wages (₹)</th>
+                        <th className="p-3 text-right">Driver Spend (₹)</th>
+                        <th className="p-3 text-right">Brokerage (₹)</th>
+                        <th className="p-3 text-right pr-4">Edit / Delete</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {calculatedSubTrips.map((item, sidx) => {
+                        const { st, wagesAmt, segmentReceivable, driverSpend, brokerage } = item;
+                        return (
+                          <tr key={st.id} className="hover:bg-slate-50/70 transition">
+                            <td className="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
+                            <td className="p-3 font-mono text-slate-650">{st.loadingDate}</td>
+                            <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
+                            <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
+                            <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
+                            <td className={`p-3 text-right font-bold font-mono ${
+                              segmentReceivable > 0 ? 'text-blue-700' :
+                              segmentReceivable === 0 ? 'text-slate-400 font-normal' :
+                              'text-amber-700'
+                            }`}>
+                              ₹{segmentReceivable.toLocaleString()}
+                            </td>
+                            <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
+                            <td className="p-3 text-right font-medium text-slate-700 font-mono">₹{driverSpend.toLocaleString()}</td>
+                            <td className="p-3 text-right font-medium text-purple-700 font-mono">₹{brokerage.toLocaleString()}</td>
+                            <td className="p-3 text-right pr-4 flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditSubTrip(st)}
+                                className="text-blue-600 hover:text-blue-800 font-bold text-[11px] flex items-center gap-0.5"
+                              >
+                                <Edit2 className="w-3 h-3" /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSubTripSegment(st.id)}
+                                className="text-rose-600 hover:text-rose-800 font-bold text-[11px] flex items-center gap-0.5"
+                              >
+                                <Trash2 className="w-3 h-3" /> Delete
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
+                        <td colSpan={4} className="p-3 pl-4 text-right uppercase tracking-wider text-[10px] text-slate-500 font-bold">Total</td>
+                        <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{totals.income.toLocaleString()}</td>
+                        <td className={`p-3 text-right font-bold font-mono ${
+                          totals.receivable > 0 ? 'text-blue-700' :
+                          totals.receivable === 0 ? 'text-slate-400 font-normal' :
+                          'text-amber-700'
+                        }`}>
+                          ₹{totals.receivable.toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-bold text-amber-700 font-mono">₹{totals.wages.toLocaleString()}</td>
+                        <td className="p-3 text-right font-bold text-slate-700 font-mono">₹{totals.driverSpend.toLocaleString()}</td>
+                        <td className="p-3 text-right font-bold text-purple-700 font-mono">₹{totals.brokerage.toLocaleString()}</td>
+                        <td className="p-3 pr-4"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+            })() : (
               <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-350 p-4">
                 <p className="text-xs text-slate-500 italic font-medium">No cargo sub-trip load segments drafted yet.</p>
                 <p className="text-[10px] text-slate-400 mt-1">Fleet regulations require at least one cargo shipment segment to compute fuel efficiency, per KM cost, and profit margins.</p>
