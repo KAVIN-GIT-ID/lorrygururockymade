@@ -6,7 +6,11 @@ const cleanEnvVar = (val: string): string => {
 };
 
 const projectID = cleanEnvVar(import.meta.env.VITE_APPWRITE_PROJECT_ID || '');
-const endpoint = cleanEnvVar(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1');
+let endpoint = cleanEnvVar(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1');
+
+if (endpoint.startsWith('/') && typeof window !== 'undefined') {
+  endpoint = window.location.origin + endpoint;
+}
 
 export const isAppwriteConfigured = () => {
   return !!projectID && !!endpoint;
