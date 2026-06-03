@@ -21,15 +21,20 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     build: {
+      chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
           manualChunks: {
+            // React Core
+            'vendor-react': ['react', 'react-dom'],
             // Charting library — large, changes rarely
             'vendor-recharts': ['recharts'],
             // Appwrite SDK — large, changes rarely
             'vendor-appwrite': ['appwrite'],
             // Icon library — large, changes rarely
             'vendor-lucide': ['lucide-react'],
+            // Animation library
+            'vendor-motion': ['motion'],
           },
         },
       },
