@@ -454,7 +454,7 @@ export default function AppwriteCloudSync({
         
         const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'global_configs'];
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
-        console.log(`Appwrite socket: Subscribing to multi-collection channels...`);
+        console.log(`Appwrite socket: Subscribing to multi-collection channels:`, channels);
 
         unsubscribe = client.subscribe(
           channels,
