@@ -82,7 +82,7 @@ export default function DriverMaster({
         const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
         const identifier = (licenseNo || driverName).trim().replace(/[^a-zA-Z0-9-]/g, '_');
         const customName = `${sanitizedOrgId}_DL_${identifier}`;
-        uploadedLicenseId = await appwrite.uploadFile(licenseFile, customName);
+        uploadedLicenseId = await appwrite.uploadFile(licenseFile, customName, organizationId);
         setLicenseFileId(uploadedLicenseId);
       }
     } catch (err) {
@@ -321,9 +321,16 @@ export default function DriverMaster({
                         <span className="font-mono font-medium">{driver.licenseNo || '—'}</span>
                         {driver.licenseFileId && (
                           <a
-                            href={appwrite.getFileView(driver.licenseFileId)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href="#"
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              try {
+                                const url = await appwrite.getSecureFileUrl(driver.licenseFileId);
+                                window.open(url, '_blank');
+                              } catch (err) {
+                                alert("Failed to load secure document.");
+                              }
+                            }}
                             className="text-[9px] text-blue-600 font-bold hover:underline"
                           >
                             View License &rarr;
@@ -432,9 +439,16 @@ export default function DriverMaster({
                     <div className="flex justify-between items-center pt-1.5 border-t border-slate-200/40">
                       <span className="text-slate-400 font-bold uppercase text-[9px]">Document</span>
                       <a
-                        href={appwrite.getFileView(driver.licenseFileId)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        href="#"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          try {
+                            const url = await appwrite.getSecureFileUrl(driver.licenseFileId);
+                            window.open(url, '_blank');
+                          } catch (err) {
+                            alert("Failed to load secure document.");
+                          }
+                        }}
                         className="text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-1"
                       >
                         <FileText className="w-3.5 h-3.5" />

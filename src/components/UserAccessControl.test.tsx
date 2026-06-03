@@ -12,6 +12,9 @@ const mockPermissions: UserPermission[] = [
     role: 'Admin',
     organizationId: 'org_test',
     isApproved: true,
+    phone: '+1234567890',
+    isEmailVerified: true,
+    isPhoneVerified: true,
     canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
     canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
     canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
@@ -163,3 +166,63 @@ describe('UserAccessControl Fuel Cards Management', () => {
     expect(updatedProfile.fuelCards).toHaveLength(0);
   });
 });
+
+describe('UserAccessControl Verification Manual Overrides', () => {
+  const unverifiedPermissions: UserPermission[] = [
+    {
+      ...mockPermissions[0],
+      id: 'perm-unverified',
+      email: 'user@company.com',
+      name: 'Unverified User',
+      role: 'Custom',
+      isEmailVerified: false,
+      isPhoneVerified: false,
+      canViewTrips: true
+    }
+  ];
+
+  it('should render unverified statuses and trigger manual verification callbacks when clicking Verify buttons', () => {
+    const handleUpdatePermission = vi.fn();
+    const handleShowNotification = vi.fn();
+
+    render(
+      <UserAccessControl
+        permissions={unverifiedPermissions}
+        orgProfile={mockOrgProfile}
+        onAddPermission={vi.fn()}
+        onUpdatePermission={handleUpdatePermission}
+        onDeletePermission={vi.fn()}
+        showNotification={handleShowNotification}
+        currentUserEmail="admin@company.com"
+        currentUserOrgId="org_test"
+      />
+    );
+
+    // Verify unverified statuses are rendered
+    expect(screen.getAllByText('Email: Unverified')).toHaveLength(2); // Mobile and Desktop views
+    expect(screen.getAllByText('Phone: Unverified')).toHaveLength(2); // Mobile and Desktop views
+
+    // Click "Verify" button for email in the desktop view (first or second)
+    const verifyButtons = screen.getAllByRole('button', { name: 'Verify' });
+    
+    // We have 4 verify buttons: 2 for email (mobile + desktop) and 2 for phone (mobile + desktop)
+    expect(verifyButtons).toHaveLength(4);
+
+    // Verify Email (Desktop/Mobile)
+    fireEvent.click(verifyButtons[0]);
+    expect(handleUpdatePermission).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'perm-unverified',
+      isEmailVerified: true
+    }));
+    expect(handleShowNotification).toHaveBeenLastCalledWith('Manually verified email for Unverified User.');
+
+    // Verify Phone (Desktop/Mobile)
+    fireEvent.click(verifyButtons[1]);
+    expect(handleUpdatePermission).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'perm-unverified',
+      isPhoneVerified: true
+    }));
+    expect(handleShowNotification).toHaveBeenLastCalledWith('Manually verified phone for Unverified User.');
+  });
+});
+

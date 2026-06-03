@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry } from '../types';
-import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark } from 'lucide-react';
+import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark, Search } from 'lucide-react';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
 import { formatTruckNumber } from '../lib/formatUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -199,6 +199,8 @@ export default function TruckMaster({
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
   const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive' | 'Admin Disabled' | 'Sold'>('All');
   const [serviceDoneTarget, setServiceDoneTarget] = useState<{ truckId: string; truckNo: string; serviceType: ServiceType; currentKM: number; intervalKM: number } | null>(null);
   const [payEmiTarget, setPayEmiTarget] = useState<{ truckNo: string; emiAmount: number; bankName: string; dueDateStr: string; loanType?: string } | null>(null);
   const [editingLoanTarget, setEditingLoanTarget] = useState<{ truck: Truck; loan: LoanEntry } | null>(null);
@@ -267,7 +269,7 @@ export default function TruckMaster({
   // Base Information
   const [truckNo, setTruckNo] = useState('');
   const [ownerName, setOwnerName] = useState('');
-  const [status, setStatus] = useState<'Active' | 'Inactive' | 'Admin Disabled'>('Active');
+  const [status, setStatus] = useState<'Active' | 'Inactive' | 'Admin Disabled' | 'Sold'>('Active');
 
   // General Specifications
   const [make, setMake] = useState('');
@@ -395,6 +397,7 @@ export default function TruckMaster({
     setTempLoanRegisteredDate('');
     setTempLoanStatus('Active');
     setTempLoanNotes('');
+    setShowAddForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -411,7 +414,7 @@ export default function TruckMaster({
         const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
         const sanitizedTruckNo = truckNo.trim().replace(/[^a-zA-Z0-9-]/g, '_');
         const customName = `${sanitizedOrgId}_RC_${sanitizedTruckNo}`;
-        uploadedRcId = await appwrite.uploadFile(rcFile, customName);
+        uploadedRcId = await appwrite.uploadFile(rcFile, customName, organizationId);
         setRcFileId(uploadedRcId);
       }
     } catch (err) {
@@ -429,7 +432,7 @@ export default function TruckMaster({
         const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
         const sanitizedTruckNo = truckNo.trim().replace(/[^a-zA-Z0-9-]/g, '_');
         const customName = `${sanitizedOrgId}_INSURANCE_${sanitizedTruckNo}`;
-        uploadedInsuranceId = await appwrite.uploadFile(insuranceFile, customName);
+        uploadedInsuranceId = await appwrite.uploadFile(insuranceFile, customName, organizationId);
         setInsuranceFileId(uploadedInsuranceId);
       }
     } catch (err) {
@@ -440,6 +443,7 @@ export default function TruckMaster({
     } finally {
       setInsuranceUploading(false);
     }
+
 
     const approvedCount = trucks.filter(t => t.isApproved !== false).length;
     const limitReached = approvedCount >= maxTrucksAllowed;
@@ -748,6 +752,105 @@ export default function TruckMaster({
     );
   };
 
+  const renderComplianceRow = (label: string, dateStr: string | undefined, days: number | null, fileId: string | undefined) => {
+    if (!dateStr) return (
+      <div className="flex justify-between items-center py-1">
+        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</span>
+        <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+      </div>
+    );
+
+    let badgeClass = "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30";
+    let displayText = `${dateStr} (${days}d left)`;
+    if (days !== null) {
+      if (days <= 0) {
+        badgeClass = "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 font-bold uppercase animate-pulse";
+        displayText = `${dateStr} (EXPIRED)`;
+      } else if (days <= 30) {
+        badgeClass = "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 font-bold";
+        displayText = `${dateStr} (${days}d left)`;
+      }
+    }
+
+    return (
+      <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800/30 last:border-0 text-xs">
+        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono ${badgeClass}`}>{displayText}</span>
+          {fileId && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.preventDefault();
+                try {
+                  const url = await appwrite.getSecureFileUrl(fileId);
+                  window.open(url, '_blank');
+                } catch (err) {
+                  alert("Failed to load secure document.");
+                }
+              }}
+              className="p-1 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 text-blue-600 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/30 rounded-lg hover:scale-105 transition-all cursor-pointer flex items-center justify-center"
+              title="View secure document attachment"
+            >
+              <FileText className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderLubeProgress = (targetKM: number | undefined, currentKM: number, intervalKM: number, label: string) => {
+    if (!targetKM) return (
+      <div className="flex justify-between items-center py-1 text-xs">
+        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</span>
+        <span className="text-xs text-slate-300 dark:text-slate-650">—</span>
+      </div>
+    );
+
+    const remaining = targetKM - currentKM;
+    const used = Math.max(0, intervalKM - remaining);
+    const percentage = Math.min(100, Math.max(0, (used / intervalKM) * 100));
+
+    let barColor = 'bg-blue-600';
+    let textColor = 'text-slate-700 dark:text-slate-300';
+    if (remaining <= 0) {
+      barColor = 'bg-rose-600 animate-pulse';
+      textColor = 'text-rose-600 dark:text-rose-400 font-extrabold';
+    } else if (remaining <= 1000) {
+      barColor = 'bg-amber-500';
+      textColor = 'text-amber-600 dark:text-amber-400 font-bold';
+    }
+
+    return (
+      <div className="bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/40 space-y-1.5">
+        <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+          <span>{label}</span>
+          <span className={textColor}>{remaining <= 0 ? 'Overdue' : `${remaining.toLocaleString()} KM left`}</span>
+        </div>
+        <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${percentage}%` }}></div>
+        </div>
+        <div className="flex justify-between text-[9px] text-slate-400 dark:text-slate-500 font-semibold font-mono">
+          <span>{currentKM.toLocaleString()} KM</span>
+          <span>{targetKM.toLocaleString()} KM</span>
+        </div>
+      </div>
+    );
+  };
+
+  const filteredTrucks = trucks.filter(truck => {
+    const matchesSearch = truck.truckNo.toLowerCase().includes(searchQuery.toLowerCase().trim());
+    const matchesStatus = statusFilter === 'All' || truck.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const allCount = trucks.length;
+  const activeCount = trucks.filter(t => t.status === 'Active').length;
+  const inactiveCount = trucks.filter(t => t.status === 'Inactive').length;
+  const adminDisabledCount = trucks.filter(t => t.status === 'Admin Disabled').length;
+  const soldCount = trucks.filter(t => t.status === 'Sold').length;
+
   return (
     <div id="truck-master-panel" className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -779,23 +882,33 @@ export default function TruckMaster({
       </div>
 
       {showAddForm && (
-        <form id="truck-form" onSubmit={handleSubmit} className="p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-250 animate-fade-in space-y-4">
-          {limitReached && !isEditing && (
-            <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg text-amber-800 dark:text-amber-400 text-xs flex gap-2">
-              <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Truck Registration Limit Reached ({approvedCount} / {maxTrucksAllowed} Free Allowed)</p>
-                <p className="mt-0.5 text-[11px]">Saving this truck will submit a pending approval request to the backend team. Once approved, the truck will become active and visible across your management sheets.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="truck-form-backdrop">
+          <form id="truck-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white tracking-wide">
+                  {isEditing ? 'Modify Fleet Information' : limitReached ? 'Request Truck Activation' : 'Register Vehicle & Technical Specs'}
+                </h3>
               </div>
+              <button 
+                type="button" 
+                onClick={resetForm}
+                className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 rounded-xl transition cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          )}
-          
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-2">
-            <Settings className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">
-              {isEditing ? 'Modify Fleet Information' : limitReached ? 'Request Truck Activation' : 'Register Vehicle & Technical Specs'}
-            </h3>
-          </div>
+
+            {limitReached && !isEditing && (
+              <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg text-amber-800 dark:text-amber-400 text-xs flex gap-2">
+                <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Truck Registration Limit Reached ({approvedCount} / {maxTrucksAllowed} Free Allowed)</p>
+                  <p className="mt-0.5 text-[11px]">Saving this truck will submit a pending approval request to the backend team. Once approved, the truck will become active and visible across your management sheets.</p>
+                </div>
+              </div>
+            )}
 
           {/* SECTION 1: Core Mechanics */}
           <div>
@@ -1441,6 +1554,7 @@ export default function TruckMaster({
                   )}
                   <option value="Active">Operational (Active)</option>
                   <option value="Inactive">Under Maintenance (Inactive)</option>
+                  <option value="Sold">Sold</option>
                 </select>
                 {limitReached && !isEditing && (
                   <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Pending approval vehicles are inactive by default</span>
@@ -1482,415 +1596,290 @@ export default function TruckMaster({
             </button>
           </div>
         </form>
+      </div>
       )}
-
-      {/* HORIZONTAL SCROLLABLE EXCEL-LIKE HIGHDENSITY DATA SHEET */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs hidden md:block">
-        <div className="bg-slate-550/5 px-4 py-2 text-slate-500 font-mono text-[10px] flex justify-between items-center border-b border-slate-200">
-          <span className="flex items-center gap-1">
-            <Wrench className="w-3.5 h-3.5 text-slate-400" />
-            Scroll with mouse wheel or drag horizontally &bull; <span className="text-blue-600 font-bold underline">Click Vehicle No to view financials & details</span>
+      {/* SEARCH AND FILTER TOOLBAR */}
+      <div className="bg-slate-50 dark:bg-slate-900/40 p-4 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Search Input Box */}
+        <div className="relative flex-1 max-w-md">
+          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <Search className="w-4 h-4" />
           </span>
-          <span className="font-semibold text-slate-605">Base Anchor Date: 2026-05-23 (UTC)</span>
+          <input
+            type="text"
+            placeholder="Search by Vehicle Number (e.g. MH-12)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-white rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono tracking-wider animate-fade-in"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 font-bold"
+            >
+              Clear
+            </button>
+          )}
         </div>
-        
-        <div ref={scrollContainerRef} className="overflow-x-auto max-w-full">
-          <table id="trucks-table" className="w-full text-left text-xs text-slate-750 divide-y divide-slate-150 whitespace-nowrap table-fixed">
-            <colgroup>
-              <col className="w-[140px]" />
-              <col className="w-[85px]" />
-              <col className="w-[90px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[95px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[115px]" />
-              <col className="w-[100px]" />
-              <col className="w-[100px]" />
-              <col className="w-[125px]" />
-              <col className="w-[100px]" />
-              <col className="w-[125px]" />
-              <col className="w-[100px]" />
-              <col className="w-[125px]" />
-              <col className="w-[100px]" />
-              <col className="w-[125px]" />
-              <col className="w-[85px]" />
-              <col className="w-[100px]" />
-            </colgroup>
-            <thead className="text-[10px] text-slate-505 uppercase bg-slate-50 font-bold border-b border-slate-200">
-              <tr>
-                <th className="px-3 py-2.5 pl-4 sticky left-0 bg-slate-50 border-r border-slate-200 z-10 text-slate-800 shadow-sm">Vehicle No</th>
-                <th className="px-3 py-2.5">Make</th>
-                <th className="px-3 py-2.5">Model</th>
-                <th className="px-3 py-2.5">Type</th>
-                <th className="px-3 py-2.5 text-center bg-blue-50/20 text-blue-700">Insurance</th>
-                <th className="px-3 py-2.5 text-center bg-indigo-50/20 text-indigo-700">FC</th>
-                <th className="px-3 py-2.5 text-right text-slate-600">Pinpush KM</th>
-                <th className="px-3 py-2.5 text-right text-slate-600">Wheel Greese KM</th>
-                <th className="px-3 py-2.5 text-center bg-violet-50/20 text-violet-700">Alignment Date</th>
-                <th className="px-3 py-2.5 text-center bg-amber-50/20 text-amber-700">Q Tax</th>
-                <th className="px-3 py-2.5 text-center bg-emerald-50/20 text-emerald-700">Green Tax</th>
-                <th className="px-3 py-2.5 text-center bg-rose-50/20 text-rose-700">NP Tax</th>
-                <th className="px-3 py-2.5 text-center bg-cyan-50/20 text-cyan-700">5Y Permit</th>
-                <th className="px-3 py-2.5 text-center bg-purple-50/20 text-purple-700">Reg Expiry</th>
-                <th className="px-3 py-2.5 text-right font-bold text-slate-800 bg-slate-100">Current KM</th>
-                <th className="px-3 py-2.5 text-right">Engine Oil KM</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-slate-905">Engine Oil KM Left</th>
-                <th className="px-3 py-2.5 text-right">Crown Oil KM</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-slate-905">Crown Oil KM Left</th>
-                <th className="px-3 py-2.5 text-right">Gear Box Oil KM</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-slate-905">Gear Box KM Left</th>
-                <th className="px-3 py-2.5 text-right">Radiator KM</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-slate-905">Radiator KM Left</th>
-                <th className="px-3 py-2.5 text-center">Status</th>
-                <th className="px-3 py-2.5 text-center pr-4 w-16">Options</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white font-medium">
-              {trucks.length === 0 ? (
-                <tr>
-                  <td colSpan={25} className="text-center py-12 text-slate-400 font-medium italic">No vehicles registered. Add a fleet specifications record to deploy.</td>
-                </tr>
-              ) : (
-                trucks.map((truck) => {
-                  const insDays = calculateDaysLeft(truck.insuranceDate);
-                  const fcDays = calculateDaysLeft(truck.fcDate);
-                  const aliDays = calculateDaysLeft(truck.alignmentNextDate);
-                  const qDays = calculateDaysLeft(truck.qTaxDate);
-                  const gDays = calculateDaysLeft(truck.greenTaxDate);
-                  const npDays = calculateDaysLeft(truck.npTaxDate);
-                  const fvDays = calculateDaysLeft(truck.fiveYearPermitDate);
-                  const regDays = calculateDaysLeft(truck.registrationExpiryDate);
- 
-                  const insProps = getExpiryCellProps(truck.insuranceDate, insDays);
-                  const fcProps = getExpiryCellProps(truck.fcDate, fcDays);
-                  const aliProps = getExpiryCellProps(truck.alignmentNextDate, aliDays);
-                  const qProps = getExpiryCellProps(truck.qTaxDate, qDays);
-                  const gProps = getExpiryCellProps(truck.greenTaxDate, gDays);
-                  const npProps = getExpiryCellProps(truck.npTaxDate, npDays);
-                  const fvProps = getExpiryCellProps(truck.fiveYearPermitDate, fvDays);
 
-                  const getRegExpiryProps = (dateStr: string | undefined, days: number | null) => {
-                    if (!dateStr) {
-                      return {
-                        className: "px-2.5 py-3 text-center font-mono text-slate-350",
-                        displayText: "—",
-                        title: "No registration expiry recorded."
-                      };
-                    }
-                    if (days === null) {
-                      return {
-                        className: "px-2.5 py-3 text-center font-mono font-bold text-slate-500",
-                        displayText: dateStr,
-                        title: "Invalid date format."
-                      };
-                    }
-                    if (days <= 0) {
-                      return {
-                        className: "px-2.5 py-3 text-center font-mono font-bold bg-rose-50 text-rose-700 border border-rose-100 uppercase",
-                        displayText: `${dateStr} (EXPIRED)`,
-                        title: `Registration expired on ${dateStr} (${Math.abs(days)} days ago).`
-                      };
-                    }
-                    if (days <= 30) {
-                      return {
-                        className: "px-2.5 py-3 text-center font-mono font-bold bg-amber-50 text-amber-800 border border-amber-100",
-                        displayText: `${dateStr} (${days}d)`,
-                        title: `Registration expires soon: ${dateStr} (${days} days left).`
-                      };
-                    }
-                    return {
-                      className: "px-2.5 py-3 text-center font-mono font-medium text-slate-705",
-                      displayText: dateStr,
-                      title: `Registration valid until ${dateStr} (${days} days left).`
-                    };
-                  };
-                  
-                  const regProps = getRegExpiryProps(truck.registrationExpiryDate, regDays);
+        {/* Operational Status Filters Tabs */}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">Filter Status:</span>
+          
+          {/* ALL Tab */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter('All')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
+              statusFilter === 'All'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            <span>All</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
+              statusFilter === 'All' ? 'bg-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>{allCount}</span>
+          </button>
 
-                  return (
-                    <tr key={truck.id} id={`row-truck-${truck.id}`} className="hover:bg-slate-50 transition border-b border-slate-100">
-                      {/* Sticky Vehicle No */}
-                      <td 
-                        className="px-3 py-3 pl-4 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-200 z-10 font-mono font-extrabold tracking-wider shadow-xs cursor-pointer select-none group/cell animate-fade-in"
-                        onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
-                        title={truck.isApproved !== false ? "Click to view detailed financials, lube milestones & compliance logs" : "Pending activation approval by Backend Team."}
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <span className="flex items-center gap-1.5 text-xs text-blue-600 group-hover/cell:text-blue-800 transition-colors">
-                            <Shield className={`w-3.5 h-3.5 ${truck.isApproved === false ? 'text-amber-500 animate-pulse' : 'text-blue-500'} group-hover/cell:scale-110 transition-transform`} />
-                            <span className={truck.isApproved !== false ? "underline decoration-dotted decoration-blue-405 group-hover/cell:decoration-solid" : ""}>{truck.truckNo}</span>
-                            {truck.loanStartDate && truck.loanEmiAmount && truck.loanStatus !== 'Closed' && (
-                              <Landmark className="w-3.5 h-3.5 text-amber-500 shrink-0 animate-pulse" title={`Active loan with ${truck.loanBankName || 'bank'}`} />
-                            )}
-                          </span>
-                          {truck.isApproved === false && (
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider max-w-max ${
-                              truck.requestStatus === 'Rejected'
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse'
-                            }`}>
-                              {truck.requestStatus === 'Rejected' ? 'Rejected' : 'Pending Approval'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 text-slate-650">{truck.make || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 font-mono text-slate-650 text-[11px]">{truck.model || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 text-slate-650 ">{truck.type || <span className="text-slate-300">—</span>}</td>
-                      
-                      {/* Expiries with Hover tooltip days relative to today */}
-                      <td className={insProps.className} title={insProps.title}>{insProps.displayText}</td>
-                      <td className={fcProps.className} title={fcProps.title}>{fcProps.displayText}</td>
-                      
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.pinpushKM ? truck.pinpushKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.wheelGreaseKM ? truck.wheelGreaseKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      
-                      <td className={aliProps.className} title={aliProps.title}>{aliProps.displayText}</td>
-                      <td className={qProps.className} title={qProps.title}>{qProps.displayText}</td>
-                      <td className={gProps.className} title={gProps.title}>{gProps.displayText}</td>
-                      <td className={npProps.className} title={npProps.title}>{npProps.displayText}</td>
-                      <td className={fvProps.className} title={fvProps.title}>{fvProps.displayText}</td>
-                      <td className={regProps.className} title={regProps.title}>{regProps.displayText}</td>
+          {/* ACTIVE Tab */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Active')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
+              statusFilter === 'Active'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+            <span>Active</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
+              statusFilter === 'Active' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>{activeCount}</span>
+          </button>
 
-                      {/* Current Mileage */}
-                      <td className="px-3 py-3 text-right font-mono font-bold text-slate-900 bg-slate-50">{truck.currentKM ? truck.currentKM.toLocaleString() : '0'}</td>
+          {/* INACTIVE Tab */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Inactive')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
+              statusFilter === 'Inactive'
+                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-450 shrink-0"></span>
+            <span>Under Maintenance</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
+              statusFilter === 'Inactive' ? 'bg-rose-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>{inactiveCount}</span>
+          </button>
 
-                      {/* Lubes Milestones readings with dynamic badge comparisons */}
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.engineOilKM ? truck.engineOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.engineOilKM, truck.currentKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000)}</td>
+          {/* ADMIN DISABLED Tab */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Admin Disabled')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
+              statusFilter === 'Admin Disabled'
+                ? 'bg-red-650 text-white border-red-650 shadow-sm'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse"></span>
+            <span>Admin Blocked</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
+              statusFilter === 'Admin Disabled' ? 'bg-red-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>{adminDisabledCount}</span>
+          </button>
 
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.crownOilKM ? truck.crownOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.crownOilKM, truck.currentKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000)}</td>
-
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.gearBoxOilKM ? truck.gearBoxOilKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000)}</td>
-
-                      <td className="px-3 py-3 text-right font-mono text-slate-600">{truck.radiatorKM ? truck.radiatorKM.toLocaleString() : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-3 bg-teal-50/5 text-right">{renderKMLeftBadge(truck.radiatorKM, truck.currentKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000)}</td>
-
-                      <td className="px-3 py-3 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          truck.status === 'Active' 
-                            ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-200' 
-                            : truck.status === 'Admin Disabled'
-                              ? 'bg-red-500/10 text-red-700 border border-red-200 font-extrabold animate-pulse'
-                              : 'bg-rose-55/10 text-rose-700 border border-rose-200'
-                        }`}>
-                          {truck.status === 'Active' ? 'Active' : truck.status === 'Admin Disabled' ? 'Admin Disabled' : 'Inactive'}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-3 text-center pr-4">
-                        <div className="flex justify-center items-center gap-1.5 select-none">
-                          {truck.requestStatus === 'Rejected' && onAddTruckRequest && (
-                            <button
-                              title="Reapply for Approval"
-                              onClick={() => {
-                                if (confirm(`Would you like to reapply for approval for truck ${truck.truckNo}?`)) {
-                                  onAddTruckRequest({
-                                    truckNo: truck.truckNo,
-                                    ownerName: truck.ownerName,
-                                    status: 'Inactive',
-                                    make: truck.make,
-                                    model: truck.model,
-                                    type: truck.type,
-                                    insuranceDate: truck.insuranceDate,
-                                    fcDate: truck.fcDate,
-                                    pinpushKM: truck.pinpushKM,
-                                    wheelGreaseKM: truck.wheelGreaseKM,
-                                    alignmentNextDate: truck.alignmentNextDate,
-                                    qTaxDate: truck.qTaxDate,
-                                    greenTaxDate: truck.greenTaxDate,
-                                    npTaxDate: truck.npTaxDate,
-                                    fiveYearPermitDate: truck.fiveYearPermitDate,
-                                    currentKM: truck.currentKM,
-                                    engineOilKM: truck.engineOilKM,
-                                    crownOilKM: truck.crownOilKM,
-                                    gearBoxOilKM: truck.gearBoxOilKM,
-                                    radiatorKM: truck.radiatorKM
-                                  });
-                                }
-                              }}
-                              className="px-2 py-0.5 bg-blue-600 hover:bg-blue-750 text-white rounded text-[10px] font-bold transition cursor-pointer"
-                            >
-                              Reapply
-                            </button>
-                          )}
-                          <button
-                            title={truck.isApproved === false ? "Cannot edit specs for unapproved vehicle" : "Edit Vehicle Specs"}
-                            disabled={!canEditTrucks || truck.isApproved === false}
-                            onClick={() => startEdit(truck)}
-                            className="p-1 text-slate-600 hover:bg-slate-200 hover:text-slate-900 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          <button
-                            title="Delete Truck"
-                            disabled={!canDeleteTrucks}
-                            onClick={() => {
-                              const msg = `Are you sure you want to delete Vehicle ${truck.truckNo} and all associated compliance specifications?`;
-                              if (confirmAction) {
-                                confirmAction(msg, () => onDeleteTruck(truck.id), "Delete Vehicle Database Record");
-                              } else if (confirm(msg)) {
-                                onDeleteTruck(truck.id);
-                              }
-                            }}
-                            className="p-1 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          {/* SOLD Tab */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Sold')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
+              statusFilter === 'Sold'
+                ? 'bg-slate-700 text-white border-slate-700 shadow-sm'
+                : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+            <span>Sold</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
+              statusFilter === 'Sold' ? 'bg-slate-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>{soldCount}</span>
+          </button>
         </div>
       </div>
 
-      {/* MOBILE LIST CARD VIEW */}
-      <div className="block md:hidden space-y-4">
-        {trucks.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
-            No operational vehicles mapped in the system registry.
-          </div>
-        ) : (
-          trucks.map((truck) => {
-            const isExpanded = expandedTruckId === truck.id;
-            
+      {/* BEAUTIFUL HIGH-DENSITY GRID OF FLEET COMPLIANCE CARDS */}
+      {trucks.length === 0 ? (
+        <div className="text-center py-12 text-slate-400 font-medium italic border border-slate-200 rounded-xl bg-slate-50/50">
+          No operational vehicles registered in the system database.
+        </div>
+      ) : filteredTrucks.length === 0 ? (
+        <div className="text-center py-12 text-slate-400 font-medium italic border border-slate-200 rounded-xl bg-slate-50/50">
+          No vehicles found matching search query "{searchQuery}" or selected status filters.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredTrucks.map((truck) => {
             const insDays = calculateDaysLeft(truck.insuranceDate);
             const fcDays = calculateDaysLeft(truck.fcDate);
+            const aliDays = calculateDaysLeft(truck.alignmentNextDate);
+            const qDays = calculateDaysLeft(truck.qTaxDate);
+            const gDays = calculateDaysLeft(truck.greenTaxDate);
             const npDays = calculateDaysLeft(truck.npTaxDate);
+            const fvDays = calculateDaysLeft(truck.fiveYearPermitDate);
+            const regDays = calculateDaysLeft(truck.registrationExpiryDate);
 
-            const insProps = getExpiryCellProps(truck.insuranceDate, insDays);
-            const fcProps = getExpiryCellProps(truck.fcDate, fcDays);
-            const npProps = getExpiryCellProps(truck.npTaxDate, npDays);
+            const isExpanded = expandedTruckId === truck.id;
 
             return (
-              <div 
+              <div
                 key={truck.id}
-                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+                id={`card-truck-${truck.id}`}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 p-5 flex flex-col justify-between group/card relative"
               >
                 <div>
-                  {/* Top Row: Vehicle No & Status */}
-                  <div className="flex justify-between items-center gap-2 mb-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span 
-                        className="font-mono font-extrabold text-blue-600 text-xs flex items-center gap-1.5 cursor-pointer underline decoration-dotted"
-                        onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
-                      >
-                        <Shield className={`w-3.5 h-3.5 ${truck.isApproved === false ? 'text-amber-500 animate-pulse' : 'text-blue-500'}`} />
-                        {truck.truckNo}
-                      </span>
+                  {/* Top Row: Vehicle No + Status Badges */}
+                  <div className="flex justify-between items-start gap-2 mb-4">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="shrink-0 text-blue-600 dark:text-blue-400">
+                          <Shield className={`w-4 h-4 ${truck.isApproved === false ? 'text-amber-500 animate-pulse' : 'text-blue-500'}`} />
+                        </span>
+                        <h4
+                          onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
+                          className={`font-mono font-extrabold text-sm tracking-wider text-slate-900 dark:text-white cursor-pointer select-all select-none hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${truck.isApproved !== false ? "underline decoration-dotted decoration-blue-400" : ""}`}
+                          title={truck.isApproved !== false ? "Click to view detailed financials & performance logs" : "Pending approval by Backend Team."}
+                        >
+                          {truck.truckNo}
+                        </h4>
+                        {truck.loanStartDate && truck.loanEmiAmount && truck.loanStatus !== 'Closed' && (
+                          <Landmark className="w-3.5 h-3.5 text-amber-500 shrink-0 animate-pulse" title={`Active loan with ${truck.loanBankName || 'bank'}`} />
+                        )}
+                      </div>
+                      
                       {truck.isApproved === false && (
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider max-w-max ${
                           truck.requestStatus === 'Rejected'
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse dark:bg-amber-950/20 dark:text-amber-450 dark:border-amber-900/30'
                         }`}>
                           {truck.requestStatus === 'Rejected' ? 'Rejected' : 'Pending Approval'}
                         </span>
                       )}
                     </div>
 
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      truck.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                      truck.status === 'Inactive' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
-                      'bg-rose-50 text-rose-705 border border-rose-100'
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${
+                      truck.status === 'Active' 
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-450 dark:border-emerald-900/30' 
+                        : truck.status === 'Admin Disabled'
+                          ? 'bg-red-50 text-red-700 border border-red-200 font-extrabold animate-pulse dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
+                          : truck.status === 'Sold'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-350 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
                     }`}>
-                      {truck.status}
+                      <span className={`w-1.5 h-1.5 rounded-full ${truck.status === 'Active' ? 'bg-emerald-500 animate-pulse' : truck.status === 'Sold' ? 'bg-slate-405' : 'bg-rose-500'}`}></span>
+                      {truck.status === 'Active' ? 'Active' : truck.status === 'Admin Disabled' ? 'Admin Disabled' : truck.status === 'Sold' ? 'Sold' : 'Inactive'}
                     </span>
                   </div>
 
-                  {/* Make/Model & Specs */}
-                  <div className="text-xs mb-3 text-slate-800 flex flex-wrap gap-2.5 items-center">
-                    {(truck.make || truck.model) && (
-                      <span className="font-bold text-slate-700">
-                        {truck.make || ''} {truck.model || ''}
+                  {/* Core Technical Specifications Banner */}
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-1 mb-4 border-b border-slate-100 dark:border-slate-800/30 pb-3">
+                    {truck.make && (
+                      <span className="flex items-center gap-1">
+                        <strong className="text-slate-450 uppercase text-[9px]">Make:</strong>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">{truck.make}</span>
+                      </span>
+                    )}
+                    {truck.model && (
+                      <span className="flex items-center gap-1">
+                        <strong className="text-slate-450 uppercase text-[9px]">Model:</strong>
+                        <span className="font-mono text-slate-700 dark:text-slate-300">{truck.model}</span>
                       </span>
                     )}
                     {truck.type && (
-                      <span className="bg-slate-100 text-slate-650 px-1.5 py-0.2 rounded font-semibold text-[9px] uppercase tracking-wider">
+                      <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.2 rounded font-bold text-[8px] uppercase tracking-wider">
                         {truck.type}
+                      </span>
+                    )}
+                    {truck.ownerName && (
+                      <span className="flex items-center gap-1 w-full mt-1">
+                        <strong className="text-slate-450 uppercase text-[9px]">Owner/Vendor:</strong>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{truck.ownerName}</span>
                       </span>
                     )}
                   </div>
 
-                  {/* Critical Expiries */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs mb-3.5">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-bold uppercase text-[9px]">Insurance</span>
-                      <span className={`${insProps.className} font-semibold text-[11px]`}>{insProps.displayText}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-bold uppercase text-[9px]">FC Expiry</span>
-                      <span className={`${fcProps.className} font-semibold text-[11px]`}>{fcProps.displayText}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-bold uppercase text-[9px]">National Permit</span>
-                      <span className={`${npProps.className} font-semibold text-[11px]`}>{npProps.displayText}</span>
-                    </div>
+                  {/* Current Odometer Status Badge */}
+                  <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-950/40 border border-slate-200/50 dark:border-slate-850 rounded-xl mb-4 text-xs">
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold">Current Odometer:</span>
+                    <span className="font-mono font-extrabold text-slate-900 dark:text-white bg-white dark:bg-slate-900 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm text-xs">
+                      {truck.currentKM ? truck.currentKM.toLocaleString() : '0'} KM
+                    </span>
                   </div>
 
-                  {/* Loan summary if present */}
+                  {/* Taxes & Validity Compliance Logs */}
+                  <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200/40 dark:border-slate-850 rounded-xl p-3.5 space-y-2 mb-4">
+                    <h5 className="text-[9px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-widest mb-1 pb-1 border-b border-slate-200/35 dark:border-slate-800/10">Compliance Certifications</h5>
+                    {renderComplianceRow('Insurance', truck.insuranceDate, insDays, truck.insuranceFileId)}
+                    {renderComplianceRow('Fitness Cert (FC)', truck.fcDate, fcDays, undefined)}
+                    {renderComplianceRow('National Permit', truck.npTaxDate, npDays, undefined)}
+                    {renderComplianceRow('5Y Permit Date', truck.fiveYearPermitDate, fvDays, undefined)}
+                    {renderComplianceRow('Q Tax validity', truck.qTaxDate, qDays, undefined)}
+                    {renderComplianceRow('Green Tax Cert', truck.greenTaxDate, gDays, undefined)}
+                    {renderComplianceRow('NP Tax Validity', truck.npTaxDate, npDays, undefined)}
+                    {renderComplianceRow('Reg Expiry validity', truck.registrationExpiryDate, regDays, undefined)}
+                  </div>
+
+                  {/* Active Loan summary banner if present */}
                   {truck.loanStartDate && truck.loanEmiAmount && (
-                    <div className="bg-amber-50 border border-amber-200/60 rounded-lg p-2.5 space-y-1.5 text-xs mb-3.5">
+                    <div className="bg-amber-50/30 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/20 rounded-xl p-3.5 mb-4 text-xs">
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-500 font-bold uppercase text-[9px] flex items-center gap-1">
-                          <Landmark className="w-3.5 h-3.5 text-amber-600" />
-                          <span>Loan EMI ({truck.loanStatus || 'Active'})</span>
+                        <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px] flex items-center gap-1.5">
+                          <Landmark className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>EMI Loan ({truck.loanStatus || 'Active'})</span>
                         </span>
-                        <span className="font-semibold text-[11px] text-slate-800">
+                        <span className="font-extrabold text-[11px] text-slate-900 dark:text-white font-mono bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">
                           ₹{Number(truck.loanEmiAmount).toLocaleString('en-IN')} /mo
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {/* Mileage & Lubes Toggle */}
-                  <div className="border border-slate-150 rounded-lg p-2 mb-3.5 bg-white">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 font-semibold">Current Odometer:</span>
-                      <span className="font-mono font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded border border-slate-150">
-                        {truck.currentKM ? truck.currentKM.toLocaleString() : '0'} KM
-                      </span>
-                    </div>
-                    
+                  {/* Lubes Spares & Oils progress toggles */}
+                  <div className="border border-slate-200/60 dark:border-slate-850 rounded-xl p-3 bg-white dark:bg-slate-900 shadow-sm mb-4">
                     <button
                       type="button"
                       onClick={() => setExpandedTruckId(isExpanded ? null : truck.id)}
-                      className="w-full text-center text-[10px] font-bold text-blue-600 mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-center gap-1 cursor-pointer"
+                      className="w-full text-center text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center justify-center gap-1.5 cursor-pointer hover:underline"
                     >
-                      <span>{isExpanded ? 'Hide' : 'Show'} Lubes & Oil Status</span>
-                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      <span>{isExpanded ? 'Hide' : 'View'} Mechanical & Oils Milestones</span>
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
 
                     {isExpanded && (
-                      <div className="mt-2.5 pt-2 border-t border-dashed border-slate-150 space-y-2 text-[11px]">
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500 font-medium">Engine Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.engineOilKM, truck.currentKM, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500 font-medium">Crown Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.crownOilKM, truck.currentKM, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500 font-medium">Gearbox Oil Left:</span>
-                          <span>{renderKMLeftBadge(truck.gearBoxOilKM, truck.currentKM, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500 font-medium">Radiator Coolant Left:</span>
-                          <span>{renderKMLeftBadge(truck.radiatorKM, truck.currentKM, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000)}</span>
+                      <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800 grid grid-cols-1 gap-3 animate-fade-in">
+                        {renderLubeProgress(truck.engineOilKM, truck.currentKM || 0, truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000, 'Engine Oil Change')}
+                        {renderLubeProgress(truck.crownOilKM, truck.currentKM || 0, truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000, 'Crown Oil Change')}
+                        {renderLubeProgress(truck.gearBoxOilKM, truck.currentKM || 0, truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000, 'Gear Box Oil Change')}
+                        {renderLubeProgress(truck.radiatorKM, truck.currentKM || 0, truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000, 'Radiator Coolant Service')}
+                        
+                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100 dark:border-slate-800/40 text-[10px] text-slate-500 dark:text-slate-400">
+                          <div>
+                            <span className="block font-bold text-slate-400 uppercase text-[9px] mb-0.5">Pinpush Grease KM</span>
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-350">{truck.pinpushKM ? `${truck.pinpushKM.toLocaleString()} KM` : '—'}</span>
+                          </div>
+                          <div>
+                            <span className="block font-bold text-slate-400 uppercase text-[9px] mb-0.5">Wheel Grease KM</span>
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-350">{truck.wheelGreaseKM ? `${truck.wheelGreaseKM.toLocaleString()} KM` : '—'}</span>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="block font-bold text-slate-400 uppercase text-[9px] mb-0.5">Alignment Next Date</span>
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-350">{truck.alignmentNextDate ? `${truck.alignmentNextDate} (${aliDays !== null ? `${aliDays}d` : ''})` : '—'}</span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1898,52 +1887,66 @@ export default function TruckMaster({
 
                   {/* Documents View links */}
                   {(truck.rcFileId || truck.insuranceFileId) && (
-                    <div className="flex flex-wrap gap-2 mb-4">
+                    <div className="flex flex-wrap gap-2 mb-4 bg-slate-50 dark:bg-slate-950/20 border border-slate-200/40 dark:border-slate-850 p-2 rounded-xl">
                       {truck.rcFileId && (
-                        <a
-                          href={appwrite.getFileView(truck.rcFileId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-700 font-semibold text-[10px] rounded hover:bg-blue-100/50 transition cursor-pointer"
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              const url = await appwrite.getSecureFileUrl(truck.rcFileId);
+                              window.open(url, '_blank');
+                            } catch (err) {
+                              alert("Failed to load secure document.");
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/30 text-blue-700 dark:text-blue-450 font-semibold text-[10px] rounded-lg hover:bg-blue-100/50 transition cursor-pointer"
                         >
-                          <FileText className="w-3 h-3" />
-                          <span>RC Doc</span>
-                        </a>
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>RC Document</span>
+                        </button>
                       )}
                       {truck.insuranceFileId && (
-                        <a
-                          href={appwrite.getFileView(truck.insuranceFileId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold text-[10px] rounded hover:bg-indigo-100/50 transition cursor-pointer"
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              const url = await appwrite.getSecureFileUrl(truck.insuranceFileId);
+                              window.open(url, '_blank');
+                            } catch (err) {
+                              alert("Failed to load secure document.");
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/30 text-indigo-700 dark:text-indigo-455 font-semibold text-[10px] rounded-lg hover:bg-indigo-100/50 transition cursor-pointer"
                         >
-                          <FileText className="w-3 h-3" />
-                          <span>Insurance Doc</span>
-                        </a>
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Insurance Spec</span>
+                        </button>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* Actions Grid */}
-                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
+                {/* Bottom Actions Row */}
+                <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-100 dark:border-slate-800/40 mt-auto">
                   <button
                     type="button"
                     onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
                     disabled={truck.isApproved === false}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Eye className="w-3.5 h-3.5 text-slate-400" />
-                    <span>View Info</span>
+                    <span>Financials</span>
                   </button>
                   <button
                     type="button"
-                    disabled={!canEditTrucks}
+                    disabled={!canEditTrucks || truck.isApproved === false}
                     onClick={() => startEdit(truck)}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Edit</span>
+                    <span>Edit Specs</span>
                   </button>
                   <button
                     type="button"
@@ -1956,7 +1959,7 @@ export default function TruckMaster({
                         onDeleteTruck(truck.id);
                       }
                     }}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 hover:text-rose-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>
@@ -1964,9 +1967,9 @@ export default function TruckMaster({
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {/* VEHICLE METRICS & FINANCIAL PERFORMANCE DRAWER (FLYOUT) */}
       {viewingTruckId && (() => {
@@ -2288,9 +2291,16 @@ export default function TruckMaster({
                     <div className="grid grid-cols-2 gap-3">
                       {truck.rcFileId && (
                         <a
-                          href={appwrite.getFileView(truck.rcFileId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href="#"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              const url = await appwrite.getSecureFileUrl(truck.rcFileId);
+                              window.open(url, '_blank');
+                            } catch (err) {
+                              alert("Failed to load secure document.");
+                            }
+                          }}
                           className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg text-blue-700 font-semibold text-xs hover:bg-blue-100/70 transition cursor-pointer"
                         >
                           <span>RC Document</span>
@@ -2299,9 +2309,16 @@ export default function TruckMaster({
                       )}
                       {truck.insuranceFileId && (
                         <a
-                          href={appwrite.getFileView(truck.insuranceFileId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href="#"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              const url = await appwrite.getSecureFileUrl(truck.insuranceFileId);
+                              window.open(url, '_blank');
+                            } catch (err) {
+                              alert("Failed to load secure document.");
+                            }
+                          }}
                           className="flex items-center justify-between p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-700 font-semibold text-xs hover:bg-indigo-100/70 transition cursor-pointer"
                         >
                           <span>Insurance Certificate</span>

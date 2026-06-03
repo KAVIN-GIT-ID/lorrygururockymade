@@ -95,23 +95,19 @@ export function useTrips({
         }
       });
 
-      saveTrips(next);
-
       if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
-          
-          for (const mId of modifiedTripIds) {
-            const mTrip = next.find(x => x.id === mId);
-            if (mTrip) {
-              await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
-            }
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
+        
+        for (const mId of modifiedTripIds) {
+          const mTrip = next.find(x => x.id === mId);
+          if (mTrip) {
+            await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
           }
-        } catch (err) {
-          console.warn("Failed to save trip to Appwrite:", err);
         }
       }
+
+      saveTrips(next);
       await loadDashboardData(activeMonth, activeYear);
 
       const diff = getTripDiff(editingTrip, updated);
@@ -133,17 +129,13 @@ export function useTrips({
         organizationId: orgId
       };
 
+      if (isAppwriteConfigured()) {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
+      }
+
       const nextTrips = [...trips, newEntry];
       saveTrips(nextTrips);
-
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
-        } catch (err) {
-          console.warn("Failed to create trip in Appwrite:", err);
-        }
-      }
       await loadDashboardData(activeMonth, activeYear);
 
       logAction('Created', 'Trip', newEntry.tripNo, `Initialized new trip sheet for vehicle ${newEntry.truckNo} (Operator: ${newEntry.driverName})`);
@@ -179,23 +171,19 @@ export function useTrips({
       return t;
     });
 
-    saveTrips(next);
-
     if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'trips', id);
-        
-        for (const mId of modifiedTripIds) {
-          const mTrip = next.find(x => x.id === mId);
-          if (mTrip) {
-            await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
-          }
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      await appwrite.deleteFleetDocument(databaseId, 'trips', id);
+      
+      for (const mId of modifiedTripIds) {
+        const mTrip = next.find(x => x.id === mId);
+        if (mTrip) {
+          await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
         }
-      } catch (err) {
-        console.warn("Failed to delete trip from Appwrite:", err);
       }
     }
+
+    saveTrips(next);
     await loadDashboardData(activeMonth, activeYear);
 
     logAction('Deleted', 'Trip', tEntry.tripNo, `Wiped cargo entry sheet for truck ${tEntry.truckNo}`);

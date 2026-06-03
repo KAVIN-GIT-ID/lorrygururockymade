@@ -2311,6 +2311,7 @@ export default function TripForm({
                 >
                   <option value="">-- Choose Account --</option>
                   <option value="paid_to_driver_advance">Paid to Driver Advance</option>
+                  <option value="Cash">Cash</option>
                   {activeAccounts.map(ac => (
                     <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                   ))}
@@ -2451,6 +2452,7 @@ export default function TripForm({
                   className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
                 >
                   <option value="">-- Choose Account --</option>
+                  <option value="Cash">Cash</option>
                   {activeAccounts.map(ac => (
                     <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                   ))}

@@ -1,4 +1,4 @@
-import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query } from 'appwrite';
+import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query, Permission, Role } from 'appwrite';
 
 const cleanEnvVar = (val: string): string => {
   if (!val) return '';
@@ -183,7 +183,7 @@ class AppwriteService {
     return cleanEnvVar(import.meta.env.VITE_APPWRITE_BUCKET_ID || '6a1713930029ff1ca4d3');
   }
 
-  async uploadFile(file: File, customName?: string): Promise<string> {
+  async uploadFile(file: File, customName?: string, organizationId?: string): Promise<string> {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite is not configured.');
     }
@@ -197,10 +197,22 @@ class AppwriteService {
         const ext = lastDot !== -1 ? fileToUpload.name.substring(lastDot) : '';
         fileToUpload = new File([fileToUpload], `${customName}${ext}`, { type: fileToUpload.type });
       }
+
+      const permissions: string[] = [];
+      if (organizationId && organizationId !== 'org_backend') {
+        // Add read, update, delete permissions for the organization's members
+        permissions.push(
+          Permission.read(Role.team(organizationId)),
+          Permission.update(Role.team(organizationId)),
+          Permission.delete(Role.team(organizationId))
+        );
+      }
+
       const response = await this.storage.createFile(
         this.getBucketId(),
         ID.unique(),
-        fileToUpload
+        fileToUpload,
+        permissions.length > 0 ? permissions : undefined
       );
       return response.$id;
     } catch (err: any) {
@@ -217,6 +229,39 @@ class AppwriteService {
     } catch (err) {
       console.warn("Appwrite getFileView failed:", err);
       return '';
+    }
+  }
+
+  async getSecureFileUrl(fileId: string): Promise<string> {
+    if (!isAppwriteConfigured() || !fileId) return '';
+    await this.initSession();
+    try {
+      const url = this.storage.getFileView(this.getBucketId(), fileId).toString();
+      
+      let headers: Record<string, string> = {
+        'X-Appwrite-Project': projectID,
+      };
+      
+      try {
+        const jwt = await this.account.createJWT();
+        headers['X-Appwrite-JWT'] = jwt.jwt;
+      } catch (jwtErr) {
+        // Fallback
+      }
+
+      const response = await fetch(url, {
+        headers,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch secure file: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (err) {
+      console.warn("Appwrite getSecureFileUrl failed, falling back to direct url:", err);
+      return this.getFileView(fileId);
     }
   }
 
@@ -255,6 +300,55 @@ class AppwriteService {
       throw new Error('Appwrite is not configured.');
     }
     return await this.account.updatePassword(newPassword, oldPassword);
+  }
+
+  async updatePhone(phone: string, passwordStr: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.updatePhone(phone, passwordStr);
+  }
+
+  async createVerification(url: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.createVerification(url);
+  }
+
+  async updateVerification(userId: string, secret: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.updateVerification(userId, secret);
+  }
+
+  async createPhoneVerification() {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.createPhoneVerification();
+  }
+
+  async updatePhoneVerification(userId: string, secret: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.updatePhoneVerification(userId, secret);
+  }
+
+  async createRecovery(email: string, url: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.createRecovery(email, url);
+  }
+
+  async updateRecovery(userId: string, secret: string, passwordStr: string) {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    return await this.account.updateRecovery(userId, secret, passwordStr);
   }
 
   /**
@@ -310,7 +404,7 @@ class AppwriteService {
    */
   async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
     await this.initSession();
-    
+
     let documentData: any = {
       organizationId: orgId,
       data: JSON.stringify(dataObj)
@@ -373,11 +467,11 @@ class AppwriteService {
     const isSchemaError = (err: any) => {
       if (!err) return false;
       const errMsg = (err.message || '').toLowerCase();
-      return err.code === 400 || 
-             errMsg.includes('attribute') || 
-             errMsg.includes('schema') || 
-             errMsg.includes('not found') || 
-             errMsg.includes('invalid document structure');
+      return err.code === 400 ||
+        errMsg.includes('attribute') ||
+        errMsg.includes('schema') ||
+        errMsg.includes('not found') ||
+        errMsg.includes('invalid document structure');
     };
 
     try {
@@ -718,7 +812,7 @@ class AppwriteService {
       if (filters.endDate) {
         baseQueries.push(Query.lessThanEqual('timestamp', filters.endDate + ' 23:59:59'));
       }
-      
+
       const sortedQueries = [
         ...baseQueries,
         Query.orderDesc('timestamp'),
@@ -807,17 +901,17 @@ class AppwriteService {
       };
     } catch (err: any) {
       const errMsg = (err.message || '').toLowerCase();
-      const isSchemaError = err.code === 400 || 
-                            errMsg.includes('attribute') || 
-                            errMsg.includes('schema') || 
-                            errMsg.includes('not found') ||
-                            errMsg.includes('index');
-      
+      const isSchemaError = err.code === 400 ||
+        errMsg.includes('attribute') ||
+        errMsg.includes('schema') ||
+        errMsg.includes('not found') ||
+        errMsg.includes('index');
+
       if (isSchemaError) {
         console.warn("Appwrite queryTrips failed due to schema/attribute mismatch. Falling back to client-side filtering...");
         // Fetch all documents for this organization
         const allDocs = await this.listFleetDocuments(dbId, 'trips', orgId);
-        
+
         // Parse and filter client-side
         let parsedList = allDocs.map(doc => {
           let item = { ...doc };
@@ -942,16 +1036,16 @@ class AppwriteService {
       };
     } catch (err: any) {
       const errMsg = (err.message || '').toLowerCase();
-      const isSchemaError = err.code === 400 || 
-                            errMsg.includes('attribute') || 
-                            errMsg.includes('schema') || 
-                            errMsg.includes('not found') ||
-                            errMsg.includes('index');
-      
+      const isSchemaError = err.code === 400 ||
+        errMsg.includes('attribute') ||
+        errMsg.includes('schema') ||
+        errMsg.includes('not found') ||
+        errMsg.includes('index');
+
       if (isSchemaError) {
         console.warn("Appwrite queryExpenses failed due to schema/attribute mismatch. Falling back to client-side filtering...");
         const allDocs = await this.listFleetDocuments(dbId, 'expenses', orgId);
-        
+
         let parsedList = allDocs.map(doc => {
           let item = { ...doc };
           if (doc.data) {
@@ -1137,20 +1231,20 @@ class AppwriteService {
       return { trips, expenses };
     } catch (err: any) {
       const errMsg = (err.message || '').toLowerCase();
-      const isSchemaError = err.code === 400 || 
-                            errMsg.includes('attribute') || 
-                            errMsg.includes('schema') || 
-                            errMsg.includes('not found') ||
-                            errMsg.includes('index');
-      
+      const isSchemaError = err.code === 400 ||
+        errMsg.includes('attribute') ||
+        errMsg.includes('schema') ||
+        errMsg.includes('not found') ||
+        errMsg.includes('index');
+
       if (isSchemaError) {
         console.warn("fetchMonthlyTripsAndExpenses failed due to schema/attribute/index mismatch. Falling back to client-side filtering...");
         // 1. Fetch all Trips for the organization
         const allTripsDocs = await this.listFleetDocuments(dbId, 'trips', orgId);
-        
+
         // 2. Fetch all Expenses for the organization
         const allExpensesDocs = await this.listFleetDocuments(dbId, 'expenses', orgId);
-        
+
         const fetchAllTime = year === 'All Time';
         const monthStr = `${year}-${month}`;
 
@@ -1161,7 +1255,7 @@ class AppwriteService {
             try {
               const parsed = JSON.parse(doc.data);
               startDate = parsed.startDate;
-            } catch {}
+            } catch { }
           }
           if (!startDate) return false;
           return startDate >= `${monthStr}-01` && startDate <= `${monthStr}-31`;
@@ -1174,7 +1268,7 @@ class AppwriteService {
             try {
               const parsed = JSON.parse(doc.data);
               date = parsed.date;
-            } catch {}
+            } catch { }
           }
           if (!date) return false;
           return date >= `${monthStr}-01` && date <= `${monthStr}-31`;

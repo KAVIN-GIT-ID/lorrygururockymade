@@ -13,6 +13,7 @@ import {
   AuditLog
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import {
   Building2,
   Truck as TruckIcon,
@@ -634,8 +635,8 @@ export default function BackendDashboard({
             <button
               onClick={() => setActiveSubTab('ORGANIZATIONS')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${activeSubTab === 'ORGANIZATIONS'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-450 hover:text-slate-205'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
                 }`}
             >
               <Building2 className="w-4 h-4" />
@@ -646,8 +647,8 @@ export default function BackendDashboard({
             <button
               onClick={() => setActiveSubTab('REQUESTS')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer relative ${activeSubTab === 'REQUESTS'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-450 hover:text-slate-205'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
                 }`}
             >
               <TruckIcon className="w-4 h-4" />
@@ -663,8 +664,8 @@ export default function BackendDashboard({
             <button
               onClick={() => setActiveSubTab('RAW_DATA')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${activeSubTab === 'RAW_DATA'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-450 hover:text-slate-205'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
                 }`}
             >
               <Database className="w-4 h-4" />
@@ -713,10 +714,10 @@ export default function BackendDashboard({
                   <div
                     key={profile.organizationId}
                     className={`bg-white dark:bg-slate-900 border rounded-xl overflow-hidden shadow-2xs transition-all duration-200 ${profile.status === 'Disabled'
-                        ? 'border-red-200 dark:border-red-900/40 bg-red-50/5'
-                        : isSelected
-                          ? 'border-purple-400 ring-1 ring-purple-400'
-                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                      ? 'border-red-200 dark:border-red-900/40 bg-red-50/5'
+                      : isSelected
+                        ? 'border-purple-400 ring-1 ring-purple-400'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
                       }`}
                   >
                     {/* Organization Main Card Header */}
@@ -725,8 +726,8 @@ export default function BackendDashboard({
                         <div className="flex items-center gap-2.5">
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{profile.organizationName}</h3>
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${profile.status === 'Active'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400'
-                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400'
                             }`}>
                             {profile.status === 'Active' ? 'Active Account' : 'Account Disabled'}
                           </span>
@@ -866,8 +867,8 @@ export default function BackendDashboard({
                                       </td>
                                       <td className="px-2 py-2.5 text-center">
                                         <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${truck.isApproved !== false
-                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                            : 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse'
+                                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                          : 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse'
                                           }`}>
                                           {truck.isApproved !== false ? 'Approved' : 'Pending'}
                                         </span>
@@ -878,8 +879,8 @@ export default function BackendDashboard({
                                       <td className="px-2 py-2.5 text-center font-mono text-[11px] text-slate-500">{formatToDisplayDate(truck.greenTaxDate)}</td>
                                       <td className="px-2 py-2.5 text-center font-mono text-[11px] text-slate-500">{formatToDisplayDate(truck.npTaxDate)}</td>
                                       <td className={`px-2 py-2.5 text-center font-mono text-[11px] ${isExpired
-                                          ? 'text-red-500 font-extrabold dark:text-red-400'
-                                          : 'text-slate-500'
+                                        ? 'text-red-500 font-extrabold dark:text-red-400'
+                                        : 'text-slate-500'
                                         }`}>
                                         {formatToDisplayDate(truck.registrationExpiryDate)}
                                         {isExpired && <span className="block text-[8px] text-red-500 font-bold uppercase">Expired</span>}
@@ -914,8 +915,8 @@ export default function BackendDashboard({
                                       <td className="px-2 py-2.5 text-right font-mono text-slate-600">{truck.currentKM?.toLocaleString() || '0'}</td>
                                       <td className="px-2 py-2.5 text-center">
                                         <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${truck.status === 'Active'
-                                            ? 'bg-green-55/15 text-green-700 dark:bg-green-500/10'
-                                            : 'bg-slate-100 text-slate-650 dark:bg-slate-800'
+                                          ? 'bg-green-55/15 text-green-700 dark:bg-green-500/10'
+                                          : 'bg-slate-100 text-slate-650 dark:bg-slate-800'
                                           }`}>
                                           {truck.status}
                                         </span>
@@ -1074,10 +1075,10 @@ export default function BackendDashboard({
                         </td>
                         <td className="px-3 py-3.5 text-center">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold border ${req.status === 'Pending'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10'
-                              : req.status === 'Approved'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10'
+                            : req.status === 'Approved'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10'
+                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10'
                             }`}>
                             {req.status}
                           </span>
@@ -1263,10 +1264,34 @@ export default function BackendDashboard({
                             </span>
                           </td>
                           <td className="px-4 py-3 text-slate-700 dark:text-slate-300 truncate" title={labelVal}>
-                            {labelVal}
+                            {selectedCollection === 'userRights' ? (
+                              <div className="flex flex-col gap-1">
+                                <div className="font-bold text-slate-800 dark:text-slate-205">{item.name || 'No Name'} ({item.email || 'No Email'})</div>
+                                <div className="flex items-center gap-1.5 text-[9px] flex-wrap">
+                                  <span className="font-semibold text-slate-400">Role: <b className="text-purple-600 dark:text-purple-400">{item.role || 'Custom'}</b></span>
+                                  <span className={`px-1 py-0.5 rounded text-[8px] font-bold border ${item.isEmailVerified
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                      : 'bg-amber-500/10 text-amber-550 border-amber-500/20'
+                                    }`}>
+                                    Email: {item.isEmailVerified ? 'Verified' : 'Unverified'}
+                                  </span>
+                                  <span className={`px-1 py-0.5 rounded text-[8px] font-bold border ${item.isPhoneVerified
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                      : 'bg-amber-500/10 text-amber-550 border-amber-500/20'
+                                    }`}>
+                                    Phone: {item.isPhoneVerified ? 'Verified' : 'Unverified'}
+                                  </span>
+                                  {item.phone && (
+                                    <span className="text-slate-450 font-mono">({item.phone})</span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              labelVal
+                            )}
                           </td>
                           <td className="px-4 py-2 text-center">
-                            <div className="flex justify-center items-center gap-2">
+                            <div className="flex justify-center items-center gap-2 flex-wrap">
                               <button
                                 disabled={!canEditDatabaseConsole}
                                 onClick={() => handleEditConsoleRecord(item)}
@@ -1276,6 +1301,73 @@ export default function BackendDashboard({
                                 <Code className="w-3.5 h-3.5" />
                                 Edit JSON
                               </button>
+
+                              {selectedCollection === 'userRights' && (
+                                <>
+                                  {!item.isEmailVerified && (
+                                    <button
+                                      disabled={!canApproveBackend}
+                                      onClick={() => {
+                                        const updated = { ...item, isEmailVerified: true };
+                                        onSaveUserRightsList(userRightsList.map(r => r.id === item.id ? updated : r));
+                                        logAction('Edited', 'Permission', item.email, `Backend team manually verified email for ${item.name || item.email}`);
+                                        alert(`Manually verified email for ${item.name || item.email}`);
+                                      }}
+                                      className="flex items-center gap-1 px-2 py-1 bg-emerald-605 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-3xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      title="Manually Verify Email"
+                                    >
+                                      Verify Email
+                                    </button>
+                                  )}
+                                  {!item.isPhoneVerified && (
+                                    <button
+                                      disabled={!canApproveBackend}
+                                      onClick={() => {
+                                        const updated = { ...item, isPhoneVerified: true };
+                                        onSaveUserRightsList(userRightsList.map(r => r.id === item.id ? updated : r));
+                                        logAction('Edited', 'Permission', item.email, `Backend team manually verified phone for ${item.name || item.email}`);
+                                        alert(`Manually verified phone for ${item.name || item.email}`);
+                                      }}
+                                      className="flex items-center gap-1 px-2 py-1 bg-teal-605 hover:bg-teal-700 text-white rounded text-[11px] font-bold transition shadow-3xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      title="Manually Verify Phone"
+                                    >
+                                      Verify Phone
+                                    </button>
+                                  )}
+                                  <button
+                                    disabled={!canApproveBackend}
+                                    onClick={async () => {
+                                      if (isAppwriteConfigured()) {
+                                        if (confirm(`Send password reset/recovery link to ${item.email}?`)) {
+                                          try {
+                                            const recoveryUrl = `${window.location.origin}?mode=recovery`;
+                                            await appwrite.createRecovery(item.email.trim(), recoveryUrl);
+                                            logAction('Edited', 'Permission', item.email, `Backend team initiated password reset email for ${item.email}`);
+                                            alert(`Password recovery link sent successfully to ${item.email}!`);
+                                          } catch (err: any) {
+                                            alert(`Failed to send recovery: ${err.message || err}`);
+                                          }
+                                        }
+                                      } else {
+                                        const newPass = prompt(`[Mock Mode] Enter new password for ${item.email}:`, "newpassword123");
+                                        if (newPass) {
+                                          if (newPass.length < 8) {
+                                            alert("Password must be at least 8 characters.");
+                                            return;
+                                          }
+                                          logAction('Edited', 'Permission', item.email, `Backend team set mock password for ${item.email}`);
+                                          alert(`[Mock Mode] Password for ${item.email} successfully updated to: ${newPass}`);
+                                        }
+                                      }
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold transition shadow-3xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Reset Password / Send Recovery"
+                                  >
+                                    Reset PW
+                                  </button>
+                                </>
+                              )}
+
                               <button
                                 disabled={!canDeleteDatabaseConsole}
                                 onClick={() => handleDeleteConsoleRecord(item)}
@@ -1337,8 +1429,8 @@ export default function BackendDashboard({
 
               {/* Status and Error Alert Area */}
               <div className={`p-3 rounded-lg border flex items-start gap-2 text-xs leading-normal ${jsonEditorIsValid
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-450'
-                  : 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-450'
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
                 }`}>
                 {jsonEditorIsValid ? (
                   <>

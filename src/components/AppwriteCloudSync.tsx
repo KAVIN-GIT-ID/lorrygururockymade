@@ -30,6 +30,7 @@ interface AppwriteCloudSyncProps {
   currentUserOrgId: string;
   isAdmin: boolean;
   onInitialSyncComplete?: (completed: boolean) => void;
+  onConnectionChange?: (isOnline: boolean, reason?: 'offline' | 'realtime_lost') => void;
 }
 
 export default function AppwriteCloudSync({
@@ -39,7 +40,8 @@ export default function AppwriteCloudSync({
   logAction,
   currentUserOrgId,
   isAdmin,
-  onInitialSyncComplete
+  onInitialSyncComplete,
+  onConnectionChange
 }: AppwriteCloudSyncProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured] = useState(isAppwriteConfigured());
@@ -56,7 +58,34 @@ export default function AppwriteCloudSync({
     return localStorage.getItem('appwrite_collection_id') || 'fleet_records';
   });
 
-  const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [realtimeConnected, setRealtimeConnected] = useState(true);
+
+  // Monitor hardware/browser network connectivity status
+  useEffect(() => {
+    const handleOnline = () => {
+      if (onConnectionChange) {
+        onConnectionChange(true);
+      }
+    };
+    const handleOffline = () => {
+      if (onConnectionChange) {
+        onConnectionChange(false, 'offline');
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial check
+    if (!window.navigator.onLine && onConnectionChange) {
+      onConnectionChange(false, 'offline');
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [onConnectionChange]);
 
   const orgId = currentUserOrgId || 'org_default';
 
@@ -541,10 +570,16 @@ export default function AppwriteCloudSync({
         );
         
         setRealtimeConnected(true);
+        if (onConnectionChange) {
+          onConnectionChange(true);
+        }
         console.log("Appwrite realtime socket pipeline successfully established.");
       } catch (err: any) {
         console.warn('Realtime socket skipped or failed:', err.message);
         setRealtimeConnected(false);
+        if (onConnectionChange) {
+          onConnectionChange(false, 'realtime_lost');
+        }
       }
     };
 

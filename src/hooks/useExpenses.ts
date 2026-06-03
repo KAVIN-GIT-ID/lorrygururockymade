@@ -38,17 +38,13 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       organizationId: orgId
     };
 
+    if (isAppwriteConfigured()) {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, orgId, newExp);
+    }
+
     const nextExpenses = [...expenses, newExp];
     saveExpenses(nextExpenses);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, orgId, newExp);
-      } catch (err) {
-        console.warn("Failed to save expense to Appwrite:", err);
-      }
-    }
     await loadDashboardData(activeMonth, activeYear);
 
     logAction('Created', 'Expense', newExp.truckNo, `Vouched ₹${newExp.amount} expense for truck (${newExp.expenseType})`);
@@ -58,17 +54,14 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
   const updateExpense = async (updated: ExpenseEntry) => {
     const oldExpense = expenses.find(e => e.id === updated.id);
     const merged: ExpenseEntry = oldExpense ? { ...oldExpense, ...updated } : updated;
-    const next = expenses.map(e => e.id === updated.id ? merged : e);
-    saveExpenses(next);
 
     if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, orgId, merged);
-      } catch (err) {
-        console.warn("Failed to update expense in Appwrite:", err);
-      }
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, orgId, merged);
     }
+
+    const next = expenses.map(e => e.id === updated.id ? merged : e);
+    saveExpenses(next);
     await loadDashboardData(activeMonth, activeYear);
 
     const diff = oldExpense ? getExpenseDiff(oldExpense, merged) : `Voucher authorization updated to ${merged.status}`;
@@ -80,17 +73,14 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
 
   const deleteExpense = async (id: string) => {
     const exp = expenses.find(e => e.id === id);
-    const next = expenses.filter(e => e.id !== id);
-    saveExpenses(next);
 
     if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'expenses', id);
-      } catch (err) {
-        console.warn("Failed to delete expense from Appwrite:", err);
-      }
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      await appwrite.deleteFleetDocument(databaseId, 'expenses', id);
     }
+
+    const next = expenses.filter(e => e.id !== id);
+    saveExpenses(next);
     await loadDashboardData(activeMonth, activeYear);
 
     if (exp) {

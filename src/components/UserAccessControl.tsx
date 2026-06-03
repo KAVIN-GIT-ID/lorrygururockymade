@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPermission, OrganizationProfile } from '../types';
-import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard } from 'lucide-react';
+import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone } from 'lucide-react';
 
 interface TeamMember {
   $id: string;
@@ -52,6 +52,7 @@ export default function UserAccessControl({
   const [showAddForm, setShowAddForm] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [role, setRole] = useState<'Admin' | 'Custom'>('Custom');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -105,8 +106,8 @@ export default function UserAccessControl({
     let updatedCards;
 
     if (editingFuelCardId) {
-      updatedCards = currentCards.map(c => 
-        c.id === editingFuelCardId 
+      updatedCards = currentCards.map(c =>
+        c.id === editingFuelCardId
           ? { ...c, cardName: fuelCardName.trim(), cardNumber: fuelCardNo.trim() || undefined, status: fuelCardStatus }
           : c
       );
@@ -157,7 +158,7 @@ export default function UserAccessControl({
     canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
     canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
     canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-        canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+    canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
     canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
     canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
     canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
@@ -171,6 +172,7 @@ export default function UserAccessControl({
   const resetForm = () => {
     setEmail('');
     setName('');
+    setPhone('');
     setRole('Custom');
     setRights({
       canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
@@ -179,7 +181,7 @@ export default function UserAccessControl({
       canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
       canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
       canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-            canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+      canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
       canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
       canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
@@ -200,6 +202,9 @@ export default function UserAccessControl({
     onAddPermission({
       email: email.trim().toLowerCase(),
       name: name.trim(),
+      phone: phone.trim() || undefined,
+      isEmailVerified: false,
+      isPhoneVerified: false,
       role,
       organizationId: currentUserOrgId,
       isApproved: true, // Manual additions by admin are auto-approved
@@ -220,7 +225,7 @@ export default function UserAccessControl({
         canViewDrivers: !isBackendOrg, canEditDrivers: !isBackendOrg, canDeleteDrivers: !isBackendOrg,
         canViewOffices: !isBackendOrg, canEditOffices: !isBackendOrg, canDeleteOffices: !isBackendOrg,
         canViewAccounts: !isBackendOrg, canEditAccounts: !isBackendOrg, canDeleteAccounts: !isBackendOrg,
-                canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
+        canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
@@ -234,7 +239,7 @@ export default function UserAccessControl({
         canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
         canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
         canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-                canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
+        canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
         canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
         canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
         canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
@@ -281,7 +286,7 @@ export default function UserAccessControl({
         canViewDrivers: !isBackendOrg, canEditDrivers: !isBackendOrg, canDeleteDrivers: !isBackendOrg,
         canViewOffices: !isBackendOrg, canEditOffices: !isBackendOrg, canDeleteOffices: !isBackendOrg,
         canViewAccounts: !isBackendOrg, canEditAccounts: !isBackendOrg, canDeleteAccounts: !isBackendOrg,
-                canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
+        canViewExpenses: !isBackendOrg, canEditExpenses: !isBackendOrg, canDeleteExpenses: !isBackendOrg,
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
@@ -309,7 +314,7 @@ export default function UserAccessControl({
       canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
       canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
       // Backend-specific rights: all start at false — admin must grant each explicitly
-            canViewBackend: isBackendOrg ? false : false,
+      canViewBackend: isBackendOrg ? false : false,
       canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false,
       canViewBackendTeam: false, canDeleteBackendTeam: false,
@@ -613,7 +618,7 @@ export default function UserAccessControl({
           <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">
             Authorize New User Account
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name <span className="text-red-500">*</span></label>
               <div className="relative">
@@ -643,6 +648,21 @@ export default function UserAccessControl({
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Mobile Number</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Phone className="w-3.5 h-3.5" />
+                </span>
+                <input
+                  type="tel"
+                  placeholder="e.g. +1234567890"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-550 font-mono"
                 />
               </div>
             </div>
@@ -751,6 +771,7 @@ export default function UserAccessControl({
           const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
           const membership = getAppwriteMembership(p.email);
           const isExpanded = expandedUserId === p.id;
+          const canEdit = !isBackendOrg || canEditBackend;
 
           return (
             <div key={p.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -767,6 +788,54 @@ export default function UserAccessControl({
                     )}
                   </div>
                   <span className="text-[11px] text-slate-400 font-mono block mt-0.5 truncate">{p.email}</span>
+                  <span className="text-[11px] text-slate-450 font-mono block mt-0.5 truncate">Phone: {p.phone || 'Not Set'}</span>
+
+                  {/* Verification override panel */}
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="flex items-center gap-1">
+                      <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                        Email: {p.isEmailVerified ? 'Verified' : 'Unverified'}
+                      </span>
+                      {canEdit && !p.isEmailVerified && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = { ...p, isEmailVerified: true };
+                            onUpdatePermission(updated);
+                            showNotification(`Manually verified email for ${p.name}.`);
+                          }}
+                          className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                        >
+                          Verify
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                        Phone: {p.isPhoneVerified ? 'Verified' : 'Unverified'}
+                      </span>
+                      {canEdit && !p.isPhoneVerified && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = { ...p, isPhoneVerified: true };
+                            onUpdatePermission(updated);
+                            showNotification(`Manually verified phone for ${p.name}.`);
+                          }}
+                          className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                        >
+                          Verify
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {/* Status badges */}
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {p.isApproved ? (
@@ -988,13 +1057,14 @@ export default function UserAccessControl({
           <tbody className="divide-y divide-slate-100 font-sans">
             {permissions.map((p) => {
               const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
-              
+              const canEdit = !isBackendOrg || canEditBackend;
+
               return (
                 <React.Fragment key={p.id}>
                   <tr className="hover:bg-slate-50/50 transition">
                     <td className="px-4 py-3.5 pl-6 font-bold text-slate-800 flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold font-sans border border-slate-200 shadow-2xs">
-                        {p.name ? p.name.substring(0,2).toUpperCase() : 'US'}
+                        {p.name ? p.name.substring(0, 2).toUpperCase() : 'US'}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
@@ -1004,74 +1074,122 @@ export default function UserAccessControl({
                           )}
                         </div>
                         <span className="text-[10px] text-slate-400 font-mono block mt-0.5">{p.email}</span>
+                        <span className="text-[10px] text-slate-450 font-mono block mt-0.5">Phone: {p.phone || 'Not Set'}</span>
+
+                        {/* Verification override panel */}
+                        <div className="flex gap-2 mt-1.5 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                              Email: {p.isEmailVerified ? 'Verified' : 'Unverified'}
+                            </span>
+                            {canEdit && !p.isEmailVerified && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = { ...p, isEmailVerified: true };
+                                  onUpdatePermission(updated);
+                                  showNotification(`Manually verified email for ${p.name}.`);
+                                }}
+                                className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                              >
+                                Verify
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                              Phone: {p.isPhoneVerified ? 'Verified' : 'Unverified'}
+                            </span>
+                            {canEdit && !p.isPhoneVerified && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = { ...p, isPhoneVerified: true };
+                                  onUpdatePermission(updated);
+                                  showNotification(`Manually verified phone for ${p.name}.`);
+                                }}
+                                className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                              >
+                                Verify
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </td>
-                    
-                  {/* Approval Status + Live Appwrite Membership Status */}
-                  <td className="px-4 py-3.5 text-center">
-                    <div className="flex flex-col items-center gap-1.5">
-                      {/* Local approval status */}
-                      {p.isApproved ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                          Approved
-                        </span>
-                      ) : (
-                        <div className="flex items-center justify-center gap-2">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
-                            Pending
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isBackendOrg && !canEditBackend) {
-                                showNotification("You do not have permission to approve team members.");
-                                return;
-                              }
-                              approveUser(p);
-                            }}
-                            disabled={isBackendOrg && !canEditBackend}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 rounded text-[10px] font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Check className="w-3 h-3 text-white" /> Approve
-                          </button>
-                        </div>
-                      )}
 
-                      {/* Live Appwrite Teams sync status */}
-                      {(() => {
-                        const membership = getAppwriteMembership(p.email);
-                        if (teamMembers.length === 0) return null; // Not loaded yet
-                        if (!membership) {
-                          return (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                              <XCircle className="w-2.5 h-2.5" /> Not in Appwrite Team
-                            </span>
-                          );
-                        }
-                        if (membership.confirm) {
-                          return (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
-                              <CheckCircle className="w-2.5 h-2.5" /> Appwrite ✓
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                            <RefreshCw className="w-2.5 h-2.5" /> Invite Pending
+                    {/* Approval Status + Live Appwrite Membership Status */}
+                    <td className="px-4 py-3.5 text-center">
+                      <div className="flex flex-col items-center gap-1.5">
+                        {/* Local approval status */}
+                        {p.isApproved ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            Approved
                           </span>
-                        );
-                      })()}
-                    </div>
-                  </td>
+                        ) : (
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
+                              Pending
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isBackendOrg && !canEditBackend) {
+                                  showNotification("You do not have permission to approve team members.");
+                                  return;
+                                }
+                                approveUser(p);
+                              }}
+                              disabled={isBackendOrg && !canEditBackend}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 rounded text-[10px] font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Check className="w-3 h-3 text-white" /> Approve
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Live Appwrite Teams sync status */}
+                        {(() => {
+                          const membership = getAppwriteMembership(p.email);
+                          if (teamMembers.length === 0) return null; // Not loaded yet
+                          if (!membership) {
+                            return (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                                <XCircle className="w-2.5 h-2.5" /> Not in Appwrite Team
+                              </span>
+                            );
+                          }
+                          if (membership.confirm) {
+                            return (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
+                                <CheckCircle className="w-2.5 h-2.5" /> Appwrite ✓
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                              <RefreshCw className="w-2.5 h-2.5" /> Invite Pending
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </td>
 
                     <td className="px-4 py-3.5 text-slate-650 font-semibold">
                       <select
                         value={p.role}
                         onChange={(e) => changeUserRole(p, e.target.value as any)}
                         disabled={
-                          isCurrentUser || 
-                          !p.isApproved || 
+                          isCurrentUser ||
+                          !p.isApproved ||
                           (isBackendOrg && !canEditBackend) ||
                           (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }
@@ -1132,7 +1250,7 @@ export default function UserAccessControl({
                           }
                         }}
                         disabled={
-                          isCurrentUser || 
+                          isCurrentUser ||
                           (isBackendOrg && !canDeleteBackend) ||
                           (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }

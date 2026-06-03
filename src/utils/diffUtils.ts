@@ -1,4 +1,4 @@
-import { Truck, Driver, Office, Account, SubTrip, TripEntry, ExpenseEntry, TripPayment, TripAdvance, FuelEntry } from '../types';
+import { Truck, Driver, Office, Account, SubTrip, TripEntry, ExpenseEntry, TripPayment, TripAdvance, FuelEntry, UserPermission } from '../types';
 
 export const generateDiffText = <T extends Record<string, any>>(
   oldObj: T,
@@ -27,6 +27,59 @@ export const generateDiffText = <T extends Record<string, any>>(
     return "";
   }
   return changes.join(" | ");
+};
+
+export const getUserPermissionDiff = (oldPerm: UserPermission, newPerm: UserPermission): string => {
+  const labels: Partial<Record<keyof UserPermission, string>> = {
+    email: 'User Email',
+    name: 'User Name',
+    role: 'User Role',
+    isApproved: 'Approval Status',
+    
+    canViewTrips: 'View Trips',
+    canEditTrips: 'Edit Trips',
+    canDeleteTrips: 'Delete Trips',
+
+    canViewTyres: 'View Tyres',
+    canEditTyres: 'Edit Tyres',
+    canDeleteTyres: 'Delete Tyres',
+
+    canViewTrucks: 'View Trucks',
+    canEditTrucks: 'Edit Trucks',
+    canDeleteTrucks: 'Delete Trucks',
+
+    canViewDrivers: 'View Drivers',
+    canEditDrivers: 'Edit Drivers',
+    canDeleteDrivers: 'Delete Drivers',
+
+    canViewOffices: 'View Offices',
+    canEditOffices: 'Edit Offices',
+    canDeleteOffices: 'Delete Offices',
+
+    canViewAccounts: 'View Accounts',
+    canEditAccounts: 'Edit Accounts',
+    canDeleteAccounts: 'Delete Accounts',
+
+    canViewExpenses: 'View Expenses',
+    canEditExpenses: 'Edit Expenses',
+    canDeleteExpenses: 'Delete Expenses',
+
+    canViewBackend: 'View Backend',
+    canAddBackend: 'Add Backend',
+    canEditBackend: 'Edit Backend',
+    canDeleteBackend: 'Delete Backend',
+    canApproveBackend: 'Approve Backend',
+    canViewTruckRequests: 'View Truck Requests',
+    canDeleteTruckRequests: 'Delete Truck Requests',
+    canViewBackendTeam: 'View Backend Team',
+    canDeleteBackendTeam: 'Delete Backend Team',
+    canViewDatabaseConsole: 'View Database Console',
+    canEditDatabaseConsole: 'Edit Database Console',
+    canDeleteDatabaseConsole: 'Delete Database Console',
+    canEditLoans: 'Edit Loans',
+    canDeleteLoans: 'Delete Loans'
+  };
+  return generateDiffText(oldPerm, newPerm, labels, ['id', 'organizationId']);
 };
 
 export const getDriverDiff = (oldDriver: Driver, newDriver: Driver): string => {

@@ -1,0 +1,17 @@
+{
+  "name": "whatsapp-otp-gateway",
+  "version": "1.0.0",
+  "description": "Headless WhatsApp Web Gateway for Self-Hosted Appwrite OTP delivery using Baileys",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

@@ -19,7 +19,7 @@ export interface Truck {
   id: string;
   truckNo: string;
   ownerName?: string;
-  status: 'Active' | 'Inactive' | 'Admin Disabled';
+  status: 'Active' | 'Inactive' | 'Admin Disabled' | 'Sold';
   organizationId?: string;
   isApproved?: boolean;
   requestStatus?: 'Pending' | 'Approved' | 'Rejected';
@@ -31,18 +31,18 @@ export interface Truck {
   make?: string;
   model?: string;
   type?: string;
-  
+
   insuranceDate?: string;      // Expiry Date (YYYY-MM-DD)
   fcDate?: string;             // Expiry Date (YYYY-MM-DD)
   pinpushKM?: number;          // Pinpush milestone KM
   wheelGreaseKM?: number;      // Wheel Grease milestone KM
   alignmentNextDate?: string;  // Alignment next date
-  
+
   qTaxDate?: string;           // Q Tax Expiry Date
   greenTaxDate?: string;       // Green Tax Expiry Date
   npTaxDate?: string;          // NP Tax Expiry Date
   fiveYearPermitDate?: string; // 5 Year Permit Expiry Date
-  
+
   currentKM?: number;          // Current odometer KM
   engineOilKM?: number;        // Engine Oil target milestone KM
   crownOilKM?: number;         // Crown Oil target milestone KM
@@ -54,7 +54,7 @@ export interface Truck {
   radiatorIntervalKM?: number;
   pinpushIntervalKM?: number;      // Per-vehicle override for pinpush grease interval
   wheelGreaseIntervalKM?: number;  // Per-vehicle override for wheel grease interval
-  
+
   // Loan details
   loanStartDate?: string;          // Start date of loan (YYYY-MM-DD)
   loanRegisteredDate?: string;     // Date loan was registered in system (YYYY-MM-DD)
@@ -93,7 +93,7 @@ export interface Account {
   holderName?: string;
   status: 'Active' | 'Inactive';
   organizationId?: string;
-  
+
   // Optional bank details fields
   bankName?: string;
   accountNo?: string;
@@ -214,7 +214,7 @@ export interface SubTrip {
   crossingBearsDriver?: number;
   rmcBearsOrg?: number;
   rmcBearsDriver?: number;
-  
+
   noOfTons?: number;
   material?: string;
   ratePerTon?: number;
@@ -284,15 +284,15 @@ export interface TripMetrics {
 
 export function getTripMetrics(trip: TripEntry): TripMetrics {
   const subTrips = trip.subTrips || [];
-  
+
   const income = subTrips.reduce((sum, s) => sum + (Number(s.income) || 0), 0);
-  
+
   let loadingExpense = 0;
   let unloadingExpense = 0;
   let brokerageExpense = 0;
   let crossingExpense = 0;
   let rmcExpense = 0;
-  
+
   let totalOrgRentalDeductions = 0;
   let driverPaidDirect = 0;
   let driverRecovery = 0;
@@ -304,12 +304,12 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
         const amount = Number(exp.amount) || 0;
         const isPaidByDriver = !!exp.paidByDriver;
         const isDeductedFromOrgRental = exp.deductedFrom === 'OrgRental';
-        
+
         // 1. Deducted from Org Rental (reduces net freight received from office)
         if (isDeductedFromOrgRental) {
           totalOrgRentalDeductions += amount;
         }
-        
+
         // 2. Who bears it
         if (exp.bears === 'Org') {
           // Add to category expense
@@ -318,7 +318,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
           else if (exp.expenseType === 'Brokerage') brokerageExpense += amount;
           else if (exp.expenseType === 'Crossing') crossingExpense += amount;
           else if (exp.expenseType === 'RMC') rmcExpense += amount;
-          
+
           // Driver paid direct gets reimbursed
           if (isPaidByDriver) {
             driverPaidDirect += amount;
@@ -332,7 +332,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
         } else if (exp.bears === 'Office') {
           // Office bears it
           officeBearsExpenseTotal += amount;
-          
+
           // Driver paid direct gets reimbursed by Org, Org recovers from Office via outstanding balance
           if (isPaidByDriver) {
             driverPaidDirect += amount;
@@ -415,10 +415,10 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
 
   // Common Trip-level expenses (with fallback to sum subTrips if undefined for compatibility)
   const rtoExpense = trip.rtoExpense !== undefined ? Number(trip.rtoExpense) : subTrips.reduce((sum, s) => sum + (Number(s.rtoExpense) || 0), 0);
-  
+
   // Calculate total fuel liters and expense from fuels list under TripEntry or single field fallback
   const fuels = trip.fuels || [];
-  const fuelLiters = fuels.length > 0 
+  const fuelLiters = fuels.length > 0
     ? fuels.reduce((sum, f) => sum + (Number(f.liters) || 0), 0)
     : (trip.dieselLiters !== undefined ? Number(trip.dieselLiters) : subTrips.reduce((sum, s) => sum + (Number(s.dieselLiters) || 0), 0));
 
@@ -429,19 +429,19 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
   const addBlueExpense = trip.addBlueExpense !== undefined ? Number(trip.addBlueExpense) : subTrips.reduce((sum, s) => sum + (Number(s.addBlueExpense) || 0), 0);
   const fastagExpense = trip.fastagExpense !== undefined ? Number(trip.fastagExpense) : subTrips.reduce((sum, s) => sum + (Number(s.fastagExpense) || 0), 0);
   const otherExpense = trip.otherExpense !== undefined ? Number(trip.otherExpense) : subTrips.reduce((sum, s) => sum + (Number(s.otherExpense) || 0), 0);
-  
+
   const startingKM = Number(trip.startingKM) || 0;
   const endingKM = Number(trip.endingKM) || 0;
   const totalKM = Math.max(0, endingKM - startingKM);
-  
+
   const millage = fuelLiters > 0 ? (totalKM / fuelLiters) : 0;
-  
+
   const totalExpense = loadingExpense + unloadingExpense + brokerageExpense + crossingExpense + rmcExpense + rtoExpense + dieselExpense + addBlueExpense + fastagExpense + driverWages + otherExpense;
   const profit = income - totalExpense;
-  
+
   const perKM = totalKM > 0 ? (totalExpense / totalKM) : 0;
   const profitPerKM = totalKM > 0 ? (profit / totalKM) : 0;
-  
+
   // Calculate Days
   let noOfDays = 1;
   if (trip.startDate && trip.endDate) {
@@ -451,7 +451,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
     noOfDays = isNaN(diffDays) || diffDays < 1 ? 1 : diffDays;
   }
-  
+
   const paymentsReceived = (trip.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const outstandingBalance = income - totalOrgRentalDeductions + officeBearsExpenseTotal - paymentsReceived;
 
@@ -482,7 +482,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
 
   const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
   const driverBalance = totalDriverSpend - (totalIssuedToDriver + driverRecovery);
-  
+
   return {
     income,
     loadingExpense,
@@ -576,9 +576,14 @@ export interface UserPermission {
   id: string;
   email: string;
   name: string;
+  phone?: string;
+  isEmailVerified?: boolean;
+  isPhoneVerified?: boolean;
   role: 'Admin' | 'Custom' | 'SuperAdmin';
   organizationId: string;
   isApproved: boolean;
+  is2FAEnabled?: boolean;
+  twoFactorSecret?: string;
 
   // Fine-grained module permissions
   canViewTrips: boolean;
@@ -631,6 +636,11 @@ export interface UserRights {
   isSuperAdmin?: boolean;
   organizationId: string;
   isApproved: boolean;
+  phone?: string;
+  isEmailVerified?: boolean;
+  isPhoneVerified?: boolean;
+  is2FAEnabled?: boolean;
+  twoFactorSecret?: string;
 
   canViewTrips: boolean;
   canEditTrips: boolean;
