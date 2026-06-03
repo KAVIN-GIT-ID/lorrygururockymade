@@ -10,3 +10,8 @@ coverage/
 # Test artifacts
 test-results/
 .vitest/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
