@@ -65,7 +65,7 @@ export default function TripList({
   const [endDate, setEndDate] = useState('');
   
   // Sorting state
-  const [sortField, setSortField] = useState<'tripNo' | 'truckNo' | 'startDate' | 'income' | 'totalExpense' | 'profit' | 'outstandingBalance' | 'status'>('startDate');
+  const [sortField, setSortField] = useState<'tripNo' | 'truckNo' | 'startDate' | 'income' | 'totalExpense' | 'profit' | 'outstandingBalance' | 'status'>('tripNo');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Pagination & Display states

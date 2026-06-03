@@ -128,18 +128,26 @@ export default function AppwriteCloudSync({
   const isSyncing = useRef(false);
 
   // Reset initial sync status and baseline when organization resolves/changes
+  const prevOrgIdRef = useRef(orgId);
   useEffect(() => {
-    setInitialPullDone(false);
-    baselineStateRef.current = {
-      trucks: [],
-      drivers: [],
-      offices: [],
-      accounts: [],
-      trips: [],
-      expenses: [],
-      tyres: [],
-      auditLogs: []
-    };
+    const wasRealOrg = prevOrgIdRef.current && prevOrgIdRef.current !== 'org_default' && prevOrgIdRef.current !== '';
+    const isRealOrg = orgId && orgId !== 'org_default' && orgId !== '';
+
+    if (wasRealOrg && isRealOrg && prevOrgIdRef.current !== orgId) {
+      console.log(`Appwrite Sync: Organization changed from ${prevOrgIdRef.current} to ${orgId}. Resetting sync state.`);
+      setInitialPullDone(false);
+      baselineStateRef.current = {
+        trucks: [],
+        drivers: [],
+        offices: [],
+        accounts: [],
+        trips: [],
+        expenses: [],
+        tyres: [],
+        auditLogs: []
+      };
+    }
+    prevOrgIdRef.current = orgId;
   }, [orgId]);
 
   useEffect(() => {

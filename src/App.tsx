@@ -626,7 +626,9 @@ export default function App() {
     };
   };
 
-  const currentUserRights = getCurrentUserRights();
+  const currentUserRights = React.useMemo(() => {
+    return getCurrentUserRights();
+  }, [currentUser, userRightsList]);
 
   // Sync profile organization name input when modal or profiles updates
   useEffect(() => {
