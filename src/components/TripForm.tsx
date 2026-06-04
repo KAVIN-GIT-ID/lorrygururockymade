@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense } from '../types';
 import { indianCities } from './indianCities';
 import { 
@@ -284,6 +284,11 @@ export default function TripForm({
   const [fuels, setFuels] = useState<FuelEntry[]>([]);
   const [advances, setAdvances] = useState<TripAdvance[]>([]);
 
+  // Refs to focus dates upon submission
+  const paymentDateInputRef = useRef<HTMLInputElement>(null);
+  const advanceDateInputRef = useRef<HTMLInputElement>(null);
+  const fuelDateInputRef = useRef<HTMLInputElement>(null);
+
   // Draft states for dynamic fuel entry
   const [newFuelDate, setNewFuelDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [newFuelLiters, setNewFuelLiters] = useState<number | ''>('');
@@ -304,7 +309,7 @@ export default function TripForm({
   const [stCargoExpenses, setStCargoExpenses] = useState<CargoExpense[]>([]);
   const [newCargoExpType, setNewCargoExpType] = useState<'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC'>('Loading');
   const [newCargoExpAmount, setNewCargoExpAmount] = useState<number | ''>('');
-  const [newCargoExpDeductedFrom, setNewCargoExpDeductedFrom] = useState<'OrgRental' | 'DriverDirect'>('DriverDirect');
+  const [newCargoExpDeductedFrom, setNewCargoExpDeductedFrom] = useState<'OrgRental' | 'DriverDirect' | 'OrgPaid'>('DriverDirect');
   const [newCargoExpBears, setNewCargoExpBears] = useState<'Org' | 'Driver' | 'Office'>('Org');
 
   const [stDriverWages, setStDriverWages] = useState<number>(0);
@@ -562,6 +567,7 @@ export default function TripForm({
     setNewFuelRate('');
     setNewFuelAmount('');
     setNewFuelShop('');
+    setTimeout(() => fuelDateInputRef.current?.focus(), 0);
   };
 
   const handleRemoveFuel = (fId: string) => {
@@ -751,6 +757,7 @@ export default function TripForm({
     setNewPayAmount('');
     setNewPayNotes('');
     setNewPaySubTripId('general');
+    setTimeout(() => paymentDateInputRef.current?.focus(), 0);
   };
 
   const handleRemovePayment = (id: string) => {
@@ -908,7 +915,12 @@ export default function TripForm({
       const filtered = stCargoExpenses.filter(e => e.expenseType === type);
       const amount = filtered.reduce((sum, e) => sum + e.amount, 0);
       const paidByDriver = filtered.some(e => e.paidByDriver);
-      const deductedFrom = filtered.some(e => e.deductedFrom === 'OrgRental') ? 'OrgRental' : 'DriverDirect';
+      let deductedFrom: 'OrgRental' | 'DriverDirect' | 'OrgPaid' = 'DriverDirect';
+      if (filtered.some(e => e.deductedFrom === 'OrgRental')) {
+        deductedFrom = 'OrgRental';
+      } else if (filtered.some(e => e.deductedFrom === 'OrgPaid')) {
+        deductedFrom = 'OrgPaid';
+      }
       
       const bearsOrg = filtered.filter(e => e.bears === 'Org').reduce((sum, e) => sum + e.amount, 0);
       const bearsDriver = filtered.filter(e => e.bears === 'Driver').reduce((sum, e) => sum + e.amount, 0);
@@ -1050,6 +1062,7 @@ export default function TripForm({
     setNewAdvAmount('');
     setNewAdvNotes('');
     setNewAdvReceivedByDriverDirectly(false);
+    setTimeout(() => advanceDateInputRef.current?.focus(), 0);
   };
 
   const handleRemoveAdvance = (id: string) => {
@@ -1434,6 +1447,7 @@ export default function TripForm({
                   <div>
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Fuel Date</label>
                     <input
+                      ref={fuelDateInputRef}
                       type="date"
                       value={newFuelDate}
                       onChange={(e) => setNewFuelDate(e.target.value)}
@@ -2071,7 +2085,7 @@ export default function TripForm({
                                 <td className="p-2.5 pl-4 font-bold text-slate-800">{exp.expenseType}</td>
                                 <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{exp.amount.toLocaleString()}</td>
                                 <td className="p-2.5 text-slate-600 font-semibold">
-                                  {exp.deductedFrom === 'OrgRental' ? 'Org Rental (Office Paid)' : 'Driver Paid (Advance)'}
+                                  {exp.deductedFrom === 'OrgRental' ? 'Org Rental (Office Paid)' : exp.deductedFrom === 'OrgPaid' ? 'Org Paid (Direct/Bank)' : 'Driver Paid (Advance)'}
                                 </td>
                                 <td className="p-2.5">
                                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -2143,6 +2157,7 @@ export default function TripForm({
                           >
                             <option value="DriverDirect">Driver Paid (Advance)</option>
                             <option value="OrgRental">Org Rental (Office Paid)</option>
+                            <option value="OrgPaid">Org Paid (Direct/Bank)</option>
                           </select>
                         </div>
 
@@ -2295,6 +2310,7 @@ export default function TripForm({
               <div className="md:col-span-2">
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Receipt Date</label>
                 <input
+                  ref={paymentDateInputRef}
                   type="date"
                   value={newPayDate}
                   onChange={(e) => setNewPayDate(e.target.value)}
@@ -2437,6 +2453,7 @@ export default function TripForm({
               <div>
                 <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Advance Date</label>
                 <input
+                  ref={advanceDateInputRef}
                   type="date"
                   value={newAdvDate}
                   onChange={(e) => setNewAdvDate(e.target.value)}

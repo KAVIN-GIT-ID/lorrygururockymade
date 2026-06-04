@@ -149,7 +149,7 @@ const targetCollections = [
 async function main() {
   console.log("\n=== Appwrite Database Schema Migration Script ===");
 
-  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+  const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
   const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
 
   console.log(`Appwrite Endpoint: ${endpoint}`);
@@ -184,6 +184,17 @@ async function main() {
   const backups = {};
 
   try {
+    // 0. Automatic Safety Backup to File
+    console.log("\n--- 0. Initiating automatic safety backup to file before schema migration ---");
+    try {
+      const { runBackup } = await import('./backup-db.cjs');
+      const backupPath = await runBackup();
+      console.log(`✓ Safety backup created successfully at: ${backupPath}`);
+    } catch (backupErr) {
+      console.error("❌ Safety backup to file failed! Aborting schema migration to prevent data loss.");
+      throw new Error(`Safety backup failed: ${backupErr.message}`);
+    }
+
     // 1. Fetch and Backup Existing Data
     console.log("\n--- 1. Backing up existing database documents ---");
     for (const col of targetCollections) {
@@ -199,7 +210,7 @@ async function main() {
             `${endpoint}/databases/${dbId}/collections/${col.id}/documents?limit=${limit}&offset=${offset}`,
             { headers }
           );
-          
+
           if (!res.ok) {
             const errData = await res.json();
             if (errData.code === 404 || errData.type === 'collection_not_found') {
@@ -404,14 +415,14 @@ async function main() {
             successCount++;
           } else {
             const errData = await res.json();
-            console.error(`❌ [${i+1}/${documents.length}] Failed to restore ${docId} in ${col.id}: ${errData.message}`);
+            console.error(`❌ [${i + 1}/${documents.length}] Failed to restore ${docId} in ${col.id}: ${errData.message}`);
             failCount++;
           }
         } catch (err) {
-          console.error(`❌ [${i+1}/${documents.length}] Network error restoring ${docId} in ${col.id}: ${err.message}`);
+          console.error(`❌ [${i + 1}/${documents.length}] Network error restoring ${docId} in ${col.id}: ${err.message}`);
           failCount++;
         }
-        
+
         // Minor delay to keep connection pipeline smooth
         await new Promise(r => setTimeout(r, 50));
       }

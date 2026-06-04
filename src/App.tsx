@@ -13,11 +13,14 @@ import AuditLogView from './components/AuditLogView';
 import TyreMaster from './components/TyreMaster';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
 import LoginScreen from './components/LoginScreen';
+import LandingPage from './components/LandingPage';
+import logo from './logo.png';
+import { useNavigate, useLocation } from 'react-router-dom';
 import UserAccessControl from './components/UserAccessControl';
 import BackendDashboard from './components/BackendDashboard';
 import VoiceAssistant from './components/VoiceAssistant';
 import ConnectionStatusBlocker from './components/ConnectionStatusBlocker';
-import { appwrite, isAppwriteConfigured } from './lib/appwrite';
+import { appwrite, isAppwriteConfigured, getAppOrigin } from './lib/appwrite';
 import { useDrivers } from './hooks/useDrivers';
 import { useOffices } from './hooks/useOffices';
 import { useAccounts } from './hooks/useAccounts';
@@ -177,6 +180,9 @@ const reconcileOrganizationProfiles = (
 };
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [disconnectReason, setDisconnectReason] = useState<'offline' | 'realtime_lost' | undefined>(undefined);
@@ -559,10 +565,10 @@ export default function App() {
         isAdmin: match.role === 'Admin' || isSuper,
         isSuperAdmin: isSuper,
         organizationId: match.organizationId,
-        isApproved: match.isApproved,
+        isApproved: match.isApproved || (isAppwriteConfigured() && !!match.organizationId && match.organizationId !== 'org_default'),
         phone: match.phone || '',
-        isEmailVerified: !!match.isEmailVerified,
-        isPhoneVerified: !!match.isPhoneVerified,
+        isEmailVerified: !!match.isEmailVerified || currentUser.emailVerification === true,
+        isPhoneVerified: !!match.isPhoneVerified || currentUser.phoneVerification === true,
         is2FAEnabled: !!match.is2FAEnabled,
         twoFactorSecret: match.twoFactorSecret || '',
         // Hide standard operations from Super Admin
@@ -784,17 +790,52 @@ export default function App() {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const data = await fetchAllGlobalConfigs(databaseId);
+          const email = (user.email || '').toLowerCase().trim();
+          let data = await fetchAllGlobalConfigs(databaseId);
           let rawProfiles = organizationProfiles;
-          if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
-            rawProfiles = data.organizationProfiles;
-          }
+          let cloudRights: UserPermission[] = [];
 
           if (data && data.userRightsList && data.userRightsList.length > 0) {
-            let cloudRights: UserPermission[] = migrateUserPermissions(data.userRightsList);
-            const localStored = localStorage.getItem('ttt_user_rights');
-            let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
+            if (data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
+              rawProfiles = data.organizationProfiles;
+            }
+            cloudRights = migrateUserPermissions(data.userRightsList);
+          } else {
+            // Fallback: Fetch individual user permission document directly (users have permissions to read their own config)
+            try {
+              const myDocId = appwrite.getEmailDocId(email);
+              const myConfig = await appwrite.loadGlobalConfig(databaseId, myDocId);
+              if (myConfig && myConfig.data) {
+                const parsed = JSON.parse(myConfig.data);
+                cloudRights = [parsed];
+                console.info("Successfully fetched individual user permission document directly from cloud.");
+              }
+            } catch (err) {
+              console.warn("Could not fetch individual user permission directly:", err);
+            }
 
+            // Fallback: Fetch organization profile directly if user belongs to an Appwrite team
+            try {
+              const userTeams = await appwrite.getUserTeams();
+              if (userTeams.length > 0) {
+                const appwriteOrgId = userTeams[0].$id;
+                const orgDocId = appwrite.getOrgDocId(appwriteOrgId);
+                const orgConfig = await appwrite.loadGlobalConfig(databaseId, orgDocId);
+                if (orgConfig && orgConfig.data) {
+                  const parsed = JSON.parse(orgConfig.data);
+                  rawProfiles = [parsed];
+                  console.info("Successfully fetched individual organization profile document directly from cloud.");
+                }
+              }
+            } catch (err) {
+              console.warn("Could not fetch individual organization profile directly:", err);
+            }
+          }
+
+          const localStored = localStorage.getItem('ttt_user_rights');
+          let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
+
+          if (cloudRights.length > 0) {
             // Filter out user permissions for which the corresponding organization profile does not exist
             const existingOrgIds = new Set(rawProfiles.map(p => p.organizationId));
             const email = (user.email || '').toLowerCase().trim();
@@ -803,6 +844,8 @@ export default function App() {
 
             const orphanedCloudKeys: string[] = [];
             cloudRights = cloudRights.filter(ur => {
+              // Always preserve the currently logged-in user — never orphan yourself
+              if (ur.email.toLowerCase().trim() === email) return true;
               if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
                 return true;
               }
@@ -824,6 +867,8 @@ export default function App() {
             }
 
             localRights = localRights.filter(ur => {
+              // Always preserve the currently logged-in user's own local entry
+              if (ur.email.toLowerCase().trim() === email) return true;
               if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
                 return true;
               }
@@ -841,32 +886,39 @@ export default function App() {
             // Only keep Super Admin / Backend team members to avoid accidental lockout.
             // Standard organization accounts/members that were deleted from the database should be deleted locally too.
             const preservedLocalOnlyEntries = localOnlyEntries.filter(lr => {
-              return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
+              // Preserve SuperAdmin/backend entries AND the currently logged-in user's own entry
+              return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend' || lr.email.toLowerCase().trim() === email;
             });
             activeRightsList = [...merged, ...preservedLocalOnlyEntries];
             setUserRightsList(activeRightsList);
             localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
           } else {
-            // Fresh/empty cloud database - clear active permissions
-            // Safety: if the current user has local Super Admin / org_backend permissions, preserve them so they are not locked out
+            // cloudRights is empty — this can mean:
+            //   (a) The DB is genuinely empty (SuperAdmin with full visibility confirmed it)
+            //   (b) The user doesn't have permission to read the full list (Custom/Admin roles)
+            // NEVER wipe local rights for non-SuperAdmin users — they simply can't read the full list.
             const email = (user.email || '').toLowerCase().trim();
             const localStored = localStorage.getItem('ttt_user_rights');
             let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
-            const myLocalMatch = localRights.find(ur => ur.email.toLowerCase() === email && (ur.role === 'SuperAdmin' || ur.organizationId === 'org_backend'));
+            const myLocalEntry = localRights.find(ur => ur.email.toLowerCase() === email);
+            const isLocalSuperAdmin = myLocalEntry?.role === 'SuperAdmin' || myLocalEntry?.organizationId === 'org_backend';
 
-            if (myLocalMatch) {
-              console.info("Preserving local Super Admin on fresh/empty cloud database:", email);
-              activeRightsList = [myLocalMatch];
+            if (isLocalSuperAdmin) {
+              // SuperAdmin with confirmed cloud visibility: DB is genuinely empty — only preserve their own entry
+              console.info("SuperAdmin confirmed empty cloud DB — preserving only their own local entry:", email);
+              const selfEntry = localRights.find(ur => ur.email.toLowerCase() === email);
+              activeRightsList = selfEntry ? [selfEntry] : [];
               setUserRightsList(activeRightsList);
               localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
+              rawProfiles = [];
+              setOrganizationProfiles([]);
+              localStorage.setItem('ttt_organization_profiles', JSON.stringify([]));
             } else {
-              activeRightsList = [];
-              setUserRightsList([]);
-              localStorage.setItem('ttt_user_rights', JSON.stringify([]));
+              // Non-SuperAdmin: cloud returned empty because they lack read permissions — keep local rights intact
+              console.info("Non-SuperAdmin user: cloud returned no rights (insufficient read access). Preserving local rights.");
+              activeRightsList = localRights;
+              // Do NOT overwrite localStorage — keep what's there
             }
-            rawProfiles = [];
-            setOrganizationProfiles([]);
-            localStorage.setItem('ttt_organization_profiles', JSON.stringify([]));
           }
           const reconciled = reconcileOrganizationProfiles(activeRightsList, rawProfiles);
           setOrganizationProfiles(reconciled);
@@ -909,6 +961,36 @@ export default function App() {
       localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
 
       let match = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
+
+      // Auto-update verification status from Appwrite Auth session to database permission record
+      if (isAppwriteConfigured() && match) {
+        let needsUpdate = false;
+        const updatedMatch = { ...match };
+
+        if (user.emailVerification === true && !match.isEmailVerified) {
+          console.info(`Reconciling email verification for ${email} (pre-teams): false → true (verified in Appwrite Auth)`);
+          updatedMatch.isEmailVerified = true;
+          needsUpdate = true;
+        }
+
+        if (user.phoneVerification === true && !match.isPhoneVerified) {
+          console.info(`Reconciling phone verification for ${email} (pre-teams): false → true (verified in Appwrite Auth)`);
+          updatedMatch.isPhoneVerified = true;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          const updatedList = activeRightsList.map(ur =>
+            ur.email.toLowerCase().trim() === email ? updatedMatch : ur
+          );
+          setUserRightsList(updatedList);
+          localStorage.setItem('ttt_user_rights', JSON.stringify(updatedList));
+          activeRightsList = updatedList;
+          match = updatedMatch;
+
+          await pushPermissionsToCloud(updatedList);
+        }
+      }
 
       // ── Appwrite Teams sync (RUN FIRST) ───────────────────────────────
       // Derive organizationId from the user's actual Appwrite team membership.
@@ -1057,9 +1139,13 @@ export default function App() {
       try {
         const loginMethod = localStorage.getItem('ttt_login_method');
         if (loginMethod === 'mock') {
-          localStorage.removeItem('ttt_guest_user');
-          localStorage.removeItem('ttt_login_method');
-          setCurrentUser(null);
+          const storedMock = localStorage.getItem('ttt_mock_user');
+          if (storedMock) {
+            const user = JSON.parse(storedMock);
+            await reconcileSession(user);
+          } else {
+            setCurrentUser(null);
+          }
           setInitialPullDone(true);
         } else if (loginMethod === 'appwrite' && isAppwriteConfigured()) {
           const user = await appwrite.getCurrentUser();
@@ -1082,6 +1168,36 @@ export default function App() {
     };
     initAuth();
   }, []);
+
+  // Synchronize location.pathname with view and tab state
+  useEffect(() => {
+    const path = location.pathname;
+    
+    // Auth guarding
+    if (!currentUser && !loadingUser) {
+      if (path.startsWith('/console')) {
+        navigate('/login');
+      } else if (path !== '/' && path !== '/login') {
+        navigate('/');
+      }
+      return;
+    }
+    
+    if (currentUser && !loadingUser) {
+      if (path === '/' || path === '/login') {
+        navigate('/console/dashboard');
+        return;
+      }
+      
+      const subpath = path.replace('/console/', '').toUpperCase();
+      const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND'];
+      if (validTabs.includes(subpath)) {
+        setActiveTab(subpath as any);
+      } else if (path === '/console') {
+        navigate('/console/dashboard');
+      }
+    }
+  }, [location.pathname, currentUser, loadingUser]);
 
   const handleEmailVerificationRedirect = async (userId: string, secret: string) => {
     setLoadingUser(true);
@@ -1172,6 +1288,7 @@ export default function App() {
     setUserRightsList([]);
     setOrganizationProfiles([]);
     showNotification('Logged out successfully.');
+    navigate('/');
   };
 
 
@@ -1222,14 +1339,23 @@ export default function App() {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     
     let gatewayHost = window.location.hostname;
+    let gatewayProtocol = window.location.protocol;
+    let useSubpath = false;
+
     if (gatewayHost === 'localhost' || gatewayHost === '127.0.0.1') {
       const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
       if (appwriteEndpoint.includes('//')) {
         gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
+        gatewayProtocol = appwriteEndpoint.split('//')[0];
+        useSubpath = true;
       }
+    } else {
+      useSubpath = true;
     }
     
-    const gatewayUrl = `http://${gatewayHost}:8000/send-otp`;
+    const gatewayUrl = useSubpath 
+      ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/send-otp`
+      : `${gatewayProtocol}//${gatewayHost}:8000/send-otp`;
     console.info(`[WhatsAppOTP] Requesting delivery of OTP: ${otp} to ${phone} via ${gatewayUrl}`);
 
     const response = await fetch(gatewayUrl, {
@@ -1270,17 +1396,28 @@ export default function App() {
     try {
       if (isAppwriteConfigured()) {
         await appwrite.updatePhone(newPhone, currentPassword);
+        
+        // Fetch fresh user object to get the updated phone and verification status from Appwrite Auth
+        const freshUser = await appwrite.getCurrentUser();
+        if (freshUser) {
+          await reconcileSession(freshUser);
+        }
+
         const email = (currentUser.email || '').toLowerCase().trim();
         const updated = userRightsList.map(ur =>
-          ur.email.toLowerCase().trim() === email ? { ...ur, phone: newPhone } : ur
+          ur.email.toLowerCase().trim() === email ? { ...ur, phone: newPhone, isPhoneVerified: freshUser?.phoneVerification === true } : ur
         );
         setUserRightsList(updated);
         localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
         await pushPermissionsToCloud(updated);
 
-        await sendWhatsAppOTP(newPhone);
-        setVerificationOtpSent(true);
-        showNotification("Mobile number saved and verification OTP sent successfully via WhatsApp!");
+        if (freshUser?.phoneVerification === true) {
+          showNotification("Mobile number updated and automatically verified!");
+        } else {
+          await sendWhatsAppOTP(newPhone);
+          setVerificationOtpSent(true);
+          showNotification("Mobile number saved and verification OTP sent successfully via WhatsApp!");
+        }
       } else {
         const email = (currentUser.email || '').toLowerCase().trim();
         const updated = userRightsList.map(ur =>
@@ -1366,7 +1503,10 @@ export default function App() {
         }
       }
 
-      const matchedProfile = activeProfiles.find(p => p.organizationName.toLowerCase().trim() === trimmedOrgName.toLowerCase());
+      const matchedProfile = activeProfiles.find(p => 
+        p.organizationName.toLowerCase().trim() === trimmedOrgName.toLowerCase() ||
+        p.organizationId.toLowerCase().trim() === trimmedOrgName.toLowerCase()
+      );
       if (!matchedProfile) {
         return { approved: false, orgId: '', error: `No organization named "${trimmedOrgName}" was found. Please check spelling or contact Admin.` };
       }
@@ -1713,7 +1853,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND') => {
-    setActiveTab(tab);
+    navigate(`/console/${tab.toLowerCase()}`);
     setIsMobileMenuOpen(false);
   };
 
@@ -2989,19 +3129,83 @@ export default function App() {
     reloadBackendData();
 
     // Subscribe to realtime database document events
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribe: any = null;
+    let destroyed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 5000;
+    const MAX_DELAY = 60000;
+
+    const teardown = () => {
+      if (unsubscribe) {
+        try {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          } else if (unsubscribe && typeof unsubscribe.unsubscribe === 'function') {
+            unsubscribe.unsubscribe();
+          }
+        } catch (_) { /* ignore close-state errors */ }
+        unsubscribe = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (destroyed) return;
+      reconnectTimer = setTimeout(() => {
+        if (!destroyed) setupRealtime();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+    };
+
     const setupRealtime = async () => {
+      if (destroyed) return;
+      teardown();
       try {
         await appwrite.initSession();
         const client = appwrite.getClient();
-        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'global_configs'];
+        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs'];
+        if (currentUserOrgId === 'org_backend') {
+          colList.push('global_configs');
+        }
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
-        unsubscribe = client.subscribe(channels, (response: any) => {
-          console.log("Super Admin Realtime Socket: Reloading datasets on DB changes...");
-          reloadBackendData();
-        });
-      } catch (e) {
-        console.warn("Super Admin websocket registration failed, relying on polling:", e);
+        try {
+          const subPromise = appwrite.getRealtime().subscribe(channels, (_response: any) => {
+            console.log("Super Admin Realtime Socket: Reloading datasets on DB changes...");
+            reloadBackendData();
+          });
+          subPromise.then(sub => {
+            if (destroyed) {
+              try { sub.unsubscribe(); } catch (_) {}
+            } else {
+              unsubscribe = sub;
+              reconnectDelay = 5000; // reset on success
+              console.log("Super Admin realtime socket established.");
+            }
+          });
+
+          // Health-check every 30s — reconnect if socket is dead
+          const healthCheck = setInterval(() => {
+            if (destroyed) { clearInterval(healthCheck); return; }
+            try {
+              const ws = (appwrite.getRealtime() as any).socket;
+              if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
+                console.info('Super Admin socket: health-check detected dead WebSocket — reconnecting...');
+                clearInterval(healthCheck);
+                scheduleReconnect();
+              }
+            } catch (_) { /* ignore */ }
+          }, 30000);
+
+        } catch (subErr: any) {
+          if (subErr?.code !== 1008) {
+            console.warn("Super Admin websocket channel error, relying on polling:", subErr);
+          }
+          scheduleReconnect();
+        }
+      } catch (e: any) {
+        if (!e?.message?.includes('CLOSING') && !e?.message?.includes('CLOSED')) {
+          console.warn("Super Admin websocket registration failed, relying on polling:", e);
+        }
+        scheduleReconnect();
       }
     };
 
@@ -3014,7 +3218,9 @@ export default function App() {
     }, 8000);
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      teardown();
       clearInterval(interval);
     };
   }, [currentUserRights.isSuperAdmin]);
@@ -3326,29 +3532,43 @@ export default function App() {
   }
 
   if (!currentUser) {
+    if (location.pathname === '/login') {
+      return (
+        <LoginScreen
+          onLoginSuccess={async (user) => {
+            const method = isAppwriteConfigured() ? 'appwrite' : 'mock';
+            localStorage.setItem('ttt_login_method', method);
+            if (method === 'mock') {
+              localStorage.setItem('ttt_mock_user', JSON.stringify(user));
+            }
+            localStorage.removeItem('ttt_guest_user');
+            setLoadingUser(true);
+            setInitialPullDone(false);
+            try {
+              await reconcileSession(user);
+              showNotification(`Successfully logged in as ${user.name || user.email}`);
+              navigate('/console/dashboard');
+            } catch (err) {
+              console.error(err);
+            } finally {
+              setLoadingUser(false);
+            }
+          }}
+          checkUserApproval={checkUserApproval}
+          onRegisterUserPermissions={handleRegisterUserPermissions}
+          onBackToHome={() => navigate('/')}
+        />
+      );
+    }
     return (
-      <LoginScreen
-        onLoginSuccess={async (user) => {
-          localStorage.setItem('ttt_login_method', 'appwrite');
-          localStorage.removeItem('ttt_guest_user');
-          setLoadingUser(true);
-          setInitialPullDone(false);
-          try {
-            await reconcileSession(user);
-            showNotification(`Successfully logged in as ${user.name || user.email}`);
-          } catch (err) {
-            console.error(err);
-          } finally {
-            setLoadingUser(false);
-          }
-        }}
-        checkUserApproval={checkUserApproval}
-        onRegisterUserPermissions={handleRegisterUserPermissions}
-      />
+      <LandingPage onEnterConsole={() => navigate('/login')} />
     );
   }
 
-  const isVerificationPending = currentUser && (!currentUserRights.isEmailVerified || !currentUserRights.isPhoneVerified);
+  const isVerificationPending = currentUser && (
+    (!currentUserRights.isEmailVerified && currentUser.emailVerification !== true) ||
+    (!currentUserRights.isPhoneVerified && currentUser.phoneVerification !== true)
+  );
 
   if (isVerificationPending) {
     return (
@@ -3392,7 +3612,8 @@ export default function App() {
                   onClick={async () => {
                     try {
                       if (isAppwriteConfigured()) {
-                        const redirectUrl = `${window.location.origin}?mode=verify`;
+                        const redirectUrl = `${getAppOrigin()}?mode=verify`;
+                        console.log("Appwrite: request verification redirect URL is:", redirectUrl);
                         await appwrite.createVerification(redirectUrl);
                       }
                       setEmailTimer(120);
@@ -3503,13 +3724,21 @@ export default function App() {
                             // Trigger admin-level Appwrite Auth user verification via the gateway
                             try {
                               let gatewayHost = window.location.hostname;
+                              let gatewayProtocol = window.location.protocol;
+                              let useSubpath = false;
                               if (gatewayHost === 'localhost' || gatewayHost === '127.0.0.1') {
                                 const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
                                 if (appwriteEndpoint.includes('//')) {
                                   gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
+                                  gatewayProtocol = appwriteEndpoint.split('//')[0];
+                                  useSubpath = true;
                                 }
+                              } else {
+                                useSubpath = true;
                               }
-                              const verifyUrl = `http://${gatewayHost}:8000/verify-user-phone`;
+                              const verifyUrl = useSubpath
+                                ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/verify-user-phone`
+                                : `${gatewayProtocol}//${gatewayHost}:8000/verify-user-phone`;
                               console.info(`[WhatsAppOTP] Requesting admin-level verification sync via ${verifyUrl}`);
                               await fetch(verifyUrl, {
                                 method: 'POST',
@@ -3944,13 +4173,8 @@ export default function App() {
         {/* Header Panel (Logo & Mobile Toggle Button) */}
         <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
           <div className="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center shrink-0">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 00-1 1v1h2v-1a1 1 0 00-1-1z"></path>
-              </svg>
-            </div>
-            <span>FleetTrack Pro</span>
+            <img src={logo} alt="LorryGuru Logo" className="h-8 w-auto shrink-0" />
+            <span>LorryGuru</span>
           </div>
 
           {/* Mobile Menu Toggle Button */}

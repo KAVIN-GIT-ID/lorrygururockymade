@@ -3,6 +3,8 @@ import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import qrcode from 'qrcode-terminal';
 import pino from 'pino';
 import dotenv from 'dotenv';
+import https from 'https';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -22,6 +24,8 @@ app.use((req, res, next) => {
 
 const PORT = process.env.PORT || 8000;
 const API_KEY = process.env.GATEWAY_API_KEY || 'your-super-secure-shared-key';
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH;
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
 
 let sock = null;
 
@@ -128,7 +132,8 @@ app.post('/verify-user-phone', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'X-Appwrite-Project': projectId,
-        'X-Appwrite-Key': adminApiKey
+        'X-Appwrite-Key': adminApiKey,
+        ...(process.env.APPWRITE_HOST_HEADER ? { 'Host': process.env.APPWRITE_HOST_HEADER } : {})
       },
       body: JSON.stringify({ phoneVerification: true })
     });
@@ -147,7 +152,18 @@ app.post('/verify-user-phone', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`WhatsApp OTP Gateway microservice listening on port ${PORT}`);
-  connectToWhatsApp();
-});
+if (SSL_KEY_PATH && SSL_CERT_PATH && fs.existsSync(SSL_KEY_PATH) && fs.existsSync(SSL_CERT_PATH)) {
+  const options = {
+    key: fs.readFileSync(SSL_KEY_PATH),
+    cert: fs.readFileSync(SSL_CERT_PATH)
+  };
+  https.createServer(options, app).listen(PORT, () => {
+    console.log(`WhatsApp OTP Gateway microservice listening on secure port ${PORT} (HTTPS)`);
+    connectToWhatsApp();
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`WhatsApp OTP Gateway microservice listening on port ${PORT} (HTTP)`);
+    connectToWhatsApp();
+  });
+}

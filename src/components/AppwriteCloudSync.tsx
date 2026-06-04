@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { 
-  Cloud, 
-  CheckCircle, 
+import {
+  Cloud,
+  CheckCircle,
   AlertCircle,
   HelpCircle,
   Settings,
@@ -49,7 +49,7 @@ export default function AppwriteCloudSync({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
-  
+
   // Custom user-adjustable database properties
   const [databaseId, setDatabaseId] = useState(() => {
     return localStorage.getItem('appwrite_database_id') || 'fleet_db';
@@ -175,6 +175,8 @@ export default function AppwriteCloudSync({
   const stateFingerprint = getScopedFingerprint(currentLocalState);
   const previousFingerprint = useRef(stateFingerprint);
 
+  const allowedCollectionsRef = useRef<string[]>(['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs']);
+
   // Initial pull from Appwrite Database
   const handlePullFromDB = async (quiet = false) => {
     if (!isConfigured) return;
@@ -183,10 +185,10 @@ export default function AppwriteCloudSync({
       setErrorMsg(null);
       setSuccessMsg(null);
     }
-    
+
     try {
       console.log('Appwrite DB: Fetching fleet documents from multi-collection structure...');
-      
+
       const loadedState: any = {
         trucks: [],
         drivers: [],
@@ -197,9 +199,10 @@ export default function AppwriteCloudSync({
         tyres: [],
         auditLogs: []
       };
-      
+
       let userRightsData: any = null;
       let maxUpdatedAt = 0;
+      const verifiedCollections: string[] = [];
 
       const categories: { key: keyof typeof loadedState; collection: string }[] = [
         { key: 'trucks', collection: 'trucks' },
@@ -215,6 +218,7 @@ export default function AppwriteCloudSync({
       const fetchPromises = categories.map(async (cat) => {
         try {
           const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
+          verifiedCollections.push(cat.collection);
           const parsedRecords: any[] = [];
           for (const doc of docs) {
             try {
@@ -259,6 +263,8 @@ export default function AppwriteCloudSync({
 
       await Promise.all([...fetchPromises, loadRightsPromise]);
 
+      allowedCollectionsRef.current = verifiedCollections;
+
       if (maxUpdatedAt > 0) {
         loadedState.exportDate = maxUpdatedAt;
       }
@@ -281,9 +287,9 @@ export default function AppwriteCloudSync({
 
       // Load state into local UI
       const didChange = onLoadCloudState(loadedState, userRightsData);
-      
+
       previousFingerprint.current = getScopedFingerprint(loadedState);
-      
+
       if (!quiet) {
         setSuccessMsg('Active registers successfully loaded from Appwrite Database!');
         if (didChange) {
@@ -296,7 +302,7 @@ export default function AppwriteCloudSync({
       console.error('Appwrite DB loading failure:', err);
       if (!quiet) {
         setErrorMsg(
-          `Database retrieval failed: ${err.message || 'Unknown error'}. \n\n` + 
+          `Database retrieval failed: ${err.message || 'Unknown error'}. \n\n` +
           `Tip: Make sure you have run the bootstrapping script to create the database schemas:\n` +
           `  node scripts/bootstrap-db.js`
         );
@@ -330,7 +336,7 @@ export default function AppwriteCloudSync({
   // Delta Sync Engine (Pushes local modifications to DB)
   const syncLocalToDatabase = async () => {
     if (!isConfigured || isSyncing.current) return;
-    
+
     isSyncing.current = true;
     const currentState = currentLocalStateRef.current;
     const baseline = baselineStateRef.current;
@@ -357,7 +363,7 @@ export default function AppwriteCloudSync({
         for (const item of currentList) {
           const baseItem = baselineList.find(b => b.id === item.id);
           const itemStr = JSON.stringify(item);
-          
+
           if (!baseItem) {
             // Created item
             console.log(`Appwrite DB [Delta Sync]: Creating doc for ${cat.collection} (${item.id})`);
@@ -399,7 +405,7 @@ export default function AppwriteCloudSync({
         } catch (pullErr: any) {
           console.warn('Post-sync quiet pull failed:', pullErr.message);
         }
-        
+
         // Update baseline
         baselineStateRef.current = {
           trucks: (currentState.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
@@ -412,7 +418,7 @@ export default function AppwriteCloudSync({
           auditLogs: (currentState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
         };
       }
-      
+
       previousFingerprint.current = getScopedFingerprint(currentState);
     } catch (e: any) {
       console.warn("Appwrite Database auto-push failed:", e.message);
@@ -439,180 +445,311 @@ export default function AppwriteCloudSync({
   */
 
   // Real-Time Web Socket subscription using Appwrite real-time channel
+  // Auto-reconnects with exponential backoff when the socket drops.
   useEffect(() => {
-    if (!isConfigured) {
+    if (!isConfigured || !initialPullDone) {
       setRealtimeConnected(false);
       return;
     }
 
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribe: any = null;
+    let destroyed = false;          // set true on useEffect cleanup
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+    let reconnectDelay = 5000;      // start at 5s, cap at 60s
+    const MAX_DELAY = 60000;
+
+    const teardown = () => {
+      if (unsubscribe) {
+        try {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          } else if (unsubscribe && typeof unsubscribe.unsubscribe === 'function') {
+            unsubscribe.unsubscribe();
+          }
+        } catch (_) { /* ignore close-state errors */ }
+        unsubscribe = null;
+      }
+      if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (destroyed) return;
+      setRealtimeConnected(false);
+      if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
+      console.info(`Appwrite socket: reconnecting in ${reconnectDelay / 1000}s...`);
+      reconnectTimer = setTimeout(() => {
+        if (!destroyed) setupRealtime();
+      }, reconnectDelay);
+      // Exponential backoff capped at MAX_DELAY
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+    };
 
     const setupRealtime = async () => {
+      if (destroyed) return;
+      teardown(); // clean up any previous socket first
+
       try {
         await appwrite.initSession();
         const client = appwrite.getClient();
-        
-        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'global_configs'];
+
+        const baseList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs']
+          .filter(col => allowedCollectionsRef.current.includes(col));
+
+        // 1. Verify access permissions on each collection dynamically before subscribing
+        const verifiedCols: string[] = [];
+        await Promise.all(baseList.map(async (col) => {
+          try {
+            await appwrite.listFleetDocuments(databaseId, col, orgId);
+            verifiedCols.push(col);
+          } catch (_) {
+            // Collection is missing or unauthorized
+          }
+        }));
+
+        if (orgId === 'org_backend') {
+          try {
+            await appwrite.listGlobalConfigs(databaseId);
+            verifiedCols.push('global_configs');
+          } catch (_) { }
+        }
+
+        const colList = verifiedCols;
+
+        if (colList.length === 0) {
+          console.warn("Appwrite socket: No allowed collections to subscribe to. Realtime connection bypassed.");
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          setRealtimeConnected(false);
+          return;
+        }
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
-        console.log(`Appwrite socket: Subscribing to multi-collection channels:`, channels);
+        console.log(`Appwrite socket: Subscribing to authorized channels:`, channels);
 
-        unsubscribe = client.subscribe(
-          channels,
-          (response: any) => {
-            const doc = response.payload;
-            const collectionId = doc.$collectionId;
-            
-            // Check if document belongs to this organization (or global configs)
-            if (collectionId !== 'global_configs' && orgId !== 'org_backend' && doc.organizationId !== orgId) {
-              return;
-            }
+        try {
+          const subPromise = appwrite.getRealtime().subscribe(
+            channels,
+            (response: any) => {
+              const doc = response.payload;
+              const collectionId = doc.$collectionId;
 
-            // If we are mid-sync (pushing OUR data), skip — but only ignore events for
-            // the exact same doc IDs we are currently writing to avoid feedback loops.
-            // We intentionally do NOT block ALL events during sync so other users'
-            // changes are not missed during concurrent writes.
-
-            console.log(`Appwrite realtime event: ${response.events[0]} on doc ${doc.$id} in ${collectionId}`);
-            
-            const eventType = response.events[0];
-            
-            const currentState = currentLocalStateRef.current;
-            const nextState = {
-              trucks: [...(currentState.trucks || [])],
-              drivers: [...(currentState.drivers || [])],
-              offices: [...(currentState.offices || [])],
-              accounts: [...(currentState.accounts || [])],
-              trips: [...(currentState.trips || [])],
-              expenses: [...(currentState.expenses || [])],
-              tyres: [...(currentState.tyres || [])],
-              auditLogs: [...(currentState.auditLogs || [])]
-            };
-
-            if (collectionId === 'global_configs') {
-              try {
-                const storedRights = localStorage.getItem('ttt_user_rights');
-                const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-                let localRights = storedRights ? JSON.parse(storedRights) : [];
-                let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-
-                if (eventType.endsWith('.delete')) {
-                  if (doc.$id.startsWith('usr_')) {
-                    localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
-                  } else if (doc.$id.startsWith('prf_')) {
-                    const orgId = doc.$id.replace('prf_', '');
-                    localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgId);
-                  }
-                } else {
-                  const parsedItem = JSON.parse(doc.data);
-                  if (doc.key.startsWith('usr_')) {
-                    const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
-                    if (idx > -1) {
-                      localRights[idx] = parsedItem;
-                    } else {
-                      localRights.push(parsedItem);
-                    }
-                  } else if (doc.key.startsWith('prf_')) {
-                    const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
-                    if (idx > -1) {
-                      localProfiles[idx] = parsedItem;
-                    } else {
-                      localProfiles.push(parsedItem);
-                    }
-                  }
-                }
-
-                onLoadCloudStateRef.current({}, { userRightsList: localRights, organizationProfiles: localProfiles });
-              } catch (e) {
-                console.warn('Failed to parse realtime global config:', e);
+              // We also check for policy errors from the message stream
+              if (response.type === 'error' && response.code === 1008) {
+                console.warn('Realtime policy violation error:', response);
               }
-              return;
-            }
 
-            let key: keyof typeof nextState | null = null;
-            if (collectionId === 'trucks') key = 'trucks';
-            else if (collectionId === 'drivers') key = 'drivers';
-            else if (collectionId === 'offices') key = 'offices';
-            else if (collectionId === 'accounts') key = 'accounts';
-            else if (collectionId === 'trips') key = 'trips';
-            else if (collectionId === 'expenses') key = 'expenses';
-            else if (collectionId === 'tyres') key = 'tyres';
-            else if (collectionId === 'audit_logs') key = 'auditLogs';
-
-            if (!key || !nextState[key]) return;
-
-            if (eventType.endsWith('.delete')) {
-              // Delete document locally
-              nextState[key] = (nextState[key] as any[]).filter(x => x.id !== doc.$id);
-            } else {
-              // Create or Update document locally
-              try {
-                const parsedRecord = JSON.parse(doc.data);
-                const index = (nextState[key] as any[]).findIndex(x => x.id === doc.$id);
-                if (index > -1) {
-                  (nextState[key] as any[])[index] = parsedRecord;
-                } else {
-                  (nextState[key] as any[]).push(parsedRecord);
-                }
-              } catch (e) {
-                console.warn('Failed to parse realtime data payload:', e);
+              // Check if document belongs to this organization (or global configs)
+              if (collectionId !== 'global_configs' && orgId !== 'org_backend' && doc.organizationId !== orgId) {
                 return;
               }
+
+              console.log(`Appwrite realtime event: ${response.events[0]} on doc ${doc.$id} in ${collectionId}`);
+
+              const eventType = response.events[0];
+
+              const currentState = currentLocalStateRef.current;
+              const nextState = {
+                trucks: [...(currentState.trucks || [])],
+                drivers: [...(currentState.drivers || [])],
+                offices: [...(currentState.offices || [])],
+                accounts: [...(currentState.accounts || [])],
+                trips: [...(currentState.trips || [])],
+                expenses: [...(currentState.expenses || [])],
+                tyres: [...(currentState.tyres || [])],
+                auditLogs: [...(currentState.auditLogs || [])]
+              };
+
+              if (collectionId === 'global_configs') {
+                try {
+                  const storedRights = localStorage.getItem('ttt_user_rights');
+                  const storedProfiles = localStorage.getItem('ttt_organization_profiles');
+                  let localRights = storedRights ? JSON.parse(storedRights) : [];
+                  let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
+
+                  if (eventType.endsWith('.delete')) {
+                    if (doc.$id.startsWith('usr_')) {
+                      localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
+                    } else if (doc.$id.startsWith('prf_')) {
+                      const orgId = doc.$id.replace('prf_', '');
+                      localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgId);
+                    }
+                  } else {
+                    const parsedItem = JSON.parse(doc.data);
+                    if (doc.key.startsWith('usr_')) {
+                      const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
+                      if (idx > -1) { localRights[idx] = parsedItem; } else { localRights.push(parsedItem); }
+                    } else if (doc.key.startsWith('prf_')) {
+                      const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
+                      if (idx > -1) { localProfiles[idx] = parsedItem; } else { localProfiles.push(parsedItem); }
+                    }
+                  }
+                  onLoadCloudStateRef.current({}, { userRightsList: localRights, organizationProfiles: localProfiles });
+                } catch (e) {
+                  console.warn('Failed to parse realtime global config:', e);
+                }
+                return;
+              }
+
+              let key: keyof typeof nextState | null = null;
+              if (collectionId === 'trucks') key = 'trucks';
+              else if (collectionId === 'drivers') key = 'drivers';
+              else if (collectionId === 'offices') key = 'offices';
+              else if (collectionId === 'accounts') key = 'accounts';
+              else if (collectionId === 'trips') key = 'trips';
+              else if (collectionId === 'expenses') key = 'expenses';
+              else if (collectionId === 'tyres') key = 'tyres';
+              else if (collectionId === 'audit_logs') key = 'auditLogs';
+
+              if (!key || !nextState[key]) return;
+
+              if (eventType.endsWith('.delete')) {
+                nextState[key] = (nextState[key] as any[]).filter(x => x.id !== doc.$id);
+              } else {
+                try {
+                  const parsedRecord = JSON.parse(doc.data);
+                  const index = (nextState[key] as any[]).findIndex(x => x.id === doc.$id);
+                  if (index > -1) { (nextState[key] as any[])[index] = parsedRecord; }
+                  else { (nextState[key] as any[]).push(parsedRecord); }
+                } catch (e) {
+                  console.warn('Failed to parse realtime data payload:', e);
+                  return;
+                }
+              }
+
+              baselineStateRef.current = {
+                trucks: (nextState.trucks).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+                drivers: (nextState.drivers).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
+                offices: (nextState.offices).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
+                accounts: (nextState.accounts).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
+                trips: (nextState.trips).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+                expenses: (nextState.expenses).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
+                tyres: (nextState.tyres).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+                auditLogs: (nextState.auditLogs).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+              };
+
+              onLoadCloudStateRef.current(nextState);
+              previousFingerprint.current = getScopedFingerprint(nextState);
+              console.log(`Database Sync: Updated ${collectionId} records in real-time.`);
             }
+          );
 
-            // Apply incremental change to local state without trigger feedback
-            baselineStateRef.current = {
-              trucks: (nextState.trucks).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              drivers: (nextState.drivers).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-              offices: (nextState.offices).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-              accounts: (nextState.accounts).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-              trips: (nextState.trips).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              expenses: (nextState.expenses).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-              tyres: (nextState.tyres).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              auditLogs: (nextState.auditLogs).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
-            };
+          subPromise.then(sub => {
+            if (destroyed) {
+              try { sub.unsubscribe(); } catch (_) {}
+            } else {
+              unsubscribe = sub;
+              // Reset backoff on successful connect
+              reconnectDelay = 5000;
+              setRealtimeConnected(true);
+              if (onConnectionChange) onConnectionChange(true);
+              console.log('Appwrite realtime socket pipeline successfully established.');
+            }
+          });
 
-            onLoadCloudStateRef.current(nextState);
-            previousFingerprint.current = getScopedFingerprint(nextState);
-            console.log(`Database Sync: Updated ${collectionId} records in real-time.`);
+          // Setup error recovery listener by waiting for the socket instance to instantiate
+          let attachAttempts = 0;
+          const attachInterval = setInterval(() => {
+            const wsInstance = (appwrite.getRealtime() as any).socket;
+            if (wsInstance) {
+              clearInterval(attachInterval);
+              const handleSocketClose = (event: CloseEvent) => {
+                if (event.code === 1008) {
+                  console.warn('Appwrite socket: Closed with 1008 policy/permission error. Bypassing Realtime and falling back to REST/Polling.');
+                  teardown();
+                  if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                  }
+                  setRealtimeConnected(false);
+                  if (onConnectionChange) onConnectionChange(true);
+                }
+              };
+
+              const handleSocketMessage = (event: MessageEvent) => {
+                try {
+                  const payload = JSON.parse(event.data);
+                  if (payload.data?.code === 1008 || payload.code === 1008 || (payload.type === 'error' && payload.data?.code === 1008)) {
+                    console.warn('Appwrite socket: Received async policy error message 1008. This usually means either collections are empty (document-level permissions) or cross-origin session cookies are blocked. Bypassing Realtime and falling back to REST/Polling.');
+                    teardown();
+                    if (reconnectTimer) {
+                      clearTimeout(reconnectTimer);
+                      reconnectTimer = null;
+                    }
+                    // Mute the connection modal by marking it cleanly as bypassed rather than lost
+                    setRealtimeConnected(false);
+                    // Silently propagate that online REST mode is functional
+                    if (onConnectionChange) onConnectionChange(true);
+                  }
+                } catch (_) { }
+              };
+
+              wsInstance.addEventListener('close', handleSocketClose);
+              wsInstance.addEventListener('message', handleSocketMessage);
+            }
+            if (++attachAttempts > 50) clearInterval(attachInterval); // timeout after 5 seconds
+          }, 100);
+
+          // Health-check: ping the socket every 30s — if it's dead, reconnect
+          healthCheckInterval = setInterval(() => {
+            if (destroyed) { if (healthCheckInterval) clearInterval(healthCheckInterval); return; }
+            try {
+              // Attempt to get the underlying WebSocket state via Appwrite client internals
+              const ws = (appwrite.getRealtime() as any).socket;
+              if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
+                console.info('Appwrite socket: health-check detected dead WebSocket — reconnecting...');
+                if (healthCheckInterval) {
+                  clearInterval(healthCheckInterval);
+                  healthCheckInterval = null;
+                }
+                scheduleReconnect();
+              }
+            } catch (_) { /* ignore inspection errors */ }
+          }, 30000);
+
+        } catch (subErr: any) {
+          // code 1008 = Missing channel(s) — some collections don't exist yet
+          if (subErr?.code !== 1008) {
+            console.warn('Realtime channel subscription failed, relying on polling:', subErr?.message);
           }
-        );
-        
-        setRealtimeConnected(true);
-        if (onConnectionChange) {
-          onConnectionChange(true);
+          scheduleReconnect();
         }
-        console.log("Appwrite realtime socket pipeline successfully established.");
       } catch (err: any) {
-        console.warn('Realtime socket skipped or failed:', err.message);
-        setRealtimeConnected(false);
-        if (onConnectionChange) {
-          onConnectionChange(false, 'realtime_lost');
+        // Ignore 'WebSocket is already in CLOSING or CLOSED state' noise
+        if (!err?.message?.includes('CLOSING') && !err?.message?.includes('CLOSED')) {
+          console.warn('Realtime socket setup failed, relying on polling:', err?.message);
         }
+        scheduleReconnect();
       }
     };
 
     setupRealtime();
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      teardown();
     };
-  }, [databaseId, isConfigured, orgId]);
+  }, [databaseId, isConfigured, orgId, initialPullDone]);
 
   const handleManualPushToDB = async () => {
+
     if (!isConfigured) {
       setErrorMsg('Appwrite variables are missing.');
       return;
     }
-    
+
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     isSyncing.current = true;
-    
+
     const currentState = currentLocalStateRef.current;
-    
+
     const categories: { key: keyof typeof currentState; collection: string }[] = [
       { key: 'trucks', collection: 'trucks' },
       { key: 'drivers', collection: 'drivers' },
@@ -627,11 +764,11 @@ export default function AppwriteCloudSync({
     try {
       console.log('Appwrite DB: Starting full migration push...');
       let totalRecords = 0;
-      
+
       for (const cat of categories) {
         const list = (currentState[cat.key] || []).filter(x => x.organizationId === orgId);
         totalRecords += list.length;
-        
+
         for (const item of list) {
           await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, orgId, item);
         }
@@ -642,7 +779,7 @@ export default function AppwriteCloudSync({
       const storedProfiles = localStorage.getItem('ttt_organization_profiles');
       const userRightsList = storedRights ? JSON.parse(storedRights) : [];
       const organizationProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-      
+
       for (const ur of userRightsList) {
         const docId = appwrite.getEmailDocId(ur.email);
         await appwrite.saveGlobalConfig(databaseId, docId, ur);
@@ -668,14 +805,14 @@ export default function AppwriteCloudSync({
       };
 
       previousFingerprint.current = getScopedFingerprint(currentState);
-      
+
       setSuccessMsg(`Successfully uploaded ${totalRecords} records to Appwrite Database!`);
       logActionRef.current('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId}" with 9 separate collections.`);
       showNotification('Success: Appwrite Database synced.');
     } catch (err: any) {
       console.error(err);
       setErrorMsg(
-        `Failed to sync with Database: ${err.message || 'Unknown error'}. \n\n` + 
+        `Failed to sync with Database: ${err.message || 'Unknown error'}. \n\n` +
         `Tip: Verify that you ran the schema bootstrapping script:\n` +
         `  node scripts/bootstrap-db.js`
       );
@@ -691,11 +828,10 @@ export default function AppwriteCloudSync({
       <button
         id="btn-appwrite-sync-trigger"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
-          isConfigured 
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${isConfigured
             ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
             : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
-        }`}
+          }`}
       >
         <Database className={`w-3.5 h-3.5 ${realtimeConnected ? 'animate-pulse text-emerald-400' : ''}`} />
         <span>Appwrite DB: {isConfigured ? realtimeConnected ? 'Live' : 'Connected' : 'Offline'}</span>
@@ -708,7 +844,7 @@ export default function AppwriteCloudSync({
               <Database className="w-4 h-4 text-emerald-400" />
               <span className="font-bold text-sm tracking-tight text-white font-sans">Appwrite Database Sync</span>
             </div>
-            <button 
+            <button
               onClick={() => setIsOpen(false)}
               className="text-slate-400 hover:text-white font-bold p-1 text-xs"
             >
@@ -732,7 +868,7 @@ export default function AppwriteCloudSync({
             <div className="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
               <span className="text-slate-400">Endpoint:</span>
               <span className="font-mono text-[10px] text-slate-400 max-w-[180px] truncate" title={import.meta.env.VITE_APPWRITE_ENDPOINT}>
-                {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}
+                {import.meta.env.VITE_APPWRITE_ENDPOINT}
               </span>
             </div>
           </div>
@@ -756,8 +892,8 @@ export default function AppwriteCloudSync({
                   <div className="grid grid-cols-1 gap-2">
                     <div>
                       <label className="block text-[9px] text-slate-500 uppercase font-bold mb-1">Database ID</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={databaseId}
                         onChange={(e) => setDatabaseId(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"

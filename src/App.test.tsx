@@ -2,7 +2,10 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import App from './App';
+import { BrowserRouter } from 'react-router-dom';
 import * as appwriteModule from './lib/appwrite';
+
+const renderApp = () => render(<BrowserRouter><App /></BrowserRouter>);
 
 describe('App Component Root Integration Tests', () => {
   beforeEach(() => {
@@ -11,10 +14,10 @@ describe('App Component Root Integration Tests', () => {
   });
 
   it('should render the LoginScreen when no session exists on startup', async () => {
-    render(<App />);
+    renderApp();
 
     // By default, since no user session is mocked, it should display the LoginScreen
-    expect(screen.getByText('FleetTrack Pro')).toBeInTheDocument();
+    expect(screen.getByText('LorryGuru')).toBeInTheDocument();
     expect(screen.getByText('Log In to System')).toBeInTheDocument();
   });
 
@@ -67,7 +70,7 @@ describe('App Component Root Integration Tests', () => {
       { $id: 'org_test', name: 'Test Logistics Corp' }
     ] as any);
 
-    render(<App />);
+    renderApp();
 
     // Wait for the async authentication effect to complete and loading screen to disappear
     await waitFor(() => {
@@ -76,7 +79,7 @@ describe('App Component Root Integration Tests', () => {
     });
 
     // Check header logo text and user initials
-    expect(screen.getByText('FleetTrack Pro')).toBeInTheDocument();
+    expect(screen.getByText('LorryGuru')).toBeInTheDocument();
     expect(screen.getByText('TA')).toBeInTheDocument(); // initials for "Test Admin"
 
     // Sidebar navigation tabs should render
@@ -123,7 +126,7 @@ describe('App Component Root Integration Tests', () => {
     vi.spyOn(appwriteModule.appwrite, 'getCurrentUser').mockResolvedValue(mockUser as any);
     vi.spyOn(appwriteModule.appwrite, 'getUserTeams').mockResolvedValue([{ $id: 'org_test', name: 'Test Logistics Corp' }] as any);
 
-    render(<App />);
+    renderApp();
 
     // Wait for the app to finish loading
     await waitFor(() => {
@@ -176,7 +179,7 @@ describe('App Component Root Integration Tests', () => {
     vi.spyOn(appwriteModule.appwrite, 'getCurrentUser').mockResolvedValue(mockUser as any);
     vi.spyOn(appwriteModule.appwrite, 'getUserTeams').mockResolvedValue([{ $id: 'org_test', name: 'Test Logistics Corp' }] as any);
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
@@ -255,7 +258,7 @@ describe('App Component Root Integration Tests', () => {
     });
     vi.spyOn(appwriteModule.appwrite, 'saveGlobalConfig').mockResolvedValue('success');
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
@@ -345,7 +348,7 @@ describe('App Component Root Integration Tests', () => {
     localStorage.setItem('ttt_trips', JSON.stringify(initialTrips));
     localStorage.setItem('ttt_login_method', 'local');
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
@@ -507,7 +510,7 @@ describe('App Component Root Integration Tests', () => {
       };
     });
 
-    render(<App />);
+    renderApp();
 
     await screen.findByText('Trip Management');
     const tripTabBtn = screen.getByRole('button', { name: /Trip Management/i });
@@ -597,7 +600,7 @@ describe('App Component Root Integration Tests', () => {
       return {} as any;
     });
 
-    render(<App />);
+    renderApp();
 
     // Wait for the URL parameter redirect flow to complete and display notification
     await waitFor(() => {
@@ -708,7 +711,7 @@ describe('App Component Root Integration Tests', () => {
     const mockSaveConfig = vi.spyOn(appwriteModule.appwrite, 'saveGlobalConfig').mockResolvedValue('success');
     const mockLogin = vi.spyOn(appwriteModule.appwrite, 'login').mockResolvedValue({} as any);
 
-    render(<App />);
+    renderApp();
 
     await screen.findByText('Dashboard');
 
@@ -815,7 +818,7 @@ describe('App Component Root Integration Tests', () => {
     const alertSpy = vi.fn();
     window.alert = alertSpy;
 
-    render(<App />);
+    renderApp();
 
     await screen.findByText('Dashboard');
 

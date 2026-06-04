@@ -148,7 +148,7 @@ export interface CargoExpense {
   expenseType: 'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC';
   amount: number;
   paidByDriver: boolean;
-  deductedFrom: 'OrgRental' | 'DriverDirect';
+  deductedFrom: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   bears: 'Org' | 'Driver' | 'Office';
 }
 
@@ -183,24 +183,24 @@ export interface SubTrip {
   brokeragePaidByDriver?: boolean;
 
   // New settlement fields
-  loadingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  loadingDeductedFrom?: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   loadingBears?: 'Org' | 'Driver';
 
-  unloadingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  unloadingDeductedFrom?: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   unloadingBears?: 'Org' | 'Driver';
 
-  brokerageDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  brokerageDeductedFrom?: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   brokerageBears?: 'Org' | 'Driver';
 
   crossingExpense?: number;
   crossingPaidByDriver?: boolean;
-  crossingDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  crossingDeductedFrom?: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   crossingBears?: 'Org' | 'Driver';
 
   // RMC fields
   rmcExpense?: number;
   rmcPaidByDriver?: boolean;
-  rmcDeductedFrom?: 'OrgRental' | 'DriverDirect';
+  rmcDeductedFrom?: 'OrgRental' | 'DriverDirect' | 'OrgPaid';
   rmcBears?: 'Org' | 'Driver';
 
   // Split/reimbursement fields

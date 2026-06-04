@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
 import {
   Lock,
   Mail,
@@ -16,14 +16,16 @@ import {
 } from 'lucide-react';
 
 import { verifyTOTP } from '../utils/totp';
+import logo from '../logo.png';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
   checkUserApproval: (email: string) => { approved: boolean; orgId: string; registered: boolean };
   onRegisterUserPermissions: (name: string, email: string, phone: string, orgId: string, orgName?: string, dryRun?: boolean) => Promise<{ approved: boolean; orgId: string; error?: string }>;
+  onBackToHome?: () => void;
 }
 
-export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegisterUserPermissions }: LoginScreenProps) {
+export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegisterUserPermissions, onBackToHome }: LoginScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -284,7 +286,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
 
     try {
       if (configured) {
-        const recoveryUrl = `${window.location.origin}?mode=recovery`;
+        const recoveryUrl = `${getAppOrigin()}?mode=recovery`;
         await appwrite.createRecovery(forgotEmail.trim(), recoveryUrl);
         setSuccessMsg('Recovery link sent! Please check your email inbox.');
       } else {
@@ -307,13 +309,21 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative">
+        {onBackToHome && (
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider transition cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Home</span>
+          </button>
+        )}
 
         {/* Brand header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl shadow-lg shadow-blue-500/15 mb-2">
-            <ShieldCheck className="w-7 h-7 text-white animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">FleetTrack Pro</h2>
+          <img src={logo} alt="LorryGuru Logo" className="h-12 mx-auto shrink-0 mb-2" />
+          <h2 className="text-2xl font-bold tracking-tight text-white">LorryGuru</h2>
           <p className="text-xs text-slate-400">Enterprise Transport & Logistics Fleet Manager</p>
         </div>
 

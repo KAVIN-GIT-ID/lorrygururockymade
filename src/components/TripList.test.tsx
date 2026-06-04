@@ -560,6 +560,71 @@ describe('TripList Component Tests', () => {
     expect(sourceTrip.advances![0].amount).toBe(9000);
     expect(sourceTrip.advances![0].fromAccountId).toBe('acc-bank');
   });
+
+  it('should support settling negative driver balance to the built-in Cash option', () => {
+    const tripA: TripEntry = {
+      id: 't-a',
+      tripNo: 'TRIP-A',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      truckNo: 'MH-12-A',
+      driverName: 'Same Driver',
+      status: 'In Progress',
+      startingKM: 0,
+      endingKM: 0,
+      fuels: [],
+      subTrips: [],
+      payments: [],
+      advances: [
+        {
+          id: 'adv-a',
+          amount: 2000,
+          date: '2026-05-01',
+          fromAccountId: 'acc-1',
+          receivedByDriverDirectly: true
+        }
+      ]
+    };
+
+    const handleSaveTrips = vi.fn();
+    const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
+
+    render(
+      <TripList
+        trips={[tripA]}
+        trucks={[]}
+        offices={[]}
+        accounts={[]}
+        onEditEntry={vi.fn()}
+        onDeleteEntry={vi.fn()}
+        onSaveTrips={handleSaveTrips}
+        confirmAction={handleConfirm}
+      />
+    );
+
+    // Open detail modal for TRIP-A by clicking the row
+    const tripARow = screen.getAllByText('TRIP-A')[0];
+    fireEvent.click(tripARow);
+
+    // Select "Settle with Company Account" tab
+    const settleTabBtn = screen.getByText('Settle with Company Account');
+    fireEvent.click(settleTabBtn);
+
+    // Select company account and click Move Funds
+    const select = screen.getByDisplayValue('-- Select Company Account --');
+    fireEvent.change(select, { target: { value: 'Cash' } });
+
+    const btn = screen.getByText('Move Funds');
+    fireEvent.click(btn);
+
+    // Verify handleSaveTrips was called with negative advance added
+    expect(handleSaveTrips).toHaveBeenCalledTimes(1);
+    const savedTrips = handleSaveTrips.mock.calls[0][0] as TripEntry[];
+    const sourceTrip = savedTrips.find(t => t.id === 't-a')!;
+    expect(sourceTrip.advances).toHaveLength(2);
+    expect(sourceTrip.advances![1].amount).toBe(-2000);
+    expect(sourceTrip.advances![1].fromAccountId).toBe('Cash');
+  });
 });
 
 

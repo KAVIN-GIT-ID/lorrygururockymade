@@ -14,32 +14,37 @@ const question = (query) => new Promise((resolve) => rl.question(query, resolve)
 async function main() {
   console.log("\n=== Appwrite Database Bootstrapper ===");
 
-  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+  const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
   const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
-  
+
   console.log(`Appwrite Endpoint: ${endpoint}`);
   console.log(`Project ID:        ${projectId || '(Not loaded from environment)'}`);
-  
+
   let targetProjectId = projectId;
   if (!targetProjectId) {
     targetProjectId = await question("Enter your Appwrite Project ID: ");
     targetProjectId = targetProjectId.trim();
   }
-  
+
   if (!targetProjectId) {
     console.error("❌ Project ID is required.");
     rl.close();
     return;
   }
 
-  let apiKey = await question("Enter your Appwrite API Key (must have 'databases.write' permission scope): ");
-  apiKey = apiKey.trim();
+  let apiKey = process.env.VITE_APPWRITE_API_KEY;
+  if (!apiKey) {
+    apiKey = await question("Enter your Appwrite API Key (must have 'databases.write' permission scope): ");
+    apiKey = apiKey.trim();
+  } else {
+    console.log("Using API Key from VITE_APPWRITE_API_KEY environment variable.");
+  }
   if (!apiKey) {
     console.error("❌ API Key is required to create database schemas.");
     rl.close();
     return;
   }
-  
+
   const dbId = 'fleet_db';
   const collections = [
     { id: 'trucks', name: 'Trucks', type: 'entity' },
@@ -52,21 +57,32 @@ async function main() {
     { id: 'audit_logs', name: 'Audit Logs', type: 'entity' },
     { id: 'global_configs', name: 'Global Configs', type: 'config' }
   ];
-  
+
   const headers = {
     'Content-Type': 'application/json',
     'X-Appwrite-Project': targetProjectId,
     'X-Appwrite-Key': apiKey
   };
-  
+
   try {
+    // 0. Automatic Safety Backup
+    console.log("\n0. Initiating automatic safety backup before destructive operations...");
+    try {
+      const { runBackup } = await import('./backup-db.cjs');
+      const backupPath = await runBackup();
+      console.log(`✓ Safety backup created successfully at: ${backupPath}`);
+    } catch (backupErr) {
+      console.error("❌ Safety backup failed! Aborting database bootstrapping to prevent data loss.");
+      throw new Error(`Safety backup failed: ${backupErr.message}`);
+    }
+
     // 1. Delete Database if exists
     console.log(`\n1. Deleting database "${dbId}" if it exists to start fresh...`);
     let deleteRes = await fetch(`${endpoint}/databases/${dbId}`, {
       method: 'DELETE',
       headers
     });
-    
+
     if (deleteRes.ok) {
       console.log(`✓ Database "${dbId}" deleted successfully.`);
       // Wait a brief moment to allow deletion to propagate in Appwrite
@@ -90,7 +106,7 @@ async function main() {
         name: 'Fleet Database'
       })
     });
-    
+
     let dbData = await dbResponse.json();
     if (dbResponse.ok) {
       console.log(`✓ Database "${dbId}" created successfully.`);
@@ -99,7 +115,7 @@ async function main() {
     } else {
       throw new Error(`Failed to create database: ${dbData.message || JSON.stringify(dbData)}`);
     }
-    
+
     // 3. Create Collections
     console.log(`\n3. Creating collections...`);
     for (const col of collections) {
@@ -118,7 +134,7 @@ async function main() {
           ]
         })
       });
-      
+
       let colData = await colResponse.json();
       if (colResponse.ok) {
         console.log(`✓ Collection "${col.id}" created successfully.`);
@@ -128,7 +144,7 @@ async function main() {
         throw new Error(`Failed to create collection "${col.id}": ${colData.message || JSON.stringify(colData)}`);
       }
     }
-    
+
     // 4. Create Attributes
     console.log(`\n4. Creating attributes in collections...`);
     const collectionCustomConfig = {
@@ -187,15 +203,15 @@ async function main() {
 
     for (const col of collections) {
       const attributes = collectionCustomConfig[col.id]?.attributes || (
-        col.type === 'entity' 
+        col.type === 'entity'
           ? [
-              { key: 'organizationId', type: 'string', size: 50, required: false },
-              { key: 'data', type: 'string', size: 1000000, required: true }
-            ]
+            { key: 'organizationId', type: 'string', size: 50, required: false },
+            { key: 'data', type: 'string', size: 1000000, required: true }
+          ]
           : [
-              { key: 'key', type: 'string', size: 50, required: true },
-              { key: 'data', type: 'string', size: 1000000, required: true }
-            ]
+            { key: 'key', type: 'string', size: 50, required: true },
+            { key: 'data', type: 'string', size: 1000000, required: true }
+          ]
       );
 
       for (const attr of attributes) {
@@ -220,7 +236,7 @@ async function main() {
         }
       }
     }
-    
+
     // 5. Wait for attributes to transition from processing to available
     console.log(`\n5. Waiting for attributes to become active...`);
     let attributesReady = false;
@@ -235,9 +251,9 @@ async function main() {
           continue;
         }
         let colMeta = await getColRes.json();
-        const expectedKeys = (collectionCustomConfig[col.id]?.attributes || (col.type === 'entity' ? [{key: 'organizationId'}, {key: 'data'}] : [{key: 'key'}, {key: 'data'}])).map(a => a.key);
+        const expectedKeys = (collectionCustomConfig[col.id]?.attributes || (col.type === 'entity' ? [{ key: 'organizationId' }, { key: 'data' }] : [{ key: 'key' }, { key: 'data' }])).map(a => a.key);
         const activeAttrs = colMeta.attributes ? colMeta.attributes.filter(a => expectedKeys.includes(a.key)) : [];
-        
+
         if (activeAttrs.length === expectedKeys.length && activeAttrs.every(a => a.status === 'available')) {
           // Ready
         } else {
@@ -246,7 +262,7 @@ async function main() {
           console.log(`Collection "${col.id}" attributes status: [ ${statuses} ]`);
         }
       }
-      
+
       if (pending === 0) {
         attributesReady = true;
         break;
@@ -255,13 +271,13 @@ async function main() {
         await new Promise(r => setTimeout(r, 2500));
       }
     }
-    
+
     if (!attributesReady) {
       console.warn("⚠ Warning: Attributes took too long to become available. Index creation might fail.");
     } else {
       console.log("✓ All attributes are available and active.");
     }
-    
+
     // 6. Create Indexes
     console.log(`\n6. Creating indexes...`);
     const customIndexes = {
@@ -323,7 +339,7 @@ async function main() {
         }
       }
     }
-    
+
     // 7. Create Storage Bucket
     console.log(`\n7. Setting up Storage Bucket...`);
     const bucketId = process.env.VITE_APPWRITE_BUCKET_ID || 'fleet_docs';
@@ -344,7 +360,7 @@ async function main() {
           fileSecurity: false
         })
       });
-      
+
       let bucketData = await bucketResponse.json();
       if (bucketResponse.ok) {
         console.log(`✓ Storage Bucket "${bucketId}" created successfully.`);
@@ -356,7 +372,7 @@ async function main() {
     } catch (bucketErr) {
       console.warn(`⚠ Warning: Storage bucket setup failed: ${bucketErr.message}`);
     }
-    
+
     console.log("\n=================================");
     console.log("✓ Setup Complete!");
     console.log(`Database ID: "${dbId}"`);
@@ -366,7 +382,7 @@ async function main() {
     }
     console.log("=================================");
     console.log("You can now safely sync your app directly using row-level document databases!");
-    
+
   } catch (err) {
     console.error(`\n❌ Bootstrapping Error: ${err.message}`);
   } finally {

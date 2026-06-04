@@ -3,12 +3,12 @@ const path = require('path');
 const { Client, Databases } = require('appwrite');
 require('dotenv').config();
 
-const backupPath = 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-05-30.json';
+const backupPath = 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-06-03.json';
 
-const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'http://52.66.92.164/v1';
-const projectId = process.env.VITE_APPWRITE_PROJECT_ID || '6a1c492a0012cf5f3a0c';
-const databaseId = process.env.VITE_APPWRITE_DATABASE_ID || 'fleet_db';
-const apiKey = process.env.VITE_APPWRITE_API_KEY || '7b6ffc61054c9a185db39a858a83280d84430747176173c4a75e2e43a44d9fa68f328af3e4a6f163fd1be83024e8e2ae8c2d81849ae346f2f0f393c76395e0ea792d7a057bbb685606e80f3baa9f6bdc7afb1823bc70f6ad00a84d87a0208b7f325dd0155885d732337b76d74a0cfc28ee3f9e4945cbbe627a909e744d627dd1';
+const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
+const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
+const databaseId = process.env.VITE_APPWRITE_DATABASE_ID;
+const apiKey = process.env.VITE_APPWRITE_API_KEY;
 
 if (!fs.existsSync(backupPath)) {
   console.error(`❌ Backup file not found at: ${backupPath}`);
@@ -115,7 +115,7 @@ async function restore() {
     for (const [key, collectionId] of Object.entries(collectionsMap)) {
       const records = backupData[key] || [];
       console.log(`\nRestoring ${records.length} records for collection: ${collectionId}...`);
-      
+
       let count = 0;
       for (const record of records) {
         if (!record.id) continue;
@@ -132,13 +132,13 @@ async function restore() {
 
     // 2. Restore Global Configs (Permissions and Profiles)
     console.log(`\nRestoring User Permissions & Organization Profiles...`);
-    
+
     // User permissions
     const userRights = backupData.userRightsList || [];
     let urCount = 0;
     for (const ur of userRights) {
       if (!ur.email) continue;
-      
+
       // Helper to generate doc key
       const clean = ur.email.trim().toLowerCase();
       const sanitized = clean.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24);
@@ -174,7 +174,7 @@ async function restore() {
     let opCount = 0;
     for (const op of orgProfiles) {
       if (!op.organizationId) continue;
-      
+
       const key = `prf_${op.organizationId}`.slice(0, 36);
       const documentData = {
         key: key,
@@ -194,7 +194,7 @@ async function restore() {
       }
     }
     console.log(`  ✓ Restored ${opCount}/${orgProfiles.length} organization profiles.`);
-    
+
     console.log('\n🎉 RESTORATION COMPLETED SUCCESSFULLY!');
   } catch (globalErr) {
     console.error('\n❌ Restoration aborted due to error:', globalErr);

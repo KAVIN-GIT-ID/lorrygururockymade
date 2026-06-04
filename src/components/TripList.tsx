@@ -1195,7 +1195,6 @@ export default function TripList({
 
                     const eligibleFwdTrips = trips.filter(
                       t => t.id !== viewingEntry.id &&
-                           t.status !== 'Completed' &&
                            t.status !== 'Paid'
                     ).sort((a, b) => {
                       const aSame = a.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
@@ -1366,6 +1365,44 @@ export default function TripList({
 
                         {activeMode === 'account' && (() => {
                           const activeAccounts = accounts.filter(a => a.status === 'Active');
+                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
+                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
+
+                          const confirmMsg = isDeficit
+                            ? `Are you sure you want to move the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to company account "${accountName}"?\n\nThis will record a negative advance on this trip to zero out the driver's balance.`
+                            : `Are you sure you want to pay the driver surplus of ₹${balanceAmt.toLocaleString('en-IN')} from company account "${accountName}" for ${viewingEntry.tripNo}?\n\nThis will record a positive advance on this trip to zero out the driver's balance.`;
+
+                          const performAccountSettle = () => {
+                            const settleAdvance: TripAdvance = {
+                              id: 'fwd_settle_' + Date.now(),
+                              amount: isDeficit ? -balanceAmt : balanceAmt,
+                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              fromAccountId: selectedFwdAccountId,
+                              notes: isDeficit 
+                                ? `Negative balance moved/returned to company account: ${accountName}`
+                                : `Positive balance paid to driver from company account: ${accountName}`,
+                              receivedByDriverDirectly: false
+                            };
+
+                            const updatedSource = {
+                              ...viewingEntry,
+                              advances: [...(viewingEntry.advances || []), settleAdvance]
+                            };
+
+                            const updatedTrips = trips.map(t => {
+                              if (t.id === updatedSource.id) return updatedSource;
+                              return t;
+                            });
+
+                            onSaveTrips(updatedTrips);
+                            setViewingEntry(updatedSource);
+                            setSelectedFwdAccountId('');
+                            alert(isDeficit
+                              ? `Successfully settled ₹${balanceAmt.toLocaleString('en-IN')} deficit to account: ${accountName}.`
+                              : `Successfully paid ₹${balanceAmt.toLocaleString('en-IN')} surplus from account: ${accountName}.`
+                            );
+                          };
+
                           return (
                             <div className="space-y-3">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1386,90 +1423,47 @@ export default function TripList({
                                   </span>
                                 </div>
                                 <div className="flex items-end gap-2 shrink-0">
-                                  {activeAccounts.length === 0 ? (
-                                    <span className="text-rose-600 font-bold text-xs">No active company accounts found.</span>
-                                  ) : (
-                                    <>
-                                      <div className="flex flex-col gap-0.5">
-                                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
-                                        <input
-                                          type="date"
-                                          value={selectedFwdDate}
-                                          onChange={(e) => setSelectedFwdDate(e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
-                                        />
-                                      </div>
-                                      <div className="flex flex-col gap-0.5">
-                                        <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
-                                        <select
-                                          value={selectedFwdAccountId}
-                                          onChange={(e) => setSelectedFwdAccountId(e.target.value)}
-                                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
-                                        >
-                                          <option value="">-- Select Company Account --</option>
-                                          {activeAccounts.map(a => (
-                                            <option key={a.id} value={a.id}>
-                                              {a.accountName} ({a.type})
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          if (!selectedFwdAccountId) {
-                                            alert("Please select a target company account first.");
-                                            return;
-                                          }
-                                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
-                                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
-
-                                          const confirmMsg = isDeficit
-                                            ? `Are you sure you want to move the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to company account "${accountName}"?\n\nThis will record a negative advance on this trip to zero out the driver's balance.`
-                                            : `Are you sure you want to pay the driver surplus of ₹${balanceAmt.toLocaleString('en-IN')} from company account "${accountName}" for ${viewingEntry.tripNo}?\n\nThis will record a positive advance on this trip to zero out the driver's balance.`;
-
-                                          const performAccountSettle = () => {
-                                            const settleAdvance: TripAdvance = {
-                                              id: 'fwd_settle_' + Date.now(),
-                                              amount: isDeficit ? -balanceAmt : balanceAmt,
-                                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
-                                              fromAccountId: selectedFwdAccountId,
-                                              notes: isDeficit 
-                                                ? `Negative balance moved/returned to company account: ${accountName}`
-                                                : `Positive balance paid to driver from company account: ${accountName}`,
-                                              receivedByDriverDirectly: false
-                                            };
-
-                                            const updatedSource = {
-                                              ...viewingEntry,
-                                              advances: [...(viewingEntry.advances || []), settleAdvance]
-                                            };
-
-                                            const updatedTrips = trips.map(t => {
-                                              if (t.id === updatedSource.id) return updatedSource;
-                                              return t;
-                                            });
-
-                                            onSaveTrips(updatedTrips);
-                                            setViewingEntry(updatedSource);
-                                            setSelectedFwdAccountId('');
-                                            alert(isDeficit
-                                              ? `Successfully settled ₹${balanceAmt.toLocaleString('en-IN')} deficit to account: ${accountName}.`
-                                              : `Successfully paid ₹${balanceAmt.toLocaleString('en-IN')} surplus from account: ${accountName}.`
-                                            );
-                                          };
-
-                                          if (confirmAction) {
-                                            confirmAction(confirmMsg, performAccountSettle, isDeficit ? "Settle Deficit" : "Pay Driver");
-                                          } else if (confirm(confirmMsg)) {
-                                            performAccountSettle();
-                                          }
-                                        }}
-                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
-                                      >
-                                        Move Funds
-                                      </button>
-                                    </>
-                                  )}
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                                    <input
+                                      type="date"
+                                      value={selectedFwdDate}
+                                      onChange={(e) => setSelectedFwdDate(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
+                                    <select
+                                      value={selectedFwdAccountId}
+                                      onChange={(e) => setSelectedFwdAccountId(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
+                                    >
+                                      <option value="">-- Select Company Account --</option>
+                                      <option value="Cash">Cash</option>
+                                      {activeAccounts.map(a => (
+                                        <option key={a.id} value={a.id}>
+                                          {a.accountName} ({a.type})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      if (!selectedFwdAccountId) {
+                                        alert("Please select a target company account first.");
+                                        return;
+                                      }
+                                      if (confirmAction) {
+                                        confirmAction(confirmMsg, performAccountSettle, isDeficit ? "Settle Deficit" : "Pay Driver");
+                                      } else if (confirm(confirmMsg)) {
+                                        performAccountSettle();
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
+                                  >
+                                    Move Funds
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -1597,7 +1591,7 @@ export default function TripList({
                                   <span className="text-slate-500 block font-bold uppercase text-[8px]">{exp.expenseType} Expense</span>
                                   <strong className="text-slate-855 block">₹{exp.amount.toLocaleString()}</strong>
                                   <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                    {exp.paidByDriver ? 'Driver Paid' : 'Office Deduct'}
+                                    {exp.paidByDriver ? 'Driver Paid' : exp.deductedFrom === 'OrgPaid' ? 'Org Paid (Direct)' : 'Office Deduct'}
                                   </span>
                                   <span className={`text-[9px] font-semibold block mt-0.5 font-mono ${
                                     exp.bears === 'Org' ? 'text-blue-650' :

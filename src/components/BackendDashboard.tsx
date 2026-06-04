@@ -13,7 +13,7 @@ import {
   AuditLog
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
-import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
 import {
   Building2,
   Truck as TruckIcon,
@@ -1340,7 +1340,7 @@ export default function BackendDashboard({
                                       if (isAppwriteConfigured()) {
                                         if (confirm(`Send password reset/recovery link to ${item.email}?`)) {
                                           try {
-                                            const recoveryUrl = `${window.location.origin}?mode=recovery`;
+                                            const recoveryUrl = `${getAppOrigin()}?mode=recovery`;
                                             await appwrite.createRecovery(item.email.trim(), recoveryUrl);
                                             logAction('Edited', 'Permission', item.email, `Backend team initiated password reset email for ${item.email}`);
                                             alert(`Password recovery link sent successfully to ${item.email}!`);

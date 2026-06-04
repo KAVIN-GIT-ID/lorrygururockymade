@@ -346,4 +346,88 @@ describe('DriverMaster Component Tests', () => {
     expect(screen.getByText('Cargo Loading Expense')).toBeInTheDocument();
     expect(screen.getByText('Cargo Brokerage Expense')).toBeInTheDocument();
   });
+
+  it('should calculate live driver settlement ledger correctly with OrgPaid cargo expenses', () => {
+    const orgPaidCargoTrips: TripEntry[] = [
+      {
+        id: 't-4',
+        tripNo: 'TRIP-102',
+        startDate: '2026-05-20',
+        endDate: '2026-05-22',
+        truckNo: 'MH-12-1234',
+        driverName: 'Karan Singh',
+        status: 'Completed',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: [
+          {
+            id: 'st-4',
+            loadingDate: '2026-05-20',
+            routeFrom: 'Mumbai',
+            routeTo: 'Pune',
+            officeName: 'Mumbai HQ',
+            income: 40000,
+            driverWages: 3000, // Wages credited to driver
+            loadingExpense: 0,
+            unloadingExpense: 0,
+            startingKM: 0,
+            endingKM: 0,
+            cargoExpenses: [
+              {
+                id: 'exp-dyn-4',
+                expenseType: 'Loading',
+                amount: 1200,
+                paidByDriver: false,
+                deductedFrom: 'OrgPaid',
+                bears: 'Org'
+              }
+            ]
+          }
+        ],
+        advances: [
+          {
+            id: 'adv-4',
+            amount: 1000,
+            date: '2026-05-20',
+            fromAccountId: 'acc-1',
+            receivedByDriverDirectly: true,
+          }
+        ],
+        payments: []
+      }
+    ];
+
+    render(
+      <DriverMaster
+        drivers={mockDrivers}
+        trips={orgPaidCargoTrips}
+        expenses={[]}
+        accounts={mockAccounts}
+        onAddDriver={vi.fn()}
+        onUpdateDriver={vi.fn()}
+        onDeleteDriver={vi.fn()}
+      />
+    );
+
+    // Select driver
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dr-1' } });
+
+    // Math:
+    // Credits:
+    //   driverWages = 3000
+    //   Loading (Org Paid, not paid by driver) = 0 for driver spend
+    //   Total Credits = 3000
+    // Debits (Recoveries) = 0
+    // Total Advances = 1000
+    // Net outstanding = 3000 - 1000 = 2000 (Payable to driver)
+    expect(screen.getByText('Total Expenses Paid by Driver')).toBeInTheDocument();
+    expect(screen.getByText('₹3,000')).toBeInTheDocument();
+
+    expect(screen.getByText('Total Advances Received')).toBeInTheDocument();
+    expect(screen.getByText('₹1,000')).toBeInTheDocument();
+
+    expect(screen.getByText('Net Outstanding Settlement')).toBeInTheDocument();
+    expect(screen.getByText('₹2,000')).toBeInTheDocument();
+    expect(screen.getByText(/Payable to Driver/i)).toBeInTheDocument();
+  });
 });

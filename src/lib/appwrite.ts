@@ -1,4 +1,4 @@
-import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query, Permission, Role } from 'appwrite';
+import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query, Permission, Role, Realtime } from 'appwrite';
 
 const cleanEnvVar = (val: string): string => {
   if (!val) return '';
@@ -6,7 +6,7 @@ const cleanEnvVar = (val: string): string => {
 };
 
 const projectID = cleanEnvVar(import.meta.env.VITE_APPWRITE_PROJECT_ID || '');
-let endpoint = cleanEnvVar(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1');
+let endpoint = cleanEnvVar(import.meta.env.VITE_APPWRITE_ENDPOINT || '');
 
 if (endpoint.startsWith('/') && typeof window !== 'undefined') {
   endpoint = window.location.origin + endpoint;
@@ -14,6 +14,13 @@ if (endpoint.startsWith('/') && typeof window !== 'undefined') {
 
 export const isAppwriteConfigured = () => {
   return !!projectID && !!endpoint;
+};
+
+export const getAppOrigin = (): string => {
+  const envUrl = cleanEnvVar(import.meta.env.VITE_APP_URL || '');
+  if (envUrl) return envUrl;
+  if (typeof window !== 'undefined') return window.location.origin;
+  return 'http://localhost:3000';
 };
 
 export function compressImageIfNeeded(file: File): Promise<File> {
@@ -93,6 +100,7 @@ class AppwriteService {
   private storage: Storage;
   private databases: Databases;
   private teams: Teams;
+  private realtime: Realtime;
   private sessionPromise: Promise<any> | null = null;
 
   constructor() {
@@ -106,10 +114,65 @@ class AppwriteService {
     this.storage = new Storage(this.client);
     this.databases = new Databases(this.client);
     this.teams = new Teams(this.client);
+    this.realtime = new Realtime(this.client);
+
+    // Monkey-patch WebSocket for Appwrite Realtime server compatibility
+    if (typeof window !== 'undefined' && !(window as any)._appwriteWsPatched) {
+      (window as any)._appwriteWsPatched = true;
+      const OriginalWebSocket = window.WebSocket;
+      const self = this;
+      window.WebSocket = function (url: string | URL, protocols?: string | string[]) {
+        let urlStr = typeof url === 'string' ? url : url.toString();
+        if (urlStr.includes('/realtime') && urlStr.includes('project=')) {
+          try {
+            const activeSubs = (self.realtime as any).activeSubscriptions;
+            if (activeSubs && activeSubs.size > 0) {
+              const channelsList: string[] = [];
+              for (const sub of activeSubs.values()) {
+                if (sub.channels) {
+                  for (const ch of sub.channels) {
+                    channelsList.push(ch);
+                  }
+                }
+              }
+               if (channelsList.length > 0) {
+                const separator = urlStr.includes('?') ? '&' : '?';
+                const channelsQuery = channelsList
+                  .map(ch => `channels[]=${encodeURIComponent(ch)}`)
+                  .join('&');
+                urlStr = `${urlStr}${separator}${channelsQuery}`;
+              }
+            }
+          } catch (err) {
+            // silent fail
+          }
+        }
+        const socket = new OriginalWebSocket(urlStr, protocols);
+        const originalSend = socket.send;
+        socket.send = function (data: any) {
+          try {
+            if (typeof data === 'string') {
+              const parsed = JSON.parse(data);
+              if (parsed.type === 'subscribe' || parsed.type === 'unsubscribe') {
+                return;
+              }
+            }
+          } catch (_) {}
+          return originalSend.apply(this, arguments as any);
+        };
+        return socket;
+      } as any;
+      window.WebSocket.prototype = OriginalWebSocket.prototype;
+      Object.assign(window.WebSocket, OriginalWebSocket);
+    }
   }
 
   getClient() {
     return this.client;
+  }
+
+  getRealtime() {
+    return this.realtime;
   }
 
   // Authorize or get active session to enable standard RBAC writes safely
@@ -241,11 +304,11 @@ class AppwriteService {
     await this.initSession();
     try {
       const url = this.storage.getFileView(this.getBucketId(), fileId).toString();
-      
+
       let headers: Record<string, string> = {
         'X-Appwrite-Project': projectID,
       };
-      
+
       try {
         const jwt = await this.account.createJWT();
         headers['X-Appwrite-JWT'] = jwt.jwt;
@@ -256,7 +319,7 @@ class AppwriteService {
       const response = await fetch(url, {
         headers,
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch secure file: ${response.statusText}`);
       }
@@ -738,7 +801,7 @@ class AppwriteService {
   async inviteToTeam(teamId: string, email: string, name: string): Promise<any> {
     if (!isAppwriteConfigured()) return null;
     try {
-      const redirectUrl = window.location.origin;
+      const redirectUrl = getAppOrigin();
       return await this.teams.createMembership(teamId, ['member'], email, undefined, undefined, redirectUrl, name);
     } catch (err: any) {
       // Ignore duplicate membership errors gracefully
