@@ -1342,14 +1342,10 @@ export default function App() {
     let gatewayProtocol = window.location.protocol;
     let useSubpath = false;
 
-    if (gatewayHost === 'localhost' || gatewayHost === '127.0.0.1') {
-      const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
-      if (appwriteEndpoint.includes('//')) {
-        gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
-        gatewayProtocol = appwriteEndpoint.split('//')[0];
-        useSubpath = true;
-      }
-    } else {
+    const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
+    if (appwriteEndpoint.includes('//')) {
+      gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
+      gatewayProtocol = appwriteEndpoint.split('//')[0];
       useSubpath = true;
     }
     
@@ -3723,17 +3719,14 @@ export default function App() {
                             
                             // Trigger admin-level Appwrite Auth user verification via the gateway
                             try {
-                              let gatewayHost = window.location.hostname;
+                               let gatewayHost = window.location.hostname;
                               let gatewayProtocol = window.location.protocol;
                               let useSubpath = false;
-                              if (gatewayHost === 'localhost' || gatewayHost === '127.0.0.1') {
-                                const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
-                                if (appwriteEndpoint.includes('//')) {
-                                  gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
-                                  gatewayProtocol = appwriteEndpoint.split('//')[0];
-                                  useSubpath = true;
-                                }
-                              } else {
+
+                              const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
+                              if (appwriteEndpoint.includes('//')) {
+                                gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
+                                gatewayProtocol = appwriteEndpoint.split('//')[0];
                                 useSubpath = true;
                               }
                               const verifyUrl = useSubpath
