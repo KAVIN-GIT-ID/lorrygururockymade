@@ -23,6 +23,7 @@ interface AppwriteCloudSyncProps {
     expenses: any[];
     tyres: any[];
     auditLogs: any[];
+    supportTickets: any[];
   };
   onLoadCloudState: (loadedState: any, userRightsData?: any, quiet?: boolean) => boolean;
   showNotification: (msg: string) => void;
@@ -33,6 +34,7 @@ interface AppwriteCloudSyncProps {
   isAdmin: boolean;
   onInitialSyncComplete?: (completed: boolean) => void;
   onConnectionChange?: (isOnline: boolean, reason?: 'offline' | 'realtime_lost') => void;
+  activeTicketId?: string | null;
 }
 
 export default function AppwriteCloudSync({
@@ -45,7 +47,8 @@ export default function AppwriteCloudSync({
   currentUserId,
   isAdmin,
   onInitialSyncComplete,
-  onConnectionChange
+  onConnectionChange,
+  activeTicketId
 }: AppwriteCloudSyncProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured] = useState(isAppwriteConfigured());
@@ -113,6 +116,8 @@ export default function AppwriteCloudSync({
   useEffect(() => { showNotificationRef.current = showNotification; }, [showNotification]);
   const logActionRef = useRef(logAction);
   useEffect(() => { logActionRef.current = logAction; }, [logAction]);
+  const activeTicketIdRef = useRef(activeTicketId);
+  useEffect(() => { activeTicketIdRef.current = activeTicketId; }, [activeTicketId]);
 
   // Keep a baseline of the last synchronized state to perform delta queries
   const baselineStateRef = useRef<{
@@ -124,6 +129,7 @@ export default function AppwriteCloudSync({
     expenses: any[];
     tyres: any[];
     auditLogs: any[];
+    supportTickets: any[];
   }>({
     trucks: [],
     drivers: [],
@@ -132,7 +138,8 @@ export default function AppwriteCloudSync({
     trips: [],
     expenses: [],
     tyres: [],
-    auditLogs: []
+    auditLogs: [],
+    supportTickets: []
   });
 
   const [initialPullDone, setInitialPullDone] = useState(false);
@@ -155,7 +162,8 @@ export default function AppwriteCloudSync({
         trips: [],
         expenses: [],
         tyres: [],
-        auditLogs: []
+        auditLogs: [],
+        supportTickets: []
       };
     }
     prevOrgIdRef.current = orgId;
@@ -179,14 +187,15 @@ export default function AppwriteCloudSync({
       trips: (state.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
       expenses: (state.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
       tyres: (state.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      auditLogs: (state.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+      auditLogs: (state.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId),
+      supportTickets: (state.supportTickets || []).filter(st => orgId === 'org_backend' || st.organizationId === orgId)
     });
   };
 
   const stateFingerprint = getScopedFingerprint(currentLocalState);
   const previousFingerprint = useRef(stateFingerprint);
 
-  const allowedCollectionsRef = useRef<string[]>(['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs']);
+  const allowedCollectionsRef = useRef<string[]>(['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets']);
 
   // Initial pull from Appwrite Database
   const handlePullFromDB = async (quiet = false) => {
@@ -210,7 +219,8 @@ export default function AppwriteCloudSync({
         trips: [],
         expenses: [],
         tyres: [],
-        auditLogs: []
+        auditLogs: [],
+        supportTickets: []
       };
 
       let userRightsData: any = null;
@@ -225,7 +235,8 @@ export default function AppwriteCloudSync({
         { key: 'trips', collection: 'trips' },
         { key: 'expenses', collection: 'expenses' },
         { key: 'tyres', collection: 'tyres' },
-        { key: 'auditLogs', collection: 'audit_logs' }
+        { key: 'auditLogs', collection: 'audit_logs' },
+        { key: 'supportTickets', collection: 'support_tickets' }
       ];
 
       const fetchPromises = categories.map(async (cat) => {
@@ -298,7 +309,8 @@ export default function AppwriteCloudSync({
         trips: loadedState.trips.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
         expenses: loadedState.expenses.filter((e: any) => orgId === 'org_backend' || e.organizationId === orgId),
         tyres: loadedState.tyres.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        auditLogs: loadedState.auditLogs.filter((l: any) => orgId === 'org_backend' || l.organizationId === orgId)
+        auditLogs: loadedState.auditLogs.filter((l: any) => orgId === 'org_backend' || l.organizationId === orgId),
+        supportTickets: loadedState.supportTickets.filter((st: any) => orgId === 'org_backend' || st.organizationId === orgId)
       };
 
       // Load state into local UI
@@ -365,7 +377,8 @@ export default function AppwriteCloudSync({
       { key: 'trips', collection: 'trips' },
       { key: 'expenses', collection: 'expenses' },
       { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' }
+      { key: 'auditLogs', collection: 'audit_logs' },
+      { key: 'supportTickets', collection: 'support_tickets' }
     ];
 
     try {
@@ -380,7 +393,8 @@ export default function AppwriteCloudSync({
         trips: [...currentState.trips],
         expenses: [...currentState.expenses],
         tyres: [...currentState.tyres],
-        auditLogs: [...currentState.auditLogs]
+        auditLogs: [...currentState.auditLogs],
+        supportTickets: [...(currentState.supportTickets || [])]
       };
 
       for (const cat of categories) {
@@ -459,7 +473,8 @@ export default function AppwriteCloudSync({
           trips: (nextBaselineState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
           expenses: (nextBaselineState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
           tyres: (nextBaselineState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          auditLogs: (nextBaselineState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+          auditLogs: (nextBaselineState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId),
+          supportTickets: (nextBaselineState.supportTickets || []).filter(st => orgId === 'org_backend' || st.organizationId === orgId)
         };
       }
 
@@ -471,7 +486,13 @@ export default function AppwriteCloudSync({
     }
   };
 
-
+  // Delta-push engine: fires whenever local state diverges from the last-synced baseline
+  useEffect(() => {
+    if (!isConfigured || !initialPullDone) return;
+    if (stateFingerprint === previousFingerprint.current) return;
+    // Local state changed — push deltas to Appwrite
+    syncLocalToDatabase();
+  }, [stateFingerprint, isConfigured, initialPullDone]);
 
   // Real-Time Web Socket subscription using Appwrite real-time channel
   // Auto-reconnects with exponential backoff when the socket drops.
@@ -537,7 +558,7 @@ export default function AppwriteCloudSync({
         await appwrite.initSession();
         const client = appwrite.getClient();
 
-        const baseList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs']
+        const baseList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets']
           .filter(col => allowedCollectionsRef.current.includes(col));
 
         // 1. Verify access permissions on each collection dynamically before subscribing
@@ -633,7 +654,7 @@ export default function AppwriteCloudSync({
                 return;
               }
 
-              let key: 'trucks' | 'drivers' | 'offices' | 'accounts' | 'trips' | 'expenses' | 'tyres' | 'auditLogs' | null = null;
+              let key: 'trucks' | 'drivers' | 'offices' | 'accounts' | 'trips' | 'expenses' | 'tyres' | 'auditLogs' | 'supportTickets' | null = null;
               if (collectionId === 'trucks') key = 'trucks';
               else if (collectionId === 'drivers') key = 'drivers';
               else if (collectionId === 'offices') key = 'offices';
@@ -642,6 +663,7 @@ export default function AppwriteCloudSync({
               else if (collectionId === 'expenses') key = 'expenses';
               else if (collectionId === 'tyres') key = 'tyres';
               else if (collectionId === 'audit_logs') key = 'auditLogs';
+              else if (collectionId === 'support_tickets') key = 'supportTickets';
 
               if (!key) return;
 
@@ -668,6 +690,26 @@ export default function AppwriteCloudSync({
                     } else {
                       // Cloud update wins
                       const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
+
+                       if (orgId === 'org_backend' && key === 'supportTickets') {
+                        if (localRecordIndex === -1) {
+                          if (parsedRecord.id !== activeTicketIdRef.current) {
+                            showNotificationRef.current(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
+                          }
+                        } else {
+                          const oldMsgsCount = localRecord?.messages?.length || 0;
+                          const newMsgs = parsedRecord.messages || [];
+                          if (newMsgs.length > oldMsgsCount) {
+                            const lastMsg = newMsgs[newMsgs.length - 1];
+                            if (lastMsg && lastMsg.sender === 'User') {
+                              if (parsedRecord.id !== activeTicketIdRef.current) {
+                                showNotificationRef.current(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
+                              }
+                            }
+                          }
+                        }
+                      }
+
                       if (localRecordIndex > -1) {
                         updatedCollection[localRecordIndex] = nextRecord;
                       } else {
@@ -870,7 +912,8 @@ export default function AppwriteCloudSync({
       { key: 'trips', collection: 'trips' },
       { key: 'expenses', collection: 'expenses' },
       { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' }
+      { key: 'auditLogs', collection: 'audit_logs' },
+      { key: 'supportTickets', collection: 'support_tickets' }
     ];
 
     try {
@@ -913,7 +956,8 @@ export default function AppwriteCloudSync({
         trips: (currentState.trips || []).filter(t => t.organizationId === orgId),
         expenses: (currentState.expenses || []).filter(e => e.organizationId === orgId),
         tyres: (currentState.tyres || []).filter(t => t.organizationId === orgId),
-        auditLogs: (currentState.auditLogs || []).filter(l => l.organizationId === orgId)
+        auditLogs: (currentState.auditLogs || []).filter(l => l.organizationId === orgId),
+        supportTickets: (currentState.supportTickets || []).filter(st => st.organizationId === orgId)
       };
 
       previousFingerprint.current = getScopedFingerprint(currentState);

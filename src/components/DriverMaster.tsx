@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile } from '../types';
 import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2 } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import CountryCodePhoneInput from './CountryCodePhoneInput';
 
 interface DriverMasterProps {
   drivers: Driver[];
@@ -177,19 +178,12 @@ export default function DriverMaster({
             </div>
             <div>
               <label htmlFor="input-driver-phone" className="block text-xs font-semibold text-slate-650 mb-1">Contact Phone</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <Phone className="w-3.5 h-3.5" />
-                </span>
-                <input
-                  id="input-driver-phone"
-                  type="tel"
-                  placeholder="e.g. 9876543210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
+              <CountryCodePhoneInput
+                id="input-driver-phone"
+                value={phone}
+                onChange={(val) => setPhone(val)}
+                placeholder="Enter mobile number"
+              />
             </div>
             <div>
               <label htmlFor="input-driver-license" className="block text-xs font-semibold text-slate-650 mb-1">Driving License No.</label>

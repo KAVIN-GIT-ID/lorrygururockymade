@@ -238,6 +238,12 @@ class AppwriteService {
     return cleanEnvVar(import.meta.env.VITE_APPWRITE_BUCKET_ID || '6a1713930029ff1ca4d3');
   }
 
+  /** Returns the dedicated support-ticket attachment bucket, or falls back to main bucket */
+  getTicketsBucketId() {
+    const ticketBucket = cleanEnvVar(import.meta.env.VITE_APPWRITE_TICKETS_BUCKET_ID || '');
+    return ticketBucket || this.getBucketId();
+  }
+
   async uploadFile(file: File, customName?: string, organizationId?: string): Promise<string> {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite is not configured.');
@@ -276,6 +282,31 @@ class AppwriteService {
     }
   }
 
+  /** Upload a file to the dedicated support_ticket bucket */
+  async uploadTicketFile(file: File, customName?: string): Promise<string> {
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite is not configured.');
+    }
+    await this.initSession();
+    try {
+      let fileToUpload = await compressImageIfNeeded(file);
+      if (customName) {
+        const lastDot = fileToUpload.name.lastIndexOf('.');
+        const ext = lastDot !== -1 ? fileToUpload.name.substring(lastDot) : '';
+        fileToUpload = new File([fileToUpload], `${customName}${ext}`, { type: fileToUpload.type });
+      }
+      const response = await this.storage.createFile(
+        this.getTicketsBucketId(),
+        ID.unique(),
+        fileToUpload
+      );
+      return response.$id;
+    } catch (err: any) {
+      console.error("Appwrite uploadTicketFile failed:", err);
+      throw err;
+    }
+  }
+
   getFileView(fileId: string): string {
     if (!isAppwriteConfigured() || !fileId) return '';
     try {
@@ -283,6 +314,30 @@ class AppwriteService {
       return url.toString();
     } catch (err) {
       console.warn("Appwrite getFileView failed:", err);
+      return '';
+    }
+  }
+
+  /** Get view URL for a ticket attachment file */
+  getTicketFileView(fileId: string): string {
+    if (!isAppwriteConfigured() || !fileId) return '';
+    try {
+      const url = this.storage.getFileView(this.getTicketsBucketId(), fileId);
+      return url.toString();
+    } catch (err) {
+      console.warn("Appwrite getTicketFileView failed:", err);
+      return '';
+    }
+  }
+
+  /** Get download URL for a ticket attachment file */
+  getTicketFileDownload(fileId: string): string {
+    if (!isAppwriteConfigured() || !fileId) return '';
+    try {
+      const url = this.storage.getFileDownload(this.getTicketsBucketId(), fileId);
+      return url.toString();
+    } catch (err) {
+      console.warn("Appwrite getTicketFileDownload failed:", err);
       return '';
     }
   }
@@ -425,6 +480,13 @@ class AppwriteService {
       );
       return response.documents || [];
     } catch (err: any) {
+      const isNotFound = err.code === 404 || 
+        err.type === 'collection_not_found' || 
+        (err.message && err.message.toLowerCase().includes('not found'));
+      if (isNotFound) {
+        console.warn(`Appwrite database collection "${collectionId}" not found. Returning empty list.`);
+        return [];
+      }
       console.error(`Appwrite Database loading failure for collection ${collectionId}:`, err);
       let msg = err.message || `Unable to load database records from collection "${collectionId}".`;
       if (msg.toLowerCase().includes('failed to fetch')) {
@@ -510,6 +572,21 @@ class AppwriteService {
         status: dataObj.status || 'Available',
         currentTruckNo: dataObj.currentTruckNo || '',
         purchaseDate: dataObj.purchaseDate || '',
+        data: JSON.stringify(dataObj)
+      };
+    } else if (collectionId === 'support_tickets') {
+      documentData = {
+        organizationId: orgId,
+        ticketNo: dataObj.ticketNo || '',
+        requesterName: dataObj.requesterName || '',
+        requesterEmail: dataObj.requesterEmail || '',
+        requesterPhone: dataObj.requesterPhone || '',
+        category: dataObj.category || 'General',
+        title: dataObj.title || '',
+        description: dataObj.description || '',
+        status: dataObj.status || 'Open',
+        assignedTeam: dataObj.assignedTeam || 'General',
+        assignedTo: dataObj.assignedTo || '',
         data: JSON.stringify(dataObj)
       };
     }
@@ -711,9 +788,6 @@ class AppwriteService {
     }
   }
 
-  /**
-   * Save a global configuration document by key to Appwrite Database.
-   */
   async saveGlobalConfig(dbId: string, key: string, payload: any): Promise<string> {
     await this.initSession();
     const documentData = {
@@ -729,6 +803,14 @@ class AppwriteService {
           const response = await this.databases.createDocument(dbId, 'global_configs', key, documentData);
           return response.$id;
         } catch (createErr: any) {
+          const isConflict = createErr.code === 409 ||
+            createErr.type === 'document_already_exists' ||
+            (createErr.message && createErr.message.toLowerCase().includes('already exists'));
+          if (isConflict) {
+            console.log(`Document "${key}" created concurrently in global_configs. Updating instead.`);
+            const response = await this.databases.updateDocument(dbId, 'global_configs', key, documentData);
+            return response.$id;
+          }
           console.error(`Appwrite Database saveGlobalConfig create failure for key ${key}:`, createErr);
           throw createErr;
         }

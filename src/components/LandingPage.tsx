@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import logo from '../logo.png';
+import CountryCodePhoneInput from './CountryCodePhoneInput';
 import {
   Shield,
   MapPin,
@@ -20,22 +21,42 @@ import {
 
 interface LandingPageProps {
   onEnterConsole: () => void;
+  onRaisePublicTicket?: (
+    name: string,
+    email: string,
+    phone: string,
+    category: 'Technical' | 'Billing' | 'General',
+    message: string
+  ) => Promise<void>;
 }
 
-export default function LandingPage({ onEnterConsole }: LandingPageProps) {
+export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: LandingPageProps) {
   const [activeSection, setActiveSection] = useState<'HOME' | 'PROFILE' | 'ABOUT' | 'CONTACT'>('HOME');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
+  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', issueCategory: 'General' as 'General' | 'Technical' | 'Billing', message: '' });
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contactForm.name || !contactForm.email || !contactForm.message) return;
-    setIsSubmitted(true);
-    setTimeout(() => {
-      setContactForm({ name: '', email: '', message: '' });
-      setIsSubmitted(false);
-    }, 4000);
+    if (!contactForm.name || !contactForm.email || !contactForm.phone || !contactForm.message) return;
+    try {
+      if (onRaisePublicTicket) {
+        await onRaisePublicTicket(
+          contactForm.name,
+          contactForm.email,
+          contactForm.phone,
+          contactForm.issueCategory,
+          contactForm.message
+        );
+      }
+      setIsSubmitted(true);
+      setTimeout(() => {
+        setContactForm({ name: '', email: '', phone: '', issueCategory: 'General', message: '' });
+        setIsSubmitted(false);
+      }, 4000);
+    } catch (err) {
+      alert("Failed to send message: " + (err as any).message);
+    }
   };
 
   const navItems = [
@@ -397,6 +418,31 @@ export default function LandingPage({ onEnterConsole }: LandingPageProps) {
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Mobile Number (with Country Code)</label>
+                      <CountryCodePhoneInput
+                        value={contactForm.phone}
+                        onChange={(phone) => setContactForm({ ...contactForm, phone })}
+                        required
+                        placeholder="Enter mobile number"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Issue Category</label>
+                      <select
+                        value={contactForm.issueCategory}
+                        onChange={(e) => setContactForm({ ...contactForm, issueCategory: e.target.value as any })}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none transition-all text-slate-800 dark:text-slate-200"
+                      >
+                        <option value="General">General Support</option>
+                        <option value="Technical">Technical Issue</option>
+                        <option value="Billing">Billing & Invoices</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Message Description</label>
                     <textarea

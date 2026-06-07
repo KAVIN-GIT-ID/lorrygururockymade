@@ -661,6 +661,11 @@ export interface UserPermission {
   canDeleteDatabaseConsole?: boolean;
   canEditLoans?: boolean;
   canDeleteLoans?: boolean;
+  supportRole?: ('Technical' | 'Billing' | 'General')[] | string;
+  canTransferTickets?: boolean;
+  canViewTickets?: boolean;
+  canEditTickets?: boolean;
+  canDeleteTickets?: boolean;
 }
 
 export interface UserRights {
@@ -717,6 +722,11 @@ export interface UserRights {
   canDeleteDatabaseConsole?: boolean;
   canEditLoans?: boolean;
   canDeleteLoans?: boolean;
+  supportRole?: ('Technical' | 'Billing' | 'General')[] | string;
+  canTransferTickets?: boolean;
+  canViewTickets?: boolean;
+  canEditTickets?: boolean;
+  canDeleteTickets?: boolean;
 }
 
 export interface TruckRequest {
@@ -782,6 +792,37 @@ export interface ServiceDonePayload {
   notes?: string;               // Optional reason/remarks (visible on service window)
   partsExpense: ServiceExpenseEntry;
   labourExpense: ServiceExpenseEntry;
+}
+
+// ─── Support Ticket & Chat System ──────────────────────────────────────────────
+
+export interface TicketMessage {
+  id: string;
+  sender: 'User' | 'Agent';
+  senderName: string;
+  senderEmail: string;
+  content: string;
+  timestamp: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+}
+
+export interface SupportTicket extends BaseRecord {
+  ticketNo: string;
+  organizationId?: string; // Empty if raised from public Contact Us form
+  requesterName: string;
+  requesterEmail: string;
+  requesterPhone: string;
+  category: 'Technical' | 'Billing' | 'General';
+  title: string;
+  description: string;
+  status: 'Open' | 'In Progress' | 'Closed';
+  assignedTeam: 'Technical' | 'Billing' | 'General';
+  assignedTo?: string; // Email of the support agent
+  messages: TicketMessage[];
+  lockedByName?: string;
+  lockedByEmail?: string;
+  lockedByAt?: string;
 }
 
 

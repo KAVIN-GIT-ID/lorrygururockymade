@@ -17,6 +17,7 @@ import {
 
 import { verifyTOTP } from '../utils/totp';
 import logo from '../logo.png';
+import CountryCodePhoneInput from './CountryCodePhoneInput';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -517,20 +518,13 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Mobile Number (E.164)</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="tel"
-                      placeholder="e.g. +1234567890"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      disabled={loading}
-                      className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-600"
-                    />
-                  </div>
+                  <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Mobile Number</label>
+                  <CountryCodePhoneInput
+                    value={phone}
+                    onChange={(val) => setPhone(val)}
+                    disabled={loading}
+                    className="!bg-slate-950/80 !border-slate-800"
+                  />
                 </div>
 
                 {/* REGISTRATION PATH SELECTION */}

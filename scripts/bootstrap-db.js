@@ -1,5 +1,8 @@
 import readline from 'readline';
 import dotenv from 'dotenv';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 // Load environmental parameters if configured
 dotenv.config();
@@ -55,6 +58,7 @@ async function main() {
     { id: 'expenses', name: 'Expenses', type: 'entity' },
     { id: 'tyres', name: 'Tyres', type: 'entity' },
     { id: 'audit_logs', name: 'Audit Logs', type: 'entity' },
+    { id: 'support_tickets', name: 'Support Tickets', type: 'entity' },
     { id: 'global_configs', name: 'Global Configs', type: 'config' }
   ];
 
@@ -68,7 +72,7 @@ async function main() {
     // 0. Automatic Safety Backup
     console.log("\n0. Initiating automatic safety backup before destructive operations...");
     try {
-      const { runBackup } = await import('./backup-db.cjs');
+      const { runBackup } = require('./backup-db.cjs');
       const backupPath = await runBackup();
       console.log(`✓ Safety backup created successfully at: ${backupPath}`);
     } catch (backupErr) {
@@ -76,25 +80,8 @@ async function main() {
       throw new Error(`Safety backup failed: ${backupErr.message}`);
     }
 
-    // 1. Delete Database if exists
-    console.log(`\n1. Deleting database "${dbId}" if it exists to start fresh...`);
-    let deleteRes = await fetch(`${endpoint}/databases/${dbId}`, {
-      method: 'DELETE',
-      headers
-    });
-
-    if (deleteRes.ok) {
-      console.log(`✓ Database "${dbId}" deleted successfully.`);
-      // Wait a brief moment to allow deletion to propagate in Appwrite
-      await new Promise(r => setTimeout(r, 2000));
-    } else {
-      let deleteData = await deleteRes.json();
-      if (deleteData.code === 404 || deleteData.type === 'database_not_found') {
-        console.log(`ℹ Database "${dbId}" does not exist, proceeding to create.`);
-      } else {
-        console.warn(`⚠ Failed to delete database: ${deleteData.message || JSON.stringify(deleteData)}`);
-      }
-    }
+    // 1. Check if database exists, otherwise create it (Incremental/Non-destructive)
+    console.log(`\n1. Checking database "${dbId}"...`);
 
     // 2. Create Database
     console.log(`\n2. Creating database "${dbId}"...`);
@@ -197,6 +184,22 @@ async function main() {
           { key: 'currentTruckNo', type: 'string', size: 50, required: false },
           { key: 'purchaseDate', type: 'string', size: 20, required: false },
           { key: 'data', type: 'string', size: 100000, required: true }
+        ]
+      },
+      support_tickets: {
+        attributes: [
+          { key: 'organizationId', type: 'string', size: 50, required: false },
+          { key: 'ticketNo', type: 'string', size: 50, required: false },
+          { key: 'requesterName', type: 'string', size: 100, required: false },
+          { key: 'requesterEmail', type: 'string', size: 100, required: false },
+          { key: 'requesterPhone', type: 'string', size: 50, required: false },
+          { key: 'category', type: 'string', size: 50, required: false },
+          { key: 'title', type: 'string', size: 200, required: false },
+          { key: 'description', type: 'string', size: 5000, required: false },
+          { key: 'status', type: 'string', size: 30, required: false },
+          { key: 'assignedTeam', type: 'string', size: 50, required: false },
+          { key: 'assignedTo', type: 'string', size: 100, required: false },
+          { key: 'data', type: 'string', size: 1000000, required: true }
         ]
       }
     };
@@ -308,6 +311,12 @@ async function main() {
         { key: 'idx_tyres_status', type: 'key', attributes: ['status'] },
         { key: 'idx_tyres_tyreNo', type: 'key', attributes: ['tyreNo'] },
         { key: 'idx_tyres_currentTruckNo', type: 'key', attributes: ['currentTruckNo'] }
+      ],
+      support_tickets: [
+        { key: 'idx_support_tickets_organizationId', type: 'key', attributes: ['organizationId'] },
+        { key: 'idx_support_tickets_status', type: 'key', attributes: ['status'] },
+        { key: 'idx_support_tickets_ticketNo', type: 'key', attributes: ['ticketNo'] },
+        { key: 'idx_support_tickets_assignedTeam', type: 'key', attributes: ['assignedTeam'] }
       ]
     };
 

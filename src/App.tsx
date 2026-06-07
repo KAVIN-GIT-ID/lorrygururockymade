@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest, createRecord, mutateRecord } from './types';
+import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest, createRecord, mutateRecord, SupportTicket } from './types';
 import Dashboard from './components/Dashboard';
 import TripList from './components/TripList';
 import TripForm from './components/TripForm';
@@ -19,6 +19,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import UserAccessControl from './components/UserAccessControl';
 import BackendDashboard from './components/BackendDashboard';
 import VoiceAssistant from './components/VoiceAssistant';
+import ProfileSupportTickets from './components/ProfileSupportTickets';
 import ConnectionStatusBlocker from './components/ConnectionStatusBlocker';
 import { appwrite, isAppwriteConfigured, getAppOrigin } from './lib/appwrite';
 import { useDrivers } from './hooks/useDrivers';
@@ -75,7 +76,8 @@ import {
   ShieldCheck,
   Trash2,
   X,
-  Mic
+  Mic,
+  MessageSquare
 } from 'lucide-react';
 
 
@@ -189,6 +191,7 @@ export default function App() {
   const [loadingUser, setLoadingUser] = useState(true);
   const [initialPullDone, setInitialPullDone] = useState(() => !isAppwriteConfigured());
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileActiveTab, setProfileActiveTab] = useState<'SETTINGS' | 'SUPPORT'>('SETTINGS');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [lastReadNotificationTime, setLastReadNotificationTime] = useState(0);
@@ -1315,7 +1318,7 @@ export default function App() {
     return { approved: false, orgId: '', registered: false };
   };
 
-  async function pushPermissionsToCloud(nextUserRights: UserPermission[]) {
+  async function pushPermissionsToCloud(nextUserRights: UserPermission[], forceEmail?: string) {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
@@ -1332,9 +1335,10 @@ export default function App() {
             return;
           }
 
-          // Change-detection: Only save if new or modified
+          // Change-detection: Only save if new or modified (unless forced)
+          const isForced = forceEmail && ur.email.toLowerCase().trim() === forceEmail.toLowerCase().trim();
           const prevUr = prevRights.find(p => p.email.toLowerCase() === ur.email.toLowerCase());
-          if (prevUr && JSON.stringify(prevUr) === JSON.stringify(ur)) {
+          if (!isForced && prevUr && JSON.stringify(prevUr) === JSON.stringify(ur)) {
             return;
           }
 
@@ -1565,17 +1569,7 @@ export default function App() {
         };
       }
 
-      if (isBackendOrg && isAppwriteConfigured()) {
-        try {
-          const exists = await appwrite.getTeam('org_backend');
-          if (!exists) {
-            await appwrite.createTeam('Backend support team', 'org_backend');
-            console.info("Successfully created org_backend team in Appwrite.");
-          }
-        } catch (err) {
-          console.warn("Error checking or creating org_backend team in Appwrite:", err);
-        }
-      }
+
 
       const newPerm: UserPermission = {
         id: 'ur_' + Date.now(),
@@ -1607,7 +1601,7 @@ export default function App() {
       );
       await saveOrganizationProfiles(reconciled);
 
-      await pushPermissionsToCloud(updatedList);
+      await pushPermissionsToCloud(updatedList, trimmedEmail);
       return { approved: isApproved, orgId: targetOrgId };
     } else {
       let finalOrgId = '';
@@ -1686,7 +1680,7 @@ export default function App() {
         }
       }
 
-      await pushPermissionsToCloud(updatedList);
+      await pushPermissionsToCloud(updatedList, trimmedEmail);
       return { approved: true, orgId: finalOrgId };
     }
   };
@@ -1782,7 +1776,7 @@ export default function App() {
     const reconciled = reconcileOrganizationProfiles(updatedList, organizationProfiles);
     await saveOrganizationProfiles(reconciled);
 
-    await pushPermissionsToCloud(updatedList);
+    await pushPermissionsToCloud(updatedList, email);
 
     // Refresh local rights state
     await reconcileSession(currentUser);
@@ -1887,10 +1881,11 @@ export default function App() {
 
   // Redirect non-admin/unauthorized users away from restricted tabs
   useEffect(() => {
-    const fallbackTab = currentUserRights.isSuperAdmin ? 'BACKEND' : 'DASHBOARD';
+    const isBackendUser = !!(currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend');
+    const fallbackTab = isBackendUser ? 'BACKEND' : 'DASHBOARD';
     if (activeTab === 'USERS' && !hasUsersTabAccess) {
       setActiveTab(fallbackTab);
-    } else if (activeTab === 'BACKEND' && !currentUserRights.isSuperAdmin) {
+    } else if (activeTab === 'BACKEND' && !isBackendUser) {
       setActiveTab(fallbackTab);
     } else if (activeTab === 'DASHBOARD' && currentUserRights.isSuperAdmin) {
       setActiveTab(fallbackTab);
@@ -1913,7 +1908,7 @@ export default function App() {
     } else if (activeTab === 'TYRES' && !currentUserRights.canViewTyres) {
       setActiveTab(fallbackTab);
     }
-  }, [activeTab, currentUserRights]);
+  }, [activeTab, currentUserRights, currentUserOrgId]);
   // Custom hooks managing operational states
   const { auditLogs, setAuditLogs, logAction, handleClearAuditLogs } = useAuditLogs({
     currentUser,
@@ -1921,6 +1916,171 @@ export default function App() {
     showNotification
   });
   const saveAuditLogs = setAuditLogs;
+
+  // Support Tickets State
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => {
+    try {
+      const stored = localStorage.getItem('ttt_support_tickets');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+
+  const saveSupportTickets = (nextTickets: SupportTicket[]) => {
+    setSupportTickets(nextTickets);
+    localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+  };
+
+  const handleCreateSupportTicket = async (
+    category: 'Technical' | 'Billing' | 'General',
+    title: string,
+    description: string,
+    attachmentFile?: File
+  ) => {
+    let attachmentUrl = '';
+    let attachmentName = '';
+    const ticketId = 'tkt_' + Date.now();
+
+    if (attachmentFile && isAppwriteConfigured()) {
+      try {
+        const customName = `ticket_attach_${ticketId}_initial`;
+        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
+        attachmentName = attachmentFile.name;
+      } catch (err) {
+        console.error('Failed to upload initial attachment:', err);
+      }
+    }
+
+    const newTicket = createRecord<SupportTicket>({
+      id: ticketId,
+      ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
+      organizationId: currentUserOrgId || '',
+      requesterName: currentUser?.name || currentUser?.email || 'Unknown User',
+      requesterEmail: currentUser?.email || '',
+      requesterPhone: currentUserRights?.phone || '',
+      category,
+      title,
+      description,
+      status: 'Open',
+      assignedTeam: category,
+      messages: [],
+    }, currentUserId);
+
+    const nextTickets = [newTicket, ...supportTickets];
+    saveSupportTickets(nextTickets);
+    logAction('Created', 'SupportTicket', newTicket.ticketNo, `Raised support ticket: ${title}`);
+    showNotification(`Support ticket #${newTicket.ticketNo} raised successfully.`);
+  };
+
+  const getClientUnreadTicketsCount = () => {
+    const myTickets = supportTickets.filter(st => currentUserOrgId === 'org_backend' || st.organizationId === currentUserOrgId);
+    let totalUnread = 0;
+    myTickets.forEach(t => {
+      if (t.status === 'Closed') return;
+      const msgs = t.messages || [];
+      if (msgs.length === 0) return;
+      const lastReadMsgId = localStorage.getItem(`ttt_tkt_read_${t.id}`);
+      if (!lastReadMsgId) {
+        const agentMsgsCount = msgs.filter(m => m.sender === 'Agent').length;
+        if (agentMsgsCount > 0) totalUnread++;
+      } else {
+        const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+        const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'Agent').length;
+        if (unreadCount > 0) totalUnread++;
+      }
+    });
+    return totalUnread;
+  };
+
+  const getAgentUnreadTicketsCount = () => {
+    const myRights = userRightsList.find(u => u.email === currentUser?.email);
+    const mySupportRoles = Array.isArray(myRights?.supportRole)
+      ? myRights.supportRole
+      : (typeof myRights?.supportRole === 'string' && myRights.supportRole !== 'None' && myRights.supportRole !== ''
+        ? [myRights.supportRole]
+        : []);
+    const isSuperAdmin = myRights?.role === 'SuperAdmin';
+    
+    const filtered = supportTickets.filter(t => {
+      if (isSuperAdmin) return true;
+      return mySupportRoles.includes(t.assignedTeam as any);
+    });
+    
+    let totalUnread = 0;
+    filtered.forEach(t => {
+      if (t.status === 'Closed') return;
+      const msgs = t.messages || [];
+      const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+      
+      if (msgs.length === 0) {
+        if (!lastReadMsgId) totalUnread++;
+      } else {
+        if (!lastReadMsgId) {
+          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+          if (userMsgsCount > 0 || msgs.length > 0) totalUnread++;
+        } else if (lastReadMsgId === 'read') {
+          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+          if (userMsgsCount > 0) totalUnread++;
+        } else {
+          const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
+          if (unreadCount > 0) totalUnread++;
+        }
+      }
+    });
+    return totalUnread;
+  };
+
+
+  const handleSendSupportTicketMessage = async (
+    ticketId: string,
+    content: string,
+    attachmentFile?: File
+  ) => {
+    let attachmentUrl = '';
+    let attachmentName = '';
+
+    if (attachmentFile && isAppwriteConfigured()) {
+      try {
+        const customName = `ticket_attach_${ticketId}_${Date.now()}`;
+        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
+        attachmentName = attachmentFile.name;
+      } catch (err) {
+        console.error('Failed to upload attachment:', err);
+      }
+    }
+
+    const myRights = userRightsList.find(u => u.email === currentUser?.email);
+    const isSupportAgent = currentUserOrgId === 'org_backend' || myRights?.role === 'SuperAdmin';
+
+    const newMessage = {
+      id: `msg-${Date.now()}`,
+      sender: (isSupportAgent ? 'Agent' : 'User') as 'User' | 'Agent',
+      senderName: currentUser?.name || currentUser?.email || 'User',
+      senderEmail: currentUser?.email || '',
+      content,
+      timestamp: new Date().toISOString(),
+      attachmentUrl: attachmentUrl || undefined,
+      attachmentName: attachmentName || undefined,
+    };
+
+    const nextTickets = supportTickets.map(t => {
+      if (t.id === ticketId) {
+        const updated = mutateRecord<SupportTicket>(t, {
+          status: t.status === 'Closed' ? ('Open' as const) : t.status,
+          messages: [...(t.messages || []), newMessage],
+        }, currentUserId);
+        return updated;
+      }
+      return t;
+    });
+
+    saveSupportTickets(nextTickets);
+    logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
+  };
 
   const currentUserId = currentUser?.$id || currentUser?.email || 'system';
 
@@ -2242,6 +2402,7 @@ export default function App() {
     if (currentUserRights.canViewExpenses && hasOrgCategoryChanged(expenses, parsed.expenses)) hasRelevantChanges = true;
     if (currentUserRights.canViewTyres && hasOrgCategoryChanged(tyres, parsed.tyres)) hasRelevantChanges = true;
     if (currentUserRights.isAdmin && hasOrgCategoryChanged(auditLogs, parsed.auditLogs)) hasRelevantChanges = true;
+    if (hasOrgCategoryChanged(supportTickets, parsed.supportTickets)) hasRelevantChanges = true;
     if (userRightsChanged) hasRelevantChanges = true;
 
     if (userRightsData) {
@@ -2378,7 +2539,7 @@ export default function App() {
           const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
           const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
           
-          const localOnlyOrPending = prev.filter(t => t.organizationId === orgId && t.syncState === 'pending');
+          const localOnlyOrPending = prev.filter(t => (orgId === 'org_backend' || t.organizationId === orgId) && t.syncState === 'pending');
           const mergedThisOrg = thisOrgPulled.map(cloudItem => {
             const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
             if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2396,9 +2557,13 @@ export default function App() {
             if (!existing) {
               uniqueMap.set(key, t);
             } else {
-              const keepNew = (t.isApproved && !existing.isApproved) ||
-                              (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
-                              (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'));
+              const keepNew =
+                (existing.deletedAt && !t.deletedAt) || // Keep active over deleted
+                (!existing.deletedAt && !t.deletedAt && (
+                  (t.isApproved && !existing.isApproved) ||
+                  (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
+                  (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'))
+                ));
               if (keepNew) {
                 if (isAppwriteConfigured()) {
                   const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
@@ -2406,7 +2571,8 @@ export default function App() {
                 }
                 uniqueMap.set(key, t);
               } else {
-                if (isAppwriteConfigured()) {
+                // Only delete from remote if the one we discard is not soft-deleted (active duplicates)
+                if (isAppwriteConfigured() && !t.deletedAt) {
                   const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
                   appwrite.deleteFleetDocument(databaseId, 'trucks', t.id).catch(() => {});
                 }
@@ -2430,7 +2596,7 @@ export default function App() {
       setDrivers(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(d => d.organizationId !== orgId && d.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(d => d.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(d => d.organizationId === orgId && d.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(d => (orgId === 'org_backend' || d.organizationId === orgId) && d.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2451,7 +2617,7 @@ export default function App() {
       setOffices(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(o => o.organizationId !== orgId && o.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(o => o.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(o => o.organizationId === orgId && o.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(o => (orgId === 'org_backend' || o.organizationId === orgId) && o.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2472,7 +2638,7 @@ export default function App() {
       setAccounts(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(a => a.organizationId !== orgId && a.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(a => a.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(a => a.organizationId === orgId && a.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(a => (orgId === 'org_backend' || a.organizationId === orgId) && a.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2493,7 +2659,7 @@ export default function App() {
       setTrips(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(t => t.organizationId === orgId && t.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(t => (orgId === 'org_backend' || t.organizationId === orgId) && t.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2514,7 +2680,7 @@ export default function App() {
       setExpenses(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(e => e.organizationId !== orgId && e.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(e => e.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(e => e.organizationId === orgId && e.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(e => (orgId === 'org_backend' || e.organizationId === orgId) && e.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2535,7 +2701,7 @@ export default function App() {
       setTyres(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(ty => ty.organizationId !== orgId && ty.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(ty => ty.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(ty => ty.organizationId === orgId && ty.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(ty => (orgId === 'org_backend' || ty.organizationId === orgId) && ty.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2556,7 +2722,7 @@ export default function App() {
       setAuditLogs(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(l => l.organizationId !== orgId && l.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(l => l.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(l => l.organizationId === orgId && l.syncState === 'pending');
+        const localOnlyOrPending = prev.filter(l => (orgId === 'org_backend' || l.organizationId === orgId) && l.syncState === 'pending');
         const mergedThisOrg = thisOrgPulled.map(cloudItem => {
           const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
           if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
@@ -2567,6 +2733,26 @@ export default function App() {
         const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
         const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('fleet_audit_logs', JSON.stringify(next));
+        return next;
+      });
+      touchLastModified();
+    }
+
+    if (parsed.supportTickets) {
+      setSupportTickets(prev => {
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(st => st.organizationId !== orgId && st.organizationId !== 'org_default');
+        const thisOrgPulled = orgId === 'org_backend' ? parsed.supportTickets : parsed.supportTickets.filter((st: any) => st.organizationId === orgId);
+        const localOnlyOrPending = prev.filter(st => (orgId === 'org_backend' || st.organizationId === orgId) && st.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map((cloudItem: any) => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some((c: any) => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
+        localStorage.setItem('ttt_support_tickets', JSON.stringify(next));
         return next;
       });
       touchLastModified();
@@ -2919,24 +3105,8 @@ export default function App() {
       return p;
     });
 
-    const syncPromises: Promise<any>[] = [];
-
-    if (isAppwriteConfigured() && currentUserOrgId) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      syncPromises.push(
-        appwrite.saveFleetDocument(databaseId, 'trucks', targetTruckId, currentUserOrgId, newTruckObj)
-          .then(() => console.log("Successfully pushed new truck request document to Appwrite."))
-          .catch(err => {
-            console.warn("Could not push new truck request document to database:", err);
-            throw err;
-          })
-      );
-    }
-
-    syncPromises.push(saveOrganizationProfiles(nextProfiles));
-
     try {
-      await Promise.all(syncPromises);
+      await saveOrganizationProfiles(nextProfiles);
       showNotification(`Submitted activation request for truck ${truckPayload.truckNo}.`);
       logAction('Created', 'Truck', truckPayload.truckNo, `Requested activation for new truck.`);
     } catch (err) {
@@ -3684,7 +3854,7 @@ export default function App() {
     );
   }
 
-  const isVerificationPending = currentUser && (
+  const isVerificationPending = currentUser && currentUserRights.isApproved && (
     (!currentUserRights.isEmailVerified && currentUser.emailVerification !== true) ||
     (!currentUserRights.isPhoneVerified && currentUser.phoneVerification !== true)
   );
@@ -4273,6 +4443,8 @@ export default function App() {
     }
   };
 
+  const isBackendTeam = currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin;
+
   return (
     <div className="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
 
@@ -4455,17 +4627,45 @@ export default function App() {
                   <span>Access Control</span>
                 </button>
               )}
-              {currentUserRights.isSuperAdmin && (
+
+              {!isBackendTeam && (
+                <button
+                  id="tab-btn-support-direct"
+                  onClick={() => {
+                    setProfileActiveTab('SUPPORT');
+                    setProfileModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40"
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageSquare className="w-4 h-4 text-slate-400" />
+                    <span>Support Center</span>
+                  </div>
+                  {getClientUnreadTicketsCount() > 0 && (
+                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
+                      {getClientUnreadTicketsCount()}
+                    </span>
+                  )}
+                </button>
+              )}
+              {(currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
                 <button
                   id="tab-btn-backend"
                   onClick={() => selectTab('BACKEND')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
+                  className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
                     ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
                     : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                     }`}
                 >
-                  <Settings className="w-4 h-4 text-purple-500" />
-                  <span>Backend Dashboard</span>
+                  <div className="flex items-center gap-3">
+                    <Settings className="w-4 h-4 text-purple-500" />
+                    <span>Backend Dashboard</span>
+                  </div>
+                  {getAgentUnreadTicketsCount() > 0 && (
+                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
+                      {getAgentUnreadTicketsCount()}
+                    </span>
+                  )}
                 </button>
               )}
             </nav>
@@ -4708,6 +4908,7 @@ export default function App() {
 
                   <button
                     onClick={() => {
+                      setProfileActiveTab('SETTINGS');
                       setProfileModalOpen(true);
                       setProfileDropdownOpen(false);
                     }}
@@ -4716,6 +4917,20 @@ export default function App() {
                     <Settings className="w-3.5 h-3.5 text-slate-400" />
                     <span>Profile Settings</span>
                   </button>
+
+                  {!isBackendTeam && (
+                    <button
+                      onClick={() => {
+                        setProfileActiveTab('SUPPORT');
+                        setProfileModalOpen(true);
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Support Center</span>
+                    </button>
+                  )}
 
                   {hasUsersTabAccess && (
                     <button
@@ -4757,20 +4972,22 @@ export default function App() {
                   trips,
                   expenses,
                   tyres,
-                  auditLogs
+                  auditLogs,
+                  supportTickets
                 }}
                 onLoadCloudState={onLoadCloudState}
                 showNotification={showNotification}
                 logAction={logAction}
                 currentUserOrgId={currentUserOrgId}
                 currentUserEmail={currentUser?.email}
-                currentUserId={currentUserId}
+                currentUserId={currentUser?.email || ''}
                 isAdmin={currentUserRights.isAdmin}
                 onInitialSyncComplete={setInitialPullDone}
                 onConnectionChange={(online, reason) => {
                   setIsOnline(online);
                   setDisconnectReason(reason);
                 }}
+                activeTicketId={activeTicketId}
               />
             )}
             {currentUserRights.isAdmin && (
@@ -5009,7 +5226,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'BACKEND' && currentUserRights.isSuperAdmin && (
+          {activeTab === 'BACKEND' && (currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
             <BackendDashboard
               organizationProfiles={organizationProfiles}
               userRightsList={userRightsList}
@@ -5046,6 +5263,11 @@ export default function App() {
               onSaveAuditLogs={saveAuditLogs}
               onSaveUserRightsList={saveUserRightsListWithSync}
               onSaveOrganizationProfiles={saveOrganizationProfiles}
+              supportTickets={supportTickets}
+              onSaveSupportTickets={saveSupportTickets}
+              currentUser={currentUser}
+              activeTicketId={activeTicketId}
+              onSetActiveTicketId={setActiveTicketId}
             />
           )}
 
@@ -5106,224 +5328,299 @@ export default function App() {
 
       {profileModalOpen && (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl animate-fade-in text-left">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
-              <h3 className="font-bold text-slate-900 text-base">Profile Settings</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in flex flex-col md:flex-row overflow-hidden h-[600px] text-left">
+            
+            {/* Sidebar navigation */}
+            <div className="w-full md:w-56 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-1.5 shrink-0">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-extrabold text-slate-850 dark:text-slate-100 text-sm uppercase tracking-wider">Settings Panel</h3>
+                {/* Close button for mobile */}
+                <button
+                  onClick={() => setProfileModalOpen(false)}
+                  className="md:hidden text-slate-400 hover:text-slate-600 text-sm font-bold p-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
               <button
-                onClick={() => setProfileModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
+                onClick={() => setProfileActiveTab('SETTINGS')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                  profileActiveTab === 'SETTINGS'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                }`}
               >
-                ✕
+                <User className="w-4 h-4" />
+                <span>Profile & Security</span>
               </button>
+
+              {!isBackendTeam && (
+                <button
+                  onClick={() => setProfileActiveTab('SUPPORT')}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                    profileActiveTab === 'SUPPORT'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Support Center</span>
+                  </div>
+                  {getClientUnreadTicketsCount() > 0 && (
+                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
+                      {getClientUnreadTicketsCount()}
+                    </span>
+                  )}
+                </button>
+              )}
+              
+              <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
+                <button
+                  onClick={() => setProfileModalOpen(false)}
+                  className="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-semibold rounded-lg transition cursor-pointer"
+                >
+                  Close Settings
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (newPassword && newPassword !== confirmPassword) {
-                alert("New passwords do not match!");
-                return;
-              }
-              const loginMethod = localStorage.getItem('ttt_login_method');
-              if (loginMethod === 'appwrite' && newPassword && !oldPassword) {
-                alert("Current password is required to change password in Appwrite.");
-                return;
-              }
-              await handleUpdateProfile(
-                profileName,
-                currentUserRights.isAdmin ? profileOrgName : undefined,
-                newPassword || undefined,
-                oldPassword || undefined
-              );
-            }} className="space-y-4">
-              {/* DISPLAY NAME */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Display Name</label>
-                <input
-                  type="text"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                  required
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                />
-              </div>
-
-              {/* ORGANIZATION NAME */}
-              {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
-                <div>
-                  <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Organization Name</label>
-                  <input
-                    type="text"
-                    value={profileOrgName}
-                    onChange={(e) => setProfileOrgName(e.target.value)}
-                    required
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                  />
-                </div>
-              )}
-
-              {/* EMAIL (READ-ONLY) */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
-                <input
-                  type="email"
-                  value={currentUser?.email || ''}
-                  disabled
-                  className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                />
-              </div>
-
-              {/* MOBILE NUMBER */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Mobile Number</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={currentUserRights.phone || 'Not Set'}
-                    disabled
-                    className="flex-1 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileWizardStep(1);
-                      setMobileWizardOpen(true);
-                      setMobileWizardOtpSent(false);
-                      setMobileWizardTimer(0);
-                      setMobileWizardCode('');
-                      setMobileWizardNewPhone('');
-                      setMobileWizardPassword('');
-                      setMobileWizardError(null);
-                      // Generate simulated OTP for Step 1
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-                    }}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10 cursor-pointer"
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-
-              {/* VOICE ASSISTANT LANGUAGE */}
-              <div>
-                <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
-                <select
-                  id="voice-lang-select"
-                  value={profileVoiceLang}
-                  onChange={(e) => setProfileVoiceLang(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
-                >
-                  <option value="en-IN">English (India) - en-IN</option>
-                  <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
-                  <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
-                  <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
-                  <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
-                  <option value="mr-IN">Marathi (मराठी) - mr-IN</option>
-                </select>
-              </div>
-
-              {/* TWO-FACTOR AUTHENTICATION (2FA) */}
-              <div className="border-t border-slate-100 pt-3">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex justify-between items-center">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                      <span className="text-xs font-bold text-slate-800">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-normal">
-                      Protect your account with Google Authenticator TOTP codes.
-                    </p>
-                  </div>
-                  {currentUserRights.is2FAEnabled ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDisable2FAOpen(true);
-                        setDisable2FACode('');
-                        setDisable2FAPassword('');
-                        setDisable2FAError(null);
-                      }}
-                      className="px-3 py-1.5 border border-red-500/30 hover:border-red-500 text-red-500 hover:bg-red-50 rounded-lg text-[10px] font-bold transition cursor-pointer"
-                    >
-                      Disable
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const secret = generateSecret();
-                        setSetup2FASecret(secret);
-                        setSetup2FACode('');
-                        setSetup2FAPassword('');
-                        setSetup2FAOpen(true);
-                        setSetup2FAError(null);
-                      }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-md shadow-blue-600/10 transition cursor-pointer"
-                    >
-                      Enable
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-3">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
-
-                {localStorage.getItem('ttt_login_method') === 'appwrite' && (
-                  <div className="mb-3">
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Current Password</label>
-                    <input
-                      type="password"
-                      value={oldPassword}
-                      onChange={(e) => setOldPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">New Password</label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Confirm Password</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100">
+            {/* Main content pane */}
+            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/20 dark:bg-slate-950/5 shrink-0">
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                  {profileActiveTab === 'SETTINGS' ? 'Profile & Security' : 'Support Center Help Desk'}
+                </h3>
                 <button
-                  type="button"
                   onClick={() => setProfileModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40"
+                  className="hidden md:block text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1 cursor-pointer"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10 hover:shadow-blue-600/20 cursor-pointer"
-                >
-                  Save Changes
+                  ✕
                 </button>
               </div>
-            </form>
+
+              <div className="flex-1 overflow-y-auto p-5 min-h-0">
+                {profileActiveTab === 'SETTINGS' ? (
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (newPassword && newPassword !== confirmPassword) {
+                      alert("New passwords do not match!");
+                      return;
+                    }
+                    const loginMethod = localStorage.getItem('ttt_login_method');
+                    if (loginMethod === 'appwrite' && newPassword && !oldPassword) {
+                      alert("Current password is required to change password in Appwrite.");
+                      return;
+                    }
+                    await handleUpdateProfile(
+                      profileName,
+                      currentUserRights.isAdmin ? profileOrgName : undefined,
+                      newPassword || undefined,
+                      oldPassword || undefined
+                    );
+                  }} className="max-w-md space-y-4">
+                    {/* DISPLAY NAME */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Display Name</label>
+                      <input
+                        type="text"
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
+                        required
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </div>
+
+                    {/* ORGANIZATION NAME */}
+                    {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
+                      <div>
+                        <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Organization Name</label>
+                        <input
+                          type="text"
+                          value={profileOrgName}
+                          onChange={(e) => setProfileOrgName(e.target.value)}
+                          required
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                    )}
+
+                    {/* EMAIL (READ-ONLY) */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
+                      <input
+                        type="email"
+                        value={currentUser?.email || ''}
+                        disabled
+                        className="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
+                      />
+                    </div>
+
+                    {/* MOBILE NUMBER */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Mobile Number</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={currentUserRights.phone || 'Not Set'}
+                          disabled
+                          className="flex-1 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMobileWizardStep(1);
+                            setMobileWizardOpen(true);
+                            setMobileWizardOtpSent(false);
+                            setMobileWizardTimer(0);
+                            setMobileWizardCode('');
+                            setMobileWizardNewPhone('');
+                            setMobileWizardPassword('');
+                            setMobileWizardError(null);
+                            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                            setMobileWizardGeneratedOtp(otp);
+                            alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+                          }}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* VOICE ASSISTANT LANGUAGE */}
+                    <div>
+                      <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
+                      <select
+                        id="voice-lang-select"
+                        value={profileVoiceLang}
+                        onChange={(e) => setProfileVoiceLang(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+                      >
+                        <option value="en-IN">English (India) - en-IN</option>
+                        <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
+                        <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
+                        <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
+                        <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
+                        <option value="mr-IN">Marathi (மराठी) - mr-IN</option>
+                      </select>
+                    </div>
+
+                    {/* TWO-FACTOR AUTHENTICATION (2FA) */}
+                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
+                      <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
+                            Protect your account with Google Authenticator TOTP codes.
+                          </p>
+                        </div>
+                        {currentUserRights.is2FAEnabled ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDisable2FAOpen(true);
+                              setDisable2FACode('');
+                              setDisable2FAPassword('');
+                              setDisable2FAError(null);
+                            }}
+                            className="px-3 py-1.5 border border-red-500/30 hover:border-red-500 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                          >
+                            Disable
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const secret = generateSecret();
+                              setSetup2FASecret(secret);
+                              setSetup2FACode('');
+                              setSetup2FAPassword('');
+                              setSetup2FAOpen(true);
+                              setSetup2FAError(null);
+                            }}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
+                          >
+                            Enable
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CHANGE PASSWORD */}
+                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
+
+                      {localStorage.getItem('ttt_login_method') === 'appwrite' && (
+                        <div className="mb-3">
+                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Current Password</label>
+                          <input
+                            type="password"
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                          />
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">New Password</label>
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Confirm Password</label>
+                          <input
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setProfileModalOpen(false)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40 dark:border-slate-700/60"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <ProfileSupportTickets
+                    tickets={supportTickets.filter(st => currentUserOrgId === 'org_backend' || st.organizationId === currentUserOrgId)}
+                    currentUser={currentUser}
+                    onCreateTicket={handleCreateSupportTicket}
+                    onSendMessage={handleSendSupportTicketMessage}
+                    isBackendTeam={currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin}
+                  />
+                )}
+              </div>
+            </div>
+
           </div>
         </div>
       )}

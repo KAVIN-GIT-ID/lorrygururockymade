@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   OrganizationProfile,
   Truck,
@@ -10,7 +10,10 @@ import {
   TripEntry,
   ExpenseEntry,
   Tyre,
-  AuditLog
+  AuditLog,
+  SupportTicket,
+  TicketMessage,
+  mutateRecord
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
 import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
@@ -23,6 +26,7 @@ import {
   X as CloseIcon,
   Plus,
   Minus,
+  MessageSquare,
   Search,
   Filter,
   Calendar,
@@ -35,7 +39,15 @@ import {
   Database,
   Trash2,
   Code,
-  AlertCircle
+  AlertCircle,
+  Paperclip,
+  Send,
+  FileText,
+  Download,
+  CheckCircle,
+  Loader2,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 interface BackendDashboardProps {
@@ -77,6 +89,11 @@ interface BackendDashboardProps {
   onSaveAuditLogs: (newLogs: AuditLog[]) => void;
   onSaveUserRightsList: (newList: UserPermission[]) => void;
   onSaveOrganizationProfiles: (nextProfiles: OrganizationProfile[]) => Promise<void>;
+  supportTickets?: SupportTicket[];
+  onSaveSupportTickets?: (tickets: SupportTicket[]) => void;
+  currentUser?: any;
+  activeTicketId?: string | null;
+  onSetActiveTicketId?: (id: string | null) => void;
 }
 
 const SCHEMA_TEMPLATES = {
@@ -257,27 +274,47 @@ export default function BackendDashboard({
   onSaveTyres,
   onSaveAuditLogs,
   onSaveUserRightsList,
-  onSaveOrganizationProfiles
+  onSaveOrganizationProfiles,
+  supportTickets = [],
+  onSaveSupportTickets,
+  currentUser,
+  activeTicketId,
+  onSetActiveTicketId
 }: BackendDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA'>(() => {
+  const myRights = userRightsList.find(u => u.email === currentUser?.email);
+  const mySupportRoles = Array.isArray(myRights?.supportRole)
+    ? myRights.supportRole
+    : (typeof myRights?.supportRole === 'string' && myRights.supportRole !== 'None' && myRights.supportRole !== ''
+      ? [myRights.supportRole]
+      : []);
+  const hasSupportRole = mySupportRoles.length > 0;
+  const myCanTransfer = myRights?.canTransferTickets || false;
+  const isSuperAdmin = myRights?.role === 'SuperAdmin';
+
+  const [activeSubTab, setActiveSubTab] = useState<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA' | 'TICKETS'>(() => {
     if (canViewBackend !== false) return 'ORGANIZATIONS';
     if (canViewTruckRequests !== false) return 'REQUESTS';
     if (canViewDatabaseConsole !== false) return 'RAW_DATA';
+    if (isSuperAdmin || (myRights?.canViewTickets && hasSupportRole)) return 'TICKETS';
     return 'ORGANIZATIONS';
   });
 
   useEffect(() => {
-    if (activeSubTab === 'RAW_DATA' && !canViewDatabaseConsole) {
-      if (canViewBackend !== false) setActiveSubTab('ORGANIZATIONS');
-      else if (canViewTruckRequests !== false) setActiveSubTab('REQUESTS');
-    } else if (activeSubTab === 'ORGANIZATIONS' && !canViewBackend) {
-      if (canViewTruckRequests !== false) setActiveSubTab('REQUESTS');
-      else if (canViewDatabaseConsole !== false) setActiveSubTab('RAW_DATA');
-    } else if (activeSubTab === 'REQUESTS' && !canViewTruckRequests) {
-      if (canViewBackend !== false) setActiveSubTab('ORGANIZATIONS');
-      else if (canViewDatabaseConsole !== false) setActiveSubTab('RAW_DATA');
+    const hasAccess = (tab: typeof activeSubTab) => {
+      if (tab === 'ORGANIZATIONS') return !!canViewBackend;
+      if (tab === 'REQUESTS') return !!canViewTruckRequests;
+      if (tab === 'RAW_DATA') return !!canViewDatabaseConsole;
+      if (tab === 'TICKETS') return !!(isSuperAdmin || (myRights?.canViewTickets && hasSupportRole));
+      return false;
+    };
+
+    if (!hasAccess(activeSubTab)) {
+      if (canViewBackend) setActiveSubTab('ORGANIZATIONS');
+      else if (canViewTruckRequests) setActiveSubTab('REQUESTS');
+      else if (canViewDatabaseConsole) setActiveSubTab('RAW_DATA');
+      else if (isSuperAdmin || (myRights?.canViewTickets && hasSupportRole)) setActiveSubTab('TICKETS');
     }
-  }, [activeSubTab, canViewBackend, canViewTruckRequests, canViewDatabaseConsole]);
+  }, [activeSubTab, canViewBackend, canViewTruckRequests, canViewDatabaseConsole, isSuperAdmin, myRights?.canViewTickets, hasSupportRole]);
   const [orgSearch, setOrgSearch] = useState('');
   const [requestSearch, setRequestSearch] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -295,6 +332,377 @@ export default function BackendDashboard({
   const [jsonEditorIsValid, setJsonEditorIsValid] = useState<boolean>(true);
   const [jsonEditorError, setJsonEditorError] = useState<string | null>(null);
   const [isAddingNewRecord, setIsAddingNewRecord] = useState<boolean>(false);
+
+  // Support Tickets States
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [chatInput, setChatInput] = useState('');
+  const [chatFile, setChatFile] = useState<File | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedTicket = supportTickets.find((t) => t.id === selectedTicketId);
+
+  // Synchronize active ticket ID to parent component for silencing notifications
+  useEffect(() => {
+    if (onSetActiveTicketId) {
+      onSetActiveTicketId(selectedTicketId);
+    }
+  }, [selectedTicketId, onSetActiveTicketId]);
+
+  // Keep latest refs to prevent stale closure capturing
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  const supportTicketsRef = useRef(supportTickets);
+  useEffect(() => { supportTicketsRef.current = supportTickets; }, [supportTickets]);
+
+  const onSaveSupportTicketsRef = useRef(onSaveSupportTickets);
+  useEffect(() => { onSaveSupportTicketsRef.current = onSaveSupportTickets; }, [onSaveSupportTickets]);
+
+  const lockedTicketIdRef = useRef<string | null>(null);
+
+  // Release lock on unmount or ticket change
+  useEffect(() => {
+    return () => {
+      if (lockedTicketIdRef.current && onSaveSupportTicketsRef.current) {
+        const email = currentUserRef.current?.email || 'agent@support.com';
+        const tickets = supportTicketsRef.current;
+        const ticketId = lockedTicketIdRef.current;
+        const ticket = tickets.find(t => t.id === ticketId);
+        if (ticket && ticket.lockedByEmail === email) {
+          const nextTickets = tickets.map(t => {
+            if (t.id === ticketId) {
+              const updated = {
+                ...t,
+                lockedByName: undefined,
+                lockedByEmail: undefined,
+                lockedByAt: undefined
+              };
+              return mutateRecord(t, updated, email);
+            }
+            return t;
+          });
+          onSaveSupportTicketsRef.current(nextTickets);
+        }
+        lockedTicketIdRef.current = null;
+      }
+    };
+  }, [selectedTicketId]);
+
+  const handleFocusInput = () => {
+    const email = currentUser?.email || 'agent@support.com';
+    const name = currentUser?.name || currentUser?.email || 'Support Agent';
+    if (selectedTicketId && onSaveSupportTickets) {
+      const ticket = supportTickets.find(t => t.id === selectedTicketId);
+      if (ticket && (!ticket.lockedByEmail || ticket.lockedByEmail === email)) {
+        lockedTicketIdRef.current = selectedTicketId;
+        const nextTickets = supportTickets.map(t => {
+          if (t.id === selectedTicketId) {
+            const updated = {
+              ...t,
+              lockedByName: name,
+              lockedByEmail: email,
+              lockedByAt: new Date().toISOString()
+            };
+            return mutateRecord(t, updated, email);
+          }
+          return t;
+        });
+        onSaveSupportTickets(nextTickets);
+      }
+    }
+  };
+
+  const handleBlurInput = () => {
+    const email = currentUser?.email || 'agent@support.com';
+    if (selectedTicketId && onSaveSupportTickets) {
+      const ticket = supportTickets.find(t => t.id === selectedTicketId);
+      if (ticket && ticket.lockedByEmail === email) {
+        lockedTicketIdRef.current = null;
+        const nextTickets = supportTickets.map(t => {
+          if (t.id === selectedTicketId) {
+            const updated = {
+              ...t,
+              lockedByName: undefined,
+              lockedByEmail: undefined,
+              lockedByAt: undefined
+            };
+            return mutateRecord(t, updated, email);
+          }
+          return t;
+        });
+        onSaveSupportTickets(nextTickets);
+      }
+    }
+  };
+
+  // Release lock on tab/window close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const email = currentUserRef.current?.email || 'agent@support.com';
+      if (selectedTicketId && onSaveSupportTicketsRef.current) {
+        const tickets = supportTicketsRef.current;
+        const ticket = tickets.find(t => t.id === selectedTicketId);
+        if (ticket && ticket.lockedByEmail === email) {
+          const nextTickets = tickets.map(t => {
+            if (t.id === selectedTicketId) {
+              const updated = {
+                ...t,
+                lockedByName: undefined,
+                lockedByEmail: undefined,
+                lockedByAt: undefined
+              };
+              return mutateRecord(t, updated, email);
+            }
+            return t;
+          });
+          onSaveSupportTicketsRef.current(nextTickets);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [selectedTicketId]);
+
+  const handleForceUnlock = (ticketId: string) => {
+    if (!onSaveSupportTickets) return;
+    const email = currentUser?.email || 'agent@support.com';
+    const nextTickets = supportTickets.map(t => {
+      if (t.id === ticketId) {
+        const updated = {
+          ...t,
+          lockedByName: undefined,
+          lockedByEmail: undefined,
+          lockedByAt: undefined
+        };
+        return mutateRecord(t, updated, email);
+      }
+      return t;
+    });
+    onSaveSupportTickets(nextTickets);
+    logAction('Edited', 'SupportTicket', ticketId, `Force unlocked support ticket`);
+  };
+
+  // Mark selected ticket as read for the agent
+  useEffect(() => {
+    if (selectedTicket) {
+      const msgs = selectedTicket.messages || [];
+      if (msgs.length > 0) {
+        const lastMsg = msgs[msgs.length - 1];
+        localStorage.setItem(`ttt_tkt_agent_read_${selectedTicket.id}`, lastMsg.id);
+      } else {
+        localStorage.setItem(`ttt_tkt_agent_read_${selectedTicket.id}`, 'read');
+      }
+    }
+  }, [selectedTicket, selectedTicket?.messages]);
+
+  const getAgentUnreadInfo = (t: SupportTicket) => {
+    if (t.status === 'Closed') return { count: 0, hasUnread: false };
+    const msgs = t.messages || [];
+    const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+    
+    if (msgs.length === 0) {
+      const hasUnread = !lastReadMsgId;
+      return { count: hasUnread ? 1 : 0, hasUnread };
+    }
+    
+    if (!lastReadMsgId) {
+      const userMsgs = msgs.filter(m => m.sender === 'User');
+      const count = userMsgs.length || 1;
+      return { count, hasUnread: true };
+    }
+    
+    if (lastReadMsgId === 'read') {
+      const userMsgs = msgs.filter(m => m.sender === 'User');
+      return { count: userMsgs.length, hasUnread: userMsgs.length > 0 };
+    }
+    
+    const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+    const unreadUserMsgs = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User');
+    return { count: unreadUserMsgs.length, hasUnread: unreadUserMsgs.length > 0 };
+  };
+
+  const getAgentUnreadTicketsCount = () => {
+    if (!isSuperAdmin && !myRights?.canViewTickets) return 0;
+    const filtered = supportTickets.filter(t => {
+      if (isSuperAdmin) return true;
+      return mySupportRoles.includes(t.assignedTeam as any);
+    });
+    
+    let totalUnread = 0;
+    filtered.forEach(t => {
+      if (t.status === 'Closed') return;
+      const msgs = t.messages || [];
+      const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+      
+      if (msgs.length === 0) {
+        if (!lastReadMsgId) totalUnread++;
+      } else {
+        if (!lastReadMsgId) {
+          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+          if (userMsgsCount > 0 || msgs.length > 0) totalUnread++;
+        } else if (lastReadMsgId === 'read') {
+          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+          if (userMsgsCount > 0) totalUnread++;
+        } else {
+          const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
+          if (unreadCount > 0) totalUnread++;
+        }
+      }
+    });
+    return totalUnread;
+  };
+
+  // Scroll to bottom of chat when messages change
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [selectedTicket?.messages]);
+
+  // Pre-resolve file URLs for attachments in the current ticket
+  useEffect(() => {
+    if (!selectedTicket) return;
+    const newUrls = { ...resolvedUrls };
+    let changed = false;
+    for (const msg of selectedTicket.messages) {
+      if (msg.attachmentUrl && !newUrls[msg.id]) {
+        const isFileId = !msg.attachmentUrl.startsWith('http');
+        if (isFileId && isAppwriteConfigured()) {
+          const url = appwrite.getTicketFileView(msg.attachmentUrl);
+          if (url) { newUrls[msg.id] = url; changed = true; }
+        } else if (msg.attachmentUrl) {
+          newUrls[msg.id] = msg.attachmentUrl;
+          changed = true;
+        }
+      }
+    }
+    if (changed) setResolvedUrls(newUrls);
+  }, [selectedTicket]);
+
+  const handleTransferTicket = (ticketId: string, newTeam: 'Technical' | 'Billing' | 'General') => {
+    if (!onSaveSupportTickets) return;
+    const ticket = supportTickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+
+    const oldTeam = ticket.assignedTeam;
+    if (oldTeam === newTeam) return;
+
+    const agentName = currentUser?.name || currentUser?.email || 'Support Agent';
+    const agentEmail = currentUser?.email || 'agent@support.com';
+    const systemMessage: TicketMessage = {
+      id: `msg-sys-${Date.now()}`,
+      sender: 'Agent',
+      senderName: 'System Notification',
+      senderEmail: 'system@ttt.com',
+      content: `⚠️ Ticket transferred to the ${newTeam} team (previously handled by the ${oldTeam} team) by ${agentName}.`,
+      timestamp: new Date().toISOString()
+    };
+
+    const nextTickets = supportTickets.map(t => {
+      if (t.id === ticketId) {
+        const updated = {
+          ...t,
+          assignedTeam: newTeam,
+          messages: [...(t.messages || []), systemMessage]
+        };
+        return mutateRecord(t, updated, agentEmail);
+      }
+      return t;
+    });
+    onSaveSupportTickets(nextTickets);
+    logAction('Edited', 'SupportTicket', ticketId, `Transferred ticket to ${newTeam} team`);
+  };
+
+  const handleDeleteTicket = (ticketId: string) => {
+    if (!onSaveSupportTickets) return;
+    if (!confirm('Are you sure you want to delete this ticket? This action cannot be undone.')) return;
+    const nextTickets = supportTickets.filter(t => t.id !== ticketId);
+    onSaveSupportTickets(nextTickets);
+    setSelectedTicketId(null);
+    logAction('Deleted', 'SupportTicket', ticketId, `Deleted support ticket`);
+  };
+
+  const handleUpdateTicketStatus = (ticketId: string, newStatus: 'Open' | 'In Progress' | 'Closed') => {
+    if (!onSaveSupportTickets) return;
+    const agentEmail = currentUser?.email || 'agent@support.com';
+    const nextTickets = supportTickets.map(t => {
+      if (t.id === ticketId) {
+        const updated = {
+          ...t,
+          status: newStatus
+        };
+        return mutateRecord(t, updated, agentEmail);
+      }
+      return t;
+    });
+    onSaveSupportTickets(nextTickets);
+    logAction('Edited', 'SupportTicket', ticketId, `Updated status to ${newStatus}`);
+  };
+
+  const handleSendChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicketId || (!chatInput.trim() && !chatFile) || !onSaveSupportTickets) return;
+
+    setIsSending(true);
+    try {
+      let attachmentUrl = '';
+      let attachmentName = '';
+      if (chatFile) {
+        if (isAppwriteConfigured()) {
+          const customName = `ticket_attach_${selectedTicketId}_${Date.now()}`;
+          attachmentUrl = await appwrite.uploadTicketFile(chatFile, customName);
+          attachmentName = chatFile.name;
+        } else {
+          attachmentUrl = 'mock-url-configured';
+          attachmentName = chatFile.name;
+        }
+      }
+
+      const newMessage = {
+        id: `msg-${Date.now()}`,
+        sender: 'Agent' as const,
+        senderName: currentUser?.name || currentUser?.email || 'Support Agent',
+        senderEmail: currentUser?.email || 'agent@support.com',
+        content: chatInput,
+        timestamp: new Date().toISOString(),
+        attachmentUrl: attachmentUrl || undefined,
+        attachmentName: attachmentName || undefined,
+      };
+
+      const nextTickets = supportTickets.map(t => {
+        if (t.id === selectedTicketId) {
+          const updated = {
+            ...t,
+            status: t.status === 'Open' ? ('In Progress' as const) : t.status,
+            messages: [...(t.messages || []), newMessage],
+          };
+          return mutateRecord(t, updated, currentUser?.email || 'agent');
+        }
+        return t;
+      });
+
+      await onSaveSupportTickets(nextTickets);
+      setChatInput('');
+      setChatFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err) {
+      alert('Failed to send support reply message.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const filteredTickets = supportTickets.filter(t => {
+    if (isSuperAdmin) return true;
+    if (!myRights?.canViewTickets) return false;
+    return mySupportRoles.includes(t.assignedTeam as any);
+  });
 
   const handleJsonChange = (val: string) => {
     setJsonEditorContent(val);
@@ -672,6 +1080,23 @@ export default function BackendDashboard({
               <span>Database Console</span>
             </button>
           )}
+          {(isSuperAdmin || (myRights?.canViewTickets && hasSupportRole)) && (
+            <button
+              onClick={() => setActiveSubTab('TICKETS')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer relative ${activeSubTab === 'TICKETS'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
+                }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Ticket Manager</span>
+              {getAgentUnreadTicketsCount() > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-extrabold text-white animate-pulse">
+                  {getAgentUnreadTicketsCount()}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -855,9 +1280,15 @@ export default function BackendDashboard({
                                       <td className="px-2 py-2.5 text-center">
                                         <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${truck.isApproved !== false
                                           ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                          : 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse'
+                                          : truck.requestStatus === 'Rejected'
+                                            ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                            : 'bg-amber-50 text-amber-600 border border-amber-100 animate-pulse'
                                           }`}>
-                                          {truck.isApproved !== false ? 'Approved' : 'Pending'}
+                                          {truck.isApproved !== false
+                                            ? 'Approved'
+                                            : truck.requestStatus === 'Rejected'
+                                              ? 'Rejected'
+                                              : 'Pending'}
                                         </span>
                                       </td>
                                       <td className="px-2 py-2.5 text-center font-mono text-[11px] text-slate-500">{formatToDisplayDate(truck.insuranceDate)}</td>
@@ -1442,6 +1873,317 @@ export default function BackendDashboard({
                 <span>Save Database Object</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT: TICKET MANAGER */}
+      {activeSubTab === 'TICKETS' && (isSuperAdmin || (myRights?.canViewTickets && hasSupportRole)) && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm flex h-[550px] text-left">
+          {/* Left Panel: Ticket List */}
+          <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-slate-900">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
+              <h4 className="font-bold text-slate-850 dark:text-slate-200 text-xs uppercase tracking-wider">
+                Support Queue ({filteredTickets.length})
+              </h4>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredTickets.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs italic">
+                  No tickets in queue.
+                </div>
+              ) : (
+                filteredTickets.map((t) => {
+                  const lastMsg = t.messages?.[t.messages.length - 1];
+                  const isSelected = selectedTicketId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTicketId(t.id);
+                        setResolvedUrls({});
+                      }}
+                      className={`w-full text-left p-3 rounded-xl transition-all ${
+                        isSelected
+                          ? 'bg-purple-50/40 dark:bg-purple-950/30 border-l-4 border-purple-600'
+                          : 'hover:bg-slate-55 dark:hover:bg-slate-800/40 border-l-4 border-transparent'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-bold text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1.5 animate-none">
+                          #{t.ticketNo}
+                          {t.lockedByEmail && (
+                            <span className="text-amber-550 dark:text-amber-450 shrink-0" title={`Locked by ${t.lockedByName}`}>
+                              <Lock className="w-3 h-3 inline-block align-middle" />
+                            </span>
+                          )}
+                          {getAgentUnreadInfo(t).hasUnread && (
+                            <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1 min-w-[14px] h-[14px] font-sans font-bold leading-none animate-pulse">
+                              {getAgentUnreadInfo(t).count}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                            t.status === 'Open'
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/40'
+                              : t.status === 'In Progress'
+                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-450 border border-amber-100 dark:border-amber-900/40'
+                              : 'bg-slate-100 text-slate-605 dark:bg-slate-800/70 dark:text-slate-400 border border-slate-202 dark:border-slate-700/60'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
+                        {t.title}
+                      </div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                        {lastMsg ? lastMsg.content : t.description}
+                      </div>
+                      <div className="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
+                        <span className="bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                          {t.category}
+                        </span>
+                        <span>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel: Chat & Actions */}
+          <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35">
+            {selectedTicket ? (() => {
+              const isLockedByOther = !!(selectedTicket.lockedByEmail && selectedTicket.lockedByEmail !== currentUser?.email);
+              return (
+                <>
+                  {/* Header */}
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-start shadow-3xs gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs font-mono">
+                          #{selectedTicket.ticketNo}
+                        </h4>
+                        <span className="text-slate-450 dark:text-slate-550 text-xs">•</span>
+                        <span className="font-semibold text-xs text-slate-705 dark:text-slate-350">
+                          {selectedTicket.title}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 space-y-0.5">
+                        <p>
+                          Requester: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedTicket.requesterName}</span> ({selectedTicket.requesterEmail})
+                        </p>
+                        <p>
+                          Phone: <span className="font-mono">{selectedTicket.requesterPhone || '—'}</span> | Org ID: <span className="font-mono">{selectedTicket.organizationId || 'Public'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Actions Area */}
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                      {/* Team Transfer dropdown if allowed */}
+                      {(isSuperAdmin || myCanTransfer) && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-450 uppercase">Team:</span>
+                          <select
+                            value={selectedTicket.assignedTeam}
+                            onChange={(e) => handleTransferTicket(selectedTicket.id, e.target.value as any)}
+                            disabled={isLockedByOther}
+                            className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded px-2 py-1 text-[11px] font-bold outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="Technical">Technical</option>
+                            <option value="Billing">Billing</option>
+                            <option value="General">General</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Close/Reopen ticket button */}
+                      {selectedTicket.status !== 'Closed' ? (
+                        <button
+                          onClick={() => handleUpdateTicketStatus(selectedTicket.id, 'Closed')}
+                          disabled={isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                          className="bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Close Ticket
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleUpdateTicketStatus(selectedTicket.id, 'In Progress')}
+                          disabled={isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                          className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Reopen Ticket
+                        </button>
+                      )}
+
+                      {/* Delete ticket button */}
+                      {(isSuperAdmin || myRights?.canDeleteTickets) && (
+                        <button
+                          onClick={() => handleDeleteTicket(selectedTicket.id)}
+                          disabled={isLockedByOther}
+                          className="bg-rose-600 text-white hover:bg-rose-750 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div className="p-3 mx-4 mt-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-650 dark:text-slate-350 shadow-3xs">
+                    <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Description</span>
+                    <p className="whitespace-pre-line leading-relaxed">{selectedTicket.description}</p>
+                  </div>
+
+                  {/* Chat Messages */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {selectedTicket.messages?.map((msg) => {
+                      const isAgent = msg.sender === 'Agent';
+                      return (
+                        <div key={msg.id} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
+                          <div
+                            className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs ${
+                              isAgent
+                                ? 'bg-purple-600 text-white border-purple-500 rounded-tr-none'
+                                : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 rounded-tl-none'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
+                              <span>{msg.senderName} ({msg.sender === 'Agent' ? 'Agent' : 'User'})</span>
+                              <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <p className="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
+
+                            {msg.attachmentUrl && (
+                              <div className={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
+                                isAgent ? 'bg-purple-700/60 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
+                              }`}>
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <FileText className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                  <span className="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
+                                </div>
+                                {resolvedUrls[msg.id] ? (
+                                  <a
+                                    href={(() => {
+                                      const isFileId = !msg.attachmentUrl!.startsWith('http');
+                                      if (isFileId && isAppwriteConfigured()) {
+                                        return appwrite.getTicketFileDownload(msg.attachmentUrl!);
+                                      }
+                                      return resolvedUrls[msg.id];
+                                    })()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={msg.attachmentName || true}
+                                    className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isAgent ? 'text-white' : 'text-blue-600'}`}
+                                    title="Download attachment"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                ) : (
+                                  <Loader2 className="w-3 h-3 animate-spin opacity-60" />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Lock Warning Banner */}
+                  {isLockedByOther && (
+                    <div className="mx-4 mb-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 text-amber-800 dark:text-amber-400 p-2.5 rounded-lg text-xs flex items-center justify-between gap-3 shadow-3xs">
+                      <div className="flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" />
+                        <span>
+                          <strong>{selectedTicket.lockedByName}</strong> is currently handling this ticket.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleForceUnlock(selectedTicket.id)}
+                        className="bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-300 font-bold px-2 py-1 rounded text-[10px] transition cursor-pointer"
+                      >
+                        Force Unlock
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Chat Input Footer */}
+                  <form onSubmit={handleSendChat} className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+                    {chatFile && (
+                      <div className="flex items-center justify-between bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/30 rounded-lg px-2.5 py-1 text-[10px] text-purple-700 dark:text-purple-400 font-medium">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate max-w-[200px] font-mono">{chatFile.name}</span>
+                        </div>
+                        <button type="button" onClick={() => setChatFile(null)} className="text-slate-455 hover:text-slate-700 cursor-pointer" disabled={isLockedByOther}>
+                          <CloseIcon className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={(e) => setChatFile(e.target.files?.[0] || null)}
+                        className="hidden"
+                        disabled={isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isSending || isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                        className="p-2 text-slate-450 hover:text-slate-705 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition shrink-0 cursor-pointer disabled:opacity-50"
+                        title="Attach file document"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onFocus={handleFocusInput}
+                        onBlur={handleBlurInput}
+                        disabled={isSending || isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                        placeholder={
+                          isLockedByOther
+                            ? `Locked by ${selectedTicket.lockedByName}...`
+                            : (!isSuperAdmin && !myRights?.canEditTickets)
+                            ? 'No edit permissions for tickets.'
+                            : selectedTicket.status === 'Closed'
+                            ? 'Ticket is closed. Reopen to reply.'
+                            : 'Type support reply...'
+                        }
+                        className="flex-1 bg-slate-55 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 focus:bg-white dark:focus:bg-slate-900 disabled:opacity-60 font-semibold"
+                        readOnly={selectedTicket.status === 'Closed' || isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets)}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSending || isLockedByOther || (!isSuperAdmin && !myRights?.canEditTickets) || (selectedTicket.status === 'Closed') || (!chatInput.trim() && !chatFile)}
+                        className="p-2 bg-purple-600 hover:bg-purple-750 text-white rounded-lg transition shrink-0 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              );
+            })() : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                <MessageSquare className="w-12 h-12 text-slate-350 dark:text-slate-750 mb-2.5" />
+                <p className="font-bold text-slate-700 dark:text-slate-400 text-xs">Select a Support Ticket</p>
+                <p className="text-[11px] text-slate-400 dark:text-slate-550 mt-1 max-w-[240px]">
+                  Choose a ticket from the support queue to communicate with the client.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

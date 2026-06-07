@@ -45,11 +45,7 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
       return nextLogs;
     });
 
-    if (isAppwriteConfigured() && currentUserOrgId) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      appwrite.saveFleetDocument(databaseId, 'audit_logs', newLog.id, newLog.organizationId || currentUserOrgId, newLog)
-        .catch(err => console.warn("Failed to sync audit log to Appwrite:", err));
-    }
+
   };
 
   const handleClearAuditLogs = () => {

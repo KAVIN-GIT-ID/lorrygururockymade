@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Office } from '../types';
 import { Plus, Edit2, Trash2, MapPin, Phone, User, CheckCircle, XCircle } from 'lucide-react';
+import CountryCodePhoneInput from './CountryCodePhoneInput';
 
 interface OfficeMasterProps {
   offices: Office[];
@@ -144,14 +145,12 @@ export default function OfficeMaster({
               />
             </div>
             <div>
-              <label htmlFor="input-office-phone" className="block text-xs font-semibold text-slate-600 mb-1">Contact Phone</label>
-              <input
+              <label htmlFor="input-office-phone" className="block text-xs font-semibold text-slate-650 mb-1">Contact Phone</label>
+              <CountryCodePhoneInput
                 id="input-office-phone"
-                type="tel"
-                placeholder="Phone number"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                onChange={(val) => setPhone(val)}
+                placeholder="Enter mobile number"
               />
             </div>
             <div>

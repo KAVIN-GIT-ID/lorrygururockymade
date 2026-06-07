@@ -18,6 +18,7 @@
     "db:bootstrap": "node scripts/bootstrap-db.js",
     "predb:migrate": "node scripts/backup-db.cjs",
     "db:migrate": "node scripts/migrate-all-schemas.js",
+    "db:restore": "node scripts/restore-from-backup.cjs",
     "hooks:install": "node scripts/install-hooks.cjs"
   },
   "dependencies": {
@@ -47,6 +48,7 @@
     "esbuild": "^0.25.0",
     "happy-dom": "^20.9.0",
     "jsdom": "^27.0.1",
+    "node-appwrite": "^26.1.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

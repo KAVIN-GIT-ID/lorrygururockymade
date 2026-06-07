@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { Client, Databases } = require('appwrite');
 require('dotenv').config();
 
-const backupPath = 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-06-03.json';
+// Get backup path from command line arguments or default
+const backupPath = process.argv[2] || 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-06-03.json';
 
 const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
 const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
@@ -12,6 +12,7 @@ const apiKey = process.env.VITE_APPWRITE_API_KEY;
 
 if (!fs.existsSync(backupPath)) {
   console.error(`❌ Backup file not found at: ${backupPath}`);
+  console.log(`Usage: node scripts/restore-from-backup.js <path-to-backup-json-file>`);
   process.exit(1);
 }
 
@@ -22,13 +23,6 @@ console.log(`Project:        ${projectId}`);
 console.log(`Database:       ${databaseId}`);
 
 const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-
-const client = new Client()
-  .setEndpoint(endpoint)
-  .setProject(projectId)
-  .setKey(apiKey);
-
-const databases = new Databases(client);
 
 // Maps category keys in JSON backup to collection names
 const collectionsMap = {
@@ -98,14 +92,37 @@ async function saveFleetDocument(collectionId, docId, orgId, dataObj) {
     };
   }
 
-  try {
-    await databases.updateDocument(databaseId, collectionId, docId, documentData);
-  } catch (err) {
-    if (err.code === 404) {
-      await databases.createDocument(databaseId, collectionId, docId, documentData);
-    } else {
-      throw err;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Appwrite-Project': projectId,
+    'X-Appwrite-Key': apiKey
+  };
+
+  // Try updating first
+  const updateUrl = `${endpoint}/databases/${databaseId}/collections/${collectionId}/documents/${docId}`;
+  let res = await fetch(updateUrl, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ data: documentData.data, permissions: documentData.permissions })
+  });
+
+  if (res.status === 404) {
+    const createUrl = `${endpoint}/databases/${databaseId}/collections/${collectionId}/documents`;
+    const createRes = await fetch(createUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        documentId: docId,
+        data: documentData
+      })
+    });
+    if (!createRes.ok) {
+      const err = await createRes.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${createRes.status}`);
     }
+  } else if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
   }
 }
 
@@ -155,16 +172,41 @@ async function restore() {
         data: JSON.stringify(ur)
       };
 
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': apiKey
+      };
+
+      const updateUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents/${key}`;
       try {
-        await databases.updateDocument(databaseId, 'global_configs', key, documentData);
+        let res = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ data: documentData.data })
+        });
+
+        if (res.status === 404) {
+          const createUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents`;
+          const createRes = await fetch(createUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              documentId: key,
+              data: documentData
+            })
+          });
+          if (!createRes.ok) {
+            const err = await createRes.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${createRes.status}`);
+          }
+        } else if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
         urCount++;
       } catch (err) {
-        if (err.code === 404) {
-          await databases.createDocument(databaseId, 'global_configs', key, documentData);
-          urCount++;
-        } else {
-          console.error(`  ❌ Failed to restore permission for ${ur.email}:`, err.message);
-        }
+        console.error(`  ❌ Failed to restore permission for ${ur.email}:`, err.message);
       }
     }
     console.log(`  ✓ Restored ${urCount}/${userRights.length} user rights.`);
@@ -181,16 +223,41 @@ async function restore() {
         data: JSON.stringify(op)
       };
 
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': apiKey
+      };
+
+      const updateUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents/${key}`;
       try {
-        await databases.updateDocument(databaseId, 'global_configs', key, documentData);
+        let res = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ data: documentData.data })
+        });
+
+        if (res.status === 404) {
+          const createUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents`;
+          const createRes = await fetch(createUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              documentId: key,
+              data: documentData
+            })
+          });
+          if (!createRes.ok) {
+            const err = await createRes.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${createRes.status}`);
+          }
+        } else if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
         opCount++;
       } catch (err) {
-        if (err.code === 404) {
-          await databases.createDocument(databaseId, 'global_configs', key, documentData);
-          opCount++;
-        } else {
-          console.error(`  ❌ Failed to restore profile for ${op.organizationId}:`, err.message);
-        }
+        console.error(`  ❌ Failed to restore profile for ${op.organizationId}:`, err.message);
       }
     }
     console.log(`  ✓ Restored ${opCount}/${orgProfiles.length} organization profiles.`);

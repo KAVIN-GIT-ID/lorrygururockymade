@@ -151,6 +151,8 @@ export default function UserAccessControl({
   const currentUserRole = currentUserPerm?.role || 'Custom';
 
   // Custom permissions state for creation form
+  const [supportRoles, setSupportRoles] = useState<('Technical' | 'Billing' | 'General')[]>([]);
+
   const [rights, setRights] = useState({
     canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
     canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
@@ -162,7 +164,8 @@ export default function UserAccessControl({
     canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
     canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
     canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-    canEditLoans: false, canDeleteLoans: false
+    canEditLoans: false, canDeleteLoans: false,
+    canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
   });
 
   const toggleFormRight = (key: keyof typeof rights) => {
@@ -174,6 +177,7 @@ export default function UserAccessControl({
     setName('');
     setPhone('');
     setRole('Custom');
+    setSupportRoles([]);
     setRights({
       canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
       canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
@@ -185,7 +189,8 @@ export default function UserAccessControl({
       canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
       canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
+      canEditLoans: false, canDeleteLoans: false,
+      canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
     });
   };
 
@@ -208,6 +213,7 @@ export default function UserAccessControl({
       role,
       organizationId: currentUserOrgId,
       isApproved: true, // Manual additions by admin are auto-approved
+      supportRole: isBackendOrg ? supportRoles : [],
       ...rights
     });
 
@@ -229,7 +235,8 @@ export default function UserAccessControl({
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
-        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg,
+        canViewTickets: isBackendOrg, canEditTickets: isBackendOrg, canDeleteTickets: isBackendOrg, canTransferTickets: isBackendOrg
       });
     } else {
       setRights({
@@ -243,7 +250,8 @@ export default function UserAccessControl({
         canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
         canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
         canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-        canEditLoans: false, canDeleteLoans: false
+        canEditLoans: false, canDeleteLoans: false,
+        canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
       });
     }
   };
@@ -290,7 +298,8 @@ export default function UserAccessControl({
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
-        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg,
+        canViewTickets: isBackendOrg, canEditTickets: isBackendOrg, canDeleteTickets: isBackendOrg, canTransferTickets: isBackendOrg
       } : {})
     };
 
@@ -319,7 +328,8 @@ export default function UserAccessControl({
       canViewTruckRequests: false, canDeleteTruckRequests: false,
       canViewBackendTeam: false, canDeleteBackendTeam: false,
       canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
+      canEditLoans: false, canDeleteLoans: false,
+      canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
     };
     onUpdatePermission(updated);
     showNotification(`Approved ${userPerm.name}. Please grant specific permissions as needed.`);
@@ -618,7 +628,7 @@ export default function UserAccessControl({
           <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">
             Authorize New User Account
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 ${isBackendOrg ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name <span className="text-red-500">*</span></label>
               <div className="relative">
@@ -677,6 +687,34 @@ export default function UserAccessControl({
                 <option value="Admin">Administrator (All Permissions)</option>
               </select>
             </div>
+            {isBackendOrg && (
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Support Category Roles</label>
+                <div className="flex flex-wrap gap-4 mt-2">
+                  {['Technical', 'Billing', 'General'].map((roleVal) => {
+                    const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                    const isChecked = supportRoles.includes(typedRole);
+                    return (
+                      <label key={roleVal} className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setSupportRoles(prev => prev.filter(r => r !== typedRole));
+                            } else {
+                              setSupportRoles(prev => [...prev, typedRole]);
+                            }
+                          }}
+                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                        />
+                        {roleVal}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {role === 'Custom' && (
@@ -702,7 +740,8 @@ export default function UserAccessControl({
                   { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                   { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                   { label: 'Backend Team Access Control', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                  { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                  { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                  { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
                 ]).map(mod => (
                   <div key={mod.label} className="grid grid-cols-4 gap-2 py-2 items-center text-xs">
                     <span className="font-semibold text-slate-700">{mod.label}</span>
@@ -740,6 +779,20 @@ export default function UserAccessControl({
                   </div>
                 ))}
               </div>
+              {isBackendOrg && (
+                <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                  <input
+                    type="checkbox"
+                    id="checkbox-form-transfer-tickets"
+                    checked={rights.canTransferTickets}
+                    onChange={() => setRights(prev => ({ ...prev, canTransferTickets: !prev.canTransferTickets }))}
+                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <label htmlFor="checkbox-form-transfer-tickets" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer uppercase tracking-tight">
+                    Authorize Ticket Transfer Privileges (Can move tickets between Technical/Billing/General category queues)
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
@@ -983,7 +1036,8 @@ export default function UserAccessControl({
                       { label: 'Customer Org Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                       { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                       { label: 'Backend Team Access', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                      { label: 'Database Console', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                      { label: 'Database Console', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                      { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
                     ]).map(mod => (
                       <div key={mod.label} className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
                         <span className="text-xs font-bold text-slate-700 block mb-2">{mod.label}</span>
@@ -1026,6 +1080,61 @@ export default function UserAccessControl({
                       </div>
                     ))}
                   </div>
+                  {isBackendOrg && (
+                    <div className="flex flex-col gap-3 mt-3 pt-3 border-t border-slate-150">
+                      {/* Support Category Selection */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Support Category Roles</label>
+                        <div className="flex flex-wrap gap-4 mt-1 bg-white border border-slate-200 rounded-lg p-2.5">
+                          {['Technical', 'Billing', 'General'].map((roleVal) => {
+                            const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                            const currentRoles = Array.isArray(p.supportRole)
+                              ? p.supportRole
+                              : (typeof p.supportRole === 'string' && p.supportRole !== 'None' && p.supportRole !== ''
+                                ? [p.supportRole]
+                                : []);
+                            const isChecked = currentRoles.includes(typedRole);
+                            return (
+                              <label key={roleVal} className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isBackendOrg && !canEditBackend}
+                                  onChange={() => {
+                                    const newRoles = (isChecked
+                                      ? currentRoles.filter(r => r !== typedRole)
+                                      : [...currentRoles, typedRole]) as ('Technical' | 'Billing' | 'General')[];
+                                    const updated = { ...p, supportRole: newRoles };
+                                    onUpdatePermission(updated);
+                                  }}
+                                  className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                />
+                                {roleVal}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Ticket Transfer Permission */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`checkbox-transfer-tickets-mob-${p.id}`}
+                          checked={!!p.canTransferTickets}
+                          onChange={() => {
+                            const updated = { ...p, canTransferTickets: !p.canTransferTickets };
+                            onUpdatePermission(updated);
+                          }}
+                          disabled={isBackendOrg && !canEditBackend}
+                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                        />
+                        <label htmlFor={`checkbox-transfer-tickets-mob-${p.id}`} className="text-xs font-bold text-slate-700 cursor-pointer uppercase tracking-tight">
+                          Authorize Ticket Transfer Privileges
+                        </label>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex justify-end mt-3">
                     <button
                       type="button"
@@ -1295,7 +1404,8 @@ export default function UserAccessControl({
                                 { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                                 { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                                 { label: 'Backend Team Access Control', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                                { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                                { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                                { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
                               ]).map(mod => (
                                 <div key={mod.label} className="grid grid-cols-4 gap-2 py-2.5 items-center text-xs">
                                   <span className="font-bold text-slate-800">{mod.label}</span>
@@ -1334,6 +1444,61 @@ export default function UserAccessControl({
                               ))}
                             </div>
                           </div>
+                          {isBackendOrg && (
+                            <div className="flex flex-col gap-3 mt-3 pt-3 border-t border-slate-200">
+                              {/* Support Category Selection */}
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">Support Category Roles</label>
+                                <div className="flex flex-wrap gap-4 mt-1 bg-white border border-slate-200 rounded-lg p-2.5">
+                                  {['Technical', 'Billing', 'General'].map((roleVal) => {
+                                    const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                                    const currentRoles = Array.isArray(p.supportRole)
+                                      ? p.supportRole
+                                      : (typeof p.supportRole === 'string' && p.supportRole !== 'None' && p.supportRole !== ''
+                                        ? [p.supportRole]
+                                        : []);
+                                    const isChecked = currentRoles.includes(typedRole);
+                                    return (
+                                      <label key={roleVal} className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          disabled={isBackendOrg && !canEditBackend}
+                                          onChange={() => {
+                                            const newRoles = (isChecked
+                                              ? currentRoles.filter(r => r !== typedRole)
+                                              : [...currentRoles, typedRole]) as ('Technical' | 'Billing' | 'General')[];
+                                            const updated = { ...p, supportRole: newRoles };
+                                            onUpdatePermission(updated);
+                                          }}
+                                          className="rounded-sm border-slate-350 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                        />
+                                        {roleVal}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Ticket Transfer Permission */}
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`checkbox-transfer-tickets-${p.id}`}
+                                  checked={!!p.canTransferTickets}
+                                  onChange={() => {
+                                    const updated = { ...p, canTransferTickets: !p.canTransferTickets };
+                                    onUpdatePermission(updated);
+                                  }}
+                                  disabled={isBackendOrg && !canEditBackend}
+                                  className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                />
+                                <label htmlFor={`checkbox-transfer-tickets-${p.id}`} className="text-xs font-bold text-slate-700 cursor-pointer uppercase tracking-tight">
+                                  Authorize Ticket Transfer Privileges (Can move tickets between queues)
+                                </label>
+                              </div>
+                            </div>
+                          )}
                           <div className="flex justify-end pt-1">
                             <button
                               type="button"
