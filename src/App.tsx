@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest } from './types';
+import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest, createRecord, mutateRecord } from './types';
 import Dashboard from './components/Dashboard';
 import TripList from './components/TripList';
 import TripForm from './components/TripForm';
@@ -384,6 +384,7 @@ export default function App() {
   organizationProfilesRef.current = organizationProfiles;
 
   const saveOrganizationProfiles = async (nextProfiles: OrganizationProfile[]) => {
+    const prevProfiles = organizationProfilesRef.current || [];
     setOrganizationProfiles(nextProfiles);
     localStorage.setItem('ttt_organization_profiles', JSON.stringify(nextProfiles));
 
@@ -392,13 +393,23 @@ export default function App() {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         const userRights = getCurrentUserRights();
         const isNotLoggedIn = !currentUser;
-        for (const prof of nextProfiles) {
+
+        const savePromises = nextProfiles.map(async (prof) => {
           if (!isNotLoggedIn && !userRights.isSuperAdmin && prof.organizationId !== userRights.organizationId) {
-            continue;
+            return;
           }
+
+          // Change-detection: Only save if new or modified
+          const prevProf = prevProfiles.find(p => p.organizationId === prof.organizationId);
+          if (prevProf && JSON.stringify(prevProf) === JSON.stringify(prof)) {
+            return;
+          }
+
           const docId = appwrite.getOrgDocId(prof.organizationId);
           await appwrite.saveGlobalConfig(databaseId, docId, prof);
-        }
+        });
+
+        await Promise.all(savePromises);
         console.log('Successfully synced organization profiles to Appwrite Database.');
       } catch (e) {
         console.warn("Could not sync organization profiles to database:", e);
@@ -653,10 +664,13 @@ export default function App() {
       for (const doc of allConfigs) {
         try {
           const parsed = JSON.parse(doc.data);
-          if (doc.key.startsWith('usr_')) {
+          const keyVal = doc.$id || doc.key || '';
+          if (keyVal.startsWith('usr_')) {
             userRightsList.push(parsed);
-          } else if (doc.key.startsWith('prf_')) {
-            organizationProfiles.push(parsed);
+          } else if (keyVal.startsWith('prf_')) {
+            if (parsed && parsed.organizationId) {
+              organizationProfiles.push(parsed);
+            }
           }
         } catch (e) {
           console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
@@ -1065,7 +1079,7 @@ export default function App() {
 
               const isSuper = appwriteOrgId === 'org_backend' || match.role === 'SuperAdmin';
               const targetRole = isSuper ? 'SuperAdmin' : 'Admin';
-              if (isAdminUser && match.role !== targetRole) {
+              if (isAdminUser && match.role !== targetRole && match.role !== 'Custom') {
                 console.info(`Reconciling role for ${email}: ${match.role} → ${targetRole} (team owner)`);
                 updatedMatch.role = targetRole as any;
                 updatedMatch.canViewTrips = true; updatedMatch.canEditTrips = true; updatedMatch.canDeleteTrips = true;
@@ -1308,24 +1322,27 @@ export default function App() {
         const userRights = getCurrentUserRights();
         const loggedInEmail = (currentUser?.email || '').toLowerCase().trim();
         const isNotLoggedIn = !currentUser;
+        const prevRights = userRightsListRef.current || [];
 
-        for (const ur of nextUserRights) {
-          // Rule: Only push the user permission to cloud if:
-          // 1. We are not logged in yet (e.g. initial setup or registration path)
-          // 2. The logged-in user is a Super Admin
-          // 3. The permission belongs to the logged-in user's own organization
-          // 4. The permission belongs to the logged-in user themselves (self update)
+        const savePromises = nextUserRights.map(async (ur) => {
           const isOwnOrg = ur.organizationId && ur.organizationId === userRights.organizationId;
           const isSelf = ur.email.toLowerCase().trim() === loggedInEmail;
 
           if (!isNotLoggedIn && !userRights.isSuperAdmin && !isOwnOrg && !isSelf) {
-            continue;
+            return;
+          }
+
+          // Change-detection: Only save if new or modified
+          const prevUr = prevRights.find(p => p.email.toLowerCase() === ur.email.toLowerCase());
+          if (prevUr && JSON.stringify(prevUr) === JSON.stringify(ur)) {
+            return;
           }
 
           const docId = appwrite.getEmailDocId(ur.email);
           await appwrite.saveGlobalConfig(databaseId, docId, ur);
-        }
+        });
 
+        await Promise.all(savePromises);
         console.log('Successfully synced registration user permissions to Appwrite Database.');
       } catch (e: any) {
         console.warn("Could not sync registration user permissions to database:", e);
@@ -1905,13 +1922,16 @@ export default function App() {
   });
   const saveAuditLogs = setAuditLogs;
 
+  const currentUserId = currentUser?.$id || currentUser?.email || 'system';
+
   const { trips, setTrips, orgTrips, saveTrips, postTripEntry, deleteTripEntry } = useTrips({
     orgId: currentUserOrgId,
     showNotification,
     logAction,
     loadDashboardData,
     activeMonth,
-    activeYear
+    activeYear,
+    currentUserId
   });
 
   const { accounts, setAccounts, orgAccounts, saveAccounts, addAccount, updateAccount, deleteAccount } = useAccounts({
@@ -1925,7 +1945,8 @@ export default function App() {
     orgId: currentUserOrgId,
     trips,
     showNotification,
-    logAction
+    logAction,
+    currentUserId
   });
 
   const { offices, setOffices, orgOffices, saveOffices, addOffice, updateOffice, deleteOffice } = useOffices({
@@ -1941,7 +1962,8 @@ export default function App() {
     logAction,
     loadDashboardData,
     activeMonth,
-    activeYear
+    activeYear,
+    currentUserId
   });
 
   const { tyres, setTyres, orgTyres, saveTyres, addTyre, updateTyre, deleteTyre } = useTyres({
@@ -1962,7 +1984,8 @@ export default function App() {
     saveOrganizationProfiles,
     showNotification,
     logAction,
-    pushFleetSnapshotNow
+    pushFleetSnapshotNow,
+    currentUserId
   });
   const [dashboardTrips, setDashboardTrips] = useState<TripEntry[]>([]);
   const [dashboardExpenses, setDashboardExpenses] = useState<ExpenseEntry[]>([]);
@@ -2049,7 +2072,10 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   function touchLastModified() {
-    localStorage.setItem('ttt_last_modified_at', Date.now().toString());
+    if (currentUserOrgId !== 'org_backend') {
+      localStorage.setItem('ttt_last_modified_at', Date.now().toString());
+    }
+    sessionStorage.setItem('ttt_recent_action_at', Date.now().toString());
   }
 
   async function pushFleetSnapshotNow(overrideTrucks?: Truck[]) {
@@ -2140,7 +2166,13 @@ export default function App() {
     pushPermissionsToCloud(newList);
   };
 
-  const onLoadCloudState = (parsed: any, userRightsData?: any): boolean => {
+  const onLoadCloudState = (parsed: any, userRightsData?: any, quiet = false): boolean => {
+    const recentActionAt = Number(sessionStorage.getItem('ttt_recent_action_at') || '0');
+    const isRecentLocalChange = Date.now() - recentActionAt < 6000;
+    if (!quiet && isRecentLocalChange) {
+      return false;
+    }
+
     const orgId = currentUserOrgId || 'org_default';
 
     const hasOrgCategoryChanged = (localItems: any[], cloudItems: any[] | undefined) => {
@@ -2308,62 +2340,106 @@ export default function App() {
     }
 
     if (parsed.trucks) {
-      // Timestamp guard: only replace local trucks if the cloud snapshot is newer than our local state.
-      // This prevents a stale cloud pull (triggered by e.g. user_rights_snapshot update from admin)
-      // from re-adding a truck that was just deleted locally but whose push hasn't landed yet.
       const localLastModified = Number(localStorage.getItem('ttt_last_modified_at') || '0');
       const cloudExportDate = parsed.exportDate
         ? (isNaN(Number(parsed.exportDate)) ? new Date(parsed.exportDate).getTime() : Number(parsed.exportDate))
         : 0;
-      // Allow a 4-second buffer for the debounce push window (push fires 3s after mutation)
-      const localIsNewer = localLastModified > 0 && cloudExportDate > 0 && localLastModified > cloudExportDate + 4000;
+      const localIsNewer = !quiet && localLastModified > 0 && cloudExportDate > 0 && localLastModified > cloudExportDate + 4000;
       if (!localIsNewer) {
         const migrated = migrateTrucks(parsed.trucks);
 
-        // Detect approval / rejection transitions for notification & audit logging
-        migrated.forEach(cloudTruck => {
-          const isRelevantOrg = orgId !== 'org_backend' && cloudTruck.organizationId === orgId;
-          if (isRelevantOrg) {
-            const localTruck = trucks.find(t =>
-              t.organizationId === orgId &&
-              t.truckNo.toUpperCase() === cloudTruck.truckNo.toUpperCase()
-            );
-            if (localTruck) {
-              const wasPendingApproval = localTruck.isApproved === false || localTruck.requestStatus === 'Pending';
+        if (!quiet) {
+          // Detect approval / rejection transitions for notification & audit logging
+          migrated.forEach(cloudTruck => {
+            const isRelevantOrg = orgId !== 'org_backend' && cloudTruck.organizationId === orgId;
+            if (isRelevantOrg) {
+              const localTruck = trucks.find(t =>
+                t.organizationId === orgId &&
+                t.truckNo.toUpperCase() === cloudTruck.truckNo.toUpperCase()
+              );
+              if (localTruck) {
+                const wasPendingApproval = localTruck.isApproved === false || localTruck.requestStatus === 'Pending';
 
-              if (wasPendingApproval && cloudTruck.isApproved === true) {
-                // Approved transition!
-                showNotification(`Truck ${cloudTruck.truckNo} has been approved by the Admin!`);
-                logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request approved by Admin. Expiry set to ${cloudTruck.registrationExpiryDate || 'None'}`, cloudTruck.organizationId);
-              } else if (wasPendingApproval && cloudTruck.requestStatus === 'Rejected') {
-                // Rejected transition!
-                showNotification(`Truck ${cloudTruck.truckNo} request was rejected.`);
-                logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request rejected by Admin.`, cloudTruck.organizationId);
+                if (wasPendingApproval && cloudTruck.isApproved === true) {
+                  // Approved transition!
+                  showNotification(`Truck ${cloudTruck.truckNo} has been approved by the Admin!`);
+                  logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request approved by Admin. Expiry set to ${cloudTruck.registrationExpiryDate || 'None'}`, cloudTruck.organizationId);
+                } else if (wasPendingApproval && cloudTruck.requestStatus === 'Rejected') {
+                  // Rejected transition!
+                  showNotification(`Truck ${cloudTruck.truckNo} request was rejected.`);
+                  logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request rejected by Admin.`, cloudTruck.organizationId);
+                }
               }
             }
-          }
-        });
+          });
+        }
 
         setTrucks(prev => {
-          const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId);
+          const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
           const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
-          // Sync directly from cloud snapshot — deleted vehicles are not re-added (matches Truck Requests behaviour)
-          const next = [...otherOrgs, ...thisOrgPulled];
-          localStorage.setItem('ttt_trucks', JSON.stringify(next));
-          return next;
+          
+          const localOnlyOrPending = prev.filter(t => t.organizationId === orgId && t.syncState === 'pending');
+          const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+            const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+            if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+              return localPendingItem;
+            }
+            return cloudItem;
+          });
+          const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+          const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
+
+          const uniqueMap = new Map<string, Truck>();
+          next.forEach(t => {
+            const key = `${t.organizationId}_${t.truckNo.toUpperCase().trim()}`;
+            const existing = uniqueMap.get(key);
+            if (!existing) {
+              uniqueMap.set(key, t);
+            } else {
+              const keepNew = (t.isApproved && !existing.isApproved) ||
+                              (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
+                              (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'));
+              if (keepNew) {
+                if (isAppwriteConfigured()) {
+                  const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+                  appwrite.deleteFleetDocument(databaseId, 'trucks', existing.id).catch(() => {});
+                }
+                uniqueMap.set(key, t);
+              } else {
+                if (isAppwriteConfigured()) {
+                  const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+                  appwrite.deleteFleetDocument(databaseId, 'trucks', t.id).catch(() => {});
+                }
+              }
+            }
+          });
+          const deduplicated = Array.from(uniqueMap.values());
+          localStorage.setItem('ttt_trucks', JSON.stringify(deduplicated));
+          return deduplicated;
         });
         touchLastModified();
       } else {
-        console.log(`Appwrite Cloud Sync: Skipping truck overwrite — local state is newer (local: ${localLastModified}, cloud: ${cloudExportDate})`);
+        if (!quiet) {
+          console.log(`Appwrite Cloud Sync: Skipping truck overwrite — local state is newer (local: ${localLastModified}, cloud: ${cloudExportDate})`);
+        }
       }
     }
 
     if (parsed.drivers) {
       const migrated = migrateDrivers(parsed.drivers);
       setDrivers(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(d => d.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(d => d.organizationId !== orgId && d.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(d => d.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(d => d.organizationId === orgId && d.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_drivers', JSON.stringify(next));
         return next;
       });
@@ -2373,9 +2449,18 @@ export default function App() {
     if (parsed.offices) {
       const migrated = migrateOffices(parsed.offices);
       setOffices(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(o => o.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(o => o.organizationId !== orgId && o.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(o => o.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(o => o.organizationId === orgId && o.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_offices', JSON.stringify(next));
         return next;
       });
@@ -2385,9 +2470,18 @@ export default function App() {
     if (parsed.accounts) {
       const migrated = migrateAccounts(parsed.accounts);
       setAccounts(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(a => a.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(a => a.organizationId !== orgId && a.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(a => a.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(a => a.organizationId === orgId && a.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_accounts', JSON.stringify(next));
         return next;
       });
@@ -2397,9 +2491,18 @@ export default function App() {
     if (parsed.trips) {
       const migrated = migrateTrips(migrateTripsIfNecessary(parsed.trips));
       setTrips(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(t => t.organizationId === orgId && t.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_trips', JSON.stringify(next));
         return next;
       });
@@ -2409,9 +2512,18 @@ export default function App() {
     if (parsed.expenses) {
       const migrated = migrateExpenses(parsed.expenses);
       setExpenses(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(e => e.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(e => e.organizationId !== orgId && e.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(e => e.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(e => e.organizationId === orgId && e.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_expenses', JSON.stringify(next));
         return next;
       });
@@ -2421,9 +2533,18 @@ export default function App() {
     if (parsed.tyres) {
       const migrated = migrateTyres(parsed.tyres);
       setTyres(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(ty => ty.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(ty => ty.organizationId !== orgId && ty.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(ty => ty.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(ty => ty.organizationId === orgId && ty.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('ttt_tyres', JSON.stringify(next));
         return next;
       });
@@ -2433,9 +2554,18 @@ export default function App() {
     if (parsed.auditLogs) {
       const migrated = migrateAuditLogs(parsed.auditLogs);
       setAuditLogs(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(l => l.organizationId !== orgId);
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(l => l.organizationId !== orgId && l.organizationId !== 'org_default');
         const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(l => l.organizationId === orgId);
-        const next = [...otherOrgs, ...thisOrgPulled];
+        const localOnlyOrPending = prev.filter(l => l.organizationId === orgId && l.syncState === 'pending');
+        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
+          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
+          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
+            return localPendingItem;
+          }
+          return cloudItem;
+        });
+        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
+        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
         localStorage.setItem('fleet_audit_logs', JSON.stringify(next));
         return next;
       });
@@ -2468,7 +2598,7 @@ export default function App() {
   };
 
   const handleUpdateOrgLimit = async (orgId: string, limit: number) => {
-    const nextProfiles = organizationProfiles.map(p =>
+        const nextProfiles = organizationProfiles.map(p =>
       p.organizationId === orgId ? { ...p, maxTrucksAllowed: limit } : p
     );
     await saveOrganizationProfiles(nextProfiles);
@@ -2520,38 +2650,37 @@ export default function App() {
 
     await saveOrganizationProfiles(nextProfiles);
 
+    const truckId = existingTruck ? existingTruck.id : ('tr_' + Date.now());
+    let updatedTruck: Truck;
+    if (existingTruck) {
+      updatedTruck = mutateRecord(existingTruck, {
+        isApproved: true,
+        requestStatus: 'Approved' as const,
+        status: 'Active' as const,
+        registrationExpiryDate: expiryStr,
+        currentKM: (existingTruck.currentKM !== undefined && existingTruck.currentKM !== null && existingTruck.currentKM !== 0) ? existingTruck.currentKM : (requestItem?.currentKM || 0)
+      }, currentUserId);
+    } else {
+      updatedTruck = createRecord<Truck>({
+        id: truckId,
+        truckNo: truckNo.toUpperCase(),
+        organizationId: orgId,
+        isApproved: true,
+        requestStatus: 'Approved',
+        status: 'Active',
+        registrationExpiryDate: expiryStr,
+        make: requestItem?.make,
+        model: requestItem?.model,
+        type: requestItem?.type,
+        currentKM: requestItem?.currentKM || 0
+      }, currentUserId);
+    }
+
     setTrucks(prev => {
       const exists = prev.some(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
-      let next;
-      if (exists) {
-        next = prev.map(t =>
-          (t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase())
-            ? {
-              ...t,
-              isApproved: true,
-              requestStatus: 'Approved' as const,
-              status: 'Active' as const,
-              registrationExpiryDate: expiryStr,
-              currentKM: (t.currentKM !== undefined && t.currentKM !== null && t.currentKM !== 0) ? t.currentKM : (requestItem?.currentKM || 0)
-            }
-            : t
-        );
-      } else {
-        const newTruck: Truck = {
-          id: 'tr_' + Date.now(),
-          truckNo: truckNo.toUpperCase(),
-          organizationId: orgId,
-          isApproved: true,
-          requestStatus: 'Approved',
-          status: 'Active',
-          registrationExpiryDate: expiryStr,
-          make: requestItem?.make,
-          model: requestItem?.model,
-          type: requestItem?.type,
-          currentKM: requestItem?.currentKM || 0
-        };
-        next = [...prev, newTruck];
-      }
+      const next = exists
+        ? prev.map(t => t.id === truckId ? updatedTruck : t)
+        : [...prev, updatedTruck];
       localStorage.setItem('ttt_trucks', JSON.stringify(next));
       return next;
     });
@@ -2559,37 +2688,7 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-        const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
-        const truckId = existing ? existing.id : ('tr_' + Date.now());
-        const updatedTruck: Truck = {
-          id: truckId,
-          truckNo: truckNo.toUpperCase(),
-          organizationId: orgId,
-          isApproved: true,
-          requestStatus: 'Approved' as const,
-          status: 'Active' as const,
-          registrationExpiryDate: expiryStr,
-          make: existing?.make || requestItem?.make,
-          model: existing?.model || requestItem?.model,
-          type: existing?.type || requestItem?.type,
-          currentKM: existing?.currentKM || requestItem?.currentKM || 0
-        };
         await appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, updatedTruck);
-
-        const userEmail = currentUser ? (currentUser.email || currentUser.name || 'SuperAdmin') : 'SuperAdmin';
-        const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-        const newAuditLog: AuditLog = {
-          id: logId,
-          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          user: userEmail,
-          action: 'Approved',
-          category: 'Truck',
-          reference: truckNo.toUpperCase(),
-          details: `Truck registration approved for ${duration === '1Y' ? '1 Year' : duration === '6M' ? '6 Months' : duration === '3M' ? '3 Months' : '1 Month'}. Active until: ${expiryStr}`,
-          organizationId: orgId
-        };
-        await appwrite.saveFleetDocument(databaseId, 'audit_logs', logId, orgId, newAuditLog);
       } catch (err) {
         console.warn("Failed to push truck approval sync to database:", err);
       }
@@ -2597,7 +2696,8 @@ export default function App() {
 
     // Pass orgId as targetOrgId so the local log entry is stored under the correct org,
     // making it visible to the org's users in their activity feed.
-    logAction('Approved', 'Truck', truckNo, `Backend approved truck registration for org ${orgId} (${duration} duration, expires ${expiryStr}).`, orgId);
+    const detailsMsg = `Truck registration approved by system administrator for ${duration === '1Y' ? '1 Year' : duration === '6M' ? '6 Months' : duration === '3M' ? '3 Months' : '1 Month'}. Active until: ${expiryStr}`;
+    logAction('Approved', 'Truck', truckNo, detailsMsg, orgId);
     showNotification(`✓ Truck ${truckNo} approved for Org ${orgId}.`);
   };
 
@@ -2615,94 +2715,96 @@ export default function App() {
     const nextProfiles = organizationProfiles.map(p =>
       p.organizationId === orgId ? { ...p, truckRequests: nextRequests } : p
     );
-    await saveOrganizationProfiles(nextProfiles);
+    
+    // Update local state immediately
+    setOrganizationProfiles(nextProfiles);
+    localStorage.setItem('ttt_organization_profiles', JSON.stringify(nextProfiles));
+    touchLastModified();
+
+    let truckId = 'tr_' + Date.now();
+    let rejectedTruckObj: Truck | null = null;
 
     if (truckNoToReject) {
+      const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase());
+      if (existing) {
+        truckId = existing.id;
+        rejectedTruckObj = mutateRecord(existing, {
+          isApproved: false,
+          requestStatus: 'Rejected' as const,
+          status: 'Inactive' as const
+        }, currentUserId);
+      } else {
+        rejectedTruckObj = createRecord<Truck>({
+          id: truckId,
+          truckNo: truckNoToReject.toUpperCase(),
+          organizationId: orgId,
+          isApproved: false,
+          requestStatus: 'Rejected',
+          status: 'Inactive',
+          make: reqItem?.make,
+          model: reqItem?.model,
+          type: reqItem?.type,
+          currentKM: reqItem?.currentKM || 0
+        }, currentUserId);
+      }
+
       setTrucks(prev => {
-        const exists = prev.some(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase());
-        let next;
-        if (exists) {
-          next = prev.map(t => {
-            if (t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase()) {
-              if (t.isApproved) {
-                // If it is already approved, don't change the approved truck back to rejected!
-                return t;
-              }
-              return {
-                ...t,
-                isApproved: false,
-                requestStatus: 'Rejected' as const,
-                status: 'Inactive' as const
-              };
-            }
-            return t;
-          });
+        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
+        const thisOrg = prev.filter(t => t.organizationId === orgId);
+        
+        let nextOrg;
+        if (existing) {
+          nextOrg = thisOrg.map(t => t.id === truckId ? (rejectedTruckObj || t) : t);
+        } else if (rejectedTruckObj) {
+          nextOrg = [...thisOrg, rejectedTruckObj];
         } else {
-          const newTruck: Truck = {
-            id: 'tr_' + Date.now(),
-            truckNo: truckNoToReject.toUpperCase(),
-            organizationId: orgId,
-            isApproved: false,
-            requestStatus: 'Rejected',
-            status: 'Inactive',
-            make: reqItem?.make,
-            model: reqItem?.model,
-            type: reqItem?.type,
-            currentKM: reqItem?.currentKM || 0
-          };
-          next = [...prev, newTruck];
+          nextOrg = thisOrg;
         }
+
+        const next = [...otherOrgs, ...nextOrg];
         localStorage.setItem('ttt_trucks', JSON.stringify(next));
         return next;
       });
-
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-          const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase());
-          const truckId = existing ? existing.id : ('tr_' + Date.now());
-          const rejectedTruck: Truck = {
-            id: truckId,
-            truckNo: truckNoToReject.toUpperCase(),
-            organizationId: orgId,
-            isApproved: false,
-            requestStatus: 'Rejected' as const,
-            status: 'Inactive' as const,
-            make: existing?.make || reqItem?.make,
-            model: existing?.model || reqItem?.model,
-            type: existing?.type || reqItem?.type,
-            currentKM: existing?.currentKM || reqItem?.currentKM || 0
-          };
-          await appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, rejectedTruck);
-
-          const userEmail = currentUser ? (currentUser.email || currentUser.name || 'SuperAdmin') : 'SuperAdmin';
-          const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-          const newAuditLog: AuditLog = {
-            id: logId,
-            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-            user: userEmail,
-            action: 'Rejected',
-            category: 'Truck',
-            reference: truckNoToReject.toUpperCase(),
-            details: `Truck registration request rejected by system administrator.`,
-            organizationId: orgId
-          };
-          await appwrite.saveFleetDocument(databaseId, 'audit_logs', logId, orgId, newAuditLog);
-        } catch (err) {
-          console.warn("Failed to push truck rejection sync to database:", err);
-        }
-      }
     }
 
-    // Pass orgId so the local log entry is stored under the correct org
-    logAction('Rejected', 'Truck', truckNoToReject || orgId, `Backend rejected truck registration request for org ${orgId}.`, orgId);
-    showNotification(`✗ Truck request rejected for Org ${orgId}.`);
-  };
+    // Trigger network requests concurrently
+    if (isAppwriteConfigured()) {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      const targetProfile = nextProfiles.find(p => p.organizationId === orgId);
+      const docId = appwrite.getOrgDocId(orgId);
+      
+      const syncPromises = [];
+      if (targetProfile) {
+        syncPromises.push(
+          appwrite.saveGlobalConfig(databaseId, docId, targetProfile)
+            .catch(err => console.warn("Failed to sync organization profile:", err))
+        );
+      }
+
+      if (truckNoToReject && rejectedTruckObj) {
+        syncPromises.push(
+          appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, rejectedTruckObj)
+            .catch(err => console.warn("Failed to push truck rejection sync:", err))
+        );
+      }
+ 
+       Promise.all(syncPromises).then(() => {
+         console.log("Rejection backend synchronization complete.");
+       });
+     }
+ 
+     logAction('Rejected', 'Truck', truckNoToReject || orgId, 'Truck registration request rejected by system administrator.', orgId);
+     showNotification(`✗ Truck request rejected for Org ${orgId}.`);
+   };
 
   const handleBackendUpdateTruck = async (targetOrgId: string, updatedTruck: Truck) => {
+    const oldTruck = trucks.find(t => t.id === updatedTruck.id);
+    const mutatedTruck = oldTruck
+      ? mutateRecord(oldTruck, updatedTruck, currentUserId)
+      : createRecord<Truck>({ ...updatedTruck, organizationId: targetOrgId } as any, currentUserId);
+
     setTrucks(prev => {
-      const next = prev.map(t => t.id === updatedTruck.id ? updatedTruck : t);
+      const next = prev.map(t => t.id === mutatedTruck.id ? mutatedTruck : t);
       localStorage.setItem('ttt_trucks', JSON.stringify(next));
       return next;
     });
@@ -2711,7 +2813,7 @@ export default function App() {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
-        await appwrite.saveFleetDocument(databaseId, 'trucks', updatedTruck.id, targetOrgId, updatedTruck);
+        await appwrite.saveFleetDocument(databaseId, 'trucks', mutatedTruck.id, targetOrgId, mutatedTruck);
 
         const userEmail = currentUser ? (currentUser.email || currentUser.name || 'SuperAdmin') : 'SuperAdmin';
         const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
@@ -2761,14 +2863,13 @@ export default function App() {
 
     if (existingRejectedTruck) {
       targetTruckId = existingRejectedTruck.id;
-      newTruckObj = {
-        ...existingRejectedTruck,
+      newTruckObj = mutateRecord(existingRejectedTruck, {
         ...truckPayload,
         isApproved: false,
         requestStatus: 'Pending' as const,
         status: 'Inactive' as const,
         registrationExpiryDate: expiryStr
-      };
+      }, currentUserId);
       setTrucks(prev => {
         const next = prev.map(t => t.id === targetTruckId ? newTruckObj : t);
         localStorage.setItem('ttt_trucks', JSON.stringify(next));
@@ -2776,7 +2877,7 @@ export default function App() {
       });
     } else {
       targetTruckId = 'tr_' + Date.now();
-      newTruckObj = {
+      newTruckObj = createRecord<Truck>({
         ...truckPayload,
         id: targetTruckId,
         organizationId: currentUserOrgId,
@@ -2784,7 +2885,7 @@ export default function App() {
         requestStatus: 'Pending' as const,
         status: 'Inactive' as const,
         registrationExpiryDate: expiryStr
-      };
+      }, currentUserId);
       setTrucks(prev => {
         const next = [...prev, newTruckObj];
         localStorage.setItem('ttt_trucks', JSON.stringify(next));
@@ -2807,30 +2908,40 @@ export default function App() {
 
     const nextProfiles = organizationProfiles.map(p => {
       if (p.organizationId === currentUserOrgId) {
+        const cleanedRequests = (p.truckRequests || []).filter(
+          r => r.truckNo.toUpperCase() !== truckPayload.truckNo.toUpperCase()
+        );
         return {
           ...p,
-          truckRequests: [...(p.truckRequests || []), requestItem]
+          truckRequests: [...cleanedRequests, requestItem]
         };
       }
       return p;
     });
 
+    const syncPromises: Promise<any>[] = [];
+
     if (isAppwriteConfigured() && currentUserOrgId) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'trucks', targetTruckId, currentUserOrgId, newTruckObj);
-        console.log("Successfully pushed new truck request document to Appwrite.");
-      } catch (err) {
-        console.warn("Could not push new truck request document to database:", err);
-        alert("Failed to request truck activation: Appwrite database connection error. Please try again.");
-        return;
-      }
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      syncPromises.push(
+        appwrite.saveFleetDocument(databaseId, 'trucks', targetTruckId, currentUserOrgId, newTruckObj)
+          .then(() => console.log("Successfully pushed new truck request document to Appwrite."))
+          .catch(err => {
+            console.warn("Could not push new truck request document to database:", err);
+            throw err;
+          })
+      );
     }
 
-    await saveOrganizationProfiles(nextProfiles);
+    syncPromises.push(saveOrganizationProfiles(nextProfiles));
 
-    showNotification(`Submitted activation request for truck ${truckPayload.truckNo}.`);
-    logAction('Created', 'Truck', truckPayload.truckNo, `Requested activation for new truck.`);
+    try {
+      await Promise.all(syncPromises);
+      showNotification(`Submitted activation request for truck ${truckPayload.truckNo}.`);
+      logAction('Created', 'Truck', truckPayload.truckNo, `Requested activation for new truck.`);
+    } catch (err) {
+      alert("Failed to request truck activation: Appwrite database connection error. Please try again.");
+    }
   };
 
   // Reconcile pending trucks if approved in global profiles
@@ -3136,8 +3247,13 @@ export default function App() {
         try {
           if (typeof unsubscribe === 'function') {
             unsubscribe();
-          } else if (unsubscribe && typeof unsubscribe.unsubscribe === 'function') {
-            unsubscribe.unsubscribe();
+          } else {
+            const subAny = unsubscribe as any;
+            if (typeof subAny.close === 'function') {
+              subAny.close();
+            } else if (typeof subAny.unsubscribe === 'function') {
+              subAny.unsubscribe();
+            }
           }
         } catch (_) { /* ignore close-state errors */ }
         unsubscribe = null;
@@ -3170,7 +3286,14 @@ export default function App() {
           });
           subPromise.then(sub => {
             if (destroyed) {
-              try { sub.unsubscribe(); } catch (_) {}
+              try {
+                const subAny = sub as any;
+                if (typeof subAny.close === 'function') {
+                  subAny.close();
+                } else if (typeof subAny.unsubscribe === 'function') {
+                  subAny.unsubscribe();
+                }
+              } catch (_) {}
             } else {
               unsubscribe = sub;
               reconnectDelay = 5000; // reset on success
@@ -3207,11 +3330,11 @@ export default function App() {
 
     setupRealtime();
 
-    // Polling fallback every 8 seconds
+    // Polling fallback every 60 seconds
     const interval = setInterval(() => {
       console.log("Super Admin Polling: Reloading datasets...");
       reloadBackendData();
-    }, 8000);
+    }, 60000);
 
     return () => {
       destroyed = true;
@@ -3251,7 +3374,7 @@ export default function App() {
 
     // 1. Parts Purchase expense
     if (partsExpense.amount > 0) {
-      const partsExp: import('./types').ExpenseEntry = {
+      const partsExp = createRecord<import('./types').ExpenseEntry>({
         id: 'exp_svc_parts_' + Date.now(),
         truckNo,
         expenseType: `Service - ${serviceType}`,
@@ -3264,13 +3387,13 @@ export default function App() {
         date: serviceDate,
         notes: notes,
         organizationId: orgId,
-      };
+      }, currentUserId);
       newExpenses.push(partsExp);
     }
 
     // 2. Mechanical Labour expense
     if (labourExpense.amount > 0) {
-      const labourExp: import('./types').ExpenseEntry = {
+      const labourExp = createRecord<import('./types').ExpenseEntry>({
         id: 'exp_svc_labour_' + Date.now() + '_1',
         truckNo,
         expenseType: `Service - ${serviceType} (Labour)`,
@@ -3283,7 +3406,7 @@ export default function App() {
         date: serviceDate,
         notes: notes,
         organizationId: orgId,
-      };
+      }, currentUserId);
       newExpenses.push(labourExp);
     }
 
@@ -3310,7 +3433,7 @@ export default function App() {
     if (kmField) {
       const truck = trucks.find(t => t.id === truckId);
       if (truck) {
-        const updatedTruck = { ...truck, [kmField]: newMilestoneKM };
+        const updatedTruck = mutateRecord(truck, { [kmField]: newMilestoneKM }, currentUserId);
         const next = trucks.map(t => t.id === truckId ? updatedTruck : t);
         saveTrucks(next);
         if (isAppwriteConfigured()) {
@@ -4640,6 +4763,8 @@ export default function App() {
                 showNotification={showNotification}
                 logAction={logAction}
                 currentUserOrgId={currentUserOrgId}
+                currentUserEmail={currentUser?.email}
+                currentUserId={currentUserId}
                 isAdmin={currentUserRights.isAdmin}
                 onInitialSyncComplete={setInitialPullDone}
                 onConnectionChange={(online, reason) => {

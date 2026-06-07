@@ -575,24 +575,24 @@ export default function BackendDashboard({
   // Exclude the backend organization itself from the control list
   const filteredOrgs = organizationProfiles.filter(p =>
     p.organizationId !== 'org_backend' &&
-    (p.organizationName.toLowerCase().includes(orgSearch.toLowerCase()) ||
-      p.organizationId.toLowerCase().includes(orgSearch.toLowerCase()) ||
-      p.ownerEmail.toLowerCase().includes(orgSearch.toLowerCase()))
+    ((p.organizationName || '').toLowerCase().includes(orgSearch.toLowerCase()) ||
+      (p.organizationId || '').toLowerCase().includes(orgSearch.toLowerCase()) ||
+      (p.ownerEmail || '').toLowerCase().includes(orgSearch.toLowerCase()))
   );
 
   // Flatten all truck requests across all organizations
   const allRequests = organizationProfiles.flatMap(profile =>
     (profile.truckRequests || []).map(req => ({
       ...req,
-      orgId: profile.organizationId,
-      orgName: profile.organizationName
+      orgId: profile.organizationId || '',
+      orgName: profile.organizationName || ''
     }))
-  ).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  ).sort((a, b) => new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime());
 
   const filteredRequests = allRequests.filter(req =>
-    req.truckNo.toLowerCase().includes(requestSearch.toLowerCase()) ||
-    req.orgName.toLowerCase().includes(requestSearch.toLowerCase()) ||
-    req.orgId.toLowerCase().includes(requestSearch.toLowerCase())
+    (req.truckNo || '').toLowerCase().includes(requestSearch.toLowerCase()) ||
+    (req.orgName || '').toLowerCase().includes(requestSearch.toLowerCase()) ||
+    (req.orgId || '').toLowerCase().includes(requestSearch.toLowerCase())
   );
 
   // Count pending requests
@@ -824,20 +824,7 @@ export default function BackendDashboard({
                         ) : (
                           <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900">
                             <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap table-fixed">
-                              <colgroup>
-                                <col className="w-[110px]" /> {/* Truck No */}
-                                <col className="w-[75px]" />  {/* Approved */}
-                                <col className="w-[85px]" />  {/* Insurance */}
-                                <col className="w-[85px]" />  {/* FC Date */}
-                                <col className="w-[85px]" />  {/* Q Tax */}
-                                <col className="w-[85px]" />  {/* Green Tax */}
-                                <col className="w-[85px]" />  {/* NP Tax */}
-                                <col className="w-[100px]" /> {/* Reg Expiry */}
-                                <col className="w-[130px]" /> {/* Renew Action */}
-                                <col className="w-[75px]" />  {/* Odometer */}
-                                <col className="w-[70px]" />  {/* Status */}
-                                <col className="w-[110px]" /> {/* Override / Approval Action */}
-                              </colgroup>
+                            <colgroup><col className="w-[110px]" /><col className="w-[75px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[100px]" /><col className="w-[130px]" /><col className="w-[75px]" /><col className="w-[70px]" /><col className="w-[110px]" /></colgroup>
                               <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                                 <tr>
                                   <th className="px-2 py-2 pl-4">Truck No</th>
@@ -1031,15 +1018,7 @@ export default function BackendDashboard({
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap table-fixed">
-                <colgroup>
-                  <col className="w-[120px]" />
-                  <col className="w-[160px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[80px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[220px]" />
-                </colgroup>
+              <colgroup><col className="w-[120px]" /><col className="w-[160px]" /><col className="w-[120px]" /><col className="w-[110px]" /><col className="w-[80px]" /><col className="w-[100px]" /><col className="w-[220px]" /></colgroup>
                 <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                   <tr>
                     <th className="px-3 py-3 pl-4">Truck Number</th>
@@ -1228,12 +1207,7 @@ export default function BackendDashboard({
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap table-fixed">
-                <colgroup>
-                  <col className="w-[180px]" /> {/* ID */}
-                  <col className="w-[100px]" /> {/* Org ID */}
-                  <col className="w-auto" />      {/* Primary detail */}
-                  <col className="w-[180px]" /> {/* Actions */}
-                </colgroup>
+                <colgroup><col className="w-[180px]" /><col className="w-[100px]" /><col className="w-auto" /><col className="w-[180px]" /></colgroup>
                 <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                   <tr>
                     <th className="px-4 py-3">ID / Reference</th>

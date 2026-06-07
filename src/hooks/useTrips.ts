@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TripEntry } from '../types';
+import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
 import { getTripDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -11,6 +11,7 @@ interface UseTripsParams {
   loadDashboardData: (month: string, year: string) => Promise<void>;
   activeMonth: string;
   activeYear: string;
+  currentUserId: string;
 }
 
 export function useTrips({
@@ -19,7 +20,8 @@ export function useTrips({
   logAction,
   loadDashboardData,
   activeMonth,
-  activeYear
+  activeYear,
+  currentUserId
 }: UseTripsParams) {
   const [trips, setTrips] = useState<TripEntry[]>(() => {
     try {
@@ -42,16 +44,16 @@ export function useTrips({
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgTrips = orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId);
+  const orgTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
+    .filter(t => !t.deletedAt);
 
   const postTripEntry = async (entryInput: Omit<TripEntry, 'id'>, editingTrip: TripEntry | null) => {
     if (editingTrip) {
       // Update logic
-      const updated: TripEntry = {
+      const updated = mutateRecord(editingTrip, {
         ...entryInput,
-        id: editingTrip.id,
         organizationId: editingTrip.organizationId || orgId
-      };
+      } as any, currentUserId);
 
       // Detect deleted carried-forward advances
       const deletedFwdAdvances: any[] = [];
@@ -81,6 +83,7 @@ export function useTrips({
           next = next.map(t => {
             if (t.tripNo === targetTripNo) {
               const cleanedAdvances = (t.advances || []).filter(adv => {
+                const isDest = deletedAdv.id.startsWith('fwd_in_');
                 const isMatchingFwd = isDest ? adv.id.startsWith('fwd_out_') : adv.id.startsWith('fwd_in_');
                 const matchingNotes = isDest
                   ? `Negative balance carried forward to ${editingTrip.tripNo}`
@@ -88,7 +91,7 @@ export function useTrips({
                 return !(isMatchingFwd && adv.notes === matchingNotes);
               });
               modifiedTripIds.push(t.id);
-              return { ...t, advances: cleanedAdvances };
+              return mutateRecord(t, { advances: cleanedAdvances }, currentUserId);
             }
             return t;
           });
@@ -123,11 +126,11 @@ export function useTrips({
         return;
       }
 
-      const newEntry: TripEntry = {
+      const newEntry = createRecord<TripEntry>({
         ...entryInput,
         id: 't_id_' + Date.now(),
         organizationId: orgId
-      };
+      }, currentUserId);
 
       if (isAppwriteConfigured()) {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
@@ -150,8 +153,8 @@ export function useTrips({
     const deletedTripNo = tEntry.tripNo;
     const modifiedTripIds: string[] = [];
 
-    // Filter out the deleted trip
-    let next = trips.filter(t => t.id !== id);
+    const updatedTrip = mutateRecord(tEntry, { deletedAt: new Date().toISOString() }, currentUserId);
+    let next = trips.map(t => t.id === id ? updatedTrip : t);
 
     // Clean up carried-forward advances on other trips that refer to the deleted trip
     next = next.map(t => {
@@ -166,14 +169,14 @@ export function useTrips({
           return !(isFwd && referencesDeleted);
         });
         modifiedTripIds.push(t.id);
-        return { ...t, advances: cleanedAdvances };
+        return mutateRecord(t, { advances: cleanedAdvances }, currentUserId);
       }
       return t;
     });
 
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      await appwrite.deleteFleetDocument(databaseId, 'trips', id);
+      await appwrite.saveFleetDocument(databaseId, 'trips', id, orgId, updatedTrip);
       
       for (const mId of modifiedTripIds) {
         const mTrip = next.find(x => x.id === mId);

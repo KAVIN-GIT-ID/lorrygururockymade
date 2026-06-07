@@ -24,10 +24,12 @@ interface AppwriteCloudSyncProps {
     tyres: any[];
     auditLogs: any[];
   };
-  onLoadCloudState: (loadedState: any, userRightsData?: any) => boolean;
+  onLoadCloudState: (loadedState: any, userRightsData?: any, quiet?: boolean) => boolean;
   showNotification: (msg: string) => void;
   logAction: (action: string, model: string, identifier: string, description: string) => void;
   currentUserOrgId: string;
+  currentUserEmail?: string;
+  currentUserId: string;
   isAdmin: boolean;
   onInitialSyncComplete?: (completed: boolean) => void;
   onConnectionChange?: (isOnline: boolean, reason?: 'offline' | 'realtime_lost') => void;
@@ -39,6 +41,8 @@ export default function AppwriteCloudSync({
   showNotification,
   logAction,
   currentUserOrgId,
+  currentUserEmail,
+  currentUserId,
   isAdmin,
   onInitialSyncComplete,
   onConnectionChange
@@ -59,6 +63,13 @@ export default function AppwriteCloudSync({
   });
 
   const [realtimeConnected, setRealtimeConnected] = useState(true);
+  const [disableRealtime, setDisableRealtime] = useState(() => {
+    return localStorage.getItem('appwrite_disable_realtime') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('appwrite_disable_realtime', disableRealtime ? 'true' : 'false');
+  }, [disableRealtime]);
 
   // Monitor hardware/browser network connectivity status
   useEffect(() => {
@@ -187,7 +198,9 @@ export default function AppwriteCloudSync({
     }
 
     try {
-      console.log('Appwrite DB: Fetching fleet documents from multi-collection structure...');
+      if (!quiet) {
+        console.log('Appwrite DB: Fetching fleet documents from multi-collection structure...');
+      }
 
       const loadedState: any = {
         trucks: [],
@@ -247,10 +260,13 @@ export default function AppwriteCloudSync({
           for (const doc of allConfigs) {
             try {
               const parsed = JSON.parse(doc.data);
-              if (doc.key.startsWith('usr_')) {
+              const keyVal = doc.$id || doc.key || '';
+              if (keyVal.startsWith('usr_')) {
                 userRightsData.userRightsList.push(parsed);
-              } else if (doc.key.startsWith('prf_')) {
-                userRightsData.organizationProfiles.push(parsed);
+              } else if (keyVal.startsWith('prf_')) {
+                if (parsed && parsed.organizationId) {
+                  userRightsData.organizationProfiles.push(parsed);
+                }
               }
             } catch (e) {
               console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
@@ -286,7 +302,7 @@ export default function AppwriteCloudSync({
       };
 
       // Load state into local UI
-      const didChange = onLoadCloudState(loadedState, userRightsData);
+      const didChange = onLoadCloudState(loadedState, userRightsData, quiet);
 
       previousFingerprint.current = getScopedFingerprint(loadedState);
 
@@ -354,6 +370,18 @@ export default function AppwriteCloudSync({
 
     try {
       let changeDetected = false;
+      let localStateNeedsPurge = false;
+
+      const nextState = {
+        trucks: [...currentState.trucks],
+        drivers: [...currentState.drivers],
+        offices: [...currentState.offices],
+        accounts: [...currentState.accounts],
+        trips: [...currentState.trips],
+        expenses: [...currentState.expenses],
+        tyres: [...currentState.tyres],
+        auditLogs: [...currentState.auditLogs]
+      };
 
       for (const cat of categories) {
         const currentList = (currentState[cat.key] || []).filter(x => orgId === 'org_backend' || x.organizationId === orgId);
@@ -361,8 +389,23 @@ export default function AppwriteCloudSync({
 
         // 1. Find Created & Updated documents
         for (const item of currentList) {
+          // If soft-deleted locally, push physical deletion to Appwrite
+          if (item.deletedAt) {
+            console.log(`Appwrite DB [Delta Sync]: Deleting (soft-deleted locally) doc for ${cat.collection} (${item.id})`);
+            try {
+              await appwrite.deleteFleetDocument(databaseId, cat.collection, item.id);
+              nextState[cat.key] = (nextState[cat.key] as any[]).filter(x => x.id !== item.id);
+              localStateNeedsPurge = true;
+              changeDetected = true;
+            } catch (err: any) {
+              console.warn(`Failed to push deletion for ${item.id}:`, err.message);
+            }
+            continue;
+          }
+
           const baseItem = baselineList.find(b => b.id === item.id);
-          const itemStr = JSON.stringify(item);
+          const baseVersion = baseItem ? (baseItem.version ?? 1) : 0;
+          const currentVersion = item.version ?? 1;
 
           if (!baseItem) {
             // Created item
@@ -370,7 +413,7 @@ export default function AppwriteCloudSync({
             const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
             await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, targetOrgId, item);
             changeDetected = true;
-          } else if (JSON.stringify(baseItem) !== itemStr) {
+          } else if (currentVersion > baseVersion) {
             // Updated item
             console.log(`Appwrite DB [Delta Sync]: Updating doc for ${cat.collection} (${item.id})`);
             const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
@@ -379,12 +422,10 @@ export default function AppwriteCloudSync({
           }
         }
 
-        // 2. Find Deleted documents
-        // Safety: only delete items that belong to THIS org. This prevents
-        // org_backend's unfiltered baseline from causing cross-org deletions.
+        // 2. Find Deleted documents fallback (hard deletions)
         for (const baseItem of baselineList) {
           if (orgId !== 'org_backend' && baseItem.organizationId && baseItem.organizationId !== orgId) {
-            continue; // Not our org — skip
+            continue;
           }
           const currentItem = currentList.find(c => c.id === baseItem.id);
           if (!currentItem) {
@@ -398,28 +439,31 @@ export default function AppwriteCloudSync({
       if (changeDetected) {
         console.log("Appwrite DB [Delta Sync]: Sync completed successfully.");
 
-        // After pushing our own changes, do a quiet pull to apply any realtime
-        // events from other users that arrived during the sync window.
+        if (localStateNeedsPurge) {
+          onLoadCloudStateRef.current(nextState, null, true);
+        }
+
         try {
           await handlePullFromDB(true);
         } catch (pullErr: any) {
           console.warn('Post-sync quiet pull failed:', pullErr.message);
         }
 
-        // Update baseline
+        // Update baseline with next/purged state
+        const nextBaselineState = localStateNeedsPurge ? nextState : currentState;
         baselineStateRef.current = {
-          trucks: (currentState.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          drivers: (currentState.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-          offices: (currentState.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-          accounts: (currentState.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-          trips: (currentState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          expenses: (currentState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-          tyres: (currentState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          auditLogs: (currentState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+          trucks: (nextBaselineState.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+          drivers: (nextBaselineState.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
+          offices: (nextBaselineState.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
+          accounts: (nextBaselineState.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
+          trips: (nextBaselineState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+          expenses: (nextBaselineState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
+          tyres: (nextBaselineState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
+          auditLogs: (nextBaselineState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
         };
       }
 
-      previousFingerprint.current = getScopedFingerprint(currentState);
+      previousFingerprint.current = getScopedFingerprint(localStateNeedsPurge ? nextState : currentState);
     } catch (e: any) {
       console.warn("Appwrite Database auto-push failed:", e.message);
     } finally {
@@ -427,27 +471,18 @@ export default function AppwriteCloudSync({
     }
   };
 
-  // Automatic background delta sync is disabled to use direct database interaction on hook mutations.
-  // This prevents race conditions and data-overwrite issues on page reloads or network glitches.
-  /*
-  useEffect(() => {
-    if (!isConfigured || !initialPullDone) return;
-    if (previousFingerprint.current === stateFingerprint) return;
 
-    previousFingerprint.current = stateFingerprint;
-
-    const timer = setTimeout(() => {
-      syncLocalToDatabase();
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [stateFingerprint, isConfigured, initialPullDone]);
-  */
 
   // Real-Time Web Socket subscription using Appwrite real-time channel
   // Auto-reconnects with exponential backoff when the socket drops.
   useEffect(() => {
     if (!isConfigured || !initialPullDone) {
+      setRealtimeConnected(false);
+      return;
+    }
+
+    if (disableRealtime) {
+      console.info("Appwrite Sync: Realtime WebSocket disabled by user. Falling back to REST polling.");
       setRealtimeConnected(false);
       return;
     }
@@ -458,14 +493,20 @@ export default function AppwriteCloudSync({
     let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
     let reconnectDelay = 5000;      // start at 5s, cap at 60s
     const MAX_DELAY = 60000;
+    let disconnectCount = 0;
 
     const teardown = () => {
       if (unsubscribe) {
         try {
           if (typeof unsubscribe === 'function') {
             unsubscribe();
-          } else if (unsubscribe && typeof unsubscribe.unsubscribe === 'function') {
-            unsubscribe.unsubscribe();
+          } else {
+            const subAny = unsubscribe as any;
+            if (typeof subAny.close === 'function') {
+              subAny.close();
+            } else if (typeof subAny.unsubscribe === 'function') {
+              subAny.unsubscribe();
+            }
           }
         } catch (_) { /* ignore close-state errors */ }
         unsubscribe = null;
@@ -529,6 +570,12 @@ export default function AppwriteCloudSync({
           return;
         }
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
+        if (orgId !== 'org_backend' && currentUserEmail) {
+          const myUserDocId = appwrite.getEmailDocId(currentUserEmail);
+          const myOrgDocId = appwrite.getOrgDocId(orgId);
+          channels.push(`databases.${databaseId}.collections.global_configs.documents.${myUserDocId}`);
+          channels.push(`databases.${databaseId}.collections.global_configs.documents.${myOrgDocId}`);
+        }
         console.log(`Appwrite socket: Subscribing to authorized channels:`, channels);
 
         try {
@@ -552,18 +599,6 @@ export default function AppwriteCloudSync({
 
               const eventType = response.events[0];
 
-              const currentState = currentLocalStateRef.current;
-              const nextState = {
-                trucks: [...(currentState.trucks || [])],
-                drivers: [...(currentState.drivers || [])],
-                offices: [...(currentState.offices || [])],
-                accounts: [...(currentState.accounts || [])],
-                trips: [...(currentState.trips || [])],
-                expenses: [...(currentState.expenses || [])],
-                tyres: [...(currentState.tyres || [])],
-                auditLogs: [...(currentState.auditLogs || [])]
-              };
-
               if (collectionId === 'global_configs') {
                 try {
                   const storedRights = localStorage.getItem('ttt_user_rights');
@@ -580,22 +615,25 @@ export default function AppwriteCloudSync({
                     }
                   } else {
                     const parsedItem = JSON.parse(doc.data);
-                    if (doc.key.startsWith('usr_')) {
+                    const keyVal = doc.$id || doc.key || '';
+                    if (keyVal.startsWith('usr_')) {
                       const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
                       if (idx > -1) { localRights[idx] = parsedItem; } else { localRights.push(parsedItem); }
-                    } else if (doc.key.startsWith('prf_')) {
-                      const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
-                      if (idx > -1) { localProfiles[idx] = parsedItem; } else { localProfiles.push(parsedItem); }
+                    } else if (keyVal.startsWith('prf_')) {
+                      if (parsedItem && parsedItem.organizationId) {
+                        const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
+                        if (idx > -1) { localProfiles[idx] = parsedItem; } else { localProfiles.push(parsedItem); }
+                      }
                     }
                   }
-                  onLoadCloudStateRef.current({}, { userRightsList: localRights, organizationProfiles: localProfiles });
+                  onLoadCloudStateRef.current({}, { userRightsList: localRights, organizationProfiles: localProfiles }, true);
                 } catch (e) {
                   console.warn('Failed to parse realtime global config:', e);
                 }
                 return;
               }
 
-              let key: keyof typeof nextState | null = null;
+              let key: 'trucks' | 'drivers' | 'offices' | 'accounts' | 'trips' | 'expenses' | 'tyres' | 'auditLogs' | null = null;
               if (collectionId === 'trucks') key = 'trucks';
               else if (collectionId === 'drivers') key = 'drivers';
               else if (collectionId === 'offices') key = 'offices';
@@ -605,42 +643,85 @@ export default function AppwriteCloudSync({
               else if (collectionId === 'tyres') key = 'tyres';
               else if (collectionId === 'audit_logs') key = 'auditLogs';
 
-              if (!key || !nextState[key]) return;
+              if (!key) return;
+
+              const currentState = currentLocalStateRef.current;
+              const currentCollection = currentState[key] || [];
+              let updatedCollection = [...currentCollection];
 
               if (eventType.endsWith('.delete')) {
-                nextState[key] = (nextState[key] as any[]).filter(x => x.id !== doc.$id);
+                updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
               } else {
                 try {
                   const parsedRecord = JSON.parse(doc.data);
-                  const index = (nextState[key] as any[]).findIndex(x => x.id === doc.$id);
-                  if (index > -1) { (nextState[key] as any[])[index] = parsedRecord; }
-                  else { (nextState[key] as any[]).push(parsedRecord); }
+                  const cloudVersion = parsedRecord.version ?? 1;
+                  const cloudUpdatedBy = parsedRecord.updatedBy ?? '';
+
+                  const localRecordIndex = updatedCollection.findIndex(x => x.id === doc.$id);
+                  const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
+                  const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
+
+                  if (cloudVersion > localVersion) {
+                    if (parsedRecord.deletedAt) {
+                      // Cloud soft-deleted: remove locally
+                      updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+                    } else {
+                      // Cloud update wins
+                      const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
+                      if (localRecordIndex > -1) {
+                        updatedCollection[localRecordIndex] = nextRecord;
+                      } else {
+                        updatedCollection.push(nextRecord);
+                      }
+                    }
+                  } else if (cloudVersion === localVersion) {
+                    if (cloudUpdatedBy === currentUserId && localRecord?.syncState === 'pending') {
+                      if (localRecord.deletedAt) {
+                        // Confirmed soft delete: remove locally
+                        updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+                      } else {
+                        // Confirmed update: mark synced
+                        localRecord.syncState = 'synced';
+                      }
+                    } else if (cloudUpdatedBy !== currentUserId && localRecord?.syncState === 'pending') {
+                      console.warn(`Conflict detected for document ${doc.$id}. Same version ${cloudVersion} but updated by user: ${cloudUpdatedBy}`);
+                      localRecord.syncState = 'conflict';
+                    }
+                  }
                 } catch (e) {
                   console.warn('Failed to parse realtime data payload:', e);
                   return;
                 }
               }
 
+              // Update the baseline for ONLY this collection
               baselineStateRef.current = {
-                trucks: (nextState.trucks).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-                drivers: (nextState.drivers).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-                offices: (nextState.offices).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-                accounts: (nextState.accounts).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-                trips: (nextState.trips).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-                expenses: (nextState.expenses).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-                tyres: (nextState.tyres).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-                auditLogs: (nextState.auditLogs).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
+                ...baselineStateRef.current,
+                [key]: updatedCollection.filter(x => orgId === 'org_backend' || x.organizationId === orgId)
               };
 
-              onLoadCloudStateRef.current(nextState);
-              previousFingerprint.current = getScopedFingerprint(nextState);
-              console.log(`Database Sync: Updated ${collectionId} records in real-time.`);
+              // Call onLoadCloudStateRef with only the changed collection
+              onLoadCloudStateRef.current({ [key]: updatedCollection }, null, true);
+
+              // Update previousFingerprint
+              const nextFingerprintState = {
+                ...currentState,
+                [key]: updatedCollection
+              };
+              previousFingerprint.current = getScopedFingerprint(nextFingerprintState);
             }
           );
 
           subPromise.then(sub => {
             if (destroyed) {
-              try { sub.unsubscribe(); } catch (_) {}
+              try {
+                const subAny = sub as any;
+                if (typeof subAny.close === 'function') {
+                  subAny.close();
+                } else if (typeof subAny.unsubscribe === 'function') {
+                  subAny.unsubscribe();
+                }
+              } catch (_) { }
             } else {
               unsubscribe = sub;
               // Reset backoff on successful connect
@@ -648,6 +729,13 @@ export default function AppwriteCloudSync({
               setRealtimeConnected(true);
               if (onConnectionChange) onConnectionChange(true);
               console.log('Appwrite realtime socket pipeline successfully established.');
+              
+              // Reset disconnect count only if connection remains stable for 5 seconds
+              setTimeout(() => {
+                if (!destroyed && unsubscribe) {
+                  disconnectCount = 0;
+                }
+              }, 5000);
             }
           });
 
@@ -658,8 +746,11 @@ export default function AppwriteCloudSync({
             if (wsInstance) {
               clearInterval(attachInterval);
               const handleSocketClose = (event: CloseEvent) => {
-                if (event.code === 1008) {
-                  console.warn('Appwrite socket: Closed with 1008 policy/permission error. Bypassing Realtime and falling back to REST/Polling.');
+                disconnectCount++;
+                console.warn(`Appwrite socket closed (code: ${event.code}). Total disconnects: ${disconnectCount}`);
+                
+                if (event.code === 1008 || disconnectCount >= 3) {
+                  console.warn('Appwrite socket: Persistent connection issues or policy violation detected. Bypassing Realtime and falling back to REST/Polling.');
                   teardown();
                   if (reconnectTimer) {
                     clearTimeout(reconnectTimer);
@@ -667,6 +758,8 @@ export default function AppwriteCloudSync({
                   }
                   setRealtimeConnected(false);
                   if (onConnectionChange) onConnectionChange(true);
+                } else {
+                  setRealtimeConnected(false);
                 }
               };
 
@@ -688,8 +781,14 @@ export default function AppwriteCloudSync({
                 } catch (_) { }
               };
 
+              const handleSocketError = (err: Event) => {
+                console.warn('Appwrite socket error event:', err);
+                setRealtimeConnected(false);
+              };
+
               wsInstance.addEventListener('close', handleSocketClose);
               wsInstance.addEventListener('message', handleSocketMessage);
+              wsInstance.addEventListener('error', handleSocketError);
             }
             if (++attachAttempts > 50) clearInterval(attachInterval); // timeout after 5 seconds
           }, 100);
@@ -734,7 +833,20 @@ export default function AppwriteCloudSync({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       teardown();
     };
-  }, [databaseId, isConfigured, orgId, initialPullDone]);
+  }, [databaseId, isConfigured, orgId, initialPullDone, currentUserEmail, disableRealtime]);
+
+  // Polling fallback to keep data and permissions in sync if WebSocket events are blocked
+  useEffect(() => {
+    if (!isConfigured || !initialPullDone) return;
+
+    const pollInterval = realtimeConnected ? 20000 : 3500;
+
+    const interval = setInterval(() => {
+      handlePullFromDB(true);
+    }, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [isConfigured, initialPullDone, databaseId, orgId, realtimeConnected]);
 
   const handleManualPushToDB = async () => {
 
@@ -829,8 +941,8 @@ export default function AppwriteCloudSync({
         id="btn-appwrite-sync-trigger"
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${isConfigured
-            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
-            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
+          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
+          : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
           }`}
       >
         <Database className={`w-3.5 h-3.5 ${realtimeConnected ? 'animate-pulse text-emerald-400' : ''}`} />
@@ -899,6 +1011,19 @@ export default function AppwriteCloudSync({
                         className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="chk-disable-realtime"
+                      checked={disableRealtime}
+                      onChange={(e) => setDisableRealtime(e.target.checked)}
+                      className="rounded bg-slate-950 border-slate-800 text-blue-605 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                    />
+                    <label htmlFor="chk-disable-realtime" className="text-[10px] text-slate-400 font-bold cursor-pointer select-none">
+                      Force REST Polling (Disable WebSocket)
+                    </label>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">

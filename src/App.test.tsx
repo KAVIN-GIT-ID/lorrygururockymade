@@ -11,9 +11,11 @@ describe('App Component Root Integration Tests', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
   });
 
   it('should render the LoginScreen when no session exists on startup', async () => {
+    window.history.pushState({}, '', '/login');
     renderApp();
 
     // By default, since no user session is mocked, it should display the LoginScreen
@@ -600,6 +602,12 @@ describe('App Component Root Integration Tests', () => {
       return {} as any;
     });
 
+    // Stub global fetch for WhatsApp OTP gateway
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({})
+    }));
+
     renderApp();
 
     // Wait for the URL parameter redirect flow to complete and display notification
@@ -631,17 +639,14 @@ describe('App Component Root Integration Tests', () => {
     fireEvent.change(phoneInput, { target: { value: 'invalidphone' } });
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
     fireEvent.click(saveVerifyBtn);
-    expect(alertSpy).toHaveBeenLastCalledWith("Invalid phone number format. It must start with '+' and follow E.164 standards (e.g. +919876543210).");
+    await screen.findByText("Invalid phone number format. Must start with '+' and follow E.164 (e.g. +919876543210).");
 
     // Test successful phone number submission
     fireEvent.change(phoneInput, { target: { value: '+919876543210' } });
     fireEvent.click(saveVerifyBtn);
 
-    await waitFor(() => {
-      expect(mockUpdatePhone).toHaveBeenCalledWith('+919876543210', 'password123');
-      expect(mockCreatePhoneVerification).toHaveBeenCalled();
-      expect(alertSpy).toHaveBeenLastCalledWith('Mobile number saved and verification OTP sent successfully!');
-    });
+    await screen.findByText('Mobile number saved and verification OTP sent successfully via WhatsApp!');
+    expect(mockUpdatePhone).toHaveBeenCalledWith('+919876543210', 'password123');
 
     // The modal should close, and the OTP verification form is displayed instead of the send button
     expect(screen.queryByText('Add / Update Mobile Number')).not.toBeInTheDocument();
@@ -653,9 +658,7 @@ describe('App Component Root Integration Tests', () => {
     const verifyCodeBtn = screen.getByRole('button', { name: 'Verify Code' });
     fireEvent.click(verifyCodeBtn);
 
-    await waitFor(() => {
-      expect(mockUpdatePhoneVerification).toHaveBeenCalledWith('usr-unverified-id', '123456');
-    });
+    await screen.findByText('Mobile number verified successfully!');
 
     // Since both email and phone are verified, the dashboard should load instantly without page refresh
     await screen.findByText('Dashboard');

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Tyre, ExpenseEntry, TyreMovementLog } from '../types';
 import { migrateTyres } from '../lib/migrations';
-import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface UseTyresParams {
   orgId: string;
@@ -68,15 +67,6 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
     const nextTyres = [...tyres, n];
     saveTyres(nextTyres);
 
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'tyres', n.id, orgId, n);
-      } catch (err) {
-        console.warn("Failed to save tyre to Appwrite:", err);
-      }
-    }
-
     logAction('Created', 'Tyre', n.tyreNo, `Registered brand new ${n.manufacturer} (${n.size}) tyre to yard warehouse.`);
 
     if (expenseDetails?.createExpense && tyreInput.purchaseAmount && tyreInput.purchaseAmount > 0) {
@@ -95,14 +85,6 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
 
       saveExpenses([...expenses, newExpense]);
 
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'expenses', newExpense.id, orgId, newExpense);
-        } catch (err) {
-          console.warn("Failed to save tyre purchase expense to Appwrite:", err);
-        }
-      }
       await loadDashboardData(activeMonth, activeYear);
 
       logAction('Created', 'Expense', expNo, `Auto-created Tyre purchase expense for Serial ${n.tyreNo} charge to vehicle ${newExpense.truckNo} of ₹${newExpense.amount.toLocaleString()}`);
@@ -117,15 +99,6 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
     const merged: Tyre = oldTyre ? { ...oldTyre, ...updated } : updated;
     const next = tyres.map(t => t.id === updated.id ? merged : t);
     saveTyres(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'tyres', merged.id, orgId, merged);
-      } catch (err) {
-        console.warn("Failed to update tyre in Appwrite:", err);
-      }
-    }
 
     let actionD = `Updated tyre specifications`;
     if (oldTyre && oldTyre.status !== merged.status) {
@@ -154,15 +127,6 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
     }
     const next = tyres.filter(t => t.id !== id);
     saveTyres(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'tyres', id);
-      } catch (err) {
-        console.warn("Failed to delete tyre from Appwrite:", err);
-      }
-    }
 
     logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre serial ${tyreToDelete.tyreNo} specification datasheet.`);
     showNotification(`Tyre archived.`);

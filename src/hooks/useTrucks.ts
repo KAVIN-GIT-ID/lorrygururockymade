@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Truck, TripEntry, OrganizationProfile } from '../types';
+import { Truck, TripEntry, OrganizationProfile, createRecord, mutateRecord } from '../types';
 import { migrateTrucks } from '../lib/migrations';
 import { getTruckDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -12,6 +12,7 @@ interface UseTrucksParams {
   showNotification: (msg: string) => void;
   logAction: (action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected', category: string, reference: string, details: string) => void;
   pushFleetSnapshotNow: (overrideTrucks?: Truck[]) => Promise<void>;
+  currentUserId: string;
 }
 
 export function useTrucks({
@@ -21,7 +22,8 @@ export function useTrucks({
   saveOrganizationProfiles,
   showNotification,
   logAction,
-  pushFleetSnapshotNow
+  pushFleetSnapshotNow,
+  currentUserId
 }: UseTrucksParams) {
   const [trucks, setTrucks] = useState<Truck[]>(() => {
     try {
@@ -38,7 +40,8 @@ export function useTrucks({
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgTrucks = orgId === 'org_backend' ? trucks : trucks.filter(t => t.organizationId === orgId);
+  const orgTrucks = (orgId === 'org_backend' ? trucks : trucks.filter(t => t.organizationId === orgId))
+    .filter(t => !t.deletedAt);
 
   const addTruck = async (truckInput: Omit<Truck, 'id'>) => {
     const isDup = orgTrucks.some(t => t.truckNo.toUpperCase().trim() === truckInput.truckNo.toUpperCase().trim());
@@ -50,13 +53,14 @@ export function useTrucks({
     d.setFullYear(d.getFullYear() + 1);
     const expiryStr = d.toISOString().split('T')[0];
 
-    const n = {
+    const n = createRecord<Truck>({
       ...truckInput,
       id: 't_id_' + Date.now(),
       organizationId: orgId,
       isApproved: true,
       registrationExpiryDate: expiryStr
-    };
+    }, currentUserId);
+
     saveTrucks([...trucks, n]);
 
     if (isAppwriteConfigured()) {
@@ -74,7 +78,10 @@ export function useTrucks({
 
   const updateTruck = async (updated: Truck) => {
     const oldTruck = trucks.find(t => t.id === updated.id);
-    const merged: Truck = oldTruck ? { ...oldTruck, ...updated } : updated;
+    const merged: Truck = oldTruck
+      ? mutateRecord(oldTruck, updated, currentUserId)
+      : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
+    
     const next = trucks.map(t => t.id === updated.id ? merged : t);
     saveTrucks(next);
 
@@ -115,15 +122,16 @@ export function useTrucks({
       alert(`Cannot delete Truck ${truckToDelete?.truckNo}. It is associated with active trip registers.`);
       return;
     }
-    const next = trucks.filter(t => t.id !== id);
+    const updatedTruck = mutateRecord(truckToDelete, { deletedAt: new Date().toISOString() }, currentUserId);
+    const next = trucks.map(t => t.id === id ? updatedTruck : t);
     saveTrucks(next);
 
     if (isAppwriteConfigured() && truckToDelete) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'trucks', id);
+        await appwrite.saveFleetDocument(databaseId, 'trucks', id, orgId, updatedTruck);
       } catch (err) {
-        console.warn("Failed to delete truck from Appwrite:", err);
+        console.warn("Failed to delete truck (soft-delete) from Appwrite:", err);
       }
 
       if (truckToDelete.rcFileId) {

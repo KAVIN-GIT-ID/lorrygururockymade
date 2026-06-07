@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Driver, TripEntry } from '../types';
+import { Driver, TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateDrivers } from '../lib/migrations';
 import { getDriverDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -9,9 +9,10 @@ interface UseDriversParams {
   trips: TripEntry[];
   showNotification: (msg: string) => void;
   logAction: (action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected', category: string, reference: string, details: string) => void;
+  currentUserId: string;
 }
 
-export function useDrivers({ orgId, trips, showNotification, logAction }: UseDriversParams) {
+export function useDrivers({ orgId, trips, showNotification, logAction, currentUserId }: UseDriversParams) {
   const [drivers, setDrivers] = useState<Driver[]>(() => {
     try {
       const stored = localStorage.getItem('ttt_drivers');
@@ -27,7 +28,8 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgDrivers = orgId === 'org_backend' ? drivers : drivers.filter(d => d.organizationId === orgId);
+  const orgDrivers = (orgId === 'org_backend' ? drivers : drivers.filter(d => d.organizationId === orgId))
+    .filter(d => !d.deletedAt);
 
   const addDriver = async (driverInput: Omit<Driver, 'id'>) => {
     const isDup = orgDrivers.some(d => d.driverName.toUpperCase().trim() === driverInput.driverName.toUpperCase().trim());
@@ -35,7 +37,12 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
       alert("Driver Name is already registered.");
       return;
     }
-    const d = { ...driverInput, id: 'd_id_' + Date.now(), organizationId: orgId };
+    const d = createRecord<Driver>({
+      ...driverInput,
+      id: 'd_id_' + Date.now(),
+      organizationId: orgId
+    }, currentUserId);
+
     saveDrivers([...drivers, d]);
 
     if (isAppwriteConfigured()) {
@@ -53,7 +60,10 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
 
   const updateDriver = async (updated: Driver) => {
     const oldDriver = drivers.find(d => d.id === updated.id);
-    const merged: Driver = oldDriver ? { ...oldDriver, ...updated } : updated;
+    const merged: Driver = oldDriver
+      ? mutateRecord(oldDriver, updated, currentUserId)
+      : createRecord<Driver>({ ...updated, organizationId: orgId } as any, currentUserId);
+    
     const next = drivers.map(d => d.id === updated.id ? merged : d);
     saveDrivers(next);
 
@@ -87,15 +97,16 @@ export function useDrivers({ orgId, trips, showNotification, logAction }: UseDri
       alert(`Cannot delete Driver ${dr?.driverName}. This driver is assigned to historical journeys.`);
       return;
     }
-    const next = drivers.filter(d => d.id !== id);
+    const updatedDriver = mutateRecord(dr, { deletedAt: new Date().toISOString() }, currentUserId);
+    const next = drivers.map(d => d.id === id ? updatedDriver : d);
     saveDrivers(next);
 
     if (isAppwriteConfigured() && dr) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.deleteFleetDocument(databaseId, 'drivers', id);
+        await appwrite.saveFleetDocument(databaseId, 'drivers', id, orgId, updatedDriver);
       } catch (err) {
-        console.warn("Failed to delete driver from Appwrite:", err);
+        console.warn("Failed to delete driver (soft-delete) from Appwrite:", err);
       }
 
       if (dr.licenseFileId) {

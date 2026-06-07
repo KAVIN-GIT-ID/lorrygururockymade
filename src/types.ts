@@ -3,6 +3,46 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface BaseRecord {
+  id: string;
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  deletedAt?: string;
+  syncState?: 'pending' | 'synced' | 'conflict';
+}
+
+export function createRecord<T>(
+  data: Omit<T, keyof BaseRecord> & { id: string },
+  userId: string
+): T & BaseRecord {
+  const now = new Date().toISOString();
+  return {
+    ...data,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: userId,
+    syncState: 'pending'
+  } as any;
+}
+
+export function mutateRecord<T extends BaseRecord>(
+  record: T,
+  updates: Partial<T>,
+  userId: string
+): T {
+  return {
+    ...record,
+    ...updates,
+    version: Math.max(1, (record.version || 0) + 1),
+    updatedAt: new Date().toISOString(),
+    updatedBy: userId,
+    syncState: 'pending'
+  };
+}
+
 export interface LoanEntry {
   id: string;
   loanType?: string;               // Type of loan (e.g. 'Chassis Loan', 'Body Loan')
@@ -15,8 +55,7 @@ export interface LoanEntry {
   loanNotes?: string;              // Optional remarks/notes
 }
 
-export interface Truck {
-  id: string;
+export interface Truck extends BaseRecord {
   truckNo: string;
   ownerName?: string;
   status: 'Active' | 'Inactive' | 'Admin Disabled' | 'Sold';
@@ -66,8 +105,7 @@ export interface Truck {
   loans?: LoanEntry[];             // Multiple loans support
 }
 
-export interface Driver {
-  id: string;
+export interface Driver extends BaseRecord {
   driverName: string;
   phone?: string;
   licenseNo?: string;
@@ -76,8 +114,7 @@ export interface Driver {
   licenseFileId?: string;
 }
 
-export interface Office {
-  id: string;
+export interface Office extends BaseRecord {
   officeName: string;
   city?: string;
   contactPerson?: string;
@@ -86,8 +123,7 @@ export interface Office {
   organizationId?: string;
 }
 
-export interface Account {
-  id: string;
+export interface Account extends BaseRecord {
   accountName: string;
   type: 'Cash' | 'Bank' | 'Digital Wallets' | 'Other';
   holderName?: string;
@@ -220,8 +256,7 @@ export interface SubTrip {
   ratePerTon?: number;
 }
 
-export interface TripEntry {
-  id: string;
+export interface TripEntry extends BaseRecord {
   tripNo: string;           // Group/Index Identifier (e.g. TRIP-2026-0001)
   truckNo: string;          // References Truck.truckNo
   startDate: string;        // YYYY-MM-DD
@@ -517,8 +552,7 @@ export function calculateBalance(trip: TripEntry): number {
   return getTripMetrics(trip).outstandingBalance;
 }
 
-export interface ExpenseEntry {
-  id: string;
+export interface ExpenseEntry extends BaseRecord {
   truckNo: string;
   expenseType: string; // e.g. "Temporary", "Scheduled", "Maintenance"
   shopName: string;
@@ -532,8 +566,7 @@ export interface ExpenseEntry {
   organizationId?: string;
 }
 
-export interface AuditLog {
-  id: string;
+export interface AuditLog extends BaseRecord {
   timestamp: string; // YYYY-MM-DD HH:MM:ss
   user: string; // e.g. "admin@example.com"
   action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected';
@@ -554,8 +587,7 @@ export interface TyreMovementLog {
 
 export type TyreStatus = 'Available' | 'Active' | 'Sold' | 'Scrapped';
 
-export interface Tyre {
-  id: string;
+export interface Tyre extends BaseRecord {
   tyreNo: string;        // Serial / Unique Code printed on tyre
   manufacturer: string;  // MRF, Apollo, TATA, Ashok Leyland, CEAT, Michelin, etc.
   size?: string;         // e.g. 10.00R20, 295/85R22.5

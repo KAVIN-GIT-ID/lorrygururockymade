@@ -517,10 +517,15 @@ export default function TruckMaster({
     };
 
     if (isEditing) {
-      onUpdateTruck({
-        id: isEditing,
-        ...truckPayload
-      });
+      const editingTruckObj = trucks.find(t => t.id === isEditing);
+      if (editingTruckObj && editingTruckObj.requestStatus === 'Rejected' && onAddTruckRequest) {
+        onAddTruckRequest(truckPayload);
+      } else {
+        onUpdateTruck({
+          id: isEditing,
+          ...truckPayload
+        });
+      }
     } else {
       if (limitReached && onAddTruckRequest) {
         onAddTruckRequest(truckPayload);
@@ -760,15 +765,15 @@ export default function TruckMaster({
       </div>
     );
 
+    const formattedDate = formatToDisplayDate(dateStr);
     let badgeClass = "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30";
-    let displayText = `${dateStr} (${days}d left)`;
+    let statusText = days !== null ? `(${days}d left)` : '';
     if (days !== null) {
       if (days <= 0) {
-        badgeClass = "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 font-bold uppercase animate-pulse";
-        displayText = `${dateStr} (EXPIRED)`;
+        badgeClass = "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 font-bold uppercase";
+        statusText = "(EXPIRED)";
       } else if (days <= 30) {
         badgeClass = "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 font-bold";
-        displayText = `${dateStr} (${days}d left)`;
       }
     }
 
@@ -776,7 +781,10 @@ export default function TruckMaster({
       <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-800/30 last:border-0 text-xs">
         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</span>
         <div className="flex items-center gap-1.5">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono ${badgeClass}`}>{displayText}</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono ${badgeClass}`}>{formattedDate}</span>
+          {statusText && (
+            <span className={`text-[9px] font-bold font-mono ${days !== null && days <= 0 ? 'text-rose-600 dark:text-rose-400 animate-pulse' : 'text-slate-400 dark:text-slate-500'}`}>{statusText}</span>
+          )}
           {fileId && (
             <button
               type="button"
@@ -1592,7 +1600,7 @@ export default function TruckMaster({
               {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {isSubmitting 
                 ? 'Uploading & Saving...' 
-                : (isEditing ? 'Save Specification Updates' : limitReached ? 'Submit Activation Request' : 'Add Truck Specs')}
+                : (isEditing ? (trucks.find(t => t.id === isEditing)?.requestStatus === 'Rejected' ? 'Re-submit Activation Request' : 'Save Specification Updates') : limitReached ? 'Submit Activation Request' : 'Add Truck Specs')}
             </button>
           </div>
         </form>
@@ -1941,16 +1949,17 @@ export default function TruckMaster({
                   </button>
                   <button
                     type="button"
-                    disabled={!canEditTrucks || truck.isApproved === false}
+                    disabled={!canEditTrucks || (truck.isApproved === false && truck.requestStatus !== 'Rejected')}
                     onClick={() => startEdit(truck)}
                     className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Edit Specs</span>
+                    <span>{truck.requestStatus === 'Rejected' ? 'Re-apply' : 'Edit Specs'}</span>
                   </button>
                   <button
                     type="button"
                     disabled={!canDeleteTrucks}
+                    title="Delete Truck"
                     onClick={() => {
                       const msg = `Caution! Are you sure you want to permanently delete vehicle entry ${truck.truckNo}? This will delete all compliance records.`;
                       if (confirmAction) {

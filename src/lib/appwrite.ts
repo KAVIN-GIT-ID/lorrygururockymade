@@ -148,18 +148,6 @@ class AppwriteService {
           }
         }
         const socket = new OriginalWebSocket(urlStr, protocols);
-        const originalSend = socket.send;
-        socket.send = function (data: any) {
-          try {
-            if (typeof data === 'string') {
-              const parsed = JSON.parse(data);
-              if (parsed.type === 'subscribe' || parsed.type === 'unsubscribe') {
-                return;
-              }
-            }
-          } catch (_) {}
-          return originalSend.apply(this, arguments as any);
-        };
         return socket;
       } as any;
       window.WebSocket.prototype = OriginalWebSocket.prototype;
@@ -541,44 +529,93 @@ class AppwriteService {
         errMsg.includes('invalid document structure');
     };
 
-    try {
-      // Upsert: Try updating the document first
-      const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
-      return response.$id;
-    } catch (err: any) {
-      // If document doesn't exist (404), create it
-      if (err.code === 404 || err.type === 'document_not_found') {
-        try {
-          const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
-          return response.$id;
-        } catch (createErr: any) {
-          if (isSchemaError(createErr)) {
-            console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
+    const tryUpdateFirst = collectionId !== 'audit_logs';
+
+    if (tryUpdateFirst) {
+      try {
+        const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
+        return response.$id;
+      } catch (err: any) {
+        const isNotFound = err.code === 404 ||
+          String(err.code) === '404' ||
+          err.type === 'document_not_found' ||
+          (err.message && err.message.toLowerCase().includes('not found'));
+        if (isNotFound) {
+          try {
+            const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
+            return response.$id;
+          } catch (createErr: any) {
+            if (isSchemaError(createErr)) {
+              console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
+              const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
+              return response.$id;
+            }
+            console.error(`Appwrite Database create failure for ${docId} in ${collectionId}:`, createErr);
+            throw createErr;
+          }
+        }
+        if (isSchemaError(err)) {
+          console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
+          try {
+            const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
+            return response.$id;
+          } catch (fallbackUpdateErr: any) {
+            console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackUpdateErr);
+            throw fallbackUpdateErr;
+          }
+        }
+        console.error(`Appwrite Database save failure for ${docId} in ${collectionId}:`, err);
+        throw err;
+      }
+    } else {
+      try {
+        // Try creating first (ideal for new records like audit logs)
+        const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
+        return response.$id;
+      } catch (err: any) {
+        const isConflict = err.code === 409 ||
+          String(err.code) === '409' ||
+          err.type === 'document_already_exists' ||
+          (err.message && (err.message.toLowerCase().includes('already exists') || err.message.toLowerCase().includes('conflict')));
+        if (isConflict) {
+          try {
+            const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
+            return response.$id;
+          } catch (updateErr: any) {
+            if (isSchemaError(updateErr)) {
+              console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
+              const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
+              return response.$id;
+            }
+            console.error(`Appwrite Database update failure for ${docId} in ${collectionId}:`, updateErr);
+            throw updateErr;
+          }
+        }
+
+        // Schema error on initial create
+        if (isSchemaError(err)) {
+          console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
+          try {
             const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
             return response.$id;
+          } catch (fallbackErr: any) {
+            if (fallbackErr.code === 409 || fallbackErr.type === 'document_already_exists') {
+              try {
+                const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
+                return response.$id;
+              } catch (fallbackUpdateErr: any) {
+                console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackUpdateErr);
+                throw fallbackUpdateErr;
+              }
+            }
+            console.error(`Appwrite Database create failure with fallback for ${docId} in ${collectionId}:`, fallbackErr);
+            throw fallbackErr;
           }
-          console.error(`Appwrite Database create failure for ${docId} in ${collectionId}:`, createErr);
-          throw createErr;
         }
-      }
 
-      if (isSchemaError(err)) {
-        console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
-        try {
-          const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
-          return response.$id;
-        } catch (fallbackErr: any) {
-          if (fallbackErr.code === 404 || fallbackErr.type === 'document_not_found') {
-            const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
-            return response.$id;
-          }
-          console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackErr);
-          throw fallbackErr;
-        }
+        console.error(`Appwrite Database save failure for ${docId} in ${collectionId}:`, err);
+        throw err;
       }
-
-      console.error(`Appwrite Database update failure for ${docId} in ${collectionId}:`, err);
-      throw err;
     }
   }
 
