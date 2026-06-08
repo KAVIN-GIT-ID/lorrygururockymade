@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SupportTicket, TicketMessage } from '../types';
+import { SupportTicket } from '../types';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { MessageSquare, Plus, Paperclip, Send, X, FileText, Download, CheckCircle, Loader2 } from 'lucide-react';
 
 interface ProfileSupportTicketsProps {
   tickets: SupportTicket[];
-  currentUser: any;
   onCreateTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   onSendMessage: (ticketId: string, content: string, attachmentFile?: File) => Promise<void>;
   isBackendTeam?: boolean;
@@ -13,7 +12,6 @@ interface ProfileSupportTicketsProps {
 
 export default function ProfileSupportTickets({
   tickets,
-  currentUser,
   onCreateTicket,
   onSendMessage,
   isBackendTeam = false

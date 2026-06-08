@@ -3,12 +3,23 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), cloudflare(), basicSsl()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      cloudflare(),
+      basicSsl(),
+      visualizer({
+        filename: 'dist/stats.html',
+        gzipSize: true,
+        brotliSize: true,
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

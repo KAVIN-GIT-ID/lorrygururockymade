@@ -271,7 +271,7 @@ export default function AppwriteCloudSync({
           for (const doc of allConfigs) {
             try {
               const parsed = JSON.parse(doc.data);
-              const keyVal = doc.$id || doc.key || '';
+              const keyVal = doc.key || doc.$id || '';
               if (keyVal.startsWith('usr_')) {
                 userRightsData.userRightsList.push(parsed);
               } else if (keyVal.startsWith('prf_')) {
@@ -984,6 +984,7 @@ export default function AppwriteCloudSync({
       <button
         id="btn-appwrite-sync-trigger"
         onClick={() => setIsOpen(!isOpen)}
+        title={isConfigured ? (realtimeConnected ? "Cloud Synchronization Active & Connected" : "Cloud Synchronization Active (Reconnecting)") : "Offline Local Database Mode"}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${isConfigured
           ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
           : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'

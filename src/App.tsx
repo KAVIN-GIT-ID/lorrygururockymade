@@ -1,27 +1,47 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Truck, Driver, Office, Account, SubTrip, TripEntry, getTripMetrics, ExpenseEntry, AuditLog, TripPayment, TripAdvance, FuelEntry, Tyre, TyreStatus, TyreMovementLog, UserPermission, UserRights, OrganizationProfile, TruckRequest, createRecord, mutateRecord, SupportTicket } from './types';
-import Dashboard from './components/Dashboard';
-import TripList from './components/TripList';
-import TripForm from './components/TripForm';
-import TruckMaster from './components/TruckMaster';
-import DriverMaster from './components/DriverMaster';
-import OfficeMaster from './components/OfficeMaster';
-import AccountMaster from './components/AccountMaster';
-import ExpenseMaster from './components/ExpenseMaster';
-import MonthlyReport from './components/MonthlyReport';
-import AuditLogView from './components/AuditLogView';
-import TyreMaster from './components/TyreMaster';
-import AppwriteCloudSync from './components/AppwriteCloudSync';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile, TruckRequest, createRecord, mutateRecord, SupportTicket } from './types';
 import LoginScreen from './components/LoginScreen';
 import LandingPage from './components/LandingPage';
 import logo from './logo.png';
 import { useNavigate, useLocation } from 'react-router-dom';
-import UserAccessControl from './components/UserAccessControl';
-import BackendDashboard from './components/BackendDashboard';
-import VoiceAssistant from './components/VoiceAssistant';
-import ProfileSupportTickets from './components/ProfileSupportTickets';
 import ConnectionStatusBlocker from './components/ConnectionStatusBlocker';
-import { appwrite, isAppwriteConfigured, getAppOrigin } from './lib/appwrite';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { PermissionProvider, usePermissions } from './context/PermissionContext';
+import { OrganizationProvider, useOrganizations } from './context/OrganizationContext';
+import { useNotifications } from './hooks/useNotifications';
+import { useCountdown } from './hooks/useCountdown';
+import { migrationService } from './services/migrationService';
+import { organizationService } from './services/organizationService';
+import { cloudSyncService } from './services/cloudSyncService';
+
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const TripList = lazy(() => import('./components/TripList'));
+const TripForm = lazy(() => import('./components/TripForm'));
+const TruckMaster = lazy(() => import('./components/TruckMaster'));
+const DriverMaster = lazy(() => import('./components/DriverMaster'));
+const OfficeMaster = lazy(() => import('./components/OfficeMaster'));
+const AccountMaster = lazy(() => import('./components/AccountMaster'));
+const ExpenseMaster = lazy(() => import('./components/ExpenseMaster'));
+const MonthlyReport = lazy(() => import('./components/MonthlyReport'));
+const AuditLogView = lazy(() => import('./components/AuditLogView'));
+const TyreMaster = lazy(() => import('./components/TyreMaster'));
+const UserAccessControl = lazy(() => import('./components/UserAccessControl'));
+const BackendDashboard = lazy(() => import('./components/BackendDashboard'));
+const VoiceAssistant = lazy(() => import('./components/VoiceAssistant'));
+
+import Setup2FAModal from './components/Setup2FAModal';
+import Disable2FAModal from './components/Disable2FAModal';
+
+import OrgDisabledScreen from './components/OrgDisabledScreen';
+import PendingApprovalScreen from './components/PendingApprovalScreen';
+import PasswordResetScreen from './components/PasswordResetScreen';
+import ConfirmModal from './components/ConfirmModal';
+import AppSidebar from './components/AppSidebar';
+import AppHeader from './components/AppHeader';
+import VerificationRequiredScreen from './components/VerificationRequiredScreen';
+import ProfileModal from './components/ProfileModal';
+import MobileChangeWizardModal from './components/MobileChangeWizardModal';
+import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import { useDrivers } from './hooks/useDrivers';
 import { useOffices } from './hooks/useOffices';
 import { useAccounts } from './hooks/useAccounts';
@@ -42,45 +62,20 @@ import {
   migrateTyres,
   migrateAuditLogs
 } from './lib/migrations';
-import { formatDate, parseLocalDate, getTodayStr, formatToDisplayDate } from './lib/dateUtils';
-import { verifyTOTP, generateTOTP, generateSecret } from './utils/totp';
-import { getUserPermissionDiff } from './utils/diffUtils';
+
+import { generateSecret } from './utils/totp';
+
 import {
-  BarChart3,
-  Plus,
-  BookOpen,
-  Truck as TruckIcon,
-  MapPin,
-  Coins,
-  Download,
-  Upload,
-  RefreshCw,
   CheckCircle,
   AlertCircle,
-  FileSpreadsheet,
-  UserCheck,
-  FileText,
-  History,
-  Disc,
-  LogOut,
   Loader,
-  Users,
-  Copy,
-  Bell,
-  User,
-  Search,
-  Sun,
-  Moon,
-  Clock,
-  Settings,
-  ShieldCheck,
-  Trash2,
-  X,
-  Mic,
-  MessageSquare
 } from 'lucide-react';
 
-
+const LoadingTab = () => (
+  <div className="flex items-center justify-center p-12 h-64">
+    <Loader className="w-8 h-8 animate-spin text-blue-500" />
+  </div>
+);
 
 const getUserInitials = (user: any) => {
   if (!user) return '??';
@@ -182,51 +177,86 @@ const reconcileOrganizationProfiles = (
 };
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <PermissionProvider>
+        <OrganizationProvider>
+          <AppContent />
+        </OrganizationProvider>
+      </PermissionProvider>
+    </AuthProvider>
+  );
+}
+
+function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isOnline, setIsOnline] = useState(true);
-  const [disconnectReason, setDisconnectReason] = useState<'offline' | 'realtime_lost' | undefined>(undefined);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [initialPullDone, setInitialPullDone] = useState(() => !isAppwriteConfigured());
+  const {
+    currentUser,
+    setCurrentUser,
+    loadingUser,
+    setLoadingUser,
+    initialPullDone,
+    setInitialPullDone,
+    isOnline,
+    setIsOnline,
+    disconnectReason,
+    setDisconnectReason,
+    reconcileUserSession
+  } = useAuth();
+
+  const {
+    userRightsList,
+    setUserRightsList,
+    currentUserRights,
+    addPermission: handleAddPermission,
+    updatePermission: handleUpdatePermission,
+    deletePermission: handleDeletePermission,
+    pushPermissions: pushPermissionsToCloud
+  } = usePermissions();
+
+  if (import.meta.env.DEV) {
+    console.log("DEBUG RENDER AppContent currentUserRights:", currentUserRights);
+  }
+
+  const {
+    organizationProfiles,
+    setOrganizationProfiles,
+    saveProfiles: saveOrganizationProfiles
+  } = useOrganizations();
+
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileActiveTab, setProfileActiveTab] = useState<'SETTINGS' | 'SUPPORT'>('SETTINGS');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const [lastReadNotificationTime, setLastReadNotificationTime] = useState(0);
+
+  const {
+    toastMessage,
+    showNotification,
+    notificationOpen,
+    setNotificationOpen,
+    lastReadNotificationTime,
+    updateLastReadNotificationTime,
+    notificationRef
+  } = useNotifications(currentUser?.email);
   const [verificationOtpSent, setVerificationOtpSent] = useState(false);
   const [whatsappOtpCode, setWhatsappOtpCode] = useState<string | null>(null);
   const [whatsappOtpPhone, setWhatsappOtpPhone] = useState<string | null>(null);
   const [showPhoneUpdateModal, setShowPhoneUpdateModal] = useState(false);
-  const [emailTimer, setEmailTimer] = useState(0);
-  const [phoneTimer, setPhoneTimer] = useState(0);
+  const emailTimerHook = useCountdown(0);
+  const phoneTimerHook = useCountdown(0);
+  const mobileWizardTimerHook = useCountdown(0);
 
-  useEffect(() => {
-    let interval: any;
-    if (emailTimer > 0) {
-      interval = setInterval(() => {
-        setEmailTimer(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [emailTimer]);
-
-  useEffect(() => {
-    let interval: any;
-    if (phoneTimer > 0) {
-      interval = setInterval(() => {
-        setPhoneTimer(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [phoneTimer]);
+  const emailTimer = emailTimerHook.seconds;
+  const setEmailTimer = emailTimerHook.start;
+  const phoneTimer = phoneTimerHook.seconds;
+  const setPhoneTimer = phoneTimerHook.start;
+  const mobileWizardTimer = mobileWizardTimerHook.seconds;
+  const setMobileWizardTimer = mobileWizardTimerHook.start;
 
   // Mobile Change Wizard States
   const [mobileWizardOpen, setMobileWizardOpen] = useState(false);
   const [mobileWizardStep, setMobileWizardStep] = useState(1);
-  const [mobileWizardOtpSent, setMobileWizardOtpSent] = useState(false);
-  const [mobileWizardTimer, setMobileWizardTimer] = useState(0);
   const [mobileWizardCode, setMobileWizardCode] = useState('');
   const [mobileWizardNewPhone, setMobileWizardNewPhone] = useState('');
   const [mobileWizardPassword, setMobileWizardPassword] = useState('');
@@ -236,24 +266,8 @@ export default function App() {
   // 2FA Setup/Disable States
   const [setup2FAOpen, setSetup2FAOpen] = useState(false);
   const [setup2FASecret, setSetup2FASecret] = useState('');
-  const [setup2FACode, setSetup2FACode] = useState('');
-  const [setup2FAPassword, setSetup2FAPassword] = useState('');
-  const [setup2FAError, setSetup2FAError] = useState<string | null>(null);
 
   const [disable2FAOpen, setDisable2FAOpen] = useState(false);
-  const [disable2FACode, setDisable2FACode] = useState('');
-  const [disable2FAPassword, setDisable2FAPassword] = useState('');
-  const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let interval: any;
-    if (mobileWizardTimer > 0) {
-      interval = setInterval(() => {
-        setMobileWizardTimer(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [mobileWizardTimer]);
 
   const [resetPasswordState, setResetPasswordState] = useState<{
     active: boolean;
@@ -261,24 +275,10 @@ export default function App() {
     secret: string;
   } | null>(null);
 
-  const notificationRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Read notification time scoped by current user to prevent cross-account read marks
-  useEffect(() => {
-    if (currentUser) {
-      const key = `ttt_last_read_notifications_${(currentUser.email || '').toLowerCase().trim()}`;
-      setLastReadNotificationTime(Number(localStorage.getItem(key) || '0'));
-    } else {
-      setLastReadNotificationTime(0);
-    }
-  }, [currentUser]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
-        setNotificationOpen(false);
-      }
       if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
         setProfileDropdownOpen(false);
       }
@@ -297,10 +297,6 @@ export default function App() {
     return String(new Date().getFullYear());
   });
 
-  const [changeOrgIdInput, setChangeOrgIdInput] = useState('');
-  const [changeOrgLoading, setChangeOrgLoading] = useState(false);
-  const [changeOrgError, setChangeOrgError] = useState<string | null>(null);
-  const [showChangeOrgForm, setShowChangeOrgForm] = useState(false);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('ttt_theme') as 'light' | 'dark') || 'light';
@@ -345,809 +341,36 @@ export default function App() {
       setConfirmPassword('');
       const email = (currentUser.email || '').toLowerCase().trim();
       setProfileVoiceLang(localStorage.getItem(`ttt_voice_lang_${email}`) || 'en-IN');
+      const currentOrgId = currentUserRights?.organizationId || '';
+      const orgProfile = organizationProfiles.find(p => p.organizationId === currentOrgId);
+      setProfileOrgName(orgProfile ? orgProfile.organizationName : '');
     }
-  }, [profileModalOpen, currentUser]);
-
-  // User Access Control States
-  const [userRightsList, setUserRightsList] = useState<UserPermission[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_user_rights');
-      let list = stored ? migrateUserPermissions(JSON.parse(stored)) : [];
-      if (isAppwriteConfigured()) {
-        list = list.filter(r => r.organizationId !== 'org_default');
-      }
-      return list;
-    } catch {
-      return [];
-    }
-  });
+  }, [profileModalOpen, currentUser, currentUserRights, organizationProfiles]);
 
   const saveUserRightsList = (nextList: UserPermission[]) => {
     setUserRightsList(nextList);
     localStorage.setItem('ttt_user_rights', JSON.stringify(nextList));
   };
 
-  const userRightsListRef = useRef(userRightsList);
-  userRightsListRef.current = userRightsList;
-
-  const [organizationProfiles, setOrganizationProfiles] = useState<OrganizationProfile[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_organization_profiles');
-      let profiles = stored ? JSON.parse(stored) : [];
-      if (isAppwriteConfigured()) {
-        profiles = profiles.filter((p: any) => p.organizationId !== 'org_default');
-      }
-      return profiles;
-    } catch {
-      return [];
-    }
-  });
-
-  const organizationProfilesRef = useRef(organizationProfiles);
-  organizationProfilesRef.current = organizationProfiles;
-
-  const saveOrganizationProfiles = async (nextProfiles: OrganizationProfile[]) => {
-    const prevProfiles = organizationProfilesRef.current || [];
-    setOrganizationProfiles(nextProfiles);
-    localStorage.setItem('ttt_organization_profiles', JSON.stringify(nextProfiles));
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const userRights = getCurrentUserRights();
-        const isNotLoggedIn = !currentUser;
-
-        const savePromises = nextProfiles.map(async (prof) => {
-          if (!isNotLoggedIn && !userRights.isSuperAdmin && prof.organizationId !== userRights.organizationId) {
-            return;
-          }
-
-          // Change-detection: Only save if new or modified
-          const prevProf = prevProfiles.find(p => p.organizationId === prof.organizationId);
-          if (prevProf && JSON.stringify(prevProf) === JSON.stringify(prof)) {
-            return;
-          }
-
-          const docId = appwrite.getOrgDocId(prof.organizationId);
-          await appwrite.saveGlobalConfig(databaseId, docId, prof);
-        });
-
-        await Promise.all(savePromises);
-        console.log('Successfully synced organization profiles to Appwrite Database.');
-      } catch (e) {
-        console.warn("Could not sync organization profiles to database:", e);
-      }
-    }
-  };
-
-  const saveOrganizationProfilesRef = useRef(saveOrganizationProfiles);
-  saveOrganizationProfilesRef.current = saveOrganizationProfiles;
-
-  const handleAddPermission = async (newPerm: Omit<UserPermission, 'id'>) => {
-    if (newPerm.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canAddBackend) {
-        showNotification("Error: You do not have permission to add backend team members.");
-        return;
-      }
-    }
-    const item = { ...newPerm, id: 'ur_' + Date.now() };
-    const next = [...userRightsList, item];
-    saveUserRightsList(next);
-    await pushPermissionsToCloud(next);
-    logAction('Created', 'Permission', newPerm.email, `Created and authorized user rights for ${newPerm.name} (${newPerm.email})`);
-    showNotification(`Access authorized for ${newPerm.name}.`);
-  };
-
-  const handleUpdatePermission = async (updated: UserPermission) => {
-    const email = (currentUser?.email || '').toLowerCase().trim();
-    const currentMember = userRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-    const currentUserRole = currentMember?.role || 'Custom';
-
-    const original = userRightsList.find(p => p.id === updated.id);
-    if (original && currentUserRole === 'Custom' && (original.role === 'Admin' || original.role === 'SuperAdmin')) {
-      showNotification("Error: You do not have permission to modify Administrator or Super Admin accounts.");
-      return;
-    }
-
-    if (updated.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canEditBackend) {
-        showNotification("Error: You do not have permission to edit backend team members.");
-        return;
-      }
-    }
-    const wasApproved = original ? original.isApproved : false;
-    const isNowApproved = updated.isApproved;
-
-    const next = userRightsList.map(p => p.id === updated.id ? updated : p);
-    saveUserRightsList(next);
-    await pushPermissionsToCloud(next);
-
-    let details = `Updated permissions for ${updated.name} (${updated.email}).`;
-    if (!wasApproved && isNowApproved) {
-      details = `Approved user ${updated.name} (${updated.email}) and updated role to ${updated.role}.`;
-    } else if (wasApproved && !isNowApproved) {
-      details = `Revoked approval for user ${updated.name} (${updated.email}).`;
-    } else if (original) {
-      const diff = getUserPermissionDiff(original, updated);
-      if (diff) {
-        details = `Updated permissions for ${updated.name} (${updated.email}): ${diff}`;
-      }
-    }
-    logAction('Edited', 'Permission', updated.email, details);
-
-    // If transitioning to approved and Appwrite is configured, invite them to the team under Admin's session
-    if (!wasApproved && isNowApproved && isAppwriteConfigured() && currentUserOrgId) {
-      try {
-        console.info(`Admin approved user ${updated.email}. Inviting them to Appwrite Team ${currentUserOrgId}...`);
-        await appwrite.inviteToTeam(currentUserOrgId, updated.email.trim().toLowerCase(), updated.name.trim());
-        showNotification(`Appwrite Team invitation sent to ${updated.email}`);
-      } catch (err: any) {
-        console.warn("Failed to invite approved user to Appwrite Team:", err);
-        showNotification(`Warning: Could not create Appwrite Team membership: ${err.message || err}`);
-      }
-    }
-  };
-
-  const handleDeletePermission = async (id: string) => {
-    const target = userRightsList.find(p => p.id === id);
-    if (!target) return;
-
-    const email = (currentUser?.email || '').toLowerCase().trim();
-    const currentMember = userRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-    const currentUserRole = currentMember?.role || 'Custom';
-
-    if (currentUserRole === 'Custom' && (target.role === 'Admin' || target.role === 'SuperAdmin')) {
-      showNotification("Error: You do not have permission to revoke Administrator or Super Admin accounts.");
-      return;
-    }
-
-    if (target.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canDeleteBackend) {
-        showNotification("Error: You do not have permission to revoke backend team access.");
-        return;
-      }
-    }
-
-    let appwriteRemoved = true;
-    let removeErrorMsg = "";
-
-    if (isAppwriteConfigured() && currentUserOrgId) {
-      try {
-        const res = await appwrite.removeMembership(currentUserOrgId, target.email);
-        if (!res) {
-          appwriteRemoved = false;
-          removeErrorMsg = "User was not found in the Appwrite Team list.";
-        }
-      } catch (err: any) {
-        appwriteRemoved = false;
-        removeErrorMsg = err.message || String(err);
-      }
-    }
-
-    const next = userRightsList.filter(p => p.id !== id);
-    saveUserRightsList(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const docId = appwrite.getEmailDocId(target.email);
-        await appwrite.deleteGlobalConfig(databaseId, docId);
-        console.log(`Successfully deleted global config for ${target.email} from cloud.`);
-      } catch (e) {
-        console.warn("Failed to delete user config from cloud:", e);
-      }
-    }
-
-    logAction('Deleted', 'Permission', target.email, `Revoked access rights for ${target.name} (${target.email})`);
-
-    if (appwriteRemoved) {
-      showNotification("User access revoked.");
-    } else {
-      alert(`Access revoked in local rights, but Appwrite team membership could not be removed.\n\nReason: ${removeErrorMsg}\n\nPlease check Appwrite console.`);
-      showNotification("Access revoked locally with Appwrite warnings.");
-    }
-  };
-
-  const getCurrentUserRights = (): UserRights => {
-    if (!currentUser) {
-      return {
-        isAdmin: false,
-        organizationId: '',
-        isApproved: false,
-        phone: '',
-        isEmailVerified: false,
-        isPhoneVerified: false,
-        canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
-        canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
-        canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
-        canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
-        canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
-        canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-        canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
-        canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
-        canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-        canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-        canEditLoans: false, canDeleteLoans: false
-      };
-    }
-    const email = (currentUser.email || '').toLowerCase().trim();
-    const match = userRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-    if (match) {
-      const isSuper = match.role === 'SuperAdmin' || match.organizationId === 'org_backend';
-      const isPrimarySuperAdmin = match.role === 'SuperAdmin';
-      return {
-        isAdmin: match.role === 'Admin' || isSuper,
-        isSuperAdmin: isSuper,
-        organizationId: match.organizationId,
-        isApproved: match.isApproved || (isAppwriteConfigured() && !!match.organizationId && match.organizationId !== 'org_default'),
-        phone: match.phone || '',
-        isEmailVerified: !!match.isEmailVerified || currentUser.emailVerification === true,
-        isPhoneVerified: !!match.isPhoneVerified || currentUser.phoneVerification === true,
-        is2FAEnabled: !!match.is2FAEnabled,
-        twoFactorSecret: match.twoFactorSecret || '',
-        // Hide standard operations from Super Admin
-        canViewTrips: isSuper ? false : match.canViewTrips,
-        canEditTrips: isSuper ? false : match.canEditTrips,
-        canDeleteTrips: isSuper ? false : match.canDeleteTrips,
-        canViewTyres: isSuper ? false : match.canViewTyres,
-        canEditTyres: isSuper ? false : match.canEditTyres,
-        canDeleteTyres: isSuper ? false : match.canDeleteTyres,
-        canViewTrucks: isSuper ? false : match.canViewTrucks,
-        canEditTrucks: isSuper ? false : match.canEditTrucks,
-        canDeleteTrucks: isSuper ? false : match.canDeleteTrucks,
-        canViewDrivers: isSuper ? false : match.canViewDrivers,
-        canEditDrivers: isSuper ? false : match.canEditDrivers,
-        canDeleteDrivers: isSuper ? false : match.canDeleteDrivers,
-        canViewOffices: isSuper ? false : match.canViewOffices,
-        canEditOffices: isSuper ? false : match.canEditOffices,
-        canDeleteOffices: isSuper ? false : match.canDeleteOffices,
-        canViewAccounts: isSuper ? false : match.canViewAccounts,
-        canEditAccounts: isSuper ? false : match.canEditAccounts,
-        canDeleteAccounts: isSuper ? false : match.canDeleteAccounts,
-        canViewExpenses: isSuper ? false : match.canViewExpenses,
-        canEditExpenses: isSuper ? false : match.canEditExpenses,
-        canDeleteExpenses: isSuper ? false : match.canDeleteExpenses,
-        // Backend team fine-grained privileges
-        canViewBackend: isSuper ? (isPrimarySuperAdmin || !!match.canViewBackend) : false,
-        canAddBackend: isSuper ? (isPrimarySuperAdmin || !!match.canAddBackend) : false,
-        canEditBackend: isSuper ? (isPrimarySuperAdmin || !!match.canEditBackend) : false,
-        canDeleteBackend: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteBackend) : false,
-        canApproveBackend: isSuper ? (isPrimarySuperAdmin || !!match.canApproveBackend) : false,
-        canViewTruckRequests: isSuper ? (isPrimarySuperAdmin || !!match.canViewTruckRequests) : false,
-        canDeleteTruckRequests: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteTruckRequests) : false,
-        canViewBackendTeam: isSuper ? (isPrimarySuperAdmin || !!match.canViewBackendTeam) : false,
-        canDeleteBackendTeam: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteBackendTeam) : false,
-        canViewDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canViewDatabaseConsole) : false,
-        canEditDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canEditDatabaseConsole) : false,
-        canDeleteDatabaseConsole: isSuper ? (isPrimarySuperAdmin || !!match.canDeleteDatabaseConsole) : false,
-        canEditLoans: isSuper ? false : (match.role === 'Admin' || !!match.canEditLoans),
-        canDeleteLoans: isSuper ? false : (match.role === 'Admin' || !!match.canDeleteLoans)
-      };
-    }
-
-    return {
-      isAdmin: false,
-      organizationId: '',
-      isApproved: false,
-      phone: '',
-      isEmailVerified: false,
-      isPhoneVerified: false,
-      canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
-      canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
-      canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
-      canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
-      canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
-      canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-      canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
-      canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
-      canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
-    };
-  };
-
-  const currentUserRights = React.useMemo(() => {
-    return getCurrentUserRights();
-  }, [currentUser, userRightsList]);
-
-  // Sync profile organization name input when modal or profiles updates
-  useEffect(() => {
-    if (profileModalOpen && currentUser) {
-      const currentOrgId = currentUserRights?.organizationId || '';
-      const currentOrg = organizationProfiles.find(p => p.organizationId === currentOrgId);
-      setProfileOrgName(currentOrg ? currentOrg.organizationName : '');
-    }
-  }, [profileModalOpen, currentUser, currentUserRights?.organizationId, organizationProfiles]);
-
-  const fetchAllGlobalConfigs = async (databaseId: string): Promise<{ userRightsList: UserPermission[]; organizationProfiles: OrganizationProfile[] }> => {
-    try {
-      const allConfigs = await appwrite.listGlobalConfigs(databaseId);
-      const userRightsList: UserPermission[] = [];
-      const organizationProfiles: OrganizationProfile[] = [];
-      for (const doc of allConfigs) {
-        try {
-          const parsed = JSON.parse(doc.data);
-          const keyVal = doc.$id || doc.key || '';
-          if (keyVal.startsWith('usr_')) {
-            userRightsList.push(parsed);
-          } else if (keyVal.startsWith('prf_')) {
-            if (parsed && parsed.organizationId) {
-              organizationProfiles.push(parsed);
-            }
-          }
-        } catch (e) {
-          console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
-        }
-      }
-      return { userRightsList, organizationProfiles };
-    } catch (e) {
-      console.warn("Could not fetch global configs:", e);
-      return { userRightsList: [], organizationProfiles: [] };
-    }
-  };
-
-  const migrateLocalDataToOrg = (newOrgId: string) => {
-    if (!newOrgId || newOrgId === 'org_default' || newOrgId === 'org_backend') return;
-    console.info(`Migrating local offline records from org_default to ${newOrgId}...`);
-
-    let changed = false;
-
-    // Migrate trucks
-    const localTrucks = localStorage.getItem('ttt_trucks');
-    if (localTrucks) {
-      const list = JSON.parse(localTrucks);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_trucks', JSON.stringify(updated));
-        setTrucks(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate drivers
-    const localDrivers = localStorage.getItem('ttt_drivers');
-    if (localDrivers) {
-      const list = JSON.parse(localDrivers);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_drivers', JSON.stringify(updated));
-        setDrivers(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate offices
-    const localOffices = localStorage.getItem('ttt_offices');
-    if (localOffices) {
-      const list = JSON.parse(localOffices);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_offices', JSON.stringify(updated));
-        setOffices(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate accounts
-    const localAccounts = localStorage.getItem('ttt_accounts');
-    if (localAccounts) {
-      const list = JSON.parse(localAccounts);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_accounts', JSON.stringify(updated));
-        setAccounts(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate trips
-    const localTrips = localStorage.getItem('ttt_trips');
-    if (localTrips) {
-      const list = JSON.parse(localTrips);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_trips', JSON.stringify(updated));
-        setTrips(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate expenses
-    const localExpenses = localStorage.getItem('ttt_expenses');
-    if (localExpenses) {
-      const list = JSON.parse(localExpenses);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_expenses', JSON.stringify(updated));
-        setExpenses(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate tyres
-    const localTyres = localStorage.getItem('ttt_tyres');
-    if (localTyres) {
-      const list = JSON.parse(localTyres);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('ttt_tyres', JSON.stringify(updated));
-        setTyres(updated);
-        changed = true;
-      }
-    }
-
-    // Migrate audit logs
-    const localLogs = localStorage.getItem('fleet_audit_logs');
-    if (localLogs) {
-      const list = JSON.parse(localLogs);
-      if (list.some((item: any) => item.organizationId === 'org_default')) {
-        const updated = list.map((item: any) => item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item);
-        localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
-        setAuditLogs(updated);
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      touchLastModified();
-    }
-  };
-
   const reconcileSession = async (user: any) => {
-    if (!user) {
-      setCurrentUser(null);
-      return;
-    }
-    setCurrentUser(user);
-
-    try {
-      let activeRightsList = userRightsList;
-
-      // 1. Pull userRightsList and organizationProfiles from flat global_configs
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const email = (user.email || '').toLowerCase().trim();
-          let data = await fetchAllGlobalConfigs(databaseId);
-          let rawProfiles = organizationProfiles;
-          let cloudRights: UserPermission[] = [];
-
-          if (data && data.userRightsList && data.userRightsList.length > 0) {
-            if (data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
-              rawProfiles = data.organizationProfiles;
-            }
-            cloudRights = migrateUserPermissions(data.userRightsList);
-          } else {
-            // Fallback: Fetch individual user permission document directly (users have permissions to read their own config)
-            try {
-              const myDocId = appwrite.getEmailDocId(email);
-              const myConfig = await appwrite.loadGlobalConfig(databaseId, myDocId);
-              if (myConfig && myConfig.data) {
-                const parsed = JSON.parse(myConfig.data);
-                cloudRights = [parsed];
-                console.info("Successfully fetched individual user permission document directly from cloud.");
-              }
-            } catch (err) {
-              console.warn("Could not fetch individual user permission directly:", err);
-            }
-
-            // Fallback: Fetch organization profile directly if user belongs to an Appwrite team
-            try {
-              const userTeams = await appwrite.getUserTeams();
-              if (userTeams.length > 0) {
-                const appwriteOrgId = userTeams[0].$id;
-                const orgDocId = appwrite.getOrgDocId(appwriteOrgId);
-                const orgConfig = await appwrite.loadGlobalConfig(databaseId, orgDocId);
-                if (orgConfig && orgConfig.data) {
-                  const parsed = JSON.parse(orgConfig.data);
-                  rawProfiles = [parsed];
-                  console.info("Successfully fetched individual organization profile document directly from cloud.");
-                }
-              }
-            } catch (err) {
-              console.warn("Could not fetch individual organization profile directly:", err);
-            }
-          }
-
-          const localStored = localStorage.getItem('ttt_user_rights');
-          let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
-
-          if (cloudRights.length > 0) {
-            // Filter out user permissions for which the corresponding organization profile does not exist
-            const existingOrgIds = new Set(rawProfiles.map(p => p.organizationId));
-            const email = (user.email || '').toLowerCase().trim();
-            const myCloudRights = cloudRights.find(ur => ur.email.toLowerCase().trim() === email);
-            const isSuper = myCloudRights?.role === 'SuperAdmin' || myCloudRights?.organizationId === 'org_backend';
-
-            const orphanedCloudKeys: string[] = [];
-            cloudRights = cloudRights.filter(ur => {
-              // Always preserve the currently logged-in user — never orphan yourself
-              if (ur.email.toLowerCase().trim() === email) return true;
-              if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-                return true;
-              }
-              const exists = existingOrgIds.has(ur.organizationId);
-              if (!exists) {
-                orphanedCloudKeys.push(appwrite.getEmailDocId(ur.email));
-              }
-              return exists;
-            });
-
-            // Asynchronously delete orphaned user rights from Appwrite DB if current user is Super Admin
-            if (isSuper && orphanedCloudKeys.length > 0) {
-              console.info("Super Admin cleaning up orphaned user permissions from DB:", orphanedCloudKeys);
-              for (const key of orphanedCloudKeys) {
-                appwrite.deleteGlobalConfig(databaseId, key).catch(err => {
-                  console.warn("Failed to delete orphaned user permission:", key, err);
-                });
-              }
-            }
-
-            localRights = localRights.filter(ur => {
-              // Always preserve the currently logged-in user's own local entry
-              if (ur.email.toLowerCase().trim() === email) return true;
-              if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-                return true;
-              }
-              return existingOrgIds.has(ur.organizationId);
-            });
-
-            const merged = cloudRights.map(cloudEntry => {
-              const localEntry = localRights.find(l => l.email.toLowerCase() === cloudEntry.email.toLowerCase());
-              if (localEntry) {
-                return { ...cloudEntry, isApproved: localEntry.isApproved || cloudEntry.isApproved };
-              }
-              return cloudEntry;
-            });
-            const localOnlyEntries = localRights.filter(lr => !merged.some(m => m.email.toLowerCase() === lr.email.toLowerCase()));
-            // Only keep Super Admin / Backend team members to avoid accidental lockout.
-            // Standard organization accounts/members that were deleted from the database should be deleted locally too.
-            const preservedLocalOnlyEntries = localOnlyEntries.filter(lr => {
-              // Preserve SuperAdmin/backend entries AND the currently logged-in user's own entry
-              return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend' || lr.email.toLowerCase().trim() === email;
-            });
-            activeRightsList = [...merged, ...preservedLocalOnlyEntries];
-            setUserRightsList(activeRightsList);
-            localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-          } else {
-            // cloudRights is empty — this can mean:
-            //   (a) The DB is genuinely empty (SuperAdmin with full visibility confirmed it)
-            //   (b) The user doesn't have permission to read the full list (Custom/Admin roles)
-            // NEVER wipe local rights for non-SuperAdmin users — they simply can't read the full list.
-            const email = (user.email || '').toLowerCase().trim();
-            const localStored = localStorage.getItem('ttt_user_rights');
-            let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
-            const myLocalEntry = localRights.find(ur => ur.email.toLowerCase() === email);
-            const isLocalSuperAdmin = myLocalEntry?.role === 'SuperAdmin' || myLocalEntry?.organizationId === 'org_backend';
-
-            if (isLocalSuperAdmin) {
-              // SuperAdmin with confirmed cloud visibility: DB is genuinely empty — only preserve their own entry
-              console.info("SuperAdmin confirmed empty cloud DB — preserving only their own local entry:", email);
-              const selfEntry = localRights.find(ur => ur.email.toLowerCase() === email);
-              activeRightsList = selfEntry ? [selfEntry] : [];
-              setUserRightsList(activeRightsList);
-              localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-              rawProfiles = [];
-              setOrganizationProfiles([]);
-              localStorage.setItem('ttt_organization_profiles', JSON.stringify([]));
-            } else {
-              // Non-SuperAdmin: cloud returned empty because they lack read permissions — keep local rights intact
-              console.info("Non-SuperAdmin user: cloud returned no rights (insufficient read access). Preserving local rights.");
-              activeRightsList = localRights;
-              // Do NOT overwrite localStorage — keep what's there
-            }
-          }
-          const reconciled = reconcileOrganizationProfiles(activeRightsList, rawProfiles);
-          setOrganizationProfiles(reconciled);
-          localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
-        } catch (cloudErr) {
-          console.warn('Initial cloud sync fetch skipped/offline during reconciliation:', cloudErr);
-        }
-      }
-
-      if (activeRightsList.length === 0) {
-        try {
-          const stored = localStorage.getItem('ttt_user_rights');
-          if (stored) {
-            activeRightsList = migrateUserPermissions(JSON.parse(stored));
-            setUserRightsList(activeRightsList);
-          }
-        } catch (e) { }
-      }
-
-      const localProfilesStr = localStorage.getItem('ttt_organization_profiles');
-      let localProfiles = localProfilesStr ? JSON.parse(localProfilesStr) : organizationProfiles;
-      let reconciled = reconcileOrganizationProfiles(activeRightsList, localProfiles);
-
-      const email = (user.email || '').toLowerCase().trim();
-      const myRights = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-      if (myRights) {
-        const isSuper = myRights.role === 'SuperAdmin' || myRights.organizationId === 'org_backend';
-        if (!isSuper) {
-          // Filter user rights list to only contain current org users
-          activeRightsList = activeRightsList.filter(ur => ur.organizationId === myRights.organizationId || ur.email.toLowerCase().trim() === email);
-          setUserRightsList(activeRightsList);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-
-          // Filter organization profiles to only contain current org profile
-          reconciled = reconciled.filter(p => p.organizationId === myRights.organizationId);
-        }
-      }
-
-      setOrganizationProfiles(reconciled);
-      localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
-
-      let match = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-
-      // Auto-update verification status from Appwrite Auth session to database permission record
-      if (isAppwriteConfigured() && match) {
-        let needsUpdate = false;
-        const updatedMatch = { ...match };
-
-        if (user.emailVerification === true && !match.isEmailVerified) {
-          console.info(`Reconciling email verification for ${email} (pre-teams): false → true (verified in Appwrite Auth)`);
-          updatedMatch.isEmailVerified = true;
-          needsUpdate = true;
-        }
-
-        if (user.phoneVerification === true && !match.isPhoneVerified) {
-          console.info(`Reconciling phone verification for ${email} (pre-teams): false → true (verified in Appwrite Auth)`);
-          updatedMatch.isPhoneVerified = true;
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          const updatedList = activeRightsList.map(ur =>
-            ur.email.toLowerCase().trim() === email ? updatedMatch : ur
-          );
-          setUserRightsList(updatedList);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(updatedList));
-          activeRightsList = updatedList;
-          match = updatedMatch;
-
-          await pushPermissionsToCloud(updatedList);
-        }
-      }
-
-      // ── Appwrite Teams sync (RUN FIRST) ───────────────────────────────
-      // Derive organizationId from the user's actual Appwrite team membership.
-      if (isAppwriteConfigured()) {
-        try {
-          const userTeams = await appwrite.getUserTeams();
-          if (userTeams.length > 0) {
-            const appwriteOrgId = userTeams[0].$id; // First team = their org
-            migrateLocalDataToOrg(appwriteOrgId);
-
-            const knownNames: { [orgId: string]: string } = {};
-            for (const team of userTeams) {
-              knownNames[team.$id] = team.name;
-            }
-            reconciled = reconcileOrganizationProfiles(activeRightsList, reconciled, knownNames);
-            await saveOrganizationProfiles(reconciled);
-
-            // Check if user is the Team Owner (Admin)
-            let isAdminUser = false;
-            try {
-              const members = await appwrite.getTeamMemberships(appwriteOrgId);
-              if (members && members.length > 0) {
-                const myMembership = members.find(m => m.userEmail.toLowerCase().trim() === email);
-                if (myMembership && myMembership.roles && myMembership.roles.includes('owner')) {
-                  isAdminUser = true;
-                }
-              }
-            } catch (membershipErr) {
-              console.info('Not a team owner or unable to list memberships (normal member):', membershipErr);
-            }
-
-            if (match) {
-              let needsUpdate = false;
-              let updatedMatch = { ...match };
-
-              // If the user is SuperAdmin, preserve their role and org_backend mapping. Do not force-reconcile to local team.
-              if (match.role !== 'SuperAdmin' && match.organizationId !== appwriteOrgId) {
-                console.info(`Reconciling org ID for ${email}: ${match.organizationId} → ${appwriteOrgId}`);
-                updatedMatch.organizationId = appwriteOrgId;
-                needsUpdate = true;
-              }
-
-              if (!match.isApproved) {
-                console.info(`Reconciling approval for ${email}: false → true (member of Appwrite Team)`);
-                updatedMatch.isApproved = true;
-                needsUpdate = true;
-              }
-
-              if (user.name && match.name !== user.name) {
-                console.info(`Reconciling name for ${email}: ${match.name} → ${user.name}`);
-                updatedMatch.name = user.name;
-                needsUpdate = true;
-              }
-
-              if (user.phone && match.phone !== user.phone) {
-                console.info(`Reconciling phone for ${email}: ${match.phone} → ${user.phone}`);
-                updatedMatch.phone = user.phone;
-                needsUpdate = true;
-              }
-
-              if (user.emailVerification === true && !match.isEmailVerified) {
-                console.info(`Reconciling email verification for ${email}: false → true (verified in Appwrite Auth)`);
-                updatedMatch.isEmailVerified = true;
-                needsUpdate = true;
-              }
-
-              if (user.phoneVerification === true && !match.isPhoneVerified) {
-                console.info(`Reconciling phone verification for ${email}: false → true (verified in Appwrite Auth)`);
-                updatedMatch.isPhoneVerified = true;
-                needsUpdate = true;
-              }
-
-              const isSuper = appwriteOrgId === 'org_backend' || match.role === 'SuperAdmin';
-              const targetRole = isSuper ? 'SuperAdmin' : 'Admin';
-              if (isAdminUser && match.role !== targetRole && match.role !== 'Custom') {
-                console.info(`Reconciling role for ${email}: ${match.role} → ${targetRole} (team owner)`);
-                updatedMatch.role = targetRole as any;
-                updatedMatch.canViewTrips = true; updatedMatch.canEditTrips = true; updatedMatch.canDeleteTrips = true;
-                updatedMatch.canViewTyres = true; updatedMatch.canEditTyres = true; updatedMatch.canDeleteTyres = true;
-                updatedMatch.canViewTrucks = true; updatedMatch.canEditTrucks = true; updatedMatch.canDeleteTrucks = true;
-                updatedMatch.canViewDrivers = true; updatedMatch.canEditDrivers = true; updatedMatch.canDeleteDrivers = true;
-                updatedMatch.canViewOffices = true; updatedMatch.canEditOffices = true; updatedMatch.canDeleteOffices = true;
-                updatedMatch.canViewAccounts = true; updatedMatch.canEditAccounts = true; updatedMatch.canDeleteAccounts = true;
-                updatedMatch.canViewExpenses = true; updatedMatch.canEditExpenses = true; updatedMatch.canDeleteExpenses = true;
-                needsUpdate = true;
-              }
-
-              if (needsUpdate) {
-                const updatedList = activeRightsList.map(ur =>
-                  ur.email.toLowerCase().trim() === email ? updatedMatch : ur
-                );
-                setUserRightsList(updatedList);
-                localStorage.setItem('ttt_user_rights', JSON.stringify(updatedList));
-                activeRightsList = updatedList;
-                match = updatedMatch;
-
-                await pushPermissionsToCloud(updatedList);
-              }
-            } else {
-              const isSuper = appwriteOrgId === 'org_backend';
-              const targetRole = isSuper ? 'SuperAdmin' : (isAdminUser ? 'Admin' : 'Custom');
-              console.info(`Auto-creating approved local permission record for team member ${email} (role: ${targetRole})`);
-              const approvedPerm: UserPermission = {
-                id: 'ur_' + Date.now(),
-                email,
-                name: user.name || email,
-                phone: user.phone || '',
-                isEmailVerified: !!user.emailVerification,
-                isPhoneVerified: !!user.phoneVerification,
-                is2FAEnabled: false,
-                twoFactorSecret: '',
-                role: targetRole as any,
-                organizationId: appwriteOrgId,
-                isApproved: true,
-                canViewTrips: true, canEditTrips: isAdminUser || isSuper, canDeleteTrips: isAdminUser || isSuper,
-                canViewTyres: true, canEditTyres: isAdminUser || isSuper, canDeleteTyres: isAdminUser || isSuper,
-                canViewTrucks: true, canEditTrucks: isAdminUser || isSuper, canDeleteTrucks: isAdminUser || isSuper,
-                canViewDrivers: true, canEditDrivers: isAdminUser || isSuper, canDeleteDrivers: isAdminUser || isSuper,
-                canViewOffices: true, canEditOffices: isAdminUser || isSuper, canDeleteOffices: isAdminUser || isSuper,
-                canViewAccounts: true, canEditAccounts: isAdminUser || isSuper, canDeleteAccounts: isAdminUser || isSuper,
-                canViewExpenses: true, canEditExpenses: isAdminUser || isSuper, canDeleteExpenses: isAdminUser || isSuper
-              };
-              const withApproved = [...activeRightsList, approvedPerm];
-              setUserRightsList(withApproved);
-              localStorage.setItem('ttt_user_rights', JSON.stringify(withApproved));
-              activeRightsList = withApproved;
-              match = approvedPerm;
-
-              await pushPermissionsToCloud(withApproved);
-            }
-          }
-        } catch (teamsErr) {
-          console.warn('Teams sync skipped (non-fatal):', teamsErr);
-        }
-      }
-
-      setCurrentUser(user);
-    } catch (err) {
-      console.warn('Appwrite user authentication verification bypassed/offline during reconciliation:', err);
-    }
+    return reconcileUserSession(
+      user,
+      userRightsList,
+      setUserRightsList,
+      organizationProfiles,
+      setOrganizationProfiles,
+      (orgId) => migrationService.migrateLocalDataToOrg(orgId, {
+        setTrucks,
+        setDrivers,
+        setOffices,
+        setAccounts,
+        setTrips,
+        setExpenses,
+        setTyres,
+        setAuditLogs,
+        touchLastModified
+      })
+    );
   };
 
   // Authentication check and cloud permission sync on startup
@@ -1189,7 +412,7 @@ export default function App() {
   // Synchronize location.pathname with view and tab state
   useEffect(() => {
     const path = location.pathname;
-    
+
     // Auth guarding
     if (!currentUser && !loadingUser) {
       if (path.startsWith('/console')) {
@@ -1199,13 +422,13 @@ export default function App() {
       }
       return;
     }
-    
+
     if (currentUser && !loadingUser) {
       if (path === '/' || path === '/login') {
         navigate('/console/dashboard');
         return;
       }
-      
+
       const subpath = path.replace('/console/', '').toUpperCase();
       const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND'];
       if (validTabs.includes(subpath)) {
@@ -1318,47 +541,12 @@ export default function App() {
     return { approved: false, orgId: '', registered: false };
   };
 
-  async function pushPermissionsToCloud(nextUserRights: UserPermission[], forceEmail?: string) {
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const userRights = getCurrentUserRights();
-        const loggedInEmail = (currentUser?.email || '').toLowerCase().trim();
-        const isNotLoggedIn = !currentUser;
-        const prevRights = userRightsListRef.current || [];
 
-        const savePromises = nextUserRights.map(async (ur) => {
-          const isOwnOrg = ur.organizationId && ur.organizationId === userRights.organizationId;
-          const isSelf = ur.email.toLowerCase().trim() === loggedInEmail;
-
-          if (!isNotLoggedIn && !userRights.isSuperAdmin && !isOwnOrg && !isSelf) {
-            return;
-          }
-
-          // Change-detection: Only save if new or modified (unless forced)
-          const isForced = forceEmail && ur.email.toLowerCase().trim() === forceEmail.toLowerCase().trim();
-          const prevUr = prevRights.find(p => p.email.toLowerCase() === ur.email.toLowerCase());
-          if (!isForced && prevUr && JSON.stringify(prevUr) === JSON.stringify(ur)) {
-            return;
-          }
-
-          const docId = appwrite.getEmailDocId(ur.email);
-          await appwrite.saveGlobalConfig(databaseId, docId, ur);
-        });
-
-        await Promise.all(savePromises);
-        console.log('Successfully synced registration user permissions to Appwrite Database.');
-      } catch (e: any) {
-        console.warn("Could not sync registration user permissions to database:", e);
-        showNotification(`Database Sync Alert: Failed to write permissions. Make sure database schemas are bootstrapped.`);
-      }
-    }
-  }
 
   const sendWhatsAppOTP = async (phone: string) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const cleanPhone = phone.replace(/[^0-9]/g, '');
-    
+
     let gatewayHost = window.location.hostname;
     let gatewayProtocol = window.location.protocol;
     let useSubpath = false;
@@ -1369,8 +557,8 @@ export default function App() {
       gatewayProtocol = appwriteEndpoint.split('//')[0];
       useSubpath = true;
     }
-    
-    const gatewayUrl = useSubpath 
+
+    const gatewayUrl = useSubpath
       ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/send-otp`
       : `${gatewayProtocol}//${gatewayHost}:8000/send-otp`;
     console.info(`[WhatsAppOTP] Requesting delivery of OTP: ${otp} to ${phone} via ${gatewayUrl}`);
@@ -1413,7 +601,7 @@ export default function App() {
     try {
       if (isAppwriteConfigured()) {
         await appwrite.updatePhone(newPhone, currentPassword);
-        
+
         // Fetch fresh user object to get the updated phone and verification status from Appwrite Auth
         const freshUser = await appwrite.getCurrentUser();
         if (freshUser) {
@@ -1464,7 +652,7 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const data = await fetchAllGlobalConfigs(databaseId);
+        const data = await organizationService.fetchAllGlobalConfigs(databaseId);
         if (data && data.userRightsList && Array.isArray(data.userRightsList)) {
           const cloudRights = migrateUserPermissions(data.userRightsList);
           setUserRightsList(cloudRights);
@@ -1511,7 +699,7 @@ export default function App() {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const data = await fetchAllGlobalConfigs(databaseId);
+          const data = await organizationService.fetchAllGlobalConfigs(databaseId);
           if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
             activeProfiles = data.organizationProfiles;
           }
@@ -1520,7 +708,7 @@ export default function App() {
         }
       }
 
-      const matchedProfile = activeProfiles.find(p => 
+      const matchedProfile = activeProfiles.find(p =>
         p.organizationName.toLowerCase().trim() === trimmedOrgName.toLowerCase() ||
         p.organizationId.toLowerCase().trim() === trimmedOrgName.toLowerCase()
       );
@@ -1533,7 +721,7 @@ export default function App() {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const data = await fetchAllGlobalConfigs(databaseId);
+          const data = await organizationService.fetchAllGlobalConfigs(databaseId);
           if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
             activeProfiles = data.organizationProfiles;
           }
@@ -1698,7 +886,7 @@ export default function App() {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const data = await fetchAllGlobalConfigs(databaseId);
+        const data = await organizationService.fetchAllGlobalConfigs(databaseId);
         if (data && data.userRightsList && Array.isArray(data.userRightsList)) {
           const cloudRights = migrateUserPermissions(data.userRightsList);
           setUserRightsList(cloudRights);
@@ -1839,6 +1027,7 @@ export default function App() {
       showNotification("Profile updated successfully!");
       setProfileModalOpen(false);
     } catch (err: any) {
+      console.error("DEBUG PROFILE UPDATE ERROR:", err);
       alert(`Error updating profile: ${err.message || 'Operation failed'}`);
     }
   };
@@ -1860,6 +1049,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND') => {
+    setActiveTab(tab);
     navigate(`/console/${tab.toLowerCase()}`);
     setIsMobileMenuOpen(false);
   };
@@ -1954,6 +1144,17 @@ export default function App() {
       }
     }
 
+    const initialMessage = attachmentFile ? {
+      id: `msg-${Date.now()}`,
+      sender: 'User' as const,
+      senderName: currentUser?.name || currentUser?.email || 'User',
+      senderEmail: currentUser?.email || '',
+      content: description,
+      timestamp: new Date().toISOString(),
+      attachmentUrl: attachmentUrl || undefined,
+      attachmentName: attachmentName || undefined,
+    } : null;
+
     const newTicket = createRecord<SupportTicket>({
       id: ticketId,
       ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
@@ -1966,7 +1167,7 @@ export default function App() {
       description,
       status: 'Open',
       assignedTeam: category,
-      messages: [],
+      messages: initialMessage ? [initialMessage] : [],
     }, currentUserId);
 
     const nextTickets = [newTicket, ...supportTickets];
@@ -2003,18 +1204,18 @@ export default function App() {
         ? [myRights.supportRole]
         : []);
     const isSuperAdmin = myRights?.role === 'SuperAdmin';
-    
+
     const filtered = supportTickets.filter(t => {
       if (isSuperAdmin) return true;
       return mySupportRoles.includes(t.assignedTeam as any);
     });
-    
+
     let totalUnread = 0;
     filtered.forEach(t => {
       if (t.status === 'Closed') return;
       const msgs = t.messages || [];
       const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
-      
+
       if (msgs.length === 0) {
         if (!lastReadMsgId) totalUnread++;
       } else {
@@ -2205,11 +1406,88 @@ export default function App() {
     });
   };
 
+  const approvedOrgTrucks = React.useMemo(() => orgTrucks.filter(t => t.isApproved !== false), [orgTrucks]);
+  const orgUserRights = React.useMemo(() => userRightsList.filter(u => u.organizationId === currentUserOrgId), [userRightsList, currentUserOrgId]);
+  const currentOrgProfile = React.useMemo(() => organizationProfiles.find(p => p.organizationId === currentUserOrgId), [organizationProfiles, currentUserOrgId]);
+  const isOrgDisabled = currentOrgProfile ? currentOrgProfile.status === 'Disabled' : false;
 
+  const canUserViewCategory = React.useCallback((category: string, logUserOrReference?: string, logDetails?: string): boolean => {
+    const cat = category.toLowerCase();
+    const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
+    if (cat.includes('password')) {
+      return (logUserOrReference || '').toLowerCase().trim() === currentUserEmail;
+    }
 
+    if (currentUserRights.isSuperAdmin) return true;
 
+    // Check if this log specifically concerns the current logged-in user (e.g. their permissions or approval status changed)
+    if (currentUserEmail) {
+      const ref = (logUserOrReference || '').toLowerCase().trim();
+      const det = (logDetails || '').toLowerCase().trim();
+      if (ref === currentUserEmail || ref.includes(currentUserEmail) || det.includes(currentUserEmail)) {
+        return true;
+      }
+    }
 
+    if (cat.includes('trip')) return !!currentUserRights.canViewTrips;
+    if (cat.includes('truck')) return !!currentUserRights.canViewTrucks;
+    if (cat.includes('driver')) return !!currentUserRights.canViewDrivers;
+    if (cat.includes('office') || cat.includes('branch')) return !!currentUserRights.canViewOffices;
+    if (cat.includes('account')) return !!currentUserRights.canViewAccounts;
+    if (cat.includes('expense')) return !!currentUserRights.canViewExpenses;
+    if (cat.includes('tyre')) return !!currentUserRights.canViewTyres;
+    if (cat.includes('organization') || cat.includes('access') || cat.includes('permission')) {
+      return !!currentUserRights.isAdmin;
+    }
+    return true;
+  }, [currentUser, currentUserRights]);
 
+  const backendEmails = React.useMemo(() => new Set(
+    userRightsList
+      .filter(u => u.organizationId === 'org_backend')
+      .map(u => u.email.toLowerCase().trim())
+  ), [userRightsList]);
+
+  const orgAuditLogs = React.useMemo(() => {
+    return auditLogs
+      .filter(l => {
+        const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
+        if (currentUserOrgId === 'org_backend') {
+          const cat = (l.category || '').toLowerCase();
+          if (cat.includes('password')) {
+            return (l.reference || '').toLowerCase().trim() === currentUserEmail;
+          }
+
+          const isBackendUserAction = backendEmails.has((l.user || '').toLowerCase().trim());
+          const isIncomingTruckRequest = l.category === 'Truck' && l.action === 'Created' && (l.details || '').includes('Requested activation');
+          const isTruckApproveOrReject = l.category === 'Truck' && (l.action === 'Approved' || l.action === 'Rejected');
+
+          return isBackendUserAction || isIncomingTruckRequest || isTruckApproveOrReject;
+        }
+
+        return l.organizationId === currentUserOrgId && canUserViewCategory(l.category, l.reference, l.details);
+      })
+      .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  }, [auditLogs, currentUser, currentUserOrgId, backendEmails, canUserViewCategory]);
+
+  const latestLogTime = React.useMemo(() => {
+    if (orgAuditLogs.length === 0) return 0;
+    const ts = orgAuditLogs[0]?.timestamp;
+    if (!ts) return 0;
+    try {
+      return ts.includes('T')
+        ? new Date(ts).getTime()
+        : new Date(ts.replace(' ', 'T') + 'Z').getTime();
+    } catch { return 0; }
+  }, [orgAuditLogs]);
+
+  const hasUnreadNotifications = latestLogTime > lastReadNotificationTime;
+
+  const cyanCount = React.useMemo(() => {
+    return currentUserRights.isAdmin
+      ? orgUserRights.filter(u => !u.isApproved).length
+      : orgTrips.filter(t => t.status === 'In Progress' || t.status === 'Pending').length;
+  }, [currentUserRights, orgUserRights, orgTrips]);
 
   // Form modal controller states
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
@@ -2228,8 +1506,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Notifications systems
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
 
   function touchLastModified() {
     if (currentUserOrgId !== 'org_backend') {
@@ -2238,7 +1515,7 @@ export default function App() {
     sessionStorage.setItem('ttt_recent_action_at', Date.now().toString());
   }
 
-  async function pushFleetSnapshotNow(overrideTrucks?: Truck[]) {
+  async function pushFleetSnapshotNow() {
     touchLastModified();
   }
 
@@ -2327,452 +1604,71 @@ export default function App() {
   };
 
   const onLoadCloudState = (parsed: any, userRightsData?: any, quiet = false): boolean => {
-    const recentActionAt = Number(sessionStorage.getItem('ttt_recent_action_at') || '0');
-    const isRecentLocalChange = Date.now() - recentActionAt < 6000;
-    if (!quiet && isRecentLocalChange) {
-      return false;
-    }
-
     const orgId = currentUserOrgId || 'org_default';
-
-    const hasOrgCategoryChanged = (localItems: any[], cloudItems: any[] | undefined) => {
-      if (!cloudItems) return false;
-      const localOrg = orgId === 'org_backend' ? localItems : localItems.filter(x => x.organizationId === orgId);
-      const cloudOrg = orgId === 'org_backend' ? cloudItems : cloudItems.filter(x => x.organizationId === orgId);
-      if (localOrg.length !== cloudOrg.length) return true;
-      const sortById = (a: any, b: any) => (a.id || '').localeCompare(b.id || '');
-      const localStr = JSON.stringify([...localOrg].sort(sortById));
-      const cloudStr = JSON.stringify([...cloudOrg].sort(sortById));
-      return localStr !== cloudStr;
-    };
-
-    let userRightsChanged = false;
     const email = (currentUser?.email || '').toLowerCase().trim();
+    const isSuper = currentUserRights?.isSuperAdmin || currentUserOrgId === 'org_backend';
 
-    if (userRightsData && userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)) {
-      const cloudRights = migrateUserPermissions(userRightsData.userRightsList);
-      if (currentUserRights.isAdmin) {
-        const localRightsOrg = userRightsList.filter(x => x.organizationId === orgId);
-        const cloudRightsOrg = cloudRights.filter(x => x.organizationId === orgId);
-        if (localRightsOrg.length !== cloudRightsOrg.length) {
-          userRightsChanged = true;
-        } else {
-          const sortById = (a: any, b: any) => (a.id || '').localeCompare(b.id || '');
-          const localStr = JSON.stringify([...localRightsOrg].sort(sortById));
-          const cloudStr = JSON.stringify([...cloudRightsOrg].sort(sortById));
-          if (localStr !== cloudStr) userRightsChanged = true;
-        }
-      } else {
-        const localOwn = userRightsList.find(x => x.email.toLowerCase().trim() === email);
-        const cloudOwn = cloudRights.find(x => x.email.toLowerCase().trim() === email);
-        if (JSON.stringify(localOwn) !== JSON.stringify(cloudOwn)) {
-          userRightsChanged = true;
-        }
+    const result = cloudSyncService.reconcile(
+      parsed,
+      userRightsData,
+      quiet,
+      currentUser,
+      currentUserRights,
+      orgId,
+      email,
+      isSuper,
+      {
+        trucks,
+        drivers,
+        offices,
+        accounts,
+        trips,
+        expenses,
+        tyres,
+        auditLogs,
+        supportTickets,
+        userRightsList,
+        organizationProfiles
       }
+    );
+
+    if (!result) return false;
+
+    if (result.userRightsList) {
+      setUserRightsList(result.userRightsList);
     }
-
-    if (parsed.userRightsList && Array.isArray(parsed.userRightsList)) {
-      const cloudRights = migrateUserPermissions(parsed.userRightsList);
-      if (currentUserRights.isAdmin) {
-        const localRightsOrg = userRightsList.filter(x => x.organizationId === orgId);
-        const cloudRightsOrg = cloudRights.filter(x => x.organizationId === orgId);
-        if (localRightsOrg.length !== cloudRightsOrg.length) {
-          userRightsChanged = true;
-        } else {
-          const sortById = (a: any, b: any) => (a.id || '').localeCompare(b.id || '');
-          const localStr = JSON.stringify([...localRightsOrg].sort(sortById));
-          const cloudStr = JSON.stringify([...cloudRightsOrg].sort(sortById));
-          if (localStr !== cloudStr) userRightsChanged = true;
-        }
-      } else {
-        const localOwn = userRightsList.find(x => x.email.toLowerCase().trim() === email);
-        const cloudOwn = cloudRights.find(x => x.email.toLowerCase().trim() === email);
-        if (JSON.stringify(localOwn) !== JSON.stringify(cloudOwn)) {
-          userRightsChanged = true;
-        }
-      }
+    if (result.organizationProfiles) {
+      setOrganizationProfiles(result.organizationProfiles);
     }
-
-    let hasRelevantChanges = false;
-    if (currentUserRights.canViewTrips && hasOrgCategoryChanged(trips, parsed.trips)) hasRelevantChanges = true;
-    if (currentUserRights.canViewTrucks && hasOrgCategoryChanged(trucks, parsed.trucks)) hasRelevantChanges = true;
-    if (currentUserRights.canViewDrivers && hasOrgCategoryChanged(drivers, parsed.drivers)) hasRelevantChanges = true;
-    if (currentUserRights.canViewOffices && hasOrgCategoryChanged(offices, parsed.offices)) hasRelevantChanges = true;
-    if (currentUserRights.canViewAccounts && hasOrgCategoryChanged(accounts, parsed.accounts)) hasRelevantChanges = true;
-    if (currentUserRights.canViewExpenses && hasOrgCategoryChanged(expenses, parsed.expenses)) hasRelevantChanges = true;
-    if (currentUserRights.canViewTyres && hasOrgCategoryChanged(tyres, parsed.tyres)) hasRelevantChanges = true;
-    if (currentUserRights.isAdmin && hasOrgCategoryChanged(auditLogs, parsed.auditLogs)) hasRelevantChanges = true;
-    if (hasOrgCategoryChanged(supportTickets, parsed.supportTickets)) hasRelevantChanges = true;
-    if (userRightsChanged) hasRelevantChanges = true;
-
-    if (userRightsData) {
-      const isSuper = currentUserRights?.isSuperAdmin || currentUserOrgId === 'org_backend';
-      const email = (currentUser?.email || '').toLowerCase().trim();
-
-      let cloudProfiles = userRightsData.organizationProfiles || [];
-      let cloudRightsSource = userRightsData.userRightsList || [];
-
-      if (!isSuper) {
-        // Filter profiles to only contain our own organization
-        cloudProfiles = cloudProfiles.filter((p: any) => p.organizationId === currentUserOrgId);
-
-        // Filter cloud rights list to only contain our own organization or self
-        cloudRightsSource = cloudRightsSource.filter((ur: any) =>
-          ur.organizationId === currentUserOrgId || ur.email.toLowerCase().trim() === email
-        );
-      }
-
-      const existingOrgIds = new Set(cloudProfiles.map((p: any) => p.organizationId));
-
-      if (cloudRightsSource && Array.isArray(cloudRightsSource)) {
-        let cloudRights = migrateUserPermissions(cloudRightsSource);
-        const localStored = localStorage.getItem('ttt_user_rights');
-        let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
-
-        // Identify orphaned user permissions in the cloud
-        const orphanedCloudKeys: string[] = [];
-        cloudRights = cloudRights.filter(ur => {
-          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-            return true;
-          }
-          const exists = existingOrgIds.has(ur.organizationId);
-          if (!exists) {
-            orphanedCloudKeys.push(appwrite.getEmailDocId(ur.email));
-          }
-          return exists;
-        });
-
-        // Asynchronously delete orphaned user rights from Appwrite DB if current user is Super Admin
-        if (isSuper && orphanedCloudKeys.length > 0) {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          console.info("Super Admin cleaning up orphaned user permissions from DB (onLoadCloudState):", orphanedCloudKeys);
-          for (const key of orphanedCloudKeys) {
-            appwrite.deleteGlobalConfig(databaseId, key).catch(err => {
-              console.warn("Failed to delete orphaned user permission:", key, err);
-            });
-          }
-        }
-
-        localRights = localRights.filter(ur => {
-          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-            return true;
-          }
-          return existingOrgIds.has(ur.organizationId);
-        });
-
-        const merged = cloudRights.map(cloudEntry => {
-          const localEntry = localRights.find(l => l.email.toLowerCase() === cloudEntry.email.toLowerCase());
-          if (localEntry) {
-            return { ...cloudEntry, isApproved: localEntry.isApproved || cloudEntry.isApproved };
-          }
-          return cloudEntry;
-        });
-        const localOnlyEntries = localRights.filter(lr => !merged.some(m => m.email.toLowerCase() === lr.email.toLowerCase()));
-        // Only keep Super Admin / Backend team members to avoid accidental lockout.
-        // Standard organization accounts/members that were deleted from the database should be deleted locally too.
-        const preservedLocalOnlyEntries = localOnlyEntries.filter(lr => {
-          return lr.role === 'SuperAdmin' || lr.organizationId === 'org_backend';
-        });
-        const activeRightsList = [...merged, ...preservedLocalOnlyEntries];
-        setUserRightsList(activeRightsList);
-        localStorage.setItem('ttt_user_rights', JSON.stringify(activeRightsList));
-      }
-
-      if (cloudProfiles && Array.isArray(cloudProfiles)) {
-        const activeRights = cloudRightsSource && Array.isArray(cloudRightsSource)
-          ? migrateUserPermissions(cloudRightsSource)
-          : userRightsList;
-
-        // Filter activeRights by existingOrgIds to avoid recreating profiles for deleted orgs
-        const filteredActiveRights = activeRights.filter(ur => {
-          if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-            return true;
-          }
-          return existingOrgIds.has(ur.organizationId);
-        });
-
-        const reconciled = reconcileOrganizationProfiles(
-          filteredActiveRights,
-          cloudProfiles
-        );
-        setOrganizationProfiles(reconciled);
-        localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));
-      }
+    if (result.trucks) {
+      setTrucks(result.trucks);
     }
+    if (result.drivers) setDrivers(result.drivers);
+    if (result.offices) setOffices(result.offices);
+    if (result.accounts) setAccounts(result.accounts);
+    if (result.trips) setTrips(result.trips);
+    if (result.expenses) setExpenses(result.expenses);
+    if (result.tyres) setTyres(result.tyres);
+    if (result.auditLogs) setAuditLogs(result.auditLogs);
+    if (result.supportTickets) setSupportTickets(result.supportTickets);
 
-    if (parsed.trucks) {
-      const localLastModified = Number(localStorage.getItem('ttt_last_modified_at') || '0');
-      const cloudExportDate = parsed.exportDate
-        ? (isNaN(Number(parsed.exportDate)) ? new Date(parsed.exportDate).getTime() : Number(parsed.exportDate))
-        : 0;
-      const localIsNewer = !quiet && localLastModified > 0 && cloudExportDate > 0 && localLastModified > cloudExportDate + 4000;
-      if (!localIsNewer) {
-        const migrated = migrateTrucks(parsed.trucks);
-
-        if (!quiet) {
-          // Detect approval / rejection transitions for notification & audit logging
-          migrated.forEach(cloudTruck => {
-            const isRelevantOrg = orgId !== 'org_backend' && cloudTruck.organizationId === orgId;
-            if (isRelevantOrg) {
-              const localTruck = trucks.find(t =>
-                t.organizationId === orgId &&
-                t.truckNo.toUpperCase() === cloudTruck.truckNo.toUpperCase()
-              );
-              if (localTruck) {
-                const wasPendingApproval = localTruck.isApproved === false || localTruck.requestStatus === 'Pending';
-
-                if (wasPendingApproval && cloudTruck.isApproved === true) {
-                  // Approved transition!
-                  showNotification(`Truck ${cloudTruck.truckNo} has been approved by the Admin!`);
-                  logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request approved by Admin. Expiry set to ${cloudTruck.registrationExpiryDate || 'None'}`, cloudTruck.organizationId);
-                } else if (wasPendingApproval && cloudTruck.requestStatus === 'Rejected') {
-                  // Rejected transition!
-                  showNotification(`Truck ${cloudTruck.truckNo} request was rejected.`);
-                  logAction('Cloud', 'Truck', cloudTruck.truckNo, `Truck registration request rejected by Admin.`, cloudTruck.organizationId);
-                }
-              }
-            }
-          });
-        }
-
-        setTrucks(prev => {
-          const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
-          const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
-          
-          const localOnlyOrPending = prev.filter(t => (orgId === 'org_backend' || t.organizationId === orgId) && t.syncState === 'pending');
-          const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-            const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-            if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-              return localPendingItem;
-            }
-            return cloudItem;
-          });
-          const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-          const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-
-          const uniqueMap = new Map<string, Truck>();
-          next.forEach(t => {
-            const key = `${t.organizationId}_${t.truckNo.toUpperCase().trim()}`;
-            const existing = uniqueMap.get(key);
-            if (!existing) {
-              uniqueMap.set(key, t);
-            } else {
-              const keepNew =
-                (existing.deletedAt && !t.deletedAt) || // Keep active over deleted
-                (!existing.deletedAt && !t.deletedAt && (
-                  (t.isApproved && !existing.isApproved) ||
-                  (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
-                  (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'))
-                ));
-              if (keepNew) {
-                if (isAppwriteConfigured()) {
-                  const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-                  appwrite.deleteFleetDocument(databaseId, 'trucks', existing.id).catch(() => {});
-                }
-                uniqueMap.set(key, t);
-              } else {
-                // Only delete from remote if the one we discard is not soft-deleted (active duplicates)
-                if (isAppwriteConfigured() && !t.deletedAt) {
-                  const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-                  appwrite.deleteFleetDocument(databaseId, 'trucks', t.id).catch(() => {});
-                }
-              }
-            }
-          });
-          const deduplicated = Array.from(uniqueMap.values());
-          localStorage.setItem('ttt_trucks', JSON.stringify(deduplicated));
-          return deduplicated;
-        });
-        touchLastModified();
-      } else {
-        if (!quiet) {
-          console.log(`Appwrite Cloud Sync: Skipping truck overwrite — local state is newer (local: ${localLastModified}, cloud: ${cloudExportDate})`);
-        }
-      }
-    }
-
-    if (parsed.drivers) {
-      const migrated = migrateDrivers(parsed.drivers);
-      setDrivers(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(d => d.organizationId !== orgId && d.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(d => d.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(d => (orgId === 'org_backend' || d.organizationId === orgId) && d.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_drivers', JSON.stringify(next));
-        return next;
+    if (result.notifications && result.notifications.length > 0) {
+      result.notifications.forEach(n => {
+        showNotification(n.message);
+        logAction(n.actionType, n.category, n.target, n.details, n.organizationId);
       });
+    }
+
+    if (result.shouldTouchLastModified) {
       touchLastModified();
     }
 
-    if (parsed.offices) {
-      const migrated = migrateOffices(parsed.offices);
-      setOffices(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(o => o.organizationId !== orgId && o.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(o => o.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(o => (orgId === 'org_backend' || o.organizationId === orgId) && o.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_offices', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.accounts) {
-      const migrated = migrateAccounts(parsed.accounts);
-      setAccounts(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(a => a.organizationId !== orgId && a.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(a => a.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(a => (orgId === 'org_backend' || a.organizationId === orgId) && a.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_accounts', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.trips) {
-      const migrated = migrateTrips(migrateTripsIfNecessary(parsed.trips));
-      setTrips(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(t => t.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(t => (orgId === 'org_backend' || t.organizationId === orgId) && t.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_trips', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.expenses) {
-      const migrated = migrateExpenses(parsed.expenses);
-      setExpenses(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(e => e.organizationId !== orgId && e.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(e => e.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(e => (orgId === 'org_backend' || e.organizationId === orgId) && e.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_expenses', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.tyres) {
-      const migrated = migrateTyres(parsed.tyres);
-      setTyres(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(ty => ty.organizationId !== orgId && ty.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(ty => ty.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(ty => (orgId === 'org_backend' || ty.organizationId === orgId) && ty.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_tyres', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.auditLogs) {
-      const migrated = migrateAuditLogs(parsed.auditLogs);
-      setAuditLogs(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(l => l.organizationId !== orgId && l.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? migrated : migrated.filter(l => l.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(l => (orgId === 'org_backend' || l.organizationId === orgId) && l.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map(cloudItem => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some(c => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('fleet_audit_logs', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.supportTickets) {
-      setSupportTickets(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(st => st.organizationId !== orgId && st.organizationId !== 'org_default');
-        const thisOrgPulled = orgId === 'org_backend' ? parsed.supportTickets : parsed.supportTickets.filter((st: any) => st.organizationId === orgId);
-        const localOnlyOrPending = prev.filter(st => (orgId === 'org_backend' || st.organizationId === orgId) && st.syncState === 'pending');
-        const mergedThisOrg = thisOrgPulled.map((cloudItem: any) => {
-          const localPendingItem = localOnlyOrPending.find(l => l.id === cloudItem.id);
-          if (localPendingItem && (localPendingItem.version ?? 0) > (cloudItem.version ?? 0)) {
-            return localPendingItem;
-          }
-          return cloudItem;
-        });
-        const notInCloud = localOnlyOrPending.filter(l => !mergedThisOrg.some((c: any) => c.id === l.id));
-        const next = [...otherOrgs, ...mergedThisOrg, ...notInCloud];
-        localStorage.setItem('ttt_support_tickets', JSON.stringify(next));
-        return next;
-      });
-      touchLastModified();
-    }
-
-    if (parsed.userRightsList) {
-      saveUserRightsList(parsed.userRightsList);
-    }
-
-    return hasRelevantChanges;
+    return result.hasRelevantChanges;
   };
 
 
 
-  function showNotification(msg: string) {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
-  }
+
 
   const handleUpdateOrgStatus = async (orgId: string, status: 'Active' | 'Disabled') => {
     const nextProfiles = organizationProfiles.map(p =>
@@ -2784,7 +1680,7 @@ export default function App() {
   };
 
   const handleUpdateOrgLimit = async (orgId: string, limit: number) => {
-        const nextProfiles = organizationProfiles.map(p =>
+    const nextProfiles = organizationProfiles.map(p =>
       p.organizationId === orgId ? { ...p, maxTrucksAllowed: limit } : p
     );
     await saveOrganizationProfiles(nextProfiles);
@@ -2901,7 +1797,7 @@ export default function App() {
     const nextProfiles = organizationProfiles.map(p =>
       p.organizationId === orgId ? { ...p, truckRequests: nextRequests } : p
     );
-    
+
     // Update local state immediately
     setOrganizationProfiles(nextProfiles);
     localStorage.setItem('ttt_organization_profiles', JSON.stringify(nextProfiles));
@@ -2937,7 +1833,7 @@ export default function App() {
       setTrucks(prev => {
         const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
         const thisOrg = prev.filter(t => t.organizationId === orgId);
-        
+
         let nextOrg;
         if (existing) {
           nextOrg = thisOrg.map(t => t.id === truckId ? (rejectedTruckObj || t) : t);
@@ -2958,7 +1854,7 @@ export default function App() {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const targetProfile = nextProfiles.find(p => p.organizationId === orgId);
       const docId = appwrite.getOrgDocId(orgId);
-      
+
       const syncPromises = [];
       if (targetProfile) {
         syncPromises.push(
@@ -2973,15 +1869,15 @@ export default function App() {
             .catch(err => console.warn("Failed to push truck rejection sync:", err))
         );
       }
- 
-       Promise.all(syncPromises).then(() => {
-         console.log("Rejection backend synchronization complete.");
-       });
-     }
- 
-     logAction('Rejected', 'Truck', truckNoToReject || orgId, 'Truck registration request rejected by system administrator.', orgId);
-     showNotification(`✗ Truck request rejected for Org ${orgId}.`);
-   };
+
+      Promise.all(syncPromises).then(() => {
+        console.log("Rejection backend synchronization complete.");
+      });
+    }
+
+    logAction('Rejected', 'Truck', truckNoToReject || orgId, 'Truck registration request rejected by system administrator.', orgId);
+    showNotification(`✗ Truck request rejected for Org ${orgId}.`);
+  };
 
   const handleBackendUpdateTruck = async (targetOrgId: string, updatedTruck: Truck) => {
     const oldTruck = trucks.find(t => t.id === updatedTruck.id);
@@ -3204,7 +2100,7 @@ export default function App() {
 
         const loadRightsPromise = (async () => {
           try {
-            userRightsData = await fetchAllGlobalConfigs(databaseId);
+            userRightsData = await organizationService.fetchAllGlobalConfigs(databaseId);
           } catch (e) {
             console.warn('Failed to load global rights config for backend reload:', e);
           }
@@ -3226,7 +2122,7 @@ export default function App() {
         }
 
         // 2. Update states
-        const currentProfiles = userRightsData?.organizationProfiles || organizationProfilesRef.current;
+        const currentProfiles = userRightsData?.organizationProfiles || organizationProfiles;
 
         // Self-healing: Automatically clean up orphaned requests from user_rights_snapshot when a vehicle is deleted
         let profilesChanged = false;
@@ -3274,7 +2170,7 @@ export default function App() {
         });
 
         if (profilesChanged) {
-          await saveOrganizationProfilesRef.current(cleanedProfiles);
+          await saveOrganizationProfiles(cleanedProfiles);
         }
 
         setTrucks(prev => {
@@ -3443,7 +2339,6 @@ export default function App() {
       teardown();
       try {
         await appwrite.initSession();
-        const client = appwrite.getClient();
         const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs'];
         if (currentUserOrgId === 'org_backend') {
           colList.push('global_configs');
@@ -3463,7 +2358,7 @@ export default function App() {
                 } else if (typeof subAny.unsubscribe === 'function') {
                   subAny.unsubscribe();
                 }
-              } catch (_) {}
+              } catch (_) { }
             } else {
               unsubscribe = sub;
               reconnectDelay = 5000; // reset on success
@@ -3723,89 +2618,12 @@ export default function App() {
 
   if (resetPasswordState && resetPasswordState.active) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans p-4">
-        {/* Background glowing decorations */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl shadow-lg shadow-blue-500/15 mb-2">
-            <Lock className="w-7 h-7 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white animate-fade-in">Reset Password</h2>
-          <p className="text-xs text-slate-400">Set a new secure password for your account.</p>
-
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            const target = e.target as any;
-            const newPassword = target.password.value;
-            const confirmPassword = target.confirmPassword.value;
-
-            if (newPassword.length < 8) {
-              alert("Password must be at least 8 characters long.");
-              return;
-            }
-            if (newPassword !== confirmPassword) {
-              alert("Passwords do not match.");
-              return;
-            }
-
-            setLoadingUser(true);
-            try {
-              if (isAppwriteConfigured()) {
-                await appwrite.updateRecovery(resetPasswordState.userId, resetPasswordState.secret, newPassword);
-              }
-              showNotification("Password has been reset successfully! You can now log in.");
-              setResetPasswordState(null);
-              window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-            } catch (err: any) {
-              console.error(err);
-              alert(`Failed to reset password: ${err.message || err}`);
-            } finally {
-              setLoadingUser(false);
-            }
-          }} className="space-y-4 text-left">
-            <div className="space-y-1.5">
-              <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">New Password</label>
-              <input
-                type="password"
-                name="password"
-                placeholder="••••••••"
-                required
-                className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Confirm New Password</label>
-              <input
-                type="password"
-                name="confirmPassword"
-                placeholder="••••••••"
-                required
-                className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/10 hover:shadow-blue-600/25 transition cursor-pointer"
-            >
-              Update Password
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setResetPasswordState(null);
-                window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-              }}
-              className="w-full py-2 text-slate-500 hover:text-slate-400 text-xs font-bold transition-all focus:outline-none cursor-pointer"
-            >
-              Cancel
-            </button>
-          </form>
-        </div>
-      </div>
+      <PasswordResetScreen
+        resetPasswordState={resetPasswordState}
+        setResetPasswordState={setResetPasswordState}
+        setLoadingUser={setLoadingUser}
+        showNotification={showNotification}
+      />
     );
   }
 
@@ -3861,579 +2679,55 @@ export default function App() {
 
   if (isVerificationPending) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 dark:bg-slate-950 font-sans p-4 overflow-auto transition-colors duration-200">
-        {/* GLOBAL TOAST BANNER IN VERIFICATION SCREEN */}
-        {toastMessage && (
-          <div id="toast-notify" className="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-            <CheckCircle className="w-4 h-4 text-white" />
-            <span className="text-xs font-semibold">{toastMessage}</span>
-          </div>
-        )}
-
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-6 md:p-8 space-y-6 transition-all">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-50 dark:bg-blue-950/40 rounded-2xl shadow-inner border border-blue-100 dark:border-blue-900/30 mb-2">
-              <ShieldCheck className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Verification Required</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Please verify your email address and mobile number to access the platform.</p>
-          </div>
-
-          <div className="space-y-5">
-            {/* Email Verification Section */}
-            <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Email Verification</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${currentUserRights.isEmailVerified
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30'
-                    : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/30'
-                  }`}>
-                  {currentUserRights.isEmailVerified ? 'Verified' : 'Unverified'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Registered Email: <span className="text-slate-800 dark:text-slate-200 font-mono font-medium">{currentUser.email}</span>
-              </p>
-              {!currentUserRights.isEmailVerified && (
-                <button
-                  type="button"
-                  disabled={emailTimer > 0}
-                  onClick={async () => {
-                    try {
-                      if (isAppwriteConfigured()) {
-                        const redirectUrl = `${getAppOrigin()}?mode=verify`;
-                        console.log("Appwrite: request verification redirect URL is:", redirectUrl);
-                        await appwrite.createVerification(redirectUrl);
-                      }
-                      setEmailTimer(120);
-                      showNotification("Verification email sent successfully!");
-                    } catch (e: any) {
-                      showNotification(`Error: ${e.message || e}`);
-                    }
-                  }}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                >
-                  {emailTimer > 0 ? `Resend Email in ${emailTimer}s` : "Send Verification Email"}
-                </button>
-              )}
-              {!isAppwriteConfigured() && !currentUserRights.isEmailVerified && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const email = (currentUser.email || '').toLowerCase().trim();
-                    const updated = userRightsList.map(ur =>
-                      ur.email.toLowerCase().trim() === email ? { ...ur, isEmailVerified: true } : ur
-                    );
-                    setUserRightsList(updated);
-                    localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                    showNotification("Simulated Email verification succeeded!");
-                  }}
-                  className="w-full py-1.5 border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-500/50 text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 rounded-xl text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  [Mock Sandbox] Force Verify Email
-                </button>
-              )}
-            </div>
-
-            {/* Phone Verification Section */}
-            <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Mobile Verification</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${currentUserRights.isPhoneVerified
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30'
-                    : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/30'
-                  }`}>
-                  {currentUserRights.isPhoneVerified ? 'Verified' : 'Unverified'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400">
-                <span>Mobile Number: <span className="text-slate-800 dark:text-slate-200 font-mono font-medium">{currentUserRights.phone || 'Not Set'}</span></span>
-                {!currentUserRights.isPhoneVerified && (
-                  <button
-                    type="button"
-                    onClick={() => setShowPhoneUpdateModal(true)}
-                    className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-bold transition cursor-pointer"
-                  >
-                    {currentUserRights.phone ? 'Update' : 'Add Number'}
-                  </button>
-                )}
-              </div>
-
-              {!currentUserRights.isPhoneVerified && (
-                <div className="space-y-2">
-                  {!verificationOtpSent ? (
-                    <button
-                      type="button"
-                      disabled={phoneTimer > 0}
-                      onClick={async () => {
-                        if (!currentUserRights.phone) {
-                          setShowPhoneUpdateModal(true);
-                          return;
-                        }
-                        try {
-                          if (isAppwriteConfigured()) {
-                            await sendWhatsAppOTP(currentUserRights.phone);
-                            showNotification("An OTP verification code has been sent via WhatsApp!");
-                          } else {
-                            showNotification("Mock OTP verification code sent! Enter 123456.");
-                          }
-                          setVerificationOtpSent(true);
-                          showNotification("OTP sent successfully!");
-                          setPhoneTimer(120);
-                        } catch (e: any) {
-                          showNotification(`Error: ${e.message || e}`);
-                        }
-                      }}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
-                      {phoneTimer > 0 ? `Resend OTP in ${phoneTimer}s` : "Send WhatsApp OTP Code"}
-                    </button>
-                  ) : (
-                    <form onSubmit={async (e) => {
-                      e.preventDefault();
-                      const target = e.target as any;
-                      const code = target.otpCode.value.trim();
-                      if (!code) {
-                        showNotification("Please enter the OTP code.");
-                        return;
-                      }
-
-                      try {
-                        if (isAppwriteConfigured()) {
-                          const storedOtp = whatsappOtpCode || sessionStorage.getItem('whatsapp_otp_code');
-                          if (code === storedOtp || code === '123456') {
-                            const email = (currentUser.email || '').toLowerCase().trim();
-                            const updated = userRightsList.map(ur =>
-                              ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
-                            );
-                            setUserRightsList(updated);
-                            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                            await pushPermissionsToCloud(updated);
-                            
-                            // Trigger admin-level Appwrite Auth user verification via the gateway
-                            try {
-                               let gatewayHost = window.location.hostname;
-                              let gatewayProtocol = window.location.protocol;
-                              let useSubpath = false;
-
-                              const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
-                              if (appwriteEndpoint.includes('//')) {
-                                gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
-                                gatewayProtocol = appwriteEndpoint.split('//')[0];
-                                useSubpath = true;
-                              }
-                              const verifyUrl = useSubpath
-                                ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/verify-user-phone`
-                                : `${gatewayProtocol}//${gatewayHost}:8000/verify-user-phone`;
-                              console.info(`[WhatsAppOTP] Requesting admin-level verification sync via ${verifyUrl}`);
-                              await fetch(verifyUrl, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  apiKey: 'ft_92hf83hdkw9812hskd',
-                                  userId: currentUser.$id
-                                })
-                              });
-                              console.info('[WhatsAppOTP] Successfully synchronized user-level verification in Appwrite Auth!');
-                            } catch (gateErr) {
-                              console.warn('[WhatsAppOTP] Failed to sync admin verification state:', gateErr);
-                            }
-
-                            const freshUser = await appwrite.getCurrentUser();
-                            if (freshUser) {
-                              setCurrentUser(freshUser);
-                              await reconcileSession(freshUser);
-                            }
-                            showNotification("WhatsApp OTP verification succeeded!");
-                            showNotification("Mobile number verified successfully!");
-                          } else {
-                            showNotification("Invalid OTP code. Please enter the verification code sent to your WhatsApp device.");
-                          }
-                        } else {
-                          if (code === '123456') {
-                            const email = (currentUser.email || '').toLowerCase().trim();
-                            const updated = userRightsList.map(ur =>
-                              ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
-                            );
-                            setUserRightsList(updated);
-                            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                            showNotification("Mock OTP verification succeeded!");
-                          } else {
-                            showNotification("Invalid OTP code. The predefined mock OTP is 123456.");
-                          }
-                        }
-                      } catch (otpErr: any) {
-                        console.error(otpErr);
-                        showNotification(`Verification failed: ${otpErr.message || otpErr}`);
-                      }
-                    }} className="space-y-2 text-left">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="otpCode"
-                          placeholder="Enter OTP (e.g. 123456)"
-                          className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-400"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="submit"
-                          className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[10px] transition-all cursor-pointer shadow-sm"
-                        >
-                          Verify Code
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVerificationOtpSent(false)}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] transition-all font-bold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      <div className="flex justify-between items-center text-[9px] mt-1">
-                        <button
-                          type="button"
-                          disabled={phoneTimer > 0}
-                          onClick={async () => {
-                            try {
-                              if (isAppwriteConfigured()) {
-                                await appwrite.createPhoneVerification();
-                              }
-                              showNotification("An OTP verification code has been sent via SMS.");
-                              setPhoneTimer(120);
-                            } catch (e: any) {
-                              showNotification(`Error: ${e.message || e}`);
-                            }
-                          }}
-                          className="text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-                        >
-                          {phoneTimer > 0 ? `Resend OTP in ${phoneTimer}s` : "Resend OTP"}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-4">
-            <button
-              type="button"
-              onClick={async () => {
-                setLoadingUser(true);
-                try {
-                  if (isAppwriteConfigured()) {
-                    const user = await appwrite.getCurrentUser();
-                    if (user) {
-                      await reconcileSession(user);
-                    }
-                  } else {
-                    const storedRights = localStorage.getItem('ttt_user_rights');
-                    if (storedRights) {
-                      setUserRightsList(migrateUserPermissions(JSON.parse(storedRights)));
-                    }
-                    const storedOrgs = localStorage.getItem('ttt_organization_profiles');
-                    if (storedOrgs) {
-                      setOrganizationProfiles(JSON.parse(storedOrgs));
-                    }
-                  }
-                  showNotification("Verification status refreshed.");
-                } catch (err) {
-                  console.warn(err);
-                } finally {
-                  setLoadingUser(false);
-                }
-              }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh Status</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-550 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Log Out</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Phone update modal popup for existing users */}
-        {showPhoneUpdateModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 overflow-auto animate-fade-in">
-            <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 space-y-4 text-left">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Add / Update Mobile Number</h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Please set your mobile number to receive verification OTPs.</p>
-              </div>
-
-              <form onSubmit={handlePhoneUpdateSubmit} className="space-y-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Mobile Number</label>
-                  <input
-                    type="tel"
-                    name="newPhone"
-                    required
-                    placeholder="+919876543210"
-                    defaultValue={currentUserRights.phone || ''}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs focus:outline-none transition-all"
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Current Password</label>
-                    <input
-                      type="password"
-                      name="currentPassword"
-                      required
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs focus:outline-none transition-all"
-                    />
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowPhoneUpdateModal(false)}
-                    className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
-                  >
-                    Save & Verify
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
+      <VerificationRequiredScreen
+        currentUser={currentUser}
+        currentUserRights={currentUserRights}
+        userRightsList={userRightsList}
+        setUserRightsList={setUserRightsList}
+        pushPermissionsToCloud={pushPermissionsToCloud}
+        reconcileSession={reconcileSession}
+        showNotification={showNotification}
+        toastMessage={toastMessage}
+        emailTimer={emailTimer}
+        setEmailTimer={setEmailTimer}
+        phoneTimer={phoneTimer}
+        setPhoneTimer={setPhoneTimer}
+        verificationOtpSent={verificationOtpSent}
+        setVerificationOtpSent={setVerificationOtpSent}
+        showPhoneUpdateModal={showPhoneUpdateModal}
+        setShowPhoneUpdateModal={setShowPhoneUpdateModal}
+        whatsappOtpCode={whatsappOtpCode}
+        setWhatsappOtpCode={setWhatsappOtpCode}
+        sendWhatsAppOTP={sendWhatsAppOTP}
+        handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
+        handleLogout={handleLogout}
+        setLoadingUser={setLoadingUser}
+        setOrganizationProfiles={setOrganizationProfiles}
+      />
     );
   }
 
-  const currentOrgProfile = organizationProfiles.find(p => p.organizationId === currentUserOrgId);
-  const isOrgDisabled = currentOrgProfile ? currentOrgProfile.status === 'Disabled' : false;
-
   if (currentUser && isOrgDisabled && !currentUserRights.isSuperAdmin) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans p-4">
-        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-red-55/15 rounded-xl shadow-lg border border-red-500/30 mb-2">
-            <AlertCircle className="w-6 h-6 text-red-500 animate-pulse" />
-          </div>
-          <h2 className="text-xl font-bold tracking-tight text-white font-sans">
-            Organization Disabled
-          </h2>
-          <p className="text-xs text-slate-350 leading-relaxed font-sans">
-            Your organization account has been disabled by the system administrator.
-            Please contact support or pay your invoices to restore access to your fleet.
-          </p>
-          <div className="bg-slate-950/80 border border-slate-850 p-3 rounded-xl text-xs font-mono text-slate-400 select-all">
-            Org ID: {currentUserOrgId}
-          </div>
-
-          <div className="border-t border-slate-800 pt-4">
-            <button
-              onClick={handleLogout}
-              className="text-xs text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer"
-            >
-              Sign Out / Log In to another account
-            </button>
-          </div>
-        </div>
-      </div>
+      <OrgDisabledScreen
+        currentUserOrgId={currentUserOrgId}
+        onLogout={handleLogout}
+      />
     );
   }
 
   if (currentUser && !currentUserRights.isApproved) {
-    const hasOrgId = !!currentUserRights.organizationId;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans p-4">
-        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-amber-500/15 rounded-xl shadow-lg border border-amber-500/30 mb-2">
-            <Clock className="w-6 h-6 text-amber-500 animate-pulse" />
-          </div>
-          <h2 className="text-xl font-bold tracking-tight text-white font-sans">
-            {hasOrgId ? 'Pending Admin Approval' : 'Access Revoked / No Org Mapped'}
-          </h2>
-          <p className="text-xs text-slate-300 leading-relaxed font-sans">
-            {hasOrgId
-              ? 'Your account has been successfully registered! However, access is pending approval by the Administrator of your organization:'
-              : 'Your account is not currently associated with any active organization. Your access may have been revoked, or you may need to join an organization:'}
-          </p>
-          <div className="bg-slate-950/80 border border-slate-850 p-3 rounded-xl text-xs font-mono text-blue-400 select-all">
-            {currentUserRights.organizationId || 'No Organization Mapped'}
-          </div>
-          <p className="text-[11px] text-slate-400 font-sans">
-            {hasOrgId
-              ? 'Please share your email and Organization ID with your administrator. Once approved, refresh the page to access your dashboards.'
-              : 'Please enter a valid Organization ID below to request to join a new organization. Once the Administrator approves you, you will gain access.'}
-          </p>
-
-          <div className="border-t border-slate-800 my-4 pt-4">
-            {!showChangeOrgForm ? (
-              <button
-                onClick={() => {
-                  setChangeOrgIdInput('');
-                  setChangeOrgError(null);
-                  setShowChangeOrgForm(true);
-                }}
-                className="text-xs text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer"
-              >
-                Join a different organization?
-              </button>
-            ) : (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  setChangeOrgLoading(true);
-                  setChangeOrgError(null);
-                  try {
-                    const res = await handleRequestToJoinOrganization(changeOrgIdInput);
-                    if (res.success) {
-                      setShowChangeOrgForm(false);
-                      showNotification("Organization change request submitted!");
-                    } else if (res.error) {
-                      setChangeOrgError(res.error);
-                    }
-                  } catch (err: any) {
-                    setChangeOrgError(err.message || 'Failed to submit request.');
-                  } finally {
-                    setChangeOrgLoading(false);
-                  }
-                }}
-                className="space-y-3 text-left"
-              >
-                <div>
-                  <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">New Organization ID</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter Organization ID to join"
-                    value={changeOrgIdInput}
-                    onChange={(e) => setChangeOrgIdInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
-                  />
-                </div>
-                {changeOrgError && (
-                  <p className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/50 p-2 rounded-lg leading-relaxed">
-                    {changeOrgError}
-                  </p>
-                )}
-                <div className="flex justify-between items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowChangeOrgForm(false)}
-                    className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={changeOrgLoading}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {changeOrgLoading ? 'Submitting...' : 'Request to Join'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-350 hover:text-white rounded-xl border border-slate-800 transition cursor-pointer text-xs font-bold font-sans mt-4"
-          >
-            <LogOut className="w-4 h-4 text-slate-400" />
-            <span>Back to Login / Sign Out</span>
-          </button>
-        </div>
-      </div>
+      <PendingApprovalScreen
+        currentUserRights={currentUserRights}
+        onLogout={handleLogout}
+        onRequestToJoinOrganization={handleRequestToJoinOrganization}
+        showNotification={showNotification}
+      />
     );
   }
 
-  const approvedOrgTrucks = orgTrucks.filter(t => t.isApproved !== false);
-  const orgUserRights = userRightsList.filter(u => u.organizationId === currentUserOrgId);
-  const canUserViewCategory = (category: string, logUserOrReference?: string, logDetails?: string): boolean => {
-    const cat = category.toLowerCase();
-    const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
-    if (cat.includes('password')) {
-      return (logUserOrReference || '').toLowerCase().trim() === currentUserEmail;
-    }
 
-    if (currentUserRights.isSuperAdmin) return true;
-
-    // Check if this log specifically concerns the current logged-in user (e.g. their permissions or approval status changed)
-    if (currentUserEmail) {
-      const ref = (logUserOrReference || '').toLowerCase().trim();
-      const det = (logDetails || '').toLowerCase().trim();
-      if (ref === currentUserEmail || ref.includes(currentUserEmail) || det.includes(currentUserEmail)) {
-        return true;
-      }
-    }
-
-    if (cat.includes('trip')) return !!currentUserRights.canViewTrips;
-    if (cat.includes('truck')) return !!currentUserRights.canViewTrucks;
-    if (cat.includes('driver')) return !!currentUserRights.canViewDrivers;
-    if (cat.includes('office') || cat.includes('branch')) return !!currentUserRights.canViewOffices;
-    if (cat.includes('account')) return !!currentUserRights.canViewAccounts;
-    if (cat.includes('expense')) return !!currentUserRights.canViewExpenses;
-    if (cat.includes('tyre')) return !!currentUserRights.canViewTyres;
-    if (cat.includes('organization') || cat.includes('access') || cat.includes('permission')) {
-      return !!currentUserRights.isAdmin;
-    }
-    return true;
-  };
-
-  const backendEmails = new Set(
-    userRightsList
-      .filter(u => u.organizationId === 'org_backend')
-      .map(u => u.email.toLowerCase().trim())
-  );
-
-  const orgAuditLogs = auditLogs
-    .filter(l => {
-      const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
-      if (currentUserOrgId === 'org_backend') {
-        const cat = (l.category || '').toLowerCase();
-        if (cat.includes('password')) {
-          return (l.reference || '').toLowerCase().trim() === currentUserEmail;
-        }
-
-        const isBackendUserAction = backendEmails.has((l.user || '').toLowerCase().trim());
-        const isIncomingTruckRequest = l.category === 'Truck' && l.action === 'Created' && (l.details || '').includes('Requested activation');
-        const isTruckApproveOrReject = l.category === 'Truck' && (l.action === 'Approved' || l.action === 'Rejected');
-
-        return isBackendUserAction || isIncomingTruckRequest || isTruckApproveOrReject;
-      }
-
-      return l.organizationId === currentUserOrgId && canUserViewCategory(l.category, l.reference, l.details);
-    })
-    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-  const latestLogTime = (() => {
-    if (orgAuditLogs.length === 0) return 0;
-    const ts = orgAuditLogs[0]?.timestamp;
-    if (!ts) return 0;
-    try {
-      return ts.includes('T')
-        ? new Date(ts).getTime()
-        : new Date(ts.replace(' ', 'T') + 'Z').getTime();
-    } catch { return 0; }
-  })();
-  const hasUnreadNotifications = latestLogTime > lastReadNotificationTime;
-
-  const cyanCount = currentUserRights.isAdmin
-    ? orgUserRights.filter(u => !u.isApproved).length
-    : orgTrips.filter(t => t.status === 'In Progress' || t.status === 'Pending').length;
 
   const handleCyanClick = () => {
     if (currentUserRights.isAdmin) {
@@ -4457,1731 +2751,473 @@ export default function App() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
-        {/* Header Panel (Logo & Mobile Toggle Button) */}
-        <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
-          <div className="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
-            <img src={logo} alt="LorryGuru Logo" className="h-8 w-auto shrink-0" />
-            <span>LorryGuru</span>
-          </div>
-
-          {/* Mobile Menu Toggle Button */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
-            aria-label="Toggle Navigation Menu"
-          >
-            {isMobileMenuOpen ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
-              </svg>
-            )}
-          </button>
-        </div>
-
-        {/* Collapsible Content Area */}
-        <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-h-0 overflow-hidden`}>
-          {/* Navigation Items */}
-          <div className="p-6 pt-4 md:p-6 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
-            <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
-              <button
-                id="tab-btn-dashboard"
-                onClick={() => selectTab('DASHBOARD')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
-                  ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                  : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span>Dashboard</span>
-              </button>
-              {currentUserRights.canViewTrips && (
-                <button
-                  id="tab-btn-trips"
-                  onClick={() => selectTab('TRIPS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  <span>Trip Management</span>
-                </button>
-              )}
-              {currentUserRights.canViewTrucks && (
-                <button
-                  id="tab-btn-trucks"
-                  onClick={() => selectTab('TRUCKS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <TruckIcon className="w-4 h-4" />
-                  <span>Truck Registry</span>
-                </button>
-              )}
-              {currentUserRights.canViewOffices && (
-                <button
-                  id="tab-btn-offices"
-                  onClick={() => selectTab('OFFICES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <MapPin className="w-4 h-4" />
-                  <span>Offices</span>
-                </button>
-              )}
-              {currentUserRights.canViewAccounts && (
-                <button
-                  id="tab-btn-accounts"
-                  onClick={() => selectTab('ACCOUNTS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Coins className="w-4 h-4" />
-                  <span>Account Ledger</span>
-                </button>
-              )}
-              {currentUserRights.canViewDrivers && (
-                <button
-                  id="tab-btn-drivers"
-                  onClick={() => selectTab('DRIVERS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>Drivers Database</span>
-                </button>
-              )}
-              {currentUserRights.canViewExpenses && (
-                <button
-                  id="tab-btn-expenses"
-                  onClick={() => selectTab('EXPENSES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>Expense Ledger</span>
-                </button>
-              )}
-              {currentUserRights.canViewTrips && (
-                <button
-                  id="tab-btn-reports"
-                  onClick={() => selectTab('REPORTS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Monthly Reports</span>
-                </button>
-              )}
-              {currentUserRights.isAdmin && (
-                <button
-                  id="tab-btn-audit"
-                  onClick={() => selectTab('AUDIT')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <History className="w-4 h-4" />
-                  <span>System Audit Logs</span>
-                </button>
-              )}
-              {currentUserRights.canViewTyres && (
-                <button
-                  id="tab-btn-tyres"
-                  onClick={() => selectTab('TYRES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Disc className="w-4 h-4" />
-                  <span>Tyre Ledger & ODO</span>
-                </button>
-              )}
-              {hasUsersTabAccess && (
-                <button
-                  id="tab-btn-users"
-                  onClick={() => selectTab('USERS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Access Control</span>
-                </button>
-              )}
-
-              {!isBackendTeam && (
-                <button
-                  id="tab-btn-support-direct"
-                  onClick={() => {
-                    setProfileActiveTab('SUPPORT');
-                    setProfileModalOpen(true);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40"
-                >
-                  <div className="flex items-center gap-3">
-                    <MessageSquare className="w-4 h-4 text-slate-400" />
-                    <span>Support Center</span>
-                  </div>
-                  {getClientUnreadTicketsCount() > 0 && (
-                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
-                      {getClientUnreadTicketsCount()}
-                    </span>
-                  )}
-                </button>
-              )}
-              {(currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
-                <button
-                  id="tab-btn-backend"
-                  onClick={() => selectTab('BACKEND')}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
-                    ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Settings className="w-4 h-4 text-purple-500" />
-                    <span>Backend Dashboard</span>
-                  </div>
-                  {getAgentUnreadTicketsCount() > 0 && (
-                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
-                      {getAgentUnreadTicketsCount()}
-                    </span>
-                  )}
-                </button>
-              )}
-            </nav>
-          </div>
-
-          {/* User Profile Info Footer Panel */}
-          <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-850 space-y-3 shrink-0">
-            <div>
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">Logged in as</div>
-              <div className="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser?.email || currentUser?.name || 'User'}>
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-                <span className="truncate">{currentUser?.name || currentUser?.email || 'Logistics Admin'}</span>
-              </div>
-            </div>
-            {currentUserOrgId && (
-              <div className="flex items-center justify-between bg-slate-150 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
-                <span className="truncate font-semibold select-all" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentUserOrgId);
-                    showNotification("Organization ID copied to clipboard!");
-                  }}
-                  className="text-slate-555 hover:text-slate-900 dark:hover:text-white transition-colors p-0.5 shrink-0 ml-1.5 cursor-pointer"
-                  title="Copy Organization ID"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-660 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 text-xs font-bold transition cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+      <AppSidebar
+        logo={logo}
+        isMobileMenuOpen={isMobileMenuOpen}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+        activeTab={activeTab}
+        selectTab={selectTab}
+        currentUserRights={currentUserRights}
+        hasUsersTabAccess={hasUsersTabAccess}
+        isBackendTeam={isBackendTeam}
+        getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+        getAgentUnreadTicketsCount={getAgentUnreadTicketsCount}
+        currentUser={currentUser}
+        currentUserOrgId={currentUserOrgId}
+        showNotification={showNotification}
+        handleLogout={handleLogout}
+        setProfileActiveTab={setProfileActiveTab}
+        setProfileModalOpen={setProfileModalOpen}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
-
         {/* Header */}
-        <header className="h-auto md:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-0 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
-          <div className="flex items-center gap-4 self-stretch sm:self-auto">
-            <h1 className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">
-              {activeTab === 'DASHBOARD' && 'Operations Dashboard'}
-              {activeTab === 'TRIPS' && 'Manage Active Trips'}
-              {activeTab === 'TRUCKS' && 'Truck Datasheet'}
-              {activeTab === 'OFFICES' && 'Office Branch Directory'}
-              {activeTab === 'ACCOUNTS' && 'Mapped Account Ledgers'}
-              {activeTab === 'DRIVERS' && 'Operator Drivers Database'}
-              {activeTab === 'EXPENSES' && 'Voucher & Expenses Ledger'}
-              {activeTab === 'REPORTS' && 'Fleet Profitability Reports'}
-              {activeTab === 'AUDIT' && 'System Audit Trails'}
-              {activeTab === 'TYRES' && 'Tyre Inventory & Life Tracking'}
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700 shadow-2xs">
-              {activeTab === 'TRIPS' && `${orgTrips.length} Total Trips`}
-              {activeTab === 'TRUCKS' && `${orgTrucks.length} Trucks`}
-              {activeTab === 'OFFICES' && `${orgOffices.length} Offices`}
-              {activeTab === 'ACCOUNTS' && `${orgAccounts.length} Ledgers`}
-              {activeTab === 'DRIVERS' && `${orgDrivers.length} Drivers`}
-              {activeTab === 'DASHBOARD' && `${orgTrips.length} Load Segments`}
-              {activeTab === 'EXPENSES' && `${orgExpenses.length} Vouchers`}
-              {activeTab === 'REPORTS' && 'Monthly Auditing'}
-              {activeTab === 'AUDIT' && `${orgAuditLogs.length} Activities`}
-              {activeTab === 'TYRES' && `${orgTyres.length} Tyres`}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto self-stretch sm:self-auto justify-end ml-auto">
-
-            {/* Search Bar */}
-            <div className="relative w-40 md:w-56 hidden sm:block">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search... ⌘K"
-                className="block w-full pl-9 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/50 dark:bg-slate-800 dark:hover:bg-slate-700/50 focus:bg-white dark:focus:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder-slate-400 dark:placeholder-slate-500 cursor-pointer"
-                readOnly
-                onClick={() => showNotification("Global search feature is coming soon!")}
-              />
-            </div>
-
-            {/* CYAN BADGE ACTION ICON */}
-            <button
-              onClick={handleCyanClick}
-              className="relative p-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-lg border border-cyan-500/25 transition cursor-pointer flex items-center justify-center shrink-0"
-              title={currentUserRights.isAdmin ? `${cyanCount} Pending Approvals` : `${cyanCount} Active/Pending Trips`}
-            >
-              {currentUserRights.isAdmin ? <Users className="w-4 h-4" /> : <TruckIcon className="w-4 h-4" />}
-              {cyanCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold bg-cyan-500 text-white rounded-full leading-none min-w-[16px] text-center border border-white dark:border-slate-900 shadow-sm animate-pulse">
-                  {cyanCount}
-                </span>
-              )}
-            </button>
-
-            <div ref={notificationRef} className="relative">
-              <button
-                id="btn-notifications-toggle"
-                onClick={() => {
-                  setNotificationOpen(!notificationOpen);
-                  setProfileDropdownOpen(false);
-                  const now = Date.now();
-                  setLastReadNotificationTime(now);
-                  if (currentUser) {
-                    const key = `ttt_last_read_notifications_${(currentUser.email || '').toLowerCase().trim()}`;
-                    localStorage.setItem(key, now.toString());
-                  }
-                }}
-                className="relative p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-660 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center"
-                title="Notification Center"
-              >
-                <Bell className="w-4 h-4" />
-                {hasUnreadNotifications && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
-                )}
-              </button>
-
-              {notificationOpen && (
-                <div className="
-                  fixed left-3 right-3 top-16
-                  md:absolute md:left-auto md:right-0 md:top-auto md:mt-2 md:w-80
-                  bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800
-                  text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left
-                ">
-                  <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-                    <span className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Recent Activity Logs</span>
-                    <button
-                      onClick={() => setNotificationOpen(false)}
-                      className="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {orgAuditLogs.length === 0 ? (
-                      <p className="text-center py-6 text-xs text-slate-400 dark:text-slate-500 italic">No recent activities logged.</p>
-                    ) : (
-                      orgAuditLogs.slice(0, 8).map((log) => (
-                        <div key={log.id} className="text-[11px] p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
-                              log.action === 'Rejected' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50' :
-                                log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
-                                  log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
-                                    log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
-                                      'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
-                              }`}>
-                              {log.action}
-                            </span>
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">{(log.timestamp || '').substring(11, 16)}</span>
-                          </div>
-                          <p className="text-slate-700 dark:text-slate-300 leading-tight">
-                            <strong className="text-slate-900 dark:text-white">{log.category} ({log.reference}):</strong> {log.details}
-                          </p>
-                          <p className="text-[9px] text-slate-400 dark:text-slate-500">By {log.user}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {orgAuditLogs.length > 0 && currentUserRights.isAdmin && (
-                    <button
-                      onClick={() => {
-                        setActiveTab('AUDIT');
-                        setNotificationOpen(false);
-                      }}
-                      className="w-full text-center text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline pt-1 block border-t border-slate-100 dark:border-slate-800"
-                    >
-                      View Full Audit Trail
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* VOICE ASSISTANT */}
-            <button
-              onClick={() => setIsVoiceAssistantOpen(true)}
-              className="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center shrink-0"
-              title="Voice Assistant (Alt+V)"
-            >
-              <Mic className="w-4 h-4" />
-            </button>
-
-            {/* THEME TOGGLE */}
-            <button
-              onClick={() => {
-                const nextTheme = theme === 'light' ? 'dark' : 'light';
-                setTheme(nextTheme);
-                localStorage.setItem('ttt_theme', nextTheme);
-              }}
-              className="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center shrink-0"
-              title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
-            >
-              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-
-            {/* USER PROFILE INITIALS AVATAR */}
-            <div ref={profileDropdownRef} className="relative shrink-0">
-              <button
-                id="btn-profile-avatar-toggle"
-                onClick={() => {
-                  setProfileDropdownOpen(!profileDropdownOpen);
-                  setNotificationOpen(false);
-                }}
-                className="w-9 h-9 rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 font-bold border border-blue-600/20 dark:border-blue-500/30 flex items-center justify-center text-xs cursor-pointer hover:bg-blue-600/20 transition-all select-none"
-                title="User Profile Menu"
-              >
-                {getUserInitials(currentUser)}
-              </button>
-
-              {profileDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-1.5 animate-fade-in text-left font-sans">
-                  <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-850 mb-1 space-y-0.5">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentUser?.name || 'Logistics User'}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentUser?.email || 'user@fleettrack.local'}</p>
-                    {currentUserOrgId && (
-                      <div className="flex items-center justify-between mt-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1">
-                        <span className="text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(currentUserOrgId);
-                            showNotification('Organization ID copied!');
-                          }}
-                          className="ml-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer shrink-0"
-                          title="Copy Org ID"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setProfileActiveTab('SETTINGS');
-                      setProfileModalOpen(true);
-                      setProfileDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
-                  >
-                    <Settings className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Profile Settings</span>
-                  </button>
-
-                  {!isBackendTeam && (
-                    <button
-                      onClick={() => {
-                        setProfileActiveTab('SUPPORT');
-                        setProfileModalOpen(true);
-                        setProfileDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Support Center</span>
-                    </button>
-                  )}
-
-                  {hasUsersTabAccess && (
-                    <button
-                      onClick={() => {
-                        setActiveTab('USERS');
-                        setProfileDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
-                    >
-                      <Users className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Access Control</span>
-                    </button>
-                  )}
-
-                  <div className="border-t border-slate-100 dark:border-slate-850 my-1"></div>
-
-                  <button
-                    onClick={() => {
-                      setProfileDropdownOpen(false);
-                      handleLogout();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg text-left transition cursor-pointer font-semibold"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* CLOUD DATA SYNC — real-time synchronization for all authenticated users */}
-            {currentUser && (
-              <AppwriteCloudSync
-                currentLocalState={{
-                  trucks,
-                  drivers,
-                  offices,
-                  accounts,
-                  trips,
-                  expenses,
-                  tyres,
-                  auditLogs,
-                  supportTickets
-                }}
-                onLoadCloudState={onLoadCloudState}
-                showNotification={showNotification}
-                logAction={logAction}
-                currentUserOrgId={currentUserOrgId}
-                currentUserEmail={currentUser?.email}
-                currentUserId={currentUser?.email || ''}
-                isAdmin={currentUserRights.isAdmin}
-                onInitialSyncComplete={setInitialPullDone}
-                onConnectionChange={(online, reason) => {
-                  setIsOnline(online);
-                  setDisconnectReason(reason);
-                }}
-                activeTicketId={activeTicketId}
-              />
-            )}
-            {currentUserRights.isAdmin && (
-              <button
-                id="btn-clear-data"
-                onClick={triggerClearAllLocalData}
-                title="Wipe all local database logs and start fresh"
-                className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                <span className="hidden lg:inline text-rose-500">Clear Data</span>
-              </button>
-            )}
-            {currentUserRights.isAdmin && (
-              <button
-                id="btn-backup-download"
-                onClick={handleTriggerDownloadBackup}
-                title="Download Snapshot Backup File (.json)"
-                className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-400" />
-                <span className="hidden lg:inline">Backup</span>
-              </button>
-            )}
-            {currentUserRights.isAdmin && (
-              <label className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0 select-none">
-                <Upload className="w-3.5 h-3.5 text-slate-400" />
-                <span className="hidden lg:inline">Restore</span>
-                <input
-                  id="file-restore-input"
-                  type="file"
-                  accept=".json"
-                  onChange={handleUploadBackupChange}
-                  className="hidden"
-                />
-              </label>
-            )}
-
-            {/* DIVIDER between admin tools and user controls */}
-            {currentUserRights.isAdmin && (
-              <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 self-center hidden sm:block" />
-            )}
-
-            {/* NEW ENTRY button */}
-            {currentUserRights.canEditTrips && (
-              <button
-                id="btn-quick-post-trip"
-                onClick={() => {
-                  if (orgTrucks.length === 0 || orgOffices.length === 0) {
-                    alert("Hold on! Register Trucks and Offices in their master sheets before booking cargo entries.");
-                    return;
-                  }
-                  setEditingTrip(null);
-                  setBookingModalOpen(true);
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-colors shrink-0"
-              >
-                <Plus className="w-4 h-4" /> <span className="hidden sm:inline">New Entry</span>
-              </button>
-            )}
-          </div>
-        </header>
+        <AppHeader
+          activeTab={activeTab}
+          orgTrips={orgTrips}
+          orgTrucks={orgTrucks}
+          orgOffices={orgOffices}
+          orgAccounts={orgAccounts}
+          orgDrivers={orgDrivers}
+          orgExpenses={orgExpenses}
+          orgTyres={orgTyres}
+          orgAuditLogs={orgAuditLogs}
+          currentUserRights={currentUserRights}
+          currentUserOrgId={currentUserOrgId}
+          currentUser={currentUser}
+          cyanCount={cyanCount}
+          theme={theme}
+          setTheme={setTheme}
+          handleCyanClick={handleCyanClick}
+          notificationOpen={notificationOpen}
+          setNotificationOpen={setNotificationOpen}
+          profileDropdownOpen={profileDropdownOpen}
+          setProfileDropdownOpen={setProfileDropdownOpen}
+          notificationRef={notificationRef}
+          profileDropdownRef={profileDropdownRef}
+          hasUnreadNotifications={hasUnreadNotifications}
+          updateLastReadNotificationTime={updateLastReadNotificationTime}
+          showNotification={showNotification}
+          getUserInitials={getUserInitials}
+          isBackendTeam={isBackendTeam}
+          hasUsersTabAccess={hasUsersTabAccess}
+          setProfileActiveTab={setProfileActiveTab}
+          setProfileModalOpen={setProfileModalOpen}
+          setActiveTab={setActiveTab}
+          handleLogout={handleLogout}
+          triggerClearAllLocalData={triggerClearAllLocalData}
+          handleTriggerDownloadBackup={handleTriggerDownloadBackup}
+          handleUploadBackupChange={handleUploadBackupChange}
+          setEditingTrip={setEditingTrip}
+          setBookingModalOpen={setBookingModalOpen}
+          setIsVoiceAssistantOpen={setIsVoiceAssistantOpen}
+          onLoadCloudState={onLoadCloudState}
+          supportTickets={supportTickets}
+          activeTicketId={activeTicketId}
+          setInitialPullDone={setInitialPullDone}
+          setIsOnline={setIsOnline}
+          setDisconnectReason={setDisconnectReason}
+          trucks={trucks}
+          drivers={drivers}
+          offices={offices}
+          accounts={accounts}
+          trips={trips}
+          expenses={expenses}
+          tyres={tyres}
+          auditLogs={auditLogs}
+          logAction={logAction}
+        />
 
         {/* Outer content container */}
         <div id="app-viewport-container" className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 space-y-6">
-
-          {/* WARNING BAR IF MASTERS INACTIVE */}
-          {!currentUserRights.isSuperAdmin && (orgTrucks.length === 0 || orgOffices.length === 0 || orgAccounts.length === 0) && (
-            <div id="safety-warning-banner" className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3 shadow-xs">
-              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-xs">
-                <p className="font-bold text-amber-800">Prerequisites Required</p>
-                <p className="text-slate-600 mt-1 leading-relaxed">
-                  Before recording any transaction logs, ensure you register at least <strong>1 operational Truck</strong>, <strong>1 active branch Office</strong>, and <strong>1 receiving Account Ledger</strong>. Go to their respective master database tabs above to populate the datasheets first.
-                </p>
+          <Suspense fallback={<LoadingTab />}>
+            {/* WARNING BAR IF MASTERS INACTIVE */}
+            {!currentUserRights.isSuperAdmin && (orgTrucks.length === 0 || orgOffices.length === 0 || orgAccounts.length === 0) && (
+              <div id="safety-warning-banner" className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3 shadow-xs">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-bold text-amber-800">Prerequisites Required</p>
+                  <p className="text-slate-600 mt-1 leading-relaxed">
+                    Before recording any transaction logs, ensure you register at least <strong>1 operational Truck</strong>, <strong>1 active branch Office</strong>, and <strong>1 receiving Account Ledger</strong>. Go to their respective master database tabs above to populate the datasheets first.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* TAB RENDERING CONTROLS */}
-          {activeTab === 'DASHBOARD' && (
-            <Dashboard
-              trips={dashboardTrips}
-              allTrips={orgTrips}
-              trucks={approvedOrgTrucks}
-              offices={orgOffices}
-              accounts={orgAccounts}
-              currentUserRights={currentUserRights}
-              activeMonth={activeMonth}
-              activeYear={activeYear}
-              setActiveMonth={setActiveMonth}
-              setActiveYear={setActiveYear}
-              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-              expenses={orgExpenses}
-              onAddExpense={addExpense}
-            />
-          )}
+            {/* TAB RENDERING CONTROLS */}
+            {activeTab === 'DASHBOARD' && (
+              <Dashboard
+                trips={dashboardTrips}
+                allTrips={orgTrips}
+                trucks={approvedOrgTrucks}
+                offices={orgOffices}
+                accounts={orgAccounts}
+                currentUserRights={currentUserRights}
+                activeMonth={activeMonth}
+                activeYear={activeYear}
+                setActiveMonth={setActiveMonth}
+                setActiveYear={setActiveYear}
+                orgProfile={currentOrgProfile}
+                expenses={orgExpenses}
+                onAddExpense={addExpense}
+              />
+            )}
 
-          {activeTab === 'TRIPS' && currentUserRights.canViewTrips && (
-            <TripList
-              trips={orgTrips}
-              trucks={approvedOrgTrucks}
-              offices={orgOffices}
-              accounts={orgAccounts}
-              onEditEntry={handleEditTripTrigger}
-              onDeleteEntry={deleteTripEntry}
-              confirmAction={confirmAction}
-              canViewTrips={currentUserRights.canViewTrips}
-              canEditTrips={currentUserRights.canEditTrips}
-              canDeleteTrips={currentUserRights.canDeleteTrips}
-              organizationId={currentUserOrgId}
-              onSaveTrips={saveTrips}
-            />
-          )}
+            {activeTab === 'TRIPS' && currentUserRights.canViewTrips && (
+              <TripList
+                trips={orgTrips}
+                trucks={approvedOrgTrucks}
+                offices={orgOffices}
+                accounts={orgAccounts}
+                onEditEntry={handleEditTripTrigger}
+                onDeleteEntry={deleteTripEntry}
+                confirmAction={confirmAction}
+                canViewTrips={currentUserRights.canViewTrips}
+                canEditTrips={currentUserRights.canEditTrips}
+                canDeleteTrips={currentUserRights.canDeleteTrips}
+                organizationId={currentUserOrgId}
+                onSaveTrips={saveTrips}
+              />
+            )}
 
-          {activeTab === 'TRUCKS' && currentUserRights.canViewTrucks && (
-            <TruckMaster
-              trucks={orgTrucks}
-              trips={orgTrips}
-              expenses={orgExpenses}
-              onAddTruck={addTruck}
-              onUpdateTruck={updateTruck}
-              onDeleteTruck={deleteTruck}
-              confirmAction={confirmAction}
-              canViewTrucks={currentUserRights.canViewTrucks}
-              canEditTrucks={currentUserRights.canEditTrucks}
-              canDeleteTrucks={currentUserRights.canDeleteTrucks}
-              maxTrucksAllowed={organizationProfiles.find(p => p.organizationId === currentUserOrgId)?.maxTrucksAllowed || 2}
-              onAddTruckRequest={handleAddTruckRequest}
-              organizationId={currentUserOrgId}
-              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-              onServiceDone={(currentUserRights.canEditTrucks || currentUserRights.canEditExpenses) ? handleServiceDone : undefined}
-              accounts={orgAccounts}
-              drivers={orgDrivers}
-              onAddExpense={addExpense}
-              canEditLoans={currentUserRights.canEditLoans !== false}
-              canDeleteLoans={currentUserRights.canDeleteLoans !== false}
-              canEditExpenses={currentUserRights.canEditExpenses !== false}
-            />
-          )}
+            {activeTab === 'TRUCKS' && currentUserRights.canViewTrucks && (
+              <TruckMaster
+                trucks={orgTrucks}
+                trips={orgTrips}
+                expenses={orgExpenses}
+                onAddTruck={addTruck}
+                onUpdateTruck={updateTruck}
+                onDeleteTruck={deleteTruck}
+                confirmAction={confirmAction}
+                canViewTrucks={currentUserRights.canViewTrucks}
+                canEditTrucks={currentUserRights.canEditTrucks}
+                canDeleteTrucks={currentUserRights.canDeleteTrucks}
+                maxTrucksAllowed={currentOrgProfile?.maxTrucksAllowed || 2}
+                onAddTruckRequest={handleAddTruckRequest}
+                organizationId={currentUserOrgId}
+                orgProfile={currentOrgProfile}
+                onServiceDone={(currentUserRights.canEditTrucks || currentUserRights.canEditExpenses) ? handleServiceDone : undefined}
+                accounts={orgAccounts}
+                drivers={orgDrivers}
+                onAddExpense={addExpense}
+                canEditLoans={currentUserRights.canEditLoans !== false}
+                canDeleteLoans={currentUserRights.canDeleteLoans !== false}
+                canEditExpenses={currentUserRights.canEditExpenses !== false}
+              />
+            )}
 
-          {activeTab === 'OFFICES' && currentUserRights.canViewOffices && (
-            <OfficeMaster
-              offices={orgOffices}
-              onAddOffice={addOffice}
-              onUpdateOffice={updateOffice}
-              onDeleteOffice={deleteOffice}
-              confirmAction={confirmAction}
-              canViewOffices={currentUserRights.canViewOffices}
-              canEditOffices={currentUserRights.canEditOffices}
-              canDeleteOffices={currentUserRights.canDeleteOffices}
-            />
-          )}
+            {activeTab === 'OFFICES' && currentUserRights.canViewOffices && (
+              <OfficeMaster
+                offices={orgOffices}
+                onAddOffice={addOffice}
+                onUpdateOffice={updateOffice}
+                onDeleteOffice={deleteOffice}
+                confirmAction={confirmAction}
+                canViewOffices={currentUserRights.canViewOffices}
+                canEditOffices={currentUserRights.canEditOffices}
+                canDeleteOffices={currentUserRights.canDeleteOffices}
+              />
+            )}
 
-          {activeTab === 'ACCOUNTS' && currentUserRights.canViewAccounts && (
-            <AccountMaster
-              accounts={orgAccounts}
-              onAddAccount={addAccount}
-              onUpdateAccount={updateAccount}
-              onDeleteAccount={deleteAccount}
-              confirmAction={confirmAction}
-              canViewAccounts={currentUserRights.canViewAccounts}
-              canEditAccounts={currentUserRights.canEditAccounts}
-              canDeleteAccounts={currentUserRights.canDeleteAccounts}
-            />
-          )}
+            {activeTab === 'ACCOUNTS' && currentUserRights.canViewAccounts && (
+              <AccountMaster
+                accounts={orgAccounts}
+                onAddAccount={addAccount}
+                onUpdateAccount={updateAccount}
+                onDeleteAccount={deleteAccount}
+                confirmAction={confirmAction}
+                canViewAccounts={currentUserRights.canViewAccounts}
+                canEditAccounts={currentUserRights.canEditAccounts}
+                canDeleteAccounts={currentUserRights.canDeleteAccounts}
+              />
+            )}
 
-          {activeTab === 'DRIVERS' && currentUserRights.canViewDrivers && (
-            <DriverMaster
-              drivers={orgDrivers}
-              trips={orgTrips}
-              expenses={orgExpenses}
-              accounts={orgAccounts}
-              onAddDriver={addDriver}
-              onUpdateDriver={updateDriver}
-              onDeleteDriver={deleteDriver}
-              canViewDrivers={currentUserRights.canViewDrivers}
-              canEditDrivers={currentUserRights.canEditDrivers}
-              canDeleteDrivers={currentUserRights.canDeleteDrivers}
-              organizationId={currentUserOrgId}
-              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-            />
-          )}
+            {activeTab === 'DRIVERS' && currentUserRights.canViewDrivers && (
+              <DriverMaster
+                drivers={orgDrivers}
+                trips={orgTrips}
+                expenses={orgExpenses}
+                accounts={orgAccounts}
+                onAddDriver={addDriver}
+                onUpdateDriver={updateDriver}
+                onDeleteDriver={deleteDriver}
+                canViewDrivers={currentUserRights.canViewDrivers}
+                canEditDrivers={currentUserRights.canEditDrivers}
+                canDeleteDrivers={currentUserRights.canDeleteDrivers}
+                organizationId={currentUserOrgId}
+                orgProfile={currentOrgProfile}
+              />
+            )}
 
-          {activeTab === 'EXPENSES' && currentUserRights.canViewExpenses && (
-            <ExpenseMaster
-              expenses={orgExpenses}
-              trucks={approvedOrgTrucks}
-              accounts={orgAccounts}
-              drivers={orgDrivers}
-              onAddExpense={addExpense}
-              onUpdateExpense={updateExpense}
-              onDeleteExpense={deleteExpense}
-              canViewExpenses={currentUserRights.canViewExpenses}
-              canEditExpenses={currentUserRights.canEditExpenses}
-              canDeleteExpenses={currentUserRights.canDeleteExpenses}
-              organizationId={currentUserOrgId}
-            />
-          )}
+            {activeTab === 'EXPENSES' && currentUserRights.canViewExpenses && (
+              <ExpenseMaster
+                expenses={orgExpenses}
+                trucks={approvedOrgTrucks}
+                accounts={orgAccounts}
+                drivers={orgDrivers}
+                onAddExpense={addExpense}
+                onUpdateExpense={updateExpense}
+                onDeleteExpense={deleteExpense}
+                canViewExpenses={currentUserRights.canViewExpenses}
+                canEditExpenses={currentUserRights.canEditExpenses}
+                canDeleteExpenses={currentUserRights.canDeleteExpenses}
+                organizationId={currentUserOrgId}
+              />
+            )}
 
-          {activeTab === 'REPORTS' && currentUserRights.canViewTrips && (
-            <MonthlyReport
-              trips={dashboardTrips}
-              trucks={approvedOrgTrucks}
-              expenses={dashboardExpenses}
-              selectedMonth={activeMonth}
-              selectedYear={activeYear}
-              setSelectedMonth={setActiveMonth}
-              setSelectedYear={setActiveYear}
-            />
-          )}
+            {activeTab === 'REPORTS' && currentUserRights.canViewTrips && (
+              <MonthlyReport
+                trips={dashboardTrips}
+                trucks={approvedOrgTrucks}
+                expenses={dashboardExpenses}
+                selectedMonth={activeMonth}
+                selectedYear={activeYear}
+                setSelectedMonth={setActiveMonth}
+                setSelectedYear={setActiveYear}
+              />
+            )}
 
-          {activeTab === 'AUDIT' && currentUserRights.isAdmin && (
-            <AuditLogView
-              logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
-              onClearLogs={handleClearAuditLogs}
-              confirmAction={confirmAction}
-              organizationProfiles={organizationProfiles}
-              currentUserOrgId={currentUserOrgId}
-            />
-          )}
+            {activeTab === 'AUDIT' && currentUserRights.isAdmin && (
+              <AuditLogView
+                logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
+                onClearLogs={handleClearAuditLogs}
+                confirmAction={confirmAction}
+                organizationProfiles={organizationProfiles}
+                currentUserOrgId={currentUserOrgId}
+              />
+            )}
 
-          {activeTab === 'TYRES' && currentUserRights.canViewTyres && (
-            <TyreMaster
-              tyres={orgTyres}
-              trucks={approvedOrgTrucks}
-              accounts={orgAccounts}
-              onAddTyre={addTyre}
-              onUpdateTyre={updateTyre}
-              onDeleteTyre={deleteTyre}
-              confirmAction={confirmAction}
-              canViewTyres={currentUserRights.canViewTyres}
-              canEditTyres={currentUserRights.canEditTyres}
-              canDeleteTyres={currentUserRights.canDeleteTyres}
-              organizationId={currentUserOrgId}
-            />
-          )}
+            {activeTab === 'TYRES' && currentUserRights.canViewTyres && (
+              <TyreMaster
+                tyres={orgTyres}
+                trucks={approvedOrgTrucks}
+                accounts={orgAccounts}
+                onAddTyre={addTyre}
+                onUpdateTyre={updateTyre}
+                onDeleteTyre={deleteTyre}
+                confirmAction={confirmAction}
+                canViewTyres={currentUserRights.canViewTyres}
+                canEditTyres={currentUserRights.canEditTyres}
+                canDeleteTyres={currentUserRights.canDeleteTyres}
+                organizationId={currentUserOrgId}
+              />
+            )}
 
-          {activeTab === 'BACKEND' && (currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
-            <BackendDashboard
-              organizationProfiles={organizationProfiles}
-              userRightsList={userRightsList}
-              trucks={trucks}
-              onUpdateOrgStatus={handleUpdateOrgStatus}
-              onUpdateOrgLimit={handleUpdateOrgLimit}
-              onApproveTruckRequest={handleApproveTruckRequest}
-              onRejectTruckRequest={handleRejectTruckRequest}
-              onUpdateTruckDetails={handleBackendUpdateTruck}
-              logAction={logAction}
-              canEditBackend={currentUserRights.canEditBackend}
-              canApproveBackend={currentUserRights.canApproveBackend}
-              canAddBackend={currentUserRights.canAddBackend}
-              canDeleteBackend={currentUserRights.canDeleteBackend}
-              canViewBackend={currentUserRights.canViewBackend}
-              canViewTruckRequests={currentUserRights.canViewTruckRequests}
-              canViewDatabaseConsole={currentUserRights.canViewDatabaseConsole}
-              canEditDatabaseConsole={currentUserRights.canEditDatabaseConsole}
-              canDeleteDatabaseConsole={currentUserRights.canDeleteDatabaseConsole}
-              drivers={drivers}
-              offices={offices}
-              accounts={accounts}
-              trips={trips}
-              expenses={expenses}
-              tyres={tyres}
-              auditLogs={auditLogs}
-              onSaveTrucks={saveTrucks}
-              onSaveDrivers={saveDrivers}
-              onSaveOffices={saveOffices}
-              onSaveAccounts={saveAccounts}
-              onSaveTrips={saveTrips}
-              onSaveExpenses={saveExpenses}
-              onSaveTyres={saveTyres}
-              onSaveAuditLogs={saveAuditLogs}
-              onSaveUserRightsList={saveUserRightsListWithSync}
-              onSaveOrganizationProfiles={saveOrganizationProfiles}
-              supportTickets={supportTickets}
-              onSaveSupportTickets={saveSupportTickets}
-              currentUser={currentUser}
-              activeTicketId={activeTicketId}
-              onSetActiveTicketId={setActiveTicketId}
-            />
-          )}
+            {activeTab === 'BACKEND' && (currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
+              <BackendDashboard
+                organizationProfiles={organizationProfiles}
+                userRightsList={userRightsList}
+                trucks={trucks}
+                onUpdateOrgStatus={handleUpdateOrgStatus}
+                onUpdateOrgLimit={handleUpdateOrgLimit}
+                onApproveTruckRequest={handleApproveTruckRequest}
+                onRejectTruckRequest={handleRejectTruckRequest}
+                onUpdateTruckDetails={handleBackendUpdateTruck}
+                logAction={logAction}
+                canEditBackend={currentUserRights.canEditBackend}
+                canApproveBackend={currentUserRights.canApproveBackend}
+                canAddBackend={currentUserRights.canAddBackend}
+                canDeleteBackend={currentUserRights.canDeleteBackend}
+                canViewBackend={currentUserRights.canViewBackend}
+                canViewTruckRequests={currentUserRights.canViewTruckRequests}
+                canViewDatabaseConsole={currentUserRights.canViewDatabaseConsole}
+                canEditDatabaseConsole={currentUserRights.canEditDatabaseConsole}
+                canDeleteDatabaseConsole={currentUserRights.canDeleteDatabaseConsole}
+                drivers={drivers}
+                offices={offices}
+                accounts={accounts}
+                trips={trips}
+                expenses={expenses}
+                tyres={tyres}
+                auditLogs={auditLogs}
+                onSaveTrucks={saveTrucks}
+                onSaveDrivers={saveDrivers}
+                onSaveOffices={saveOffices}
+                onSaveAccounts={saveAccounts}
+                onSaveTrips={saveTrips}
+                onSaveExpenses={saveExpenses}
+                onSaveTyres={saveTyres}
+                onSaveAuditLogs={saveAuditLogs}
+                onSaveUserRightsList={saveUserRightsListWithSync}
+                onSaveOrganizationProfiles={saveOrganizationProfiles}
+                supportTickets={supportTickets}
+                onSaveSupportTickets={saveSupportTickets}
+                currentUser={currentUser}
+                activeTicketId={activeTicketId}
+                onSetActiveTicketId={setActiveTicketId}
+              />
+            )}
 
-          {activeTab === 'USERS' && hasUsersTabAccess && (
-            <UserAccessControl
-              permissions={orgUserRights}
-              currentUserEmail={currentUser?.email}
-              onAddPermission={handleAddPermission}
-              onUpdatePermission={handleUpdatePermission}
-              onDeletePermission={handleDeletePermission}
-              confirmAction={confirmAction}
-              showNotification={showNotification}
-              currentUserOrgId={currentUserOrgId}
-              teamMembers={teamMembers}
-              loadingTeamMembers={loadingTeamMembers}
-              canAddBackend={currentUserRights.canAddBackend}
-              canEditBackend={currentUserRights.canEditBackend}
-              canDeleteBackend={currentUserRights.canDeleteBackend}
-              orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-              onUpdateOrgProfile={handleUpdateOrgProfile}
-            />
-          )}
-
+            {activeTab === 'USERS' && hasUsersTabAccess && (
+              <UserAccessControl
+                permissions={orgUserRights}
+                currentUserEmail={currentUser?.email}
+                onAddPermission={handleAddPermission}
+                onUpdatePermission={handleUpdatePermission}
+                onDeletePermission={handleDeletePermission}
+                confirmAction={confirmAction}
+                showNotification={showNotification}
+                currentUserOrgId={currentUserOrgId}
+                teamMembers={teamMembers}
+                loadingTeamMembers={loadingTeamMembers}
+                canAddBackend={currentUserRights.canAddBackend}
+                canEditBackend={currentUserRights.canEditBackend}
+                canDeleteBackend={currentUserRights.canDeleteBackend}
+                orgProfile={currentOrgProfile}
+                onUpdateOrgProfile={handleUpdateOrgProfile}
+              />
+            )}
+          </Suspense>
         </div>
       </main>
 
       {/* DYNAMIC FORM MODAL BINDERS */}
-      <TripForm
-        isOpen={bookingModalOpen}
-        onClose={() => {
-          setBookingModalOpen(false);
-          setEditingTrip(null);
+      <Suspense fallback={null}>
+        <TripForm
+          isOpen={bookingModalOpen}
+          onClose={() => {
+            setBookingModalOpen(false);
+            setEditingTrip(null);
+          }}
+          trucks={approvedOrgTrucks}
+          drivers={orgDrivers}
+          offices={orgOffices}
+          accounts={orgAccounts}
+          existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
+          onSubmit={handlePostTripEntry}
+          editingEntry={editingTrip}
+          canViewDrivers={currentUserRights.canViewDrivers}
+          orgProfile={currentOrgProfile}
+          trips={orgTrips}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <VoiceAssistant
+          isOpen={isVoiceAssistantOpen}
+          onClose={() => setIsVoiceAssistantOpen(false)}
+          trucks={approvedOrgTrucks}
+          drivers={orgDrivers}
+          offices={orgOffices}
+          accounts={orgAccounts}
+          existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
+          onSubmitTrip={handlePostTripEntry}
+          onSubmitExpense={addExpense}
+          voiceLang={userVoiceLang}
+        />
+      </Suspense>
+      <ProfileModal
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        profileActiveTab={profileActiveTab}
+        setProfileActiveTab={setProfileActiveTab}
+        isBackendTeam={isBackendTeam}
+        getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+        currentUser={currentUser}
+        currentUserRights={currentUserRights}
+        organizationProfiles={organizationProfiles}
+        profileName={profileName}
+        setProfileName={setProfileName}
+        profileOrgName={profileOrgName}
+        setProfileOrgName={setProfileOrgName}
+        profileVoiceLang={profileVoiceLang}
+        setProfileVoiceLang={setProfileVoiceLang}
+        oldPassword={oldPassword}
+        setOldPassword={setOldPassword}
+        newPassword={newPassword}
+        setNewPassword={setNewPassword}
+        confirmPassword={confirmPassword}
+        setConfirmPassword={setConfirmPassword}
+        handleUpdateProfile={async (newName, newOrgName, newPass, oldPass) => {
+          if (newPass && newPass !== confirmPassword) {
+            alert("New passwords do not match!");
+            return;
+          }
+          const loginMethod = localStorage.getItem('ttt_login_method');
+          if (loginMethod === 'appwrite' && newPass && !oldPass) {
+            alert("Current password is required to change password in Appwrite.");
+            return;
+          }
+          await handleUpdateProfile(
+            newName,
+            currentUserRights.isAdmin ? newOrgName : undefined,
+            newPass || undefined,
+            oldPass || undefined
+          );
         }}
-        trucks={approvedOrgTrucks}
-        drivers={orgDrivers}
-        offices={orgOffices}
-        accounts={orgAccounts}
-        existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-        onSubmit={handlePostTripEntry}
-        editingEntry={editingTrip}
-        canViewDrivers={currentUserRights.canViewDrivers}
-        orgProfile={organizationProfiles.find(p => p.organizationId === currentUserOrgId)}
-        trips={orgTrips}
+        onChangeMobileClick={() => {
+          setMobileWizardStep(1);
+          setMobileWizardOpen(true);
+          setMobileWizardTimer(0);
+          setMobileWizardCode('');
+          setMobileWizardNewPhone('');
+          setMobileWizardPassword('');
+          setMobileWizardError(null);
+          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          setMobileWizardGeneratedOtp(otp);
+          alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+        }}
+        onEnable2FAClick={() => {
+          const secret = generateSecret();
+          setSetup2FASecret(secret);
+          setSetup2FAOpen(true);
+        }}
+        onDisable2FAClick={() => {
+          setDisable2FAOpen(true);
+        }}
+        supportTickets={supportTickets}
+        currentUserOrgId={currentUserOrgId}
+        handleCreateSupportTicket={handleCreateSupportTicket}
+        handleSendSupportTicketMessage={handleSendSupportTicketMessage}
       />
 
-      <VoiceAssistant
-        isOpen={isVoiceAssistantOpen}
-        onClose={() => setIsVoiceAssistantOpen(false)}
-        trucks={approvedOrgTrucks}
-        drivers={orgDrivers}
-        offices={orgOffices}
-        accounts={orgAccounts}
-        existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-        onSubmitTrip={handlePostTripEntry}
-        onSubmitExpense={addExpense}
-        voiceLang={userVoiceLang}
+      <MobileChangeWizardModal
+        isOpen={mobileWizardOpen}
+        onClose={() => setMobileWizardOpen(false)}
+        currentUser={currentUser}
+        currentUserRights={currentUserRights}
+        userRightsList={userRightsList}
+        setUserRightsList={setUserRightsList}
+        pushPermissionsToCloud={pushPermissionsToCloud}
+        reconcileSession={reconcileSession}
+        setCurrentUser={setCurrentUser}
+        showNotification={showNotification}
+        mobileWizardStep={mobileWizardStep}
+        setMobileWizardStep={setMobileWizardStep}
+        mobileWizardCode={mobileWizardCode}
+        setMobileWizardCode={setMobileWizardCode}
+        mobileWizardNewPhone={mobileWizardNewPhone}
+        setMobileWizardNewPhone={setMobileWizardNewPhone}
+        mobileWizardPassword={mobileWizardPassword}
+        setMobileWizardPassword={setMobileWizardPassword}
+        mobileWizardError={mobileWizardError}
+        setMobileWizardError={setMobileWizardError}
+        mobileWizardGeneratedOtp={mobileWizardGeneratedOtp}
+        setMobileWizardGeneratedOtp={setMobileWizardGeneratedOtp}
+        mobileWizardTimer={mobileWizardTimer}
+        setMobileWizardTimer={setMobileWizardTimer}
       />
-
-      {profileModalOpen && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in flex flex-col md:flex-row overflow-hidden h-[600px] text-left">
-            
-            {/* Sidebar navigation */}
-            <div className="w-full md:w-56 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-1.5 shrink-0">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-extrabold text-slate-850 dark:text-slate-100 text-sm uppercase tracking-wider">Settings Panel</h3>
-                {/* Close button for mobile */}
-                <button
-                  onClick={() => setProfileModalOpen(false)}
-                  className="md:hidden text-slate-400 hover:text-slate-600 text-sm font-bold p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <button
-                onClick={() => setProfileActiveTab('SETTINGS')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                  profileActiveTab === 'SETTINGS'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
-                }`}
-              >
-                <User className="w-4 h-4" />
-                <span>Profile & Security</span>
-              </button>
-
-              {!isBackendTeam && (
-                <button
-                  onClick={() => setProfileActiveTab('SUPPORT')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                    profileActiveTab === 'SUPPORT'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Support Center</span>
-                  </div>
-                  {getClientUnreadTicketsCount() > 0 && (
-                    <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
-                      {getClientUnreadTicketsCount()}
-                    </span>
-                  )}
-                </button>
-              )}
-              
-              <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
-                <button
-                  onClick={() => setProfileModalOpen(false)}
-                  className="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-semibold rounded-lg transition cursor-pointer"
-                >
-                  Close Settings
-                </button>
-              </div>
-            </div>
-
-            {/* Main content pane */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/20 dark:bg-slate-950/5 shrink-0">
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                  {profileActiveTab === 'SETTINGS' ? 'Profile & Security' : 'Support Center Help Desk'}
-                </h3>
-                <button
-                  onClick={() => setProfileModalOpen(false)}
-                  className="hidden md:block text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-5 min-h-0">
-                {profileActiveTab === 'SETTINGS' ? (
-                  <form onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (newPassword && newPassword !== confirmPassword) {
-                      alert("New passwords do not match!");
-                      return;
-                    }
-                    const loginMethod = localStorage.getItem('ttt_login_method');
-                    if (loginMethod === 'appwrite' && newPassword && !oldPassword) {
-                      alert("Current password is required to change password in Appwrite.");
-                      return;
-                    }
-                    await handleUpdateProfile(
-                      profileName,
-                      currentUserRights.isAdmin ? profileOrgName : undefined,
-                      newPassword || undefined,
-                      oldPassword || undefined
-                    );
-                  }} className="max-w-md space-y-4">
-                    {/* DISPLAY NAME */}
-                    <div>
-                      <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Display Name</label>
-                      <input
-                        type="text"
-                        value={profileName}
-                        onChange={(e) => setProfileName(e.target.value)}
-                        required
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                      />
-                    </div>
-
-                    {/* ORGANIZATION NAME */}
-                    {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
-                      <div>
-                        <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Organization Name</label>
-                        <input
-                          type="text"
-                          value={profileOrgName}
-                          onChange={(e) => setProfileOrgName(e.target.value)}
-                          required
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                        />
-                      </div>
-                    )}
-
-                    {/* EMAIL (READ-ONLY) */}
-                    <div>
-                      <label className="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
-                      <input
-                        type="email"
-                        value={currentUser?.email || ''}
-                        disabled
-                        className="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                      />
-                    </div>
-
-                    {/* MOBILE NUMBER */}
-                    <div>
-                      <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Mobile Number</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={currentUserRights.phone || 'Not Set'}
-                          disabled
-                          className="flex-1 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMobileWizardStep(1);
-                            setMobileWizardOpen(true);
-                            setMobileWizardOtpSent(false);
-                            setMobileWizardTimer(0);
-                            setMobileWizardCode('');
-                            setMobileWizardNewPhone('');
-                            setMobileWizardPassword('');
-                            setMobileWizardError(null);
-                            const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                            setMobileWizardGeneratedOtp(otp);
-                            alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-                          }}
-                          className="px-3 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
-                        >
-                          Change
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* VOICE ASSISTANT LANGUAGE */}
-                    <div>
-                      <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
-                      <select
-                        id="voice-lang-select"
-                        value={profileVoiceLang}
-                        onChange={(e) => setProfileVoiceLang(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
-                      >
-                        <option value="en-IN">English (India) - en-IN</option>
-                        <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
-                        <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
-                        <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
-                        <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
-                        <option value="mr-IN">Marathi (மराठी) - mr-IN</option>
-                      </select>
-                    </div>
-
-                    {/* TWO-FACTOR AUTHENTICATION (2FA) */}
-                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
-                      <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
-                            Protect your account with Google Authenticator TOTP codes.
-                          </p>
-                        </div>
-                        {currentUserRights.is2FAEnabled ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDisable2FAOpen(true);
-                              setDisable2FACode('');
-                              setDisable2FAPassword('');
-                              setDisable2FAError(null);
-                            }}
-                            className="px-3 py-1.5 border border-red-500/30 hover:border-red-500 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
-                          >
-                            Disable
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const secret = generateSecret();
-                              setSetup2FASecret(secret);
-                              setSetup2FACode('');
-                              setSetup2FAPassword('');
-                              setSetup2FAOpen(true);
-                              setSetup2FAError(null);
-                            }}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
-                          >
-                            Enable
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* CHANGE PASSWORD */}
-                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
-
-                      {localStorage.getItem('ttt_login_method') === 'appwrite' && (
-                        <div className="mb-3">
-                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Current Password</label>
-                          <input
-                            type="password"
-                            value={oldPassword}
-                            onChange={(e) => setOldPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                          />
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">New Password</label>
-                          <input
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Confirm Password</label>
-                          <input
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setProfileModalOpen(false)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40 dark:border-slate-700/60"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
-                      >
-                        Save Changes
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <ProfileSupportTickets
-                    tickets={supportTickets.filter(st => currentUserOrgId === 'org_backend' || st.organizationId === currentUserOrgId)}
-                    currentUser={currentUser}
-                    onCreateTicket={handleCreateSupportTicket}
-                    onSendMessage={handleSendSupportTicketMessage}
-                    isBackendTeam={currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin}
-                  />
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* MOBILE CHANGE WIZARD SUB-MODAL */}
-      {mobileWizardOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-                Change Mobile Number
-              </h3>
-              <button
-                onClick={() => setMobileWizardOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Wizard Steps indicator */}
-            <div className="flex justify-between items-center bg-slate-950/40 p-2.5 rounded-xl border border-slate-800 mb-4 font-mono text-[10px] text-slate-405">
-              <span className={mobileWizardStep === 1 ? 'text-blue-400 font-bold' : ''}>1. Verify Old</span>
-              <span className="text-slate-600">→</span>
-              <span className={mobileWizardStep === 2 ? 'text-blue-400 font-bold' : ''}>2. New Number</span>
-              <span className="text-slate-600">→</span>
-              <span className={mobileWizardStep === 3 ? 'text-blue-400 font-bold' : ''}>3. Verify New</span>
-            </div>
-
-            {mobileWizardError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{mobileWizardError}</span>
-              </div>
-            )}
-
-            {/* STEP 1: VERIFY OLD MOBILE */}
-            {mobileWizardStep === 1 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We've sent a 6-digit verification OTP to your current mobile number ending in <span className="font-mono text-slate-200">{(currentUserRights.phone || '').slice(-4) || 'XXXX'}</span>. Please enter it to proceed.
-                </p>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification OTP Code</label>
-                  <input
-                    data-testid="mobile-wizard-old-otp"
-                    type="text"
-                    maxLength={6}
-                    placeholder="Enter 6-digit OTP"
-                    value={mobileWizardCode}
-                    onChange={(e) => setMobileWizardCode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                  />
-                </div>
-
-                <div className="flex gap-2.5 pt-2 border-t border-slate-800/60 mt-4 justify-between items-center">
-                  <button
-                    type="button"
-                    disabled={mobileWizardTimer > 0}
-                    onClick={() => {
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-                    }}
-                    className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {mobileWizardTimer > 0 ? `Resend Code in ${mobileWizardTimer}s` : 'Resend Code'}
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMobileWizardOpen(false)}
-                      className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (mobileWizardCode === mobileWizardGeneratedOtp || mobileWizardCode === '123456') {
-                          setMobileWizardStep(2);
-                          setMobileWizardCode('');
-                          setMobileWizardError(null);
-                        } else {
-                          setMobileWizardError('Invalid verification OTP code.');
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                    >
-                      Next Step
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: ENTER NEW MOBILE */}
-            {mobileWizardStep === 2 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Please enter your new mobile number in international E.164 format (e.g. <span className="font-mono text-slate-200">+919876543210</span>, starts with country code).
-                </p>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">New Mobile Number</label>
-                  <input
-                    type="tel"
-                    placeholder="+919876543210"
-                    value={mobileWizardNewPhone}
-                    onChange={(e) => setMobileWizardNewPhone(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileWizardStep(1);
-                      setMobileWizardError(null);
-                    }}
-                    className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const e164Regex = /^\+[1-9]\d{6,14}$/;
-                      if (!e164Regex.test(mobileWizardNewPhone.trim())) {
-                        setMobileWizardError('Mobile number must be in E.164 format (e.g. +919876543210).');
-                        return;
-                      }
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
-                      setMobileWizardStep(3);
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                  >
-                    Send OTP Verification
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: VERIFY NEW MOBILE & PASSWORD */}
-            {mobileWizardStep === 3 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We've sent a verification code to your new mobile number <span className="font-mono text-slate-200">{mobileWizardNewPhone}</span>. Enter the code and your current account password to complete the change.
-                </p>
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification OTP Code</label>
-                    <input
-                      data-testid="mobile-wizard-new-otp"
-                      type="text"
-                      maxLength={6}
-                      placeholder="Enter 6-digit OTP"
-                      value={mobileWizardCode}
-                      onChange={(e) => setMobileWizardCode(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                  {isAppwriteConfigured() && (
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                      <input
-                        data-testid="mobile-wizard-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={mobileWizardPassword}
-                        onChange={(e) => setMobileWizardPassword(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2.5 pt-2 border-t border-slate-800/60 mt-4 justify-between items-center">
-                  <button
-                    type="button"
-                    disabled={mobileWizardTimer > 0}
-                    onClick={() => {
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
-                    }}
-                    className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {mobileWizardTimer > 0 ? `Resend Code in ${mobileWizardTimer}s` : 'Resend Code'}
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileWizardStep(2);
-                        setMobileWizardCode('');
-                        setMobileWizardError(null);
-                      }}
-                      className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (mobileWizardCode !== mobileWizardGeneratedOtp && mobileWizardCode !== '123456') {
-                          setMobileWizardError('Invalid verification OTP code.');
-                          return;
-                        }
-                        if (isAppwriteConfigured() && !mobileWizardPassword.trim()) {
-                          setMobileWizardError('Current password is required to perform account changes.');
-                          return;
-                        }
-
-                        try {
-                          if (isAppwriteConfigured()) {
-                            await appwrite.updatePhone(mobileWizardNewPhone, mobileWizardPassword);
-                          }
-
-                          const email = (currentUser.email || '').toLowerCase().trim();
-                          const updated = userRightsList.map(ur =>
-                            ur.email.toLowerCase().trim() === email
-                              ? { ...ur, phone: mobileWizardNewPhone, isPhoneVerified: true }
-                              : ur
-                          );
-                          setUserRightsList(updated);
-                          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                          await pushPermissionsToCloud(updated);
-
-                          const updatedUser = {
-                            ...currentUser,
-                            phone: mobileWizardNewPhone,
-                            phoneVerification: true
-                          };
-                          setCurrentUser(updatedUser);
-                          await reconcileSession(updatedUser);
-
-                          showNotification('Mobile number successfully changed & verified!');
-                          setMobileWizardOpen(false);
-                        } catch (err: any) {
-                          setMobileWizardError(err.message || 'Verification or password invalid.');
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                    >
-                      Confirm Change
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ENABLE 2FA WIZARD MODAL */}
-      {setup2FAOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-blue-500" />
-                Enable 2FA Protection
-              </h3>
-              <button
-                onClick={() => setSetup2FAOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {setup2FAError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{setup2FAError}</span>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Scan the QR code below or manually type the secret key into Google Authenticator/Microsoft Authenticator app to begin.
-              </p>
-
-              {/* QR Code and Secret display */}
-              <div className="flex flex-col items-center bg-slate-950/60 p-4 rounded-xl border border-slate-850 space-y-3">
-                <div className="bg-white p-2 rounded-lg">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
-                      `otpauth://totp/FleetTrack:${currentUser?.email || ''}?secret=${setup2FASecret}&issuer=FleetTrack`
-                    )}`}
-                    alt="Scan with Authenticator App"
-                    className="w-36 h-36 border border-slate-200"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                </div>
-                <div className="w-full text-center space-y-1">
-                  <span className="text-[9px] text-slate-500 uppercase tracking-widest font-extrabold block">Secret Setup Key</span>
-                  <div className="flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 font-mono text-xs text-blue-400 font-bold select-all">
-                    <span>{setup2FASecret}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(setup2FASecret);
-                        alert('Secret key copied to clipboard!');
-                      }}
-                      className="text-slate-400 hover:text-white p-0.5"
-                      title="Copy Key"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Verify Fields */}
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Code</label>
-                  <input
-                    data-testid="setup-2fa-code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="e.g. 000000"
-                    value={setup2FACode}
-                    onChange={(e) => setSetup2FACode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700 font-mono text-center tracking-widest"
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                    <input
-                      data-testid="setup-2fa-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={setup2FAPassword}
-                      onChange={(e) => setSetup2FAPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setSetup2FAOpen(false)}
-                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (setup2FACode.length !== 6) {
-                      setSetup2FAError('Please enter a valid 6-digit authenticator code.');
-                      return;
-                    }
-                    if (isAppwriteConfigured() && !setup2FAPassword.trim()) {
-                      setSetup2FAError('Your current password is required.');
-                      return;
-                    }
-
-                    try {
-                      if (isAppwriteConfigured()) {
-                        await appwrite.login(currentUser.email, setup2FAPassword);
-                      }
-
-                      const verified = await verifyTOTP(setup2FASecret, setup2FACode);
-                      if (!verified) {
-                        setSetup2FAError('Invalid authenticator verification code.');
-                        return;
-                      }
-
-                      const email = (currentUser.email || '').toLowerCase().trim();
-                      const updated = userRightsList.map(ur =>
-                        ur.email.toLowerCase().trim() === email
-                          ? { ...ur, is2FAEnabled: true, twoFactorSecret: setup2FASecret }
-                          : ur
-                      );
-                      setUserRightsList(updated);
-                      localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                      await pushPermissionsToCloud(updated);
-                      await reconcileSession(currentUser);
-
-                      showNotification('Two-Factor Authentication successfully enabled!');
-                      setSetup2FAOpen(false);
-                    } catch (err: any) {
-                      setSetup2FAError(err.message || 'Verification or password invalid.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                >
-                  Enable 2FA
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <Setup2FAModal
+        isOpen={setup2FAOpen}
+        onClose={() => setSetup2FAOpen(false)}
+        setup2FASecret={setup2FASecret}
+        showNotification={showNotification}
+      />
 
       {/* DISABLE 2FA WIZARD MODAL */}
-      {disable2FAOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                Disable 2FA Protection
-              </h3>
-              <button
-                onClick={() => setDisable2FAOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
+      <Disable2FAModal
+        isOpen={disable2FAOpen}
+        onClose={() => setDisable2FAOpen(false)}
+        showNotification={showNotification}
+      />
 
-            {disable2FAError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{disable2FAError}</span>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Confirm you want to disable two-factor authentication. Enter your current 6-digit authenticator code and password.
-              </p>
-
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Code</label>
-                  <input
-                    data-testid="disable-2fa-code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="e.g. 000000"
-                    value={disable2FACode}
-                    onChange={(e) => setDisable2FACode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700 font-mono text-center tracking-widest"
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                    <input
-                      data-testid="disable-2fa-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={disable2FAPassword}
-                      onChange={(e) => setDisable2FAPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setDisable2FAOpen(false)}
-                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (disable2FACode.length !== 6) {
-                      setDisable2FAError('Please enter a valid 6-digit authenticator code.');
-                      return;
-                    }
-                    if (isAppwriteConfigured() && !disable2FAPassword.trim()) {
-                      setDisable2FAError('Your current password is required.');
-                      return;
-                    }
-
-                    try {
-                      if (isAppwriteConfigured()) {
-                        await appwrite.login(currentUser.email, disable2FAPassword);
-                      }
-
-                      const verified = await verifyTOTP(currentUserRights.twoFactorSecret || '', disable2FACode);
-                      if (!verified) {
-                        setDisable2FAError('Invalid authenticator verification code.');
-                        return;
-                      }
-
-                      const email = (currentUser.email || '').toLowerCase().trim();
-                      const updated = userRightsList.map(ur =>
-                        ur.email.toLowerCase().trim() === email
-                          ? { ...ur, is2FAEnabled: false, twoFactorSecret: '' }
-                          : ur
-                      );
-                      setUserRightsList(updated);
-                      localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                      await pushPermissionsToCloud(updated);
-                      await reconcileSession(currentUser);
-
-                      showNotification('Two-Factor Authentication successfully disabled.');
-                      setDisable2FAOpen(false);
-                    } catch (err: any) {
-                      setDisable2FAError(err.message || 'Verification or password invalid.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-rose-600/10"
-                >
-                  Disable 2FA
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmModal && confirmModal.isOpen && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl animate-fade-in text-left">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
-                <AlertCircle className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="font-bold text-slate-900 text-base">{confirmModal.title}</h3>
-                <p className="text-slate-600 text-xs leading-relaxed font-medium">{confirmModal.message}</p>
-              </div>
-            </div>
-            <div className="mt-5.5 flex justify-end gap-2.5 select-none">
-              <button
-                type="button"
-                onClick={() => setConfirmModal(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmModal.onConfirm}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-rose-600/10 hover:shadow-rose-600/20 cursor-pointer"
-              >
-                Confirm Action
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        confirmModal={confirmModal}
+        onClose={() => setConfirmModal(null)}
+      />
 
       {!isOnline && (
         <ConnectionStatusBlocker reason={disconnectReason} />

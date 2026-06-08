@@ -129,7 +129,7 @@ describe('OfficeMaster Component Integration Tests', () => {
       officeName: 'Bangalore Branch',
       city: 'Bangalore',
       contactPerson: 'Sanjay Kumar',
-      phone: '7654321098',
+      phone: '+917654321098',
       status: 'Active',
     });
   });

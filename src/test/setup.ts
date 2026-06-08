@@ -150,7 +150,6 @@ vi.mock('../lib/appwrite', () => {
       queryTyres: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
       queryAuditLogs: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
       fetchMonthlyTripsAndExpenses: vi.fn().mockResolvedValue({ trips: [], expenses: [] }),
-      getClient: vi.fn().mockReturnValue(null),
       updatePhone: vi.fn().mockResolvedValue({}),
       createVerification: vi.fn().mockResolvedValue({}),
       updateVerification: vi.fn().mockResolvedValue({}),
@@ -158,6 +157,16 @@ vi.mock('../lib/appwrite', () => {
       updatePhoneVerification: vi.fn().mockResolvedValue({}),
       createRecovery: vi.fn().mockResolvedValue({}),
       updateRecovery: vi.fn().mockResolvedValue({}),
+      getRealtime: vi.fn().mockReturnValue({
+        subscribe: vi.fn().mockResolvedValue({
+          close: vi.fn(),
+          unsubscribe: vi.fn()
+        })
+      }),
+      getClient: vi.fn().mockReturnValue({
+        setEndpoint: vi.fn().mockReturnThis(),
+        setProject: vi.fn().mockReturnThis(),
+      }),
     }
   };
 });

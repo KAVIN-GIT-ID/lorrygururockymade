@@ -49,6 +49,7 @@
     "happy-dom": "^20.9.0",
     "jsdom": "^27.0.1",
     "node-appwrite": "^26.1.0",
+    "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

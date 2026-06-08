@@ -111,9 +111,10 @@ describe('DriverMaster Component Tests', () => {
     expect(handleAdd).toHaveBeenCalledTimes(1);
     expect(handleAdd).toHaveBeenCalledWith({
       driverName: 'Arjun Dev',
-      phone: '8888877777',
+      phone: '+918888877777',
       licenseNo: 'DL-9999',
-      status: 'Active'
+      status: 'Active',
+      licenseFileId: undefined
     });
   });
 

@@ -140,7 +140,7 @@ describe('App Component Root Integration Tests', () => {
     fireEvent.click(officeTabBtn);
 
     // 3. Verify that the Office Master component is displayed
-    expect(screen.getByText('Office Datasheet')).toBeInTheDocument();
+    expect(await screen.findByText('Office Datasheet')).toBeInTheDocument();
     expect(screen.getByText(/Manage active trading offices and transport hubs/i)).toBeInTheDocument();
   });
 
@@ -190,10 +190,10 @@ describe('App Component Root Integration Tests', () => {
     const userInitialsBtn = screen.getByText('TA');
     fireEvent.click(userInitialsBtn);
 
-    const profileSettingsBtn = screen.getByText('Profile Settings');
+    const profileSettingsBtn = await screen.findByText('Profile Settings');
     fireEvent.click(profileSettingsBtn);
 
-    expect(screen.getByRole('heading', { name: /Profile Settings/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Profile & Security/i })).toBeInTheDocument();
 
     const langSelect = screen.getByLabelText(/Voice Assistant Language/i);
     expect(langSelect).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe('App Component Root Integration Tests', () => {
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
-      expect(screen.queryByRole('heading', { name: /Profile Settings/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /Profile & Security/i })).not.toBeInTheDocument();
     });
 
     expect(localStorage.getItem('ttt_voice_lang_admin@test.com')).toBe('hi-IN');
@@ -514,11 +514,14 @@ describe('App Component Root Integration Tests', () => {
 
     renderApp();
 
-    await screen.findByText('Trip Management');
+    await waitFor(() => {
+      expect(screen.getByTitle('Cloud Synchronization Active & Connected')).toBeInTheDocument();
+    }, { timeout: 5000 });
     const tripTabBtn = screen.getByRole('button', { name: /Trip Management/i });
     fireEvent.click(tripTabBtn);
 
     await screen.findAllByText('TRIP-A-01');
+    await waitFor(() => expect(document.getElementById('trip-row-t-1')).not.toBeNull());
     const deleteBtn = within(document.getElementById('trip-row-t-1')!).getByTitle('Wipe Cargo Entry record');
     fireEvent.click(deleteBtn);
 
@@ -526,7 +529,7 @@ describe('App Component Root Integration Tests', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
+      const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]').filter((t: any) => !t.deletedAt);
       expect(storedTrips).toHaveLength(1);
       expect(storedTrips[0].tripNo).toBe('TRIP-B-02');
       expect(storedTrips[0].advances).toHaveLength(0);
