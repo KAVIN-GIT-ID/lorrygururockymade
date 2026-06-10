@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Tyre, ExpenseEntry, TyreMovementLog } from '../types';
 import { migrateTyres } from '../lib/migrations';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface UseTyresParams {
   orgId: string;
@@ -127,6 +128,15 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
     }
     const next = tyres.filter(t => t.id !== id);
     saveTyres(next);
+
+    if (isAppwriteConfigured() && tyreToDelete) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'tyres', id);
+      } catch (err) {
+        console.warn("Failed to delete tyre from Appwrite:", err);
+      }
+    }
 
     logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre serial ${tyreToDelete.tyreNo} specification datasheet.`);
     showNotification(`Tyre archived.`);

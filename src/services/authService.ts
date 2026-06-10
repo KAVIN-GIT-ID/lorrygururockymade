@@ -80,8 +80,8 @@ export const authService = {
             try {
               const myDocId = appwrite.getEmailDocId(email);
               const myConfig = await appwrite.loadGlobalConfig(databaseId, myDocId);
-              if (myConfig && myConfig.data) {
-                activeRightsList = [JSON.parse(myConfig.data)];
+              if (myConfig) {
+                activeRightsList = [myConfig];
               }
             } catch (err) {
               console.warn("Could not fetch individual user permission directly:", err);
@@ -93,8 +93,8 @@ export const authService = {
                 const appwriteOrgId = userTeams[0].$id;
                 const orgDocId = appwrite.getOrgDocId(appwriteOrgId);
                 const orgConfig = await appwrite.loadGlobalConfig(databaseId, orgDocId);
-                if (orgConfig && orgConfig.data) {
-                  rawProfiles = [JSON.parse(orgConfig.data)];
+                if (orgConfig) {
+                  rawProfiles = [orgConfig];
                 }
               }
             } catch (err) {

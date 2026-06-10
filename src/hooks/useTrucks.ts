@@ -63,7 +63,14 @@ export function useTrucks({
 
     saveTrucks([...trucks, n]);
 
-
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trucks', n.id, orgId, n);
+      } catch (err) {
+        console.warn("Failed to save truck to Appwrite:", err);
+      }
+    }
 
     logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
     showNotification(`Truck ${n.truckNo} added successfully.`);
@@ -78,16 +85,25 @@ export function useTrucks({
     const next = trucks.map(t => t.id === updated.id ? merged : t);
     saveTrucks(next);
 
-    if (isAppwriteConfigured() && oldTruck) {
-      if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
-        appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
-          console.warn("Failed to delete replaced RC file:", err);
-        });
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trucks', merged.id, orgId, merged);
+      } catch (err) {
+        console.warn("Failed to update truck in Appwrite:", err);
       }
-      if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
-        appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
-          console.warn("Failed to delete replaced Insurance file:", err);
-        });
+
+      if (oldTruck) {
+        if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
+          appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
+            console.warn("Failed to delete replaced RC file:", err);
+          });
+        }
+        if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
+          appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
+            console.warn("Failed to delete replaced Insurance file:", err);
+          });
+        }
       }
     }
 
@@ -110,6 +126,13 @@ export function useTrucks({
     saveTrucks(next);
 
     if (isAppwriteConfigured() && truckToDelete) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.deleteFleetDocument(databaseId, 'trucks', id);
+      } catch (err) {
+        console.warn("Failed to delete truck from Appwrite:", err);
+      }
+
       if (truckToDelete.rcFileId) {
         appwrite.deleteFile(truckToDelete.rcFileId).catch(err => {
           console.warn("Failed to delete RC file on truck removal:", err);

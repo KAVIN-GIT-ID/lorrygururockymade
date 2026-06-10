@@ -457,12 +457,6 @@ export default function AppwriteCloudSync({
           onLoadCloudStateRef.current(nextState, null, true);
         }
 
-        try {
-          await handlePullFromDB(true);
-        } catch (pullErr: any) {
-          console.warn('Post-sync quiet pull failed:', pullErr.message);
-        }
-
         // Update baseline with next/purged state
         const nextBaselineState = localStateNeedsPurge ? nextState : currentState;
         baselineStateRef.current = {

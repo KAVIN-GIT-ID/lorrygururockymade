@@ -589,6 +589,20 @@ class AppwriteService {
         assignedTo: dataObj.assignedTo || '',
         data: JSON.stringify(dataObj)
       };
+    } else if (collectionId === 'payments') {
+      documentData = {
+        organizationId: orgId,
+        truckNo: dataObj.truckNo || '',
+        amount: Number(dataObj.amount) || 0,
+        transactionId: dataObj.transactionId || '',
+        paymentDate: dataObj.paymentDate || '',
+        duration: dataObj.duration || '',
+        status: dataObj.status || 'Success',
+        customerEmail: dataObj.customerEmail || '',
+        customerName: dataObj.customerName || '',
+        customerPhone: dataObj.customerPhone || '',
+        data: JSON.stringify(dataObj)
+      };
     }
 
     const fallbackData = {

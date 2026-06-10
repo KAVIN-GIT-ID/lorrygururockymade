@@ -308,6 +308,7 @@ export const cloudSyncService = {
               (!existing.deletedAt && !t.deletedAt && (
                 (t.isApproved && !existing.isApproved) ||
                 (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
+                (t.requestStatus === 'Rejected' && existing.requestStatus === 'Pending') ||
                 (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'))
               ));
             if (keepNew) {

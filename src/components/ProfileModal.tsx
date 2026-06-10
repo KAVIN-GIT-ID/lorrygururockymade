@@ -35,6 +35,16 @@ interface ProfileModalProps {
   currentUserOrgId: string;
   handleCreateSupportTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   handleSendSupportTicketMessage: (ticketId: string, content: string, attachmentFile?: File) => Promise<void>;
+  
+  profileGst: string;
+  setProfileGst: (val: string) => void;
+  profilePan: string;
+  setProfilePan: (val: string) => void;
+  profileAadhaar: string;
+  setProfileAadhaar: (val: string) => void;
+  profileAddress: string;
+  setProfileAddress: (val: string) => void;
+  payments: any[];
 }
 
 const LoadingTab = () => (
@@ -72,7 +82,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   supportTickets,
   currentUserOrgId,
   handleCreateSupportTicket,
-  handleSendSupportTicketMessage
+  handleSendSupportTicketMessage,
+
+  profileGst,
+  setProfileGst,
+  profilePan,
+  setProfilePan,
+  profileAadhaar,
+  setProfileAadhaar,
+  profileAddress,
+  setProfileAddress,
+  payments
 }) => {
   if (!isOpen) return null;
 
@@ -87,7 +107,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             {/* Close button for mobile */}
             <button
               onClick={onClose}
-              className="md:hidden text-slate-400 hover:text-slate-650 text-sm font-bold p-1 cursor-pointer"
+              className="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
             >
               ✕
             </button>
@@ -98,7 +118,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
               profileActiveTab === 'SETTINGS'
                 ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-550 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
             }`}
           >
             <User className="w-4 h-4" />
@@ -111,7 +131,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
                 profileActiveTab === 'SUPPORT'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-550 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                  : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
               }`}
             >
               <div className="flex items-center gap-2.5">
@@ -129,7 +149,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
             <button
               onClick={onClose}
-              className="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-semibold rounded-lg transition cursor-pointer"
+              className="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-355 text-xs font-semibold rounded-lg transition cursor-pointer"
             >
               Close Settings
             </button>
@@ -182,6 +202,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 onChangeMobileClick={onChangeMobileClick}
                 onEnable2FAClick={onEnable2FAClick}
                 onDisable2FAClick={onDisable2FAClick}
+                profileGst={profileGst}
+                setProfileGst={setProfileGst}
+                profilePan={profilePan}
+                setProfilePan={setProfilePan}
+                profileAadhaar={profileAadhaar}
+                setProfileAadhaar={setProfileAadhaar}
+                profileAddress={profileAddress}
+                setProfileAddress={setProfileAddress}
               />
             ) : (
               <Suspense fallback={<LoadingTab />}>
@@ -190,6 +218,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   onCreateTicket={handleCreateSupportTicket}
                   onSendMessage={handleSendSupportTicketMessage}
                   isBackendTeam={currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin}
+                  payments={payments}
+                  orgName={profileOrgName}
+                  gstNo={profileGst}
+                  panNo={profilePan}
+                  address={profileAddress}
                 />
               </Suspense>
             )}

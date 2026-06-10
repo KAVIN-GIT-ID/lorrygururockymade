@@ -27,7 +27,9 @@ const AuditLogView = lazy(() => import('./components/AuditLogView'));
 const TyreMaster = lazy(() => import('./components/TyreMaster'));
 const UserAccessControl = lazy(() => import('./components/UserAccessControl'));
 const BackendDashboard = lazy(() => import('./components/BackendDashboard'));
+const BillingHistory = lazy(() => import('./components/BillingHistory'));
 const VoiceAssistant = lazy(() => import('./components/VoiceAssistant'));
+const LegalPage = lazy(() => import('./components/LegalPage'));
 
 import Setup2FAModal from './components/Setup2FAModal';
 import Disable2FAModal from './components/Disable2FAModal';
@@ -276,6 +278,7 @@ function AppContent() {
   } | null>(null);
 
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const verifiedTxns = useRef(new Set<string>());
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -317,6 +320,27 @@ function AppContent() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Profile KYC states
+  const [profileGst, setProfileGst] = useState('');
+  const [profilePan, setProfilePan] = useState('');
+  const [profileAadhaar, setProfileAadhaar] = useState('');
+  const [profileAddress, setProfileAddress] = useState('');
+
+  // Payments State
+  const [payments, setPayments] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('ttt_payments');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const savePayments = (nextPayments: any[]) => {
+    setPayments(nextPayments);
+    localStorage.setItem('ttt_payments', JSON.stringify(nextPayments));
+  };
+
   // Voice language state
   const [userVoiceLang, setUserVoiceLang] = useState<string>('en-IN');
   const [profileVoiceLang, setProfileVoiceLang] = useState<string>('en-IN');
@@ -344,6 +368,10 @@ function AppContent() {
       const currentOrgId = currentUserRights?.organizationId || '';
       const orgProfile = organizationProfiles.find(p => p.organizationId === currentOrgId);
       setProfileOrgName(orgProfile ? orgProfile.organizationName : '');
+      setProfileGst(orgProfile?.gstNo || '');
+      setProfilePan(orgProfile?.panNo || '');
+      setProfileAadhaar(orgProfile?.aadhaarNo || '');
+      setProfileAddress(orgProfile?.address || '');
     }
   }, [profileModalOpen, currentUser, currentUserRights, organizationProfiles]);
 
@@ -412,12 +440,13 @@ function AppContent() {
   // Synchronize location.pathname with view and tab state
   useEffect(() => {
     const path = location.pathname;
+    const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
 
     // Auth guarding
     if (!currentUser && !loadingUser) {
       if (path.startsWith('/console')) {
         navigate('/login');
-      } else if (path !== '/' && path !== '/login') {
+      } else if (path !== '/' && path !== '/login' && !publicLegalPaths.includes(path)) {
         navigate('/');
       }
       return;
@@ -428,9 +457,12 @@ function AppContent() {
         navigate('/console/dashboard');
         return;
       }
+      if (publicLegalPaths.includes(path)) {
+        return;
+      }
 
       const subpath = path.replace('/console/', '').toUpperCase();
-      const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND'];
+      const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND', 'BILLING'];
       if (validTabs.includes(subpath)) {
         setActiveTab(subpath as any);
       } else if (path === '/console') {
@@ -477,18 +509,80 @@ function AppContent() {
     }
   };
 
+  const handleVerifyPhonePePayment = async (txnId: string, truckNo: string) => {
+    try {
+      showNotification("Verifying PhonePe payment status...");
+      const serverUrl = '';
+      
+      const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
+      const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
+      const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
+      const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || '';
+
+      const queryParams = new URLSearchParams({
+        truckNo,
+        organizationId: (currentUserRights?.organizationId) || 'org_default',
+        duration,
+        customerName: currentUser?.name || '',
+        customerEmail: currentUser?.email || '',
+        customerPhone: currentUser?.phone || '',
+        existingTruckId,
+        truckPayload: JSON.stringify(tempPayloadObj)
+      });
+
+      const response = await fetch(`${serverUrl}/api/payment/status/${txnId}?${queryParams.toString()}`);
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        localStorage.removeItem('ttt_temp_payment_payload');
+        localStorage.removeItem('ttt_temp_payment_duration');
+        localStorage.removeItem('ttt_temp_payment_truck_id');
+
+        showNotification(`Payment verified! Truck ${truckNo} is now Active.`);
+
+        if (data.expiryDate && tempPayloadObj) {
+          const targetId = existingTruckId || ('tr_' + Date.now());
+          setTrucks(prev => {
+            const next = prev.map(t => t.id === targetId ? {
+              ...t,
+              ...tempPayloadObj,
+              isApproved: true,
+              requestStatus: 'Approved' as const,
+              status: 'Active' as const,
+              registrationExpiryDate: data.expiryDate
+            } : t);
+            localStorage.setItem('ttt_trucks', JSON.stringify(next));
+            return next;
+          });
+        }
+      } else {
+        alert(`Payment Verification Failed: ${data.message || 'Transaction was not successful'}`);
+      }
+
+    } catch (err: any) {
+      console.error('Verify Payment Error:', err);
+      alert(`Error verifying payment: ${err.message}`);
+    } finally {
+      window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+    }
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode');
     const userId = params.get('userId');
     const secret = params.get('secret');
+    const txnId = params.get('txnId');
+    const truckNo = params.get('truckNo');
 
     if (mode === 'recovery' && userId && secret) {
       setResetPasswordState({ active: true, userId, secret });
     } else if (mode === 'verify' && userId && secret) {
       handleEmailVerificationRedirect(userId, secret);
+    } else if (txnId && truckNo) {
+      // Handled by the PhonePePaymentModal inside TruckMaster component
     }
-  }, [userRightsList]);
+  }, [userRightsList, currentUserRights, currentUser]);
 
 
 
@@ -1006,12 +1100,19 @@ function AppContent() {
         await pushPermissionsToCloud(updatedRightsList);
       }
 
-      // Update organization name if modified and user is Admin
+      // Update organization name and KYC if user is Admin
       const currentOrgId = currentUserRights?.organizationId || '';
-      if (currentUserRights.isAdmin && newOrgName && newOrgName.trim() && currentOrgId) {
+      if (currentUserRights.isAdmin && currentOrgId) {
         const nextProfiles = organizationProfiles.map(p =>
           p.organizationId === currentOrgId
-            ? { ...p, organizationName: newOrgName.trim() }
+            ? { 
+                ...p, 
+                organizationName: newOrgName && newOrgName.trim() ? newOrgName.trim() : p.organizationName,
+                gstNo: profileGst.trim(),
+                panNo: profilePan.trim(),
+                aadhaarNo: profileAadhaar.trim(),
+                address: profileAddress.trim()
+              }
             : p
         );
         await saveOrganizationProfiles(nextProfiles);
@@ -1045,10 +1146,10 @@ function AppContent() {
 
 
   // Navigation / Tabs State
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND' | 'BILLING'>('DASHBOARD');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND') => {
+  const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND' | 'BILLING') => {
     setActiveTab(tab);
     navigate(`/console/${tab.toLowerCase()}`);
     setIsMobileMenuOpen(false);
@@ -1097,6 +1198,8 @@ function AppContent() {
       setActiveTab(fallbackTab);
     } else if (activeTab === 'TYRES' && !currentUserRights.canViewTyres) {
       setActiveTab(fallbackTab);
+    } else if (activeTab === 'BILLING' && !(currentUserRights.isAdmin || currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend')) {
+      setActiveTab(fallbackTab);
     }
   }, [activeTab, currentUserRights, currentUserOrgId]);
   // Custom hooks managing operational states
@@ -1122,6 +1225,133 @@ function AppContent() {
   const saveSupportTickets = (nextTickets: SupportTicket[]) => {
     setSupportTickets(nextTickets);
     localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+  };
+
+  const handleInitiateRefund = async (orgId: string, truckNo: string, paymentRecord: any) => {
+    try {
+      showNotification("Initiating refund via PhonePe gateway...");
+      
+      const serverUrl = '';
+      const response = await fetch(`${serverUrl}/api/payment/refund`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          originalTransactionId: paymentRecord.transactionId,
+          amount: paymentRecord.amount
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Refund request failed');
+      }
+
+      const refundId = data.refundId || ('REF' + Date.now());
+
+      // Update payment record in local state & storage
+      const nextPayments = payments.map(p => {
+        if (p.id === paymentRecord.id) {
+          return {
+            ...p,
+            status: 'Refunded',
+            refundId,
+            refundStatus: 'Initiated',
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return p;
+      });
+      savePayments(nextPayments);
+
+      // Also save to Appwrite if configured
+      if (isAppwriteConfigured()) {
+        try {
+          await appwrite.saveFleetDocument('fleet_db', 'payments', paymentRecord.id, orgId, {
+            ...paymentRecord,
+            status: 'Refunded',
+            refundId,
+            refundStatus: 'Initiated',
+            updatedAt: new Date().toISOString()
+          });
+        } catch (err) {
+          console.error("Failed to sync refunded payment to Appwrite:", err);
+        }
+      }
+
+      // Reset the truck's subscription expiry (set to yesterday / expired, request status as Rejected, status as Inactive)
+      const targetTruck = trucks.find(t => t.truckNo.toUpperCase() === truckNo.toUpperCase() && t.organizationId === orgId);
+      if (targetTruck) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        const updatedTruck = {
+          ...targetTruck,
+          registrationExpiryDate: yesterdayStr,
+          status: 'Inactive' as const,
+          requestStatus: 'Rejected' as const,
+          isApproved: false,
+          updatedAt: new Date().toISOString()
+        };
+
+        setTrucks(prev => {
+          const next = prev.map(t => t.id === targetTruck.id ? updatedTruck : t);
+          localStorage.setItem('ttt_trucks', JSON.stringify(next));
+          return next;
+        });
+
+        if (isAppwriteConfigured()) {
+          try {
+            await appwrite.saveFleetDocument('fleet_db', 'trucks', targetTruck.id, orgId, updatedTruck);
+          } catch (err) {
+            console.error("Failed to sync deactivated truck to Appwrite:", err);
+          }
+        }
+      }
+
+      // Auto-raise Billing Support Ticket
+      const ticketId = 'tkt_' + Date.now();
+      const ticketNo = 'TKT-' + Math.floor(100000 + Math.random() * 900000);
+      const ticketTitle = `Refund Processed for Truck ${truckNo}`;
+      const ticketDescription = `A refund of ₹${paymentRecord.amount} has been initiated for the subscription of truck ${truckNo}. Refund Transaction ID: ${refundId}. The truck has been deactivated.`;
+
+      const initialMessage = {
+        id: `msg-${Date.now()}`,
+        sender: 'Agent' as const,
+        senderName: 'Billing Team',
+        senderEmail: 'billing@lorryguru.com',
+        content: ticketDescription,
+        timestamp: new Date().toISOString(),
+      };
+
+      const newTicket: SupportTicket = {
+        id: ticketId,
+        ticketNo,
+        organizationId: orgId,
+        requesterName: paymentRecord.customerName || 'Organization Owner',
+        requesterEmail: paymentRecord.customerEmail || '',
+        requesterPhone: paymentRecord.customerPhone || '',
+        category: 'Billing',
+        title: ticketTitle,
+        description: ticketDescription,
+        status: 'Open',
+        assignedTeam: 'Billing',
+        messages: [initialMessage],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const nextTickets = [newTicket, ...supportTickets];
+      saveSupportTickets(nextTickets);
+
+      logAction('Created', 'SupportTicket', newTicket.ticketNo, `Auto-raised refund billing ticket: ${ticketTitle}`, orgId);
+      showNotification(`Refund initiated successfully. Refund ID: ${refundId}`);
+    } catch (err: any) {
+      console.error("Refund processing error:", err);
+      alert(`Refund Error: ${err.message}`);
+    }
   };
 
   const handleCreateSupportTicket = async (
@@ -1948,7 +2178,7 @@ function AppContent() {
       newTruckObj = mutateRecord(existingRejectedTruck, {
         ...truckPayload,
         isApproved: false,
-        requestStatus: 'Pending' as const,
+        requestStatus: 'Rejected' as const,
         status: 'Inactive' as const,
         registrationExpiryDate: expiryStr
       }, currentUserId);
@@ -1958,14 +2188,81 @@ function AppContent() {
         return next;
       });
     } else {
-      targetTruckId = 'tr_' + Date.now();
+      targetTruckId = (truckPayload as any).id || 'tr_' + Date.now();
       newTruckObj = createRecord<Truck>({
         ...truckPayload,
         id: targetTruckId,
         organizationId: currentUserOrgId,
         isApproved: false,
-        requestStatus: 'Pending' as const,
+        requestStatus: 'Rejected' as const,
         status: 'Inactive' as const,
+        registrationExpiryDate: expiryStr
+      }, currentUserId);
+      setTrucks(prev => {
+        const next = [...prev, newTruckObj];
+        localStorage.setItem('ttt_trucks', JSON.stringify(next));
+        return next;
+      });
+    }
+
+    touchLastModified();
+    logAction('Created', 'Truck', truckPayload.truckNo, `Added unsubscribed vehicle to fleet database.`);
+  };
+
+  const handleProcessTruckPayment = async (
+    truckPayload: Omit<Truck, 'id'>,
+    paymentDetails: {
+      transactionId: string;
+      amount: number;
+      duration: string;
+      planName: string;
+      customerName: string;
+      customerEmail: string;
+      customerPhone: string;
+      paymentDate: string;
+      status: string;
+      paymentMethod?: string;
+    },
+    existingTruckId?: string | null
+  ) => {
+    const d = new Date();
+    const durationStr = paymentDetails.duration;
+    if (durationStr === '1 Month') {
+      d.setMonth(d.getMonth() + 1);
+    } else if (durationStr === '3 Months') {
+      d.setMonth(d.getMonth() + 3);
+    } else if (durationStr === '6 Months') {
+      d.setMonth(d.getMonth() + 6);
+    } else {
+      d.setFullYear(d.getFullYear() + 1); // Default 1 Year
+    }
+    const expiryStr = d.toISOString().split('T')[0];
+
+    let targetTruckId = existingTruckId || ('tr_' + Date.now());
+    let newTruckObj: Truck;
+
+    const existingTruck = trucks.find(t => t.id === targetTruckId);
+    if (existingTruck) {
+      newTruckObj = mutateRecord(existingTruck, {
+        ...truckPayload,
+        isApproved: true,
+        requestStatus: 'Approved' as const,
+        status: 'Active' as const,
+        registrationExpiryDate: expiryStr
+      }, currentUserId);
+      setTrucks(prev => {
+        const next = prev.map(t => t.id === targetTruckId ? newTruckObj : t);
+        localStorage.setItem('ttt_trucks', JSON.stringify(next));
+        return next;
+      });
+    } else {
+      newTruckObj = createRecord<Truck>({
+        ...truckPayload,
+        id: targetTruckId,
+        organizationId: currentUserOrgId,
+        isApproved: true,
+        requestStatus: 'Approved' as const,
+        status: 'Active' as const,
         registrationExpiryDate: expiryStr
       }, currentUserId);
       setTrucks(prev => {
@@ -1981,7 +2278,7 @@ function AppContent() {
       id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
       truckNo: truckPayload.truckNo.toUpperCase(),
       requestedAt: new Date().toISOString().substring(0, 10),
-      status: 'Pending',
+      status: 'Approved',
       make: truckPayload.make,
       model: truckPayload.model,
       type: truckPayload.type,
@@ -2003,11 +2300,83 @@ function AppContent() {
 
     try {
       await saveOrganizationProfiles(nextProfiles);
-      showNotification(`Submitted activation request for truck ${truckPayload.truckNo}.`);
-      logAction('Created', 'Truck', truckPayload.truckNo, `Requested activation for new truck.`);
     } catch (err) {
-      alert("Failed to request truck activation: Appwrite database connection error. Please try again.");
+      console.warn("Failed to update organization profiles truck requests, continuing...", err);
     }
+
+    // Map payment method to account
+    const activeAccounts = orgAccounts.filter(a => a.status === 'Active');
+    let matchedAccount = activeAccounts.find(a => {
+      if (paymentDetails.paymentMethod === 'upi') {
+        return a.type === 'Digital Wallets';
+      } else if (paymentDetails.paymentMethod === 'card' || paymentDetails.paymentMethod === 'netbanking') {
+        return a.type === 'Bank';
+      }
+      return false;
+    });
+
+    if (!matchedAccount) {
+      matchedAccount = activeAccounts.find(a => 
+        paymentDetails.paymentMethod === 'upi' ? a.type === 'Digital Wallets' : a.type === 'Bank'
+      ) || activeAccounts[0];
+    }
+
+    const paymentModeName = matchedAccount 
+      ? matchedAccount.accountName 
+      : (paymentDetails.paymentMethod === 'upi' ? 'Digital Wallets' : 'Bank');
+
+    // Auto-register expense
+    try {
+      await addExpense({
+        truckNo: truckPayload.truckNo.toUpperCase(),
+        expenseType: 'Temporary',
+        shopName: 'Lorry Guru Technologies',
+        amount: paymentDetails.amount,
+        paymentMode: paymentModeName,
+        date: new Date().toISOString().split('T')[0],
+        status: 'Paid',
+        notes: `Subscription payment (${paymentDetails.duration}) for truck ${truckPayload.truckNo.toUpperCase()}. Transaction ID: ${paymentDetails.transactionId}. Mode: ${paymentDetails.paymentMethod || 'PhonePe'}`
+      });
+    } catch (expErr) {
+      console.error("Failed to auto-log payment as expense:", expErr);
+    }
+
+    const paymentRecord = {
+      id: 'pay_' + Date.now(),
+      organizationId: currentUserOrgId,
+      truckNo: truckPayload.truckNo.toUpperCase(),
+      amount: paymentDetails.amount,
+      transactionId: paymentDetails.transactionId,
+      paymentDate: paymentDetails.paymentDate,
+      duration: paymentDetails.duration,
+      status: paymentDetails.status,
+      customerEmail: paymentDetails.customerEmail,
+      customerName: paymentDetails.customerName,
+      customerPhone: paymentDetails.customerPhone,
+      paymentMethod: paymentDetails.paymentMethod || 'upi',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const nextPayments = [paymentRecord, ...payments];
+    savePayments(nextPayments);
+
+    if (isAppwriteConfigured()) {
+      try {
+        await appwrite.saveFleetDocument(
+          'fleet_db',
+          'payments',
+          paymentRecord.id,
+          currentUserOrgId,
+          paymentRecord
+        );
+      } catch (err) {
+        console.error("Failed to save payment record in Appwrite:", err);
+      }
+    }
+
+    logAction('Created', 'Truck', truckPayload.truckNo, `Paid ₹${paymentDetails.amount} via PhonePe. Auto-approved and validity extended to ${expiryStr}`);
+    showNotification(`Truck ${truckPayload.truckNo} successfully activated! Validity extended to ${expiryStr}.`);
   };
 
   // Reconcile pending trucks if approved in global profiles
@@ -2638,6 +3007,16 @@ function AppContent() {
     );
   }
 
+  const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
+  if (publicLegalPaths.includes(location.pathname)) {
+    const defaultTab = location.pathname === '/privacy' ? 'privacy' : (location.pathname === '/refunds' || location.pathname === '/refund-policy') ? 'refunds' : 'terms';
+    return (
+      <Suspense fallback={<LoadingTab />}>
+        <LegalPage defaultTab={defaultTab} onBack={() => navigate(currentUser ? '/console/dashboard' : '/')} />
+      </Suspense>
+    );
+  }
+
   if (!currentUser) {
     if (location.pathname === '/login') {
       return (
@@ -2861,6 +3240,7 @@ function AppContent() {
                 orgProfile={currentOrgProfile}
                 expenses={orgExpenses}
                 onAddExpense={addExpense}
+                onUpdateTruck={updateTruck}
               />
             )}
 
@@ -2904,6 +3284,10 @@ function AppContent() {
                 canEditLoans={currentUserRights.canEditLoans !== false}
                 canDeleteLoans={currentUserRights.canDeleteLoans !== false}
                 canEditExpenses={currentUserRights.canEditExpenses !== false}
+                currentUserEmail={currentUser?.email || ''}
+                currentUserName={currentUser?.name || ''}
+                currentUserPhone={currentUser?.phone || ''}
+                onProcessTruckPayment={handleProcessTruckPayment}
               />
             )}
 
@@ -3046,6 +3430,8 @@ function AppContent() {
                 currentUser={currentUser}
                 activeTicketId={activeTicketId}
                 onSetActiveTicketId={setActiveTicketId}
+                payments={payments}
+                onInitiateRefund={handleInitiateRefund}
               />
             )}
 
@@ -3066,6 +3452,17 @@ function AppContent() {
                 canDeleteBackend={currentUserRights.canDeleteBackend}
                 orgProfile={currentOrgProfile}
                 onUpdateOrgProfile={handleUpdateOrgProfile}
+              />
+            )}
+
+            {activeTab === 'BILLING' && (currentUserRights.isAdmin || currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
+              <BillingHistory
+                payments={payments}
+                currentUserOrgId={currentUserOrgId}
+                orgName={currentOrgProfile?.organizationName || ''}
+                gstNo={currentOrgProfile?.gstNo || ''}
+                panNo={currentOrgProfile?.panNo || ''}
+                address={currentOrgProfile?.address || ''}
               />
             )}
           </Suspense>
@@ -3170,6 +3567,15 @@ function AppContent() {
         currentUserOrgId={currentUserOrgId}
         handleCreateSupportTicket={handleCreateSupportTicket}
         handleSendSupportTicketMessage={handleSendSupportTicketMessage}
+        profileGst={profileGst}
+        setProfileGst={setProfileGst}
+        profilePan={profilePan}
+        setProfilePan={setProfilePan}
+        profileAadhaar={profileAadhaar}
+        setProfileAadhaar={setProfileAadhaar}
+        profileAddress={profileAddress}
+        setProfileAddress={setProfileAddress}
+        payments={payments}
       />
 
       <MobileChangeWizardModal

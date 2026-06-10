@@ -23,6 +23,14 @@ interface ProfileSettingsProps {
   onChangeMobileClick: () => void;
   onEnable2FAClick: () => void;
   onDisable2FAClick: () => void;
+  profileGst: string;
+  setProfileGst: (val: string) => void;
+  profilePan: string;
+  setProfilePan: (val: string) => void;
+  profileAadhaar: string;
+  setProfileAadhaar: (val: string) => void;
+  profileAddress: string;
+  setProfileAddress: (val: string) => void;
 }
 
 export default function ProfileSettings({
@@ -44,7 +52,15 @@ export default function ProfileSettings({
   onSubmit,
   onChangeMobileClick,
   onEnable2FAClick,
-  onDisable2FAClick
+  onDisable2FAClick,
+  profileGst,
+  setProfileGst,
+  profilePan,
+  setProfilePan,
+  profileAadhaar,
+  setProfileAadhaar,
+  profileAddress,
+  setProfileAddress
 }: ProfileSettingsProps) {
   return (
     <form onSubmit={onSubmit} className="max-w-md space-y-4">
@@ -98,7 +114,7 @@ export default function ProfileSettings({
           <button
             type="button"
             onClick={onChangeMobileClick}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-755 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
           >
             Change
           </button>
@@ -112,21 +128,83 @@ export default function ProfileSettings({
           id="voice-lang-select"
           value={profileVoiceLang}
           onChange={(e) => setProfileVoiceLang(e.target.value)}
-          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
         >
           <option value="en-IN">English (India) - en-IN</option>
           <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
           <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
           <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
           <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
-          <option value="mr-IN">Marathi (மраठी) - mr-IN</option>
+          <option value="mr-IN">Marathi (मराठी) - mr-IN</option>
         </select>
+      </div>
+
+      {/* GST & BUSINESS KYC DETAILS (BILLING) */}
+      <div className="border-t border-slate-105 dark:border-slate-800 pt-3">
+        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">
+          GST & Business KYC Details (Billing)
+        </span>
+        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4.5 space-y-3">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">GSTIN (15 Characters)</label>
+            <input
+              type="text"
+              value={profileGst}
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 15);
+                setProfileGst(val);
+              }}
+              placeholder="e.g. 33AAFCL8686P1Z4"
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">PAN Card (10 Characters)</label>
+              <input
+                type="text"
+                value={profilePan}
+                onChange={(e) => {
+                  const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10);
+                  setProfilePan(val);
+                }}
+                placeholder="e.g. AAFCL8686P"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">Aadhaar (12 Digits)</label>
+              <input
+                type="text"
+                value={profileAadhaar}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').substring(0, 12);
+                  setProfileAadhaar(val);
+                }}
+                placeholder="e.g. 123456789012"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-555 uppercase tracking-wide mb-1">Billing Address</label>
+            <textarea
+              value={profileAddress}
+              onChange={(e) => setProfileAddress(e.target.value)}
+              placeholder="Full billing address for tax invoices"
+              rows={2}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
       </div>
 
       {/* TWO-FACTOR AUTHENTICATION (2FA) */}
       <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
-        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
+        <div className="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
           <div className="space-y-0.5">
             <div className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
@@ -140,7 +218,7 @@ export default function ProfileSettings({
             <button
               type="button"
               onClick={onDisable2FAClick}
-              className="px-3 py-1.5 border border-red-500/30 hover:border-red-500 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
+              className="px-3 py-1.5 border border-red-500/30 hover:border-red-50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
             >
               Disable
             </button>
@@ -168,7 +246,7 @@ export default function ProfileSettings({
               value={oldPassword}
               onChange={(e) => setOldPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
         )}
@@ -181,7 +259,7 @@ export default function ProfileSettings({
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
           <div>
@@ -191,7 +269,7 @@ export default function ProfileSettings({
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
         </div>

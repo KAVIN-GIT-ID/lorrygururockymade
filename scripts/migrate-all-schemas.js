@@ -143,6 +143,41 @@ const targetCollections = [
       purchaseDate: rawData.purchaseDate || '',
       data: JSON.stringify(rawData)
     })
+  },
+  {
+    id: 'payments',
+    name: 'Payments',
+    attributes: [
+      { key: 'organizationId', type: 'string', size: 50, required: false },
+      { key: 'truckNo', type: 'string', size: 50, required: false },
+      { key: 'amount', type: 'float', required: false },
+      { key: 'transactionId', type: 'string', size: 100, required: false },
+      { key: 'paymentDate', type: 'string', size: 30, required: false },
+      { key: 'duration', type: 'string', size: 30, required: false },
+      { key: 'status', type: 'string', size: 30, required: false },
+      { key: 'customerEmail', type: 'string', size: 100, required: false },
+      { key: 'customerName', type: 'string', size: 100, required: false },
+      { key: 'customerPhone', type: 'string', size: 50, required: false },
+      { key: 'data', type: 'string', size: 100000, required: true }
+    ],
+    indexes: [
+      { key: 'idx_payments_organizationId', type: 'key', attributes: ['organizationId'] },
+      { key: 'idx_payments_truckNo', type: 'key', attributes: ['truckNo'] },
+      { key: 'idx_payments_transactionId', type: 'key', attributes: ['transactionId'] }
+    ],
+    extractFn: (doc, rawData) => ({
+      organizationId: doc.organizationId || 'org_default',
+      truckNo: rawData.truckNo || '',
+      amount: Number(rawData.amount) || 0,
+      transactionId: rawData.transactionId || '',
+      paymentDate: rawData.paymentDate || '',
+      duration: rawData.duration || '',
+      status: rawData.status || 'Success',
+      customerEmail: rawData.customerEmail || '',
+      customerName: rawData.customerName || '',
+      customerPhone: rawData.customerPhone || '',
+      data: JSON.stringify(rawData)
+    })
   }
 ];
 

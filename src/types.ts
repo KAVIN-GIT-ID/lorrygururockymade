@@ -762,6 +762,10 @@ export interface OrganizationProfile {
   wheelGreaseIntervalKM?: number;  // Org-wide default for wheel grease
   brokeragePolicy?: 'OrgBears' | 'DriverBears'; // Org-wide default brokerage policy
   fuelCards?: FuelCard[];
+  gstNo?: string;
+  panNo?: string;
+  aadhaarNo?: string;
+  address?: string;
 }
 
 // ─── Service Done Types ────────────────────────────────────────────────────────

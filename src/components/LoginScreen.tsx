@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
 import {
   Lock,
@@ -27,7 +28,9 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegisterUserPermissions, onBackToHome }: LoginScreenProps) {
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
+  const [agreed, setAgreed] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -107,6 +110,11 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
 
     if (password.length < 8) {
       setErrorMsg('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (!isLogin && !agreed) {
+      setErrorMsg('You must agree to the Terms & Conditions and Privacy Policy to register.');
       return;
     }
 
@@ -417,7 +425,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 if (configured) {
                   try {
                     await appwrite.logout();
-                  } catch (e) {}
+                  } catch (e) { }
                 }
                 setIs2FAInterception(false);
                 setPendingUser(null);
@@ -523,7 +531,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                     value={phone}
                     onChange={(val) => setPhone(val)}
                     disabled={loading}
-                    className="!bg-slate-950/80 !border-slate-800"
+                    className="!bg-slate-950/80 !border-slate-800 !text-slate-200"
                   />
                 </div>
 
@@ -635,7 +643,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                   className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-600"
                 />
               </div>
-              {isLogin && (
+              {isLogin ? (
                 <div className="flex justify-end pt-1">
                   <button
                     type="button"
@@ -648,6 +656,35 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                   >
                     Forgot Password?
                   </button>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 pt-2 select-none">
+                  <input
+                    type="checkbox"
+                    id="agree-checkbox"
+                    checked={agreed}
+                    onChange={(e) => setAgreed(e.target.checked)}
+                    disabled={loading}
+                    className="mt-0.5 w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer border border-slate-700 bg-slate-950"
+                  />
+                  <label htmlFor="agree-checkbox" className="text-[10px] leading-normal text-slate-400 cursor-pointer">
+                    I agree to the{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('/terms')}
+                      className="text-blue-500 hover:underline inline font-bold"
+                    >
+                      Terms &amp; Conditions
+                    </button>{' '}
+                    and{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('/privacy')}
+                      className="text-blue-500 hover:underline inline font-bold"
+                    >
+                      Privacy Policy
+                    </button>.
+                  </label>
                 </div>
               )}
             </div>
@@ -696,28 +733,14 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
               {configured ? 'Configured' : 'Missing Env Vars'}
             </span>
           </div>
+        </div>
 
-          {/* <button
-            type="button"
-            onClick={() => setShowConfigDetails(!showConfigDetails)}
-            className="text-[9px] text-slate-500 hover:text-slate-350 underline inline-flex items-center gap-1"
-          >
-            <HelpCircle className="w-3 h-3" />
-            {showConfigDetails ? 'Hide backend connection details' : 'Show connection parameters'}
-          </button>
-
-          {showConfigDetails && (
-            <div className="w-full bg-slate-950/80 p-2.5 rounded-lg border border-slate-850 font-mono text-[9px] text-slate-400 space-y-1 text-left leading-relaxed">
-              <div><b>Endpoint:</b> {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}</div>
-              <div><b>Project ID:</b> {import.meta.env.VITE_APPWRITE_PROJECT_ID || '(Not Configured)'}</div>
-              <div><b>Database:</b> {import.meta.env.VITE_APPWRITE_PROJECT_NAME || 'truck'}</div>
-              {!configured && (
-                <div className="text-amber-500 border-t border-slate-850 mt-1.5 pt-1.5 leading-relaxed font-sans">
-                  <b>Troubleshooting Notice:</b> Create a `.env` file containing these keys inside the project workspace directory to connect your specific backend database.
-                </div>
-              )}
-            </div>
-          )} */}
+        <div className="flex justify-center gap-3 text-[10px] text-slate-550 font-bold border-t border-slate-850 pt-3">
+          <button type="button" onClick={() => navigate('/terms')} className="hover:text-slate-300 transition-colors cursor-pointer">Terms &amp; Conditions</button>
+          <span>•</span>
+          <button type="button" onClick={() => navigate('/privacy')} className="hover:text-slate-300 transition-colors cursor-pointer">Privacy Policy</button>
+          <span>•</span>
+          <button type="button" onClick={() => navigate('/refunds')} className="hover:text-slate-300 transition-colors cursor-pointer">Refund Policy</button>
         </div>
 
       </div>

@@ -4,6 +4,7 @@ import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2
 import { getOutstandingAge, formatToDisplayDate, calculateDaysLeft } from '../lib/dateUtils';
 import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './TruckMaster';
 import PayEmiModal from './PayEmiModal';
+import PayTaxModal from './PayTaxModal';
 
 interface DashboardProps {
   trips: TripEntry[];
@@ -19,6 +20,7 @@ interface DashboardProps {
   orgProfile?: OrganizationProfile;
   expenses?: ExpenseEntry[];
   onAddExpense?: (expense: Omit<ExpenseEntry, 'id'>) => void;
+  onUpdateTruck?: (truck: Truck) => Promise<void>;
 }
 
 export default function Dashboard({ 
@@ -34,7 +36,8 @@ export default function Dashboard({
   setActiveYear,
   orgProfile,
   expenses = [],
-  onAddExpense
+  onAddExpense,
+  onUpdateTruck
 }: DashboardProps) {
   const months = [
     { value: '01', label: 'January' },
@@ -65,6 +68,14 @@ export default function Dashboard({
     bankName: string;
     dueDateStr: string;
     loanType?: string;
+  } | null>(null);
+
+  // Pay Tax state
+  const [payTaxTarget, setPayTaxTarget] = React.useState<{
+    truckId: string;
+    truckNo: string;
+    taxType: 'Insurance' | 'Quarterly Tax' | 'National Permit Tax' | '5 Year Permit';
+    currentExpiryDate: string;
   } | null>(null);
 
   React.useEffect(() => {
@@ -279,7 +290,7 @@ export default function Dashboard({
 
   const combinedAlerts = React.useMemo(() => {
     const alerts: any[] = [];
-    const anchor = new Date('2026-05-23');
+    const anchor = new Date();
 
     trucks.forEach(truck => {
       if (truck.status !== 'Active') return;
@@ -353,13 +364,27 @@ export default function Dashboard({
         { label: 'Green Tax Cert', date: truck.greenTaxDate },
         { label: 'National Permit Tax', date: truck.npTaxDate },
         { label: '5 Year Permit Date', date: truck.fiveYearPermitDate },
-        { label: 'Registration Expiry', date: truck.registrationExpiryDate }
+        { label: 'Subscription Expiry', date: truck.registrationExpiryDate }
       ];
 
       docs.forEach(doc => {
         if (doc.date) {
           const daysLeft = calculateDaysLeft(doc.date, anchor);
           if (daysLeft !== null && daysLeft <= 30) {
+            let metadata: any = undefined;
+            if (['Insurance Expiry', 'Quarterly Tax (Q Tax)', 'National Permit Tax', '5 Year Permit Date'].includes(doc.label)) {
+              const taxType = doc.label === 'Insurance Expiry' ? 'Insurance'
+                            : doc.label === 'Quarterly Tax (Q Tax)' ? 'Quarterly Tax'
+                            : doc.label === 'National Permit Tax' ? 'National Permit Tax'
+                            : '5 Year Permit';
+              metadata = {
+                truckId: truck.id,
+                truckNo: truck.truckNo,
+                taxType,
+                currentExpiryDate: doc.date
+              };
+            }
+
             alerts.push({
               id: `doc-${truck.id}-${doc.label}`,
               type: 'document',
@@ -370,7 +395,8 @@ export default function Dashboard({
               description: daysLeft <= 0
                 ? `Expired ${Math.abs(daysLeft)} days ago (on ${formatToDisplayDate(doc.date)})`
                  : `Expires in ${daysLeft} days (on ${formatToDisplayDate(doc.date)})`,
-              dueDate: doc.date
+              dueDate: doc.date,
+              metadata
             });
           }
         }
@@ -498,6 +524,16 @@ export default function Dashboard({
                       className="ml-3 shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg transition shadow-3xs cursor-pointer uppercase tracking-wider"
                     >
                       Pay EMI
+                    </button>
+                  )}
+
+                  {alert.type === 'document' && alert.metadata && currentUserRights?.canEditExpenses && (
+                    <button
+                      type="button"
+                      onClick={() => setPayTaxTarget(alert.metadata)}
+                      className="ml-3 shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg transition shadow-3xs cursor-pointer uppercase tracking-wider"
+                    >
+                      {alert.metadata.taxType === 'Insurance' ? 'Pay Insurance' : 'Pay Tax'}
                     </button>
                   )}
                 </div>
@@ -843,6 +879,50 @@ export default function Dashboard({
               alert(`EMI Payment of ₹${payEmiTarget.emiAmount.toLocaleString('en-IN')} for ${payEmiTarget.truckNo} recorded successfully.`);
             }
             setPayEmiTarget(null);
+          }}
+        />
+      )}
+
+      {/* Pay Tax Modal */}
+      {payTaxTarget && (
+        <PayTaxModal
+          isOpen={true}
+          onClose={() => setPayTaxTarget(null)}
+          truckNo={payTaxTarget.truckNo}
+          taxType={payTaxTarget.taxType}
+          currentExpiryDate={payTaxTarget.currentExpiryDate}
+          accounts={accounts}
+          onConfirm={(paymentDate, amount, nextExpiryDate, accountId) => {
+            if (onAddExpense) {
+              onAddExpense({
+                truckNo: payTaxTarget.truckNo,
+                expenseType: 'Scheduled',
+                shopName: 'RTO / Government Department',
+                amount: amount,
+                paymentMode: accountId,
+                date: paymentDate,
+                status: 'Paid',
+                notes: `${payTaxTarget.taxType} renewal payment. Next Expiry: ${nextExpiryDate}`,
+              });
+            }
+            if (onUpdateTruck) {
+              const truckToUpdate = trucks.find(t => t.id === payTaxTarget.truckId);
+              if (truckToUpdate) {
+                const updatedTruck = { ...truckToUpdate };
+                if (payTaxTarget.taxType === 'Insurance') {
+                  updatedTruck.insuranceDate = nextExpiryDate;
+                } else if (payTaxTarget.taxType === 'Quarterly Tax') {
+                  updatedTruck.qTaxDate = nextExpiryDate;
+                } else if (payTaxTarget.taxType === 'National Permit Tax') {
+                  updatedTruck.npTaxDate = nextExpiryDate;
+                } else if (payTaxTarget.taxType === '5 Year Permit') {
+                  updatedTruck.fiveYearPermitDate = nextExpiryDate;
+                }
+                onUpdateTruck(updatedTruck);
+              }
+            }
+            alert(`${payTaxTarget.taxType} payment of ₹${amount.toLocaleString('en-IN')} for ${payTaxTarget.truckNo} recorded and expiry date updated successfully.`);
+            setPayTaxTarget(null);
           }}
         />
       )}

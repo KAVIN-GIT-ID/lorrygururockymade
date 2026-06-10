@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import logo from '../logo.png';
 import CountryCodePhoneInput from './CountryCodePhoneInput';
 import {
@@ -31,6 +32,7 @@ interface LandingPageProps {
 }
 
 export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: LandingPageProps) {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<'HOME' | 'PROFILE' | 'ABOUT' | 'CONTACT'>('HOME');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', issueCategory: 'General' as 'General' | 'Technical' | 'Billing', message: '' });
@@ -480,9 +482,9 @@ export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: Lan
                     <div className="flex items-start gap-3 text-xs leading-normal">
                       <MapPin className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                       <span>
-                        <strong>LorryGuru HQ</strong><br />
-                        No. 45, Anna Salai, Guindy Industrial Estate,<br />
-                        Chennai, Tamil Nadu, 600032, India.
+                        <strong>Lorry Guru Technologies</strong><br />
+                        5/6 Kodakarankady, Avarangampalayam,<br />
+                        Sankari, Salem - 637301, Tamil Nadu, India.
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-xs">
@@ -511,7 +513,14 @@ export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: Lan
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-8 text-center text-xs text-slate-400 dark:text-slate-500 transition-colors mt-auto">
         <div className="max-w-7xl mx-auto px-4 space-y-3">
           <p>© {new Date().getFullYear()} LorryGuru (lorryguru.in). All rights reserved.</p>
-          <p className="text-[10px] text-slate-500">
+          <div className="flex justify-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-semibold">
+            <button onClick={() => navigate('/terms')} className="hover:underline cursor-pointer">Terms & Conditions</button>
+            <span>•</span>
+            <button onClick={() => navigate('/privacy')} className="hover:underline cursor-pointer">Privacy Policy</button>
+            <span>•</span>
+            <button onClick={() => navigate('/refunds')} className="hover:underline cursor-pointer">Refund & Cancellation Policy</button>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
             Powered by React, TailwindCSS, and secure self-hosted Appwrite on AWS.
           </p>
         </div>

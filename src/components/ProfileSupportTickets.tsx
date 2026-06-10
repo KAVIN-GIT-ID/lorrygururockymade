@@ -8,16 +8,27 @@ interface ProfileSupportTicketsProps {
   onCreateTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   onSendMessage: (ticketId: string, content: string, attachmentFile?: File) => Promise<void>;
   isBackendTeam?: boolean;
+  payments: any[];
+  orgName: string;
+  gstNo: string;
+  panNo: string;
+  address: string;
 }
 
 export default function ProfileSupportTickets({
   tickets,
   onCreateTicket,
   onSendMessage,
-  isBackendTeam = false
+  isBackendTeam = false,
+  payments = [],
+  orgName = '',
+  gstNo = '',
+  panNo = '',
+  address = ''
 }: ProfileSupportTicketsProps) {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'TICKETS' | 'BILLING'>('TICKETS');
   
   // Create Form States
   const [category, setCategory] = useState<'Technical' | 'Billing' | 'General'>('General');
@@ -134,28 +145,158 @@ export default function ProfileSupportTickets({
     }
   };
 
+  const handleDownloadInvoice = (payment: any) => {
+    const invoiceNo = 'INV-' + payment.transactionId;
+    const baseAmount = (payment.amount / 1.18).toFixed(2);
+    const gstAmount = (payment.amount - parseFloat(baseAmount)).toFixed(2);
+    const cgst = (parseFloat(gstAmount) / 2).toFixed(2);
+    const sgst = cgst;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Tax Invoice - ${invoiceNo}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 40px; line-height: 1.5; }
+            .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, .05); font-size: 14px; }
+            .invoice-header { display: flex; justify-content: space-between; border-bottom: 2px solid #5f259f; padding-bottom: 20px; margin-bottom: 20px; }
+            .vendor-details h2 { margin: 0; color: #5f259f; font-size: 24px; font-weight: 800; }
+            .vendor-details p { margin: 4px 0; font-size: 12px; color: #666; }
+            .invoice-title { text-align: right; }
+            .invoice-title h1 { margin: 0; font-size: 22px; color: #333; font-weight: 800; text-transform: uppercase; }
+            .invoice-title p { margin: 4px 0; font-size: 12px; color: #666; font-family: monospace; }
+            .invoice-details { display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 13px; }
+            .bill-to h3 { margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: #888; letter-spacing: 1px; }
+            .bill-to p { margin: 4px 0; font-weight: 600; }
+            .bill-to span { display: block; color: #555; margin-top: 2px; }
+            .invoice-info p { margin: 4px 0; text-align: right; }
+            .invoice-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            .invoice-table th { background: #5f259f; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase; font-weight: 700; }
+            .invoice-table td { padding: 12px 10px; border-bottom: 1px solid #eee; }
+            .invoice-table .text-right { text-align: right; }
+            .totals { display: flex; justify-content: flex-end; margin-bottom: 40px; }
+            .totals-table { width: 250px; border-collapse: collapse; }
+            .totals-table td { padding: 6px 10px; font-size: 13px; }
+            .totals-table tr.grand-total td { font-weight: bold; font-size: 16px; border-top: 2px solid #5f259f; border-bottom: 2px solid #5f259f; color: #5f259f; }
+            .footer { text-align: center; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 20px; margin-top: 40px; }
+            .paid-badge { display: inline-block; padding: 4px 10px; background: #e6f4ea; color: #137333; border: 1px solid #137333; border-radius: 4px; font-weight: bold; text-transform: uppercase; font-size: 12px; margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-box">
+            <div class="invoice-header">
+              <div class="vendor-details">
+                <h2>Lorry Guru Technologies</h2>
+                <p>Salem Main Road, Iveli</p>
+                <p>Salem, Tamil Nadu, 637501</p>
+                <p>GSTIN: 33AAFCL8686P1Z4 | PAN: AAFCL8686P</p>
+              </div>
+              <div class="invoice-title">
+                <h1>Tax Invoice</h1>
+                <p>No: ${invoiceNo}</p>
+                <div class="paid-badge">Paid</div>
+              </div>
+            </div>
+            
+            <div class="invoice-details">
+              <div class="bill-to">
+                <h3>Billed To</h3>
+                <p>${orgName || 'Lorry Owner'}</p>
+                <span>Address: ${address || 'Not Provided'}</span>
+                <span>GSTIN: ${gstNo || 'Not Provided'}</span>
+                <span>PAN: ${panNo || 'Not Provided'}</span>
+              </div>
+              <div class="invoice-info">
+                <p><strong>Invoice Date:</strong> ${new Date(payment.paymentDate).toLocaleDateString()}</p>
+                <p><strong>Payment Mode:</strong> PhonePe (${payment.paymentMethod || 'UPI'})</p>
+                <p><strong>Transaction Ref:</strong> ${payment.transactionId}</p>
+              </div>
+            </div>
+            
+            <table width="100%" class="invoice-table">
+              <thead>
+                <tr>
+                  <th align="left">Description</th>
+                  <th align="center">Duration</th>
+                  <th align="right">Base Price</th>
+                  <th align="right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>Lorry Guru Fleet Software Subscription</strong><br/>
+                    <span style="font-size: 11px; color: #666;">Software access subscription fee for vehicle: ${payment.truckNo}</span>
+                  </td>
+                  <td align="center">${payment.duration}</td>
+                  <td align="right">₹${baseAmount}</td>
+                  <td align="right">₹${baseAmount}</td>
+                </tr>
+              </tbody>
+            </table>
+            
+            <div class="totals">
+              <table class="totals-table">
+                <tr>
+                  <td>Subtotal (Taxable):</td>
+                  <td align="right">₹${baseAmount}</td>
+                </tr>
+                <tr>
+                  <td>CGST (9%):</td>
+                  <td align="right">₹${cgst}</td>
+                </tr>
+                <tr>
+                  <td>SGST (9%):</td>
+                  <td align="right">₹${sgst}</td>
+                </tr>
+                <tr class="grand-total">
+                  <td>Total Paid:</td>
+                  <td align="right">₹${payment.amount}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div class="footer">
+              <p>Thank you for choosing Lorry Guru Technologies!</p>
+              <p>This is a computer-generated tax invoice and does not require a physical signature.</p>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
-    <div className="flex h-[550px] bg-slate-50 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
+    <div className="flex h-[550px] bg-slate-50 dark:bg-slate-955 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
       {/* LEFT SIDEBAR: Ticket List */}
       <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-slate-900">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-950/20">
           <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5">
             <MessageSquare className="w-4 h-4 text-blue-600" />
-            Support Tickets
+            Support Help Desk
           </h4>
-          {!isBackendTeam && (
+          {activeTab === 'TICKETS' && !isBackendTeam && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1.5 rounded-lg text-[10px] transition shadow-xs cursor-pointer"
             >
-              <Plus className="w-3 h-3" /> New Ticket
+              <Plus className="w-3 h-3" /> New
             </button>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-2">
           {tickets.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-xs italic">
+            <div className="p-8 text-center text-slate-400 dark:text-slate-550 text-xs italic">
               No tickets raised yet.
             </div>
           ) : (
@@ -172,30 +313,24 @@ export default function ProfileSupportTickets({
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <span className="font-bold text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1.5">
+                    <span className="font-bold text-[10px] text-slate-400 dark:text-slate-505 font-mono flex items-center gap-1.5">
                       #{t.ticketNo}
                       {getUnreadInfo(t).hasUnread && (
-                        <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1 min-w-[14px] h-[14px] font-sans font-bold leading-none animate-pulse">
-                          {getUnreadInfo(t).count}
-                        </span>
+                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
                       )}
                     </span>
-                    <span
-                      className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                        t.status === 'Open'
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/40'
-                          : t.status === 'In Progress'
-                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-450 border border-amber-100 dark:border-amber-900/40'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800/70 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60'
-                      }`}
-                    >
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                      t.status === 'Open' ? 'bg-emerald-50 text-emerald-600' :
+                      t.status === 'In Progress' ? 'bg-amber-50 text-amber-600 animate-pulse' :
+                      'bg-slate-100 text-slate-500'
+                    }`}>
                       {t.status}
                     </span>
                   </div>
-                  <div className="font-bold text-xs text-slate-805 dark:text-slate-200 truncate mb-1">
+                  <div className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
                     {t.title}
                   </div>
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                  <div className="text-[10px] text-slate-400 dark:text-slate-555 truncate">
                     {lastMsg ? lastMsg.content : t.description}
                   </div>
                   <div className="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
@@ -212,7 +347,7 @@ export default function ProfileSupportTickets({
       </div>
 
       {/* RIGHT SIDEBAR: Chat Pane */}
-      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35">
+      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35 overflow-hidden">
         {selectedTicket ? (
           <>
             {/* Header */}
@@ -222,7 +357,7 @@ export default function ProfileSupportTickets({
                   <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs font-mono">
                     #{selectedTicket.ticketNo}
                   </h4>
-                  <span className="text-slate-450 dark:text-slate-550 text-xs">•</span>
+                  <span className="text-slate-450 dark:text-slate-555 text-xs">•</span>
                   <span className="font-semibold text-xs text-slate-700 dark:text-slate-350">
                     {selectedTicket.title}
                   </span>
@@ -244,32 +379,30 @@ export default function ProfileSupportTickets({
                   {selectedTicket.status}
                 </span>
               </div>
-            </div>
-
-            {/* Description card */}
-            <div className="p-3 mx-4 mt-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-650 dark:text-slate-350 shadow-3xs">
-              <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Issue Details</span>
-              <p className="whitespace-pre-line leading-relaxed">{selectedTicket.description}</p>
-            </div>
-
-            {/* Chat Messages */}
+                  {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Requester original issue details */}
+              <div className="p-3 bg-slate-105 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-655 dark:text-slate-355 shadow-3xs text-left animate-fade-in">
+                <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Issue Details</span>
+                <p className="whitespace-pre-line leading-relaxed font-sans">{selectedTicket.description}</p>
+              </div>
+
               {selectedTicket.messages?.map((msg) => {
                 const isUser = msg.sender === 'User';
                 return (
                   <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs ${
+                      className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
                         isUser
                           ? 'bg-blue-600 text-white border-blue-500 rounded-tr-none'
-                          : 'bg-purple-50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-300 border-purple-100 dark:border-purple-900/30 rounded-tl-none'
+                          : 'bg-purple-55 dark:bg-purple-950/20 text-purple-900 dark:text-purple-300 border-purple-100 dark:border-purple-900/30 rounded-tl-none'
                       }`}
                     >
                       <div className="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
                         <span className="flex items-center gap-1">
                           {msg.senderName}
                           {!isUser && (
-                            <span className="bg-purple-200 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
+                            <span className="bg-purple-200 dark:bg-purple-900/40 text-purple-700 dark:text-purple-355 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
                               Support Team
                             </span>
                           )}
@@ -280,7 +413,7 @@ export default function ProfileSupportTickets({
 
                       {msg.attachmentUrl && (
                         <div className={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                          isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-purple-100/40 dark:bg-purple-950/60 border border-purple-200/30 dark:border-purple-900/30 text-purple-800 dark:text-purple-350'
+                          isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-purple-100/40 dark:bg-purple-950/60 border border-purple-200/30 dark:border-purple-900/30 text-purple-800 dark:text-purple-355'
                         }`}>
                           <div className="flex items-center gap-1.5 truncate">
                             <FileText className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -289,25 +422,21 @@ export default function ProfileSupportTickets({
                           {resolvedUrls[msg.id] ? (
                             <a
                               href={
-                                // Resolve the proper download URL from the ticket bucket
                                 (() => {
-                                  const isFileId = !msg.attachmentUrl!.startsWith('http');
+                                  const isFileId = !msg.attachmentUrl.startsWith('http');
                                   if (isFileId && isAppwriteConfigured()) {
-                                    return appwrite.getTicketFileDownload(msg.attachmentUrl!);
+                                    return appwrite.getTicketFileDownload(msg.attachmentUrl);
                                   }
                                   return resolvedUrls[msg.id];
                                 })()
                               }
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download={msg.attachmentName || true}
-                              className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isUser ? 'text-white' : 'text-purple-600'}`}
-                              title="Download attachment"
+                              download
+                              className={`p-1 rounded hover:bg-black/10 transition ${isUser ? 'text-white' : 'text-purple-700 dark:text-purple-355'}`}
                             >
                               <Download className="w-3.5 h-3.5" />
                             </a>
                           ) : (
-                            <Loader2 className="w-3 h-3 animate-spin opacity-60" />
+                            <span className="text-[8px] opacity-65">Resolving...</span>
                           )}
                         </div>
                       )}
@@ -316,63 +445,65 @@ export default function ProfileSupportTickets({
                 );
               })}
               <div ref={chatEndRef} />
-            </div>
+            </div>        </div>
 
-            {/* Chat Input Footer */}
-            <form onSubmit={handleSendChat} className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
-              {chatFile && (
-                <div className="flex items-center justify-between bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 dark:text-blue-400 font-medium">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span className="truncate max-w-[200px] font-mono">{chatFile.name}</span>
+            {/* Message Input Panel */}
+            {selectedTicket.status !== 'Closed' ? (
+              <form onSubmit={handleSendChat} className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Type your reply here..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    className="w-full h-10 pl-3 pr-24 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-955 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  
+                  <div className="absolute right-2 top-1.5 flex items-center gap-1">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => setChatFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="chat-attach-file"
+                    />
+                    <label
+                      htmlFor="chat-attach-file"
+                      className={`p-1 rounded-lg transition cursor-pointer ${chatFile ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'text-slate-400 hover:text-slate-655 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                      title={chatFile ? `File chosen: ${chatFile.name}` : "Attach file"}
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </label>
+                    {chatFile && (
+                      <button
+                        type="button"
+                        onClick={() => { setChatFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                        className="p-1 rounded-lg text-rose-500 hover:bg-rose-50"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  <button type="button" onClick={() => setChatFile(null)} className="text-slate-400 hover:text-slate-650 cursor-pointer">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
                 </div>
-              )}
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={(e) => setChatFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isSending}
-                  className="p-2 text-slate-450 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition shrink-0 cursor-pointer disabled:opacity-50"
-                  title="Attach file document"
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  disabled={isSending}
-                  placeholder={selectedTicket.status === 'Closed' ? 'This ticket is closed. Reopen to reply.' : 'Type message here...'}
-                  className="flex-1 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 disabled:opacity-60"
-                  readOnly={selectedTicket.status === 'Closed'}
-                />
+
                 <button
                   type="submit"
-                  disabled={isSending || (selectedTicket.status === 'Closed') || (!chatInput.trim() && !chatFile)}
-                  className="p-2 bg-blue-600 hover:bg-blue-750 text-white rounded-lg transition shrink-0 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={isSending || (!chatInput.trim() && !chatFile)}
+                  className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold transition-all shadow-md shadow-blue-500/10 cursor-pointer disabled:opacity-50"
                 >
                   {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>Send</span>
                 </button>
+              </form>
+            ) : (
+              <div className="p-4 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 font-bold uppercase tracking-wider">
+                This support ticket is closed and resolved.
               </div>
-            </form>
+            )}
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-            <MessageSquare className="w-12 h-12 text-slate-350 dark:text-slate-700 mb-2.5 animate-bounce-slow" />
-            <p className="font-bold text-slate-700 dark:text-slate-400 text-xs">Select a Support Ticket</p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-550 mt-1 max-w-[240px]">
-              Raise a support ticket to chat with technical, billing or general help desk agents.
-            </p>
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-450 dark:text-slate-500 font-medium italic">
+            Select a support ticket from the sidebar queue.
           </div>
         )}
       </div>

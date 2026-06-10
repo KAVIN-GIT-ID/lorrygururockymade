@@ -33,6 +33,13 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       allowedHosts: ['local.lorryguru.in'],
       https: true as any,
+      proxy: {
+        '/api/payment': {
+          target: 'http://127.0.0.1:5000',
+          changeOrigin: true,
+          secure: false,
+        }
+      }
     },
     build: {
       chunkSizeWarningLimit: 1000,

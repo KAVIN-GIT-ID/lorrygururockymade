@@ -6,6 +6,7 @@ import { formatTruckNumber } from '../lib/formatUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import ServiceDoneModal from './ServiceDoneModal';
 import PayEmiModal from './PayEmiModal';
+import PhonePePaymentModal from './PhonePePaymentModal';
 
 export const getTruckLoans = (truck: Truck): LoanEntry[] => {
   if (truck.loans && truck.loans.length > 0) {
@@ -170,6 +171,24 @@ interface TruckMasterProps {
   canEditLoans?: boolean;
   canDeleteLoans?: boolean;
   canEditExpenses?: boolean;
+  currentUserEmail?: string;
+  currentUserName?: string;
+  currentUserPhone?: string;
+  onProcessTruckPayment?: (
+    truckPayload: Omit<Truck, 'id'>,
+    paymentDetails: {
+      transactionId: string;
+      amount: number;
+      duration: string;
+      planName: string;
+      customerName: string;
+      customerEmail: string;
+      customerPhone: string;
+      paymentDate: string;
+      status: string;
+    },
+    existingTruckId?: string | null
+  ) => Promise<void> | void;
 }
 
 export default function TruckMaster({ 
@@ -194,12 +213,43 @@ export default function TruckMaster({
   canEditLoans = true,
   canDeleteLoans = true,
   canEditExpenses = true,
+  currentUserEmail = '',
+  currentUserName = '',
+  currentUserPhone = '',
+  onProcessTruckPayment,
 }: TruckMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
   const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // PhonePe Payment States
+  const [showPhonePeModal, setShowPhonePeModal] = useState(false);
+  const [phonePeTruckNo, setPhonePeTruckNo] = useState('');
+  const [phonePePayload, setPhonePePayload] = useState<Omit<Truck, 'id'> | null>(null);
+  const [phonePeEditingId, setPhonePeEditingId] = useState<string | null>(null);
+  const [initialTxnId, setInitialTxnId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const txnId = params.get('txnId');
+    const truckNo = params.get('truckNo');
+    if (txnId && truckNo) {
+      const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
+      const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
+      const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || null;
+
+      if (tempPayloadObj) {
+        setPhonePePayload(tempPayloadObj);
+        setPhonePeTruckNo(truckNo);
+        setPhonePeEditingId(existingTruckId);
+        setInitialTxnId(txnId);
+        setShowPhonePeModal(true);
+      }
+    }
+  }, []);
+
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive' | 'Admin Disabled' | 'Sold'>('All');
   const [serviceDoneTarget, setServiceDoneTarget] = useState<{ truckId: string; truckNo: string; serviceType: ServiceType; currentKM: number; intervalKM: number } | null>(null);
   const [payEmiTarget, setPayEmiTarget] = useState<{ truckNo: string; emiAmount: number; bankName: string; dueDateStr: string; loanType?: string } | null>(null);
@@ -518,6 +568,22 @@ export default function TruckMaster({
 
     if (isEditing) {
       const editingTruckObj = trucks.find(t => t.id === isEditing);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isExpired = editingTruckObj && editingTruckObj.registrationExpiryDate && editingTruckObj.registrationExpiryDate < todayStr;
+      const isRejected = editingTruckObj && editingTruckObj.requestStatus === 'Rejected';
+      const isUnapproved = editingTruckObj && editingTruckObj.isApproved === false;
+
+      if ((isExpired || isRejected || isUnapproved) && onProcessTruckPayment) {
+        localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
+        localStorage.setItem('ttt_temp_payment_truck_id', isEditing || '');
+        setPhonePePayload(truckPayload);
+        setPhonePeTruckNo(truckPayload.truckNo);
+        setPhonePeEditingId(isEditing);
+        setShowPhonePeModal(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       if (editingTruckObj && editingTruckObj.requestStatus === 'Rejected' && onAddTruckRequest) {
         onAddTruckRequest(truckPayload);
       } else {
@@ -527,6 +593,31 @@ export default function TruckMaster({
         });
       }
     } else {
+      const newTruckId = 'tr_' + Date.now();
+      
+      // Save temp payment details in localStorage
+      localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
+      localStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
+
+      // Save truck as rejected (unsubscribed/inactive) in list first
+      if (onAddTruckRequest) {
+        onAddTruckRequest({
+          ...truckPayload,
+          id: newTruckId,
+          requestStatus: 'Rejected' as const
+        } as any);
+      }
+
+      // Launch PhonePe Checkout Modal
+      if (onProcessTruckPayment) {
+        setPhonePePayload(truckPayload);
+        setPhonePeTruckNo(truckPayload.truckNo);
+        setPhonePeEditingId(newTruckId);
+        setShowPhonePeModal(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       if (limitReached && onAddTruckRequest) {
         onAddTruckRequest(truckPayload);
       } else {
@@ -601,7 +692,7 @@ export default function TruckMaster({
 
   // Days left calculation relative to standard anchor date
   const calculateDaysLeft = (dateStr?: string) => {
-    return calculateDaysLeftUtil(dateStr, new Date('2026-05-23'));
+    return calculateDaysLeftUtil(dateStr, new Date());
   };
 
   const getExpiryCellProps = (dateStr: string | undefined, days: number | null) => {
@@ -882,7 +973,7 @@ export default function TruckMaster({
           >
             {showAddForm ? 'Close Specification Panel' : (
               <>
-                <Plus className="w-3.5 h-3.5" /> {limitReached ? 'Request Truck Activation' : 'Add/Edit Truck Specs'}
+                <Plus className="w-3.5 h-3.5" /> {limitReached ? 'Subscribe & Add Truck' : 'Add/Edit Truck Specs'}
               </>
             )}
           </button>
@@ -896,7 +987,7 @@ export default function TruckMaster({
               <div className="flex items-center gap-2">
                 <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-sm font-bold text-slate-800 dark:text-white tracking-wide">
-                  {isEditing ? 'Modify Fleet Information' : limitReached ? 'Request Truck Activation' : 'Register Vehicle & Technical Specs'}
+                  {isEditing ? 'Modify Fleet Information' : limitReached ? 'Subscribe & Add Truck' : 'Register Vehicle & Technical Specs'}
                 </h3>
               </div>
               <button 
@@ -913,7 +1004,7 @@ export default function TruckMaster({
                 <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold">Truck Registration Limit Reached ({approvedCount} / {maxTrucksAllowed} Free Allowed)</p>
-                  <p className="mt-0.5 text-[11px]">Saving this truck will submit a pending approval request to the backend team. Once approved, the truck will become active and visible across your management sheets.</p>
+                  <p className="mt-0.5 text-[11px]">Saving this truck will direct you to the PhonePe checkout page to complete the subscription. Once payment is successful, the truck will be automatically approved and activated.</p>
                 </div>
               </div>
             )}
@@ -1565,11 +1656,11 @@ export default function TruckMaster({
                   <option value="Sold">Sold</option>
                 </select>
                 {limitReached && !isEditing && (
-                  <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Pending approval vehicles are inactive by default</span>
+                  <span className="text-[9px] text-amber-500 font-semibold block mt-0.5">Unsubscribed/inactive vehicles are disabled until a subscription is active</span>
                 )}
               </div>
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Registration Expiry (Read-only)</label>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Subscription Expiry (Read-only)</label>
                 <input
                   type="text"
                   disabled
@@ -1600,7 +1691,7 @@ export default function TruckMaster({
               {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {isSubmitting 
                 ? 'Uploading & Saving...' 
-                : (isEditing ? (trucks.find(t => t.id === isEditing)?.requestStatus === 'Rejected' ? 'Re-submit Activation Request' : 'Save Specification Updates') : limitReached ? 'Submit Activation Request' : 'Add Truck Specs')}
+                : (isEditing ? (trucks.find(t => t.id === isEditing)?.requestStatus === 'Rejected' ? 'Subscribe' : 'Save Specification Updates') : limitReached ? 'Subscribe' : 'Add Truck Specs')}
             </button>
           </div>
         </form>
@@ -1775,7 +1866,7 @@ export default function TruckMaster({
                             ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
                             : 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse dark:bg-amber-950/20 dark:text-amber-450 dark:border-amber-900/30'
                         }`}>
-                          {truck.requestStatus === 'Rejected' ? 'Rejected' : 'Pending Approval'}
+                          {truck.requestStatus === 'Rejected' ? 'Subscription Inactive' : 'Pending Approval'}
                         </span>
                       )}
                     </div>
@@ -1839,7 +1930,7 @@ export default function TruckMaster({
                     {renderComplianceRow('Q Tax validity', truck.qTaxDate, qDays, undefined)}
                     {renderComplianceRow('Green Tax Cert', truck.greenTaxDate, gDays, undefined)}
                     {renderComplianceRow('NP Tax Validity', truck.npTaxDate, npDays, undefined)}
-                    {renderComplianceRow('Reg Expiry validity', truck.registrationExpiryDate, regDays, undefined)}
+                    {renderComplianceRow('Subscription Expiry', truck.registrationExpiryDate, regDays, undefined)}
                   </div>
 
                   {/* Active Loan summary banner if present */}
@@ -1949,12 +2040,12 @@ export default function TruckMaster({
                   </button>
                   <button
                     type="button"
-                    disabled={!canEditTrucks || (truck.isApproved === false && truck.requestStatus !== 'Rejected')}
+                    disabled={!canEditTrucks}
                     onClick={() => startEdit(truck)}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
+                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-855 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{truck.requestStatus === 'Rejected' ? 'Re-apply' : 'Edit Specs'}</span>
+                    <span>{(!truck.isApproved || (truck.registrationExpiryDate && truck.registrationExpiryDate < new Date().toISOString().split('T')[0]) || truck.requestStatus === 'Rejected') ? 'Subscribe' : 'Edit Specs'}</span>
                   </button>
                   <button
                     type="button"
@@ -2439,6 +2530,34 @@ export default function TruckMaster({
             } as any);
             setEditingLoanTarget(null);
             alert("Loan details updated successfully.");
+          }}
+        />
+      )}
+      {/* PhonePe Payment Modal */}
+      {showPhonePeModal && phonePePayload && (
+        <PhonePePaymentModal
+          isOpen={true}
+          onClose={() => {
+            setShowPhonePeModal(false);
+            setPhonePePayload(null);
+            setPhonePeEditingId(null);
+            setInitialTxnId(undefined);
+          }}
+          truckNo={phonePeTruckNo}
+          defaultCustomerEmail={currentUserEmail}
+          defaultCustomerName={currentUserName}
+          defaultCustomerPhone={currentUserPhone}
+          initialTxnId={initialTxnId}
+          onSuccess={async (paymentDetails) => {
+            if (onProcessTruckPayment) {
+              await onProcessTruckPayment(phonePePayload, paymentDetails, phonePeEditingId);
+            }
+            setShowPhonePeModal(false);
+            setPhonePePayload(null);
+            setPhonePeEditingId(null);
+            setInitialTxnId(undefined);
+            resetForm();
+            setShowAddForm(false);
           }}
         />
       )}

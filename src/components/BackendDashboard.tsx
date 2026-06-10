@@ -94,6 +94,8 @@ interface BackendDashboardProps {
   currentUser?: any;
   activeTicketId?: string | null;
   onSetActiveTicketId?: (id: string | null) => void;
+  payments?: any[];
+  onInitiateRefund?: (orgId: string, truckNo: string, paymentRecord: any) => Promise<void>;
 }
 
 const SCHEMA_TEMPLATES = {
@@ -279,7 +281,9 @@ export default function BackendDashboard({
   onSaveSupportTickets,
   currentUser,
   activeTicketId,
-  onSetActiveTicketId
+  onSetActiveTicketId,
+  payments = [],
+  onInitiateRefund
 }: BackendDashboardProps) {
   const myRights = userRightsList.find(u => u.email === currentUser?.email);
   const mySupportRoles = Array.isArray(myRights?.supportRole)
@@ -958,7 +962,7 @@ export default function BackendDashboard({
       'Edited',
       'Truck',
       truck.truckNo,
-      `Renewed registration by ${duration} to ${nextExpiryStr} and enabled status for Org ${orgId}`
+      `Renewed subscription by ${duration} to ${nextExpiryStr} and enabled status for Org ${orgId}`
     );
   };
 
@@ -975,7 +979,7 @@ export default function BackendDashboard({
       'Edited',
       'Truck',
       editingTruck.truckNo,
-      `Renewed registration by ${renewalDuration} to ${nextExpiryStr} and enabled status for Org ${editingTruckOrgId}`
+      `Renewed subscription by ${renewalDuration} to ${nextExpiryStr} and enabled status for Org ${editingTruckOrgId}`
     );
     setEditingTruck(updatedTruck);
   };
@@ -1249,7 +1253,7 @@ export default function BackendDashboard({
                         ) : (
                           <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900">
                             <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap table-fixed">
-                            <colgroup><col className="w-[110px]" /><col className="w-[75px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[100px]" /><col className="w-[130px]" /><col className="w-[75px]" /><col className="w-[70px]" /><col className="w-[110px]" /></colgroup>
+                              <colgroup><col className="w-[110px]" /><col className="w-[75px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[85px]" /><col className="w-[125px]" /><col className="w-[130px]" /><col className="w-[75px]" /><col className="w-[70px]" /><col className="w-[110px]" /></colgroup>
                               <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                                 <tr>
                                   <th className="px-2 py-2 pl-4">Truck No</th>
@@ -1259,7 +1263,7 @@ export default function BackendDashboard({
                                   <th className="px-2 py-2 text-center">Q Tax</th>
                                   <th className="px-2 py-2 text-center">Green Tax</th>
                                   <th className="px-2 py-2 text-center">NP Tax</th>
-                                  <th className="px-2 py-2 text-center">Reg Expiry</th>
+                                  <th className="px-2 py-2 text-center">Subscription Expiry</th>
                                   <th className="px-2 py-2 text-center">Renew Action</th>
                                   <th className="px-2 py-2 text-right">Odometer</th>
                                   <th className="px-2 py-2 text-center">Status</th>
@@ -1304,31 +1308,70 @@ export default function BackendDashboard({
                                         {isExpired && <span className="block text-[8px] text-red-500 font-bold uppercase">Expired</span>}
                                       </td>
                                       <td className="px-2 py-2.5 text-center">
-                                        <div className="flex flex-col items-center gap-1 justify-center">
-                                          <div className="flex items-center gap-1">
-                                            <select
-                                              disabled={!canEditBackend}
-                                              value={duration}
-                                              onChange={(e) => setRowDurations(prev => ({ ...prev, [truck.id]: e.target.value as any }))}
-                                              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded px-1 py-0.5 text-[10px] focus:outline-none"
-                                            >
-                                              <option value="1M">1 Month</option>
-                                              <option value="3M">3 Months</option>
-                                              <option value="6M">6 Months</option>
-                                              <option value="1Y">1 Year</option>
-                                            </select>
-                                            <button
-                                              disabled={!canEditBackend}
-                                              onClick={() => handleRenewClick(profile.organizationId, truck, duration)}
-                                              className="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-[10px] font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                              Renew
-                                            </button>
-                                          </div>
-                                          <span className="text-[9px] font-mono text-purple-600 dark:text-purple-400">
-                                            → {formatToDisplayDate(getNextExpiryDate(truck, duration))}
-                                          </span>
-                                        </div>
+                                        {(() => {
+                                          const truckPayments = (payments || []).filter((p: any) =>
+                                            p.truckNo.toUpperCase() === truck.truckNo.toUpperCase() &&
+                                            p.organizationId === profile.organizationId
+                                          );
+                                          const activeRefundablePayment = truckPayments.find((p: any) => {
+                                            if (p.status !== 'Success' && p.status !== 'Refunded') return false;
+                                            const payDate = new Date(p.paymentDate || p.createdAt);
+                                            const diffTime = Date.now() - payDate.getTime();
+                                            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                                            return diffDays <= 7;
+                                          });
+
+                                          if (activeRefundablePayment) {
+                                            if (activeRefundablePayment.status === 'Refunded') {
+                                              return (
+                                                <span className="text-[10px] text-rose-500 font-extrabold uppercase bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                                  Refunded
+                                                </span>
+                                              );
+                                            }
+                                            return (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  if (confirm(`Are you sure you want to initiate a PhonePe refund of ₹${activeRefundablePayment.amount} for truck ${truck.truckNo}? This will rollback approval status.`)) {
+                                                    onInitiateRefund?.(profile.organizationId, truck.truckNo, activeRefundablePayment);
+                                                  }
+                                                }}
+                                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition cursor-pointer"
+                                              >
+                                                Request Refund
+                                              </button>
+                                            );
+                                          }
+
+                                          return (
+                                            <div className="flex flex-col items-center gap-1 justify-center">
+                                              <div className="flex items-center gap-1">
+                                                <select
+                                                  disabled={!canEditBackend}
+                                                  value={duration}
+                                                  onChange={(e) => setRowDurations(prev => ({ ...prev, [truck.id]: e.target.value as any }))}
+                                                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-855 dark:text-slate-200 rounded px-1 py-0.5 text-[10px] focus:outline-none"
+                                                >
+                                                  <option value="1M">1 Month</option>
+                                                  <option value="3M">3 Months</option>
+                                                  <option value="6M">6 Months</option>
+                                                  <option value="1Y">1 Year</option>
+                                                </select>
+                                                <button
+                                                  disabled={!canEditBackend}
+                                                  onClick={() => handleRenewClick(profile.organizationId, truck, duration)}
+                                                  className="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-[10px] font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                >
+                                                  Renew
+                                                </button>
+                                              </div>
+                                              <span className="text-[9px] font-mono text-purple-600 dark:text-purple-400">
+                                                → {formatToDisplayDate(getNextExpiryDate(truck, duration))}
+                                              </span>
+                                            </div>
+                                          );
+                                        })()}
                                       </td>
                                       <td className="px-2 py-2.5 text-right font-mono text-slate-600">{truck.currentKM?.toLocaleString() || '0'}</td>
                                       <td className="px-2 py-2.5 text-center">
@@ -1374,7 +1417,7 @@ export default function BackendDashboard({
                                                     }
                                                   }}
                                                   className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                                                  title="Approve Truck"
+                                                  title="Approve Truck (Manual Override)"
                                                 >
                                                   Approve
                                                 </button>
@@ -1390,7 +1433,7 @@ export default function BackendDashboard({
                                                     }
                                                   }}
                                                   className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                                                  title="Reject Request"
+                                                  title="Reject Request (Manual Override)"
                                                 >
                                                   Reject
                                                 </button>
@@ -1415,6 +1458,122 @@ export default function BackendDashboard({
                             </table>
                           </div>
                         )}
+
+                        {/* Payments & Refunds Ledger */}
+                        {(() => {
+                          const orgPayments = (payments || []).filter((p: any) => p.organizationId === profile.organizationId);
+                          return (
+                            <div className="mt-6 border-t border-slate-200 dark:border-slate-850 pt-5 space-y-3">
+                              <div className="flex justify-between items-center">
+                                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 uppercase tracking-widest flex items-center gap-1.5">
+                                  <History className="w-4 h-4 text-purple-500" />
+                                  Payments & Refunds Ledger
+                                </h4>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  Showing {orgPayments.length} transactions
+                                </span>
+                              </div>
+
+                              {orgPayments.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic text-center py-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                                  No transactions recorded for this organization.
+                                </p>
+                              ) : (
+                                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900">
+                                  <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap table-fixed">
+                                    <colgroup>
+                                      <col className="w-[140px]" />
+                                      <col className="w-[100px]" />
+                                      <col className="w-[80px]" />
+                                      <col className="w-[90px]" />
+                                      <col className="w-[180px]" />
+                                      <col className="w-[90px]" />
+                                      <col className="w-[110px]" />
+                                    </colgroup>
+                                    <thead className="bg-slate-55 dark:bg-slate-950 font-bold text-[10px] text-slate-500 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
+                                      <tr>
+                                        <th className="px-3 py-2 pl-4">Date</th>
+                                        <th className="px-2 py-2">Truck No</th>
+                                        <th className="px-2 py-2 text-right">Amount</th>
+                                        <th className="px-2 py-2 text-center">Method</th>
+                                        <th className="px-2 py-2">Transaction ID / Refund ID</th>
+                                        <th className="px-2 py-2 text-center">Status</th>
+                                        <th className="px-2 py-2 text-center pr-4">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-850 font-medium">
+                                      {orgPayments.map((p: any) => {
+                                        const payDate = new Date(p.paymentDate || p.createdAt);
+                                        const diffTime = Date.now() - payDate.getTime();
+                                        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                                        const isRefundable = (p.status === 'Success' || p.status === 'success') && diffDays <= 7;
+
+                                        return (
+                                          <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/50 transition">
+                                            <td className="px-3 py-2.5 pl-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                                              {formatToDisplayDate(p.paymentDate || p.createdAt.split('T')[0])} {payDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="px-2 py-2.5 font-mono font-bold text-slate-700 dark:text-slate-350">
+                                              {p.truckNo}
+                                            </td>
+                                            <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                                              ₹{p.amount?.toLocaleString()}
+                                            </td>
+                                            <td className="px-2 py-2.5 text-center font-mono text-[10px] text-slate-500 uppercase">
+                                              {p.paymentMethod || 'upi'}
+                                            </td>
+                                            <td className="px-2 py-2.5 font-mono text-[10px] text-slate-500">
+                                              <div className="flex flex-col">
+                                                <span>Txn: {p.transactionId}</span>
+                                                {p.refundId && (
+                                                  <span className="text-rose-500 font-semibold text-[9px]">
+                                                    Ref: {p.refundId}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </td>
+                                            <td className="px-2 py-2.5 text-center">
+                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                                p.status === 'Refunded' || p.status === 'refunded'
+                                                  ? 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/20'
+                                                  : 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-950/20'
+                                              }`}>
+                                                {p.status}
+                                              </span>
+                                            </td>
+                                            <td className="px-2 py-2.5 text-center pr-4">
+                                              {isRefundable ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (confirm(`Are you sure you want to initiate a PhonePe refund of ₹${p.amount} for truck ${p.truckNo}? This will rollback approval status.`)) {
+                                                      onInitiateRefund?.(profile.organizationId, p.truckNo, p);
+                                                    }
+                                                  }}
+                                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition cursor-pointer"
+                                                >
+                                                  Request Refund
+                                                </button>
+                                              ) : p.status === 'Refunded' ? (
+                                                <span className="text-[10px] text-rose-500 font-extrabold uppercase bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200">
+                                                  Refunded
+                                                </span>
+                                              ) : (
+                                                <span className="text-[10px] text-slate-400 italic">
+                                                  No Action
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -1428,6 +1587,17 @@ export default function BackendDashboard({
       {/* TAB CONTENT: REQUESTS */}
       {activeSubTab === 'REQUESTS' && canViewTruckRequests !== false && (
         <div className="space-y-4">
+          {/* Pause Notification Banner */}
+          <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-amber-800 dark:text-amber-400 text-xs flex gap-3">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-550 mt-0.5 animate-pulse" />
+            <div>
+              <p className="font-bold text-sm">Manual Approval System Paused</p>
+              <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-400">
+                The manual verification and approval system is currently paused. Vehicle activations and registration renewals are now automated using the PhonePe secure payment gateway. Approved and active subscriptions bypass manual checks.
+              </p>
+            </div>
+          </div>
+
           {/* Filters Bar */}
           <div className="flex flex-col sm:flex-row justify-between items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-xl gap-3">
             <div className="relative w-full sm:w-80">
@@ -1527,6 +1697,7 @@ export default function BackendDashboard({
                                         }
                                       }}
                                       className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-3xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      title="Approve (Manual Override)"
                                     >
                                       <Check className="w-3.5 h-3.5" />
                                       Approve
@@ -1539,6 +1710,7 @@ export default function BackendDashboard({
                                         }
                                       }}
                                       className="flex items-center gap-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold transition shadow-3xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      title="Reject (Manual Override)"
                                     >
                                       <CloseIcon className="w-3.5 h-3.5" />
                                       Reject
@@ -2291,7 +2463,7 @@ export default function BackendDashboard({
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Registration Expiry</label>
+                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Subscription Expiry</label>
                     <input
                       type="date"
                       value={editingTruck.registrationExpiryDate || ''}
@@ -2303,15 +2475,15 @@ export default function BackendDashboard({
               </div>
 
               <div className="border-t border-slate-100 dark:border-slate-800 my-2 pt-3">
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">Registration Renewal</span>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">Subscription Renewal</span>
                 <div className="flex items-center gap-3 bg-purple-500/5 border border-purple-500/10 p-3 rounded-lg">
                   <div className="flex-1">
-                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Select Renewal Duration</label>
+                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Select Renewal Duration</label>
                     <select
                       disabled={!canEditBackend}
                       value={renewalDuration}
                       onChange={(e) => setRenewalDuration(e.target.value as any)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-none mb-1"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-855 dark:text-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-none mb-1"
                     >
                       <option value="1M">1 Month</option>
                       <option value="3M">3 Months</option>
@@ -2329,7 +2501,7 @@ export default function BackendDashboard({
                       onClick={handleRenewInModal}
                       className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Renew Registration
+                      Renew Subscription
                     </button>
                   </div>
                 </div>

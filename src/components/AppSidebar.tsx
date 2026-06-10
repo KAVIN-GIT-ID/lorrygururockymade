@@ -15,7 +15,8 @@ import {
   Settings,
   Copy,
   LogOut,
-  X
+  X,
+  Receipt
 } from 'lucide-react';
 import { UserPermission } from '../types';
 
@@ -173,6 +174,19 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 <span>Expense Ledger</span>
+              </button>
+            )}
+            {(currentUserRights.isAdmin || currentUserRights.isSuperAdmin) && (
+              <button
+                id="tab-btn-billing"
+                onClick={() => selectTab('BILLING')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BILLING'
+                  ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
+                  : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
+                  }`}
+              >
+                <Receipt className="w-4 h-4" />
+                <span>Billing & Invoices</span>
               </button>
             )}
             {currentUserRights.canViewTrips && (

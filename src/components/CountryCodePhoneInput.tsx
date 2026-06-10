@@ -75,13 +75,13 @@ export default function CountryCodePhoneInput({
   };
 
   return (
-    <div className={`flex rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden ${disabled ? 'opacity-65 cursor-not-allowed' : ''} ${className}`}>
+    <div className={`flex rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-hidden ${disabled ? 'opacity-65 cursor-not-allowed' : ''} ${className}`}>
       {/* Country Code Select Dropdown */}
       <select
         value={selectedCountry}
         onChange={handleCountryChange}
         disabled={disabled}
-        className="bg-slate-50 dark:bg-slate-950 text-slate-850 dark:text-slate-200 text-xs px-2.5 py-2 border-r border-slate-200 dark:border-slate-800 outline-none focus:ring-0 cursor-pointer font-bold shrink-0 max-w-[95px] md:max-w-[110px]"
+        className="bg-slate-50 dark:bg-slate-950 text-current text-xs px-2.5 py-2 border-r border-slate-200 dark:border-slate-800 outline-none focus:ring-0 cursor-pointer font-bold shrink-0 max-w-[95px] md:max-w-[110px]"
         title="Select Country Code"
       >
         {COUNTRY_CODES.map((c) => (
@@ -100,7 +100,7 @@ export default function CountryCodePhoneInput({
         placeholder={placeholder}
         value={localNumber}
         onChange={handleLocalNumberChange}
-        className="w-full bg-transparent text-slate-800 dark:text-slate-200 text-xs px-3 py-2 outline-none focus:ring-0 placeholder-slate-400 dark:placeholder-slate-500 font-mono"
+        className="w-full bg-transparent text-current text-xs px-3 py-2 outline-none focus:ring-0 placeholder-slate-400 dark:placeholder-slate-500 font-mono"
       />
     </div>
   );
