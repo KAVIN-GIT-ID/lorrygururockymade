@@ -87,7 +87,8 @@ export default function ProfileSupportTickets({
     if (!selectedTicket) return;
     const newUrls = { ...resolvedUrls };
     let changed = false;
-    for (const msg of selectedTicket.messages) {
+    const messages = Array.isArray(selectedTicket.messages) ? selectedTicket.messages : [];
+    for (const msg of messages) {
       if (msg.attachmentUrl && !newUrls[msg.id]) {
         // Check if attachmentUrl is a file ID (does not start with http)
         const isFileId = !msg.attachmentUrl.startsWith('http');
@@ -379,30 +380,44 @@ export default function ProfileSupportTickets({
                   {selectedTicket.status}
                 </span>
               </div>
-                  {/* Chat Messages */}
+            </div>
+
+            {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {/* Requester original issue details */}
-              <div className="p-3 bg-slate-105 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-655 dark:text-slate-355 shadow-3xs text-left animate-fade-in">
+              <div className="p-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-300 shadow-3xs text-left animate-fade-in">
                 <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Issue Details</span>
                 <p className="whitespace-pre-line leading-relaxed font-sans">{selectedTicket.description}</p>
               </div>
 
               {selectedTicket.messages?.map((msg) => {
+                const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
                 const isUser = msg.sender === 'User';
+                
+                if (isSystem) {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-2">
+                      <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
+                        {msg.content}
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                     <div
                       className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
                         isUser
-                          ? 'bg-blue-600 text-white border-blue-500 rounded-tr-none'
-                          : 'bg-purple-55 dark:bg-purple-950/20 text-purple-900 dark:text-purple-300 border-purple-100 dark:border-purple-900/30 rounded-tl-none'
+                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-blue-500/10'
+                          : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none'
                       }`}
                     >
                       <div className="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
                         <span className="flex items-center gap-1">
                           {msg.senderName}
                           {!isUser && (
-                            <span className="bg-purple-200 dark:bg-purple-900/40 text-purple-700 dark:text-purple-355 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
+                            <span className="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
                               Support Team
                             </span>
                           )}
@@ -413,7 +428,7 @@ export default function ProfileSupportTickets({
 
                       {msg.attachmentUrl && (
                         <div className={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                          isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-purple-100/40 dark:bg-purple-950/60 border border-purple-200/30 dark:border-purple-900/30 text-purple-800 dark:text-purple-355'
+                          isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-slate-50 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-700/50 text-slate-700 dark:text-slate-350'
                         }`}>
                           <div className="flex items-center gap-1.5 truncate">
                             <FileText className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -431,7 +446,7 @@ export default function ProfileSupportTickets({
                                 })()
                               }
                               download
-                              className={`p-1 rounded hover:bg-black/10 transition ${isUser ? 'text-white' : 'text-purple-700 dark:text-purple-355'}`}
+                              className={`p-1 rounded hover:bg-black/10 transition ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}
                             >
                               <Download className="w-3.5 h-3.5" />
                             </a>
@@ -445,7 +460,7 @@ export default function ProfileSupportTickets({
                 );
               })}
               <div ref={chatEndRef} />
-            </div>        </div>
+            </div>
 
             {/* Message Input Panel */}
             {selectedTicket.status !== 'Closed' ? (
@@ -456,7 +471,7 @@ export default function ProfileSupportTickets({
                     placeholder="Type your reply here..."
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    className="w-full h-10 pl-3 pr-24 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-955 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-semibold"
+                    className="w-full h-10 pl-3 pr-24 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-semibold"
                   />
                   
                   <div className="absolute right-2 top-1.5 flex items-center gap-1">
@@ -469,7 +484,7 @@ export default function ProfileSupportTickets({
                     />
                     <label
                       htmlFor="chat-attach-file"
-                      className={`p-1 rounded-lg transition cursor-pointer ${chatFile ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'text-slate-400 hover:text-slate-655 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                      className={`p-1 rounded-lg transition cursor-pointer ${chatFile ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                       title={chatFile ? `File chosen: ${chatFile.name}` : "Attach file"}
                     >
                       <Paperclip className="w-4 h-4" />

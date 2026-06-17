@@ -65,6 +65,17 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
       ] as TyreMovementLog[]
     };
 
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'tyres', n.id, orgId, n);
+      } catch (err) {
+        console.error("Failed to save tyre to Appwrite. Action aborted:", err);
+        alert("Error: Failed to register tyre in server database. Please check your connection or permissions.");
+        return;
+      }
+    }
+
     const nextTyres = [...tyres, n];
     saveTyres(nextTyres);
 
@@ -84,6 +95,15 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
         organizationId: orgId
       };
 
+      if (isAppwriteConfigured()) {
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'expenses', newExpense.id, orgId, newExpense);
+        } catch (err) {
+          console.warn("Failed to save auto-created tyre expense to Appwrite:", err);
+        }
+      }
+
       saveExpenses([...expenses, newExpense]);
 
       await loadDashboardData(activeMonth, activeYear);
@@ -98,6 +118,18 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
   const updateTyre = async (updated: Tyre) => {
     const oldTyre = tyres.find(t => t.id === updated.id);
     const merged: Tyre = oldTyre ? { ...oldTyre, ...updated } : updated;
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'tyres', merged.id, orgId, merged);
+      } catch (err) {
+        console.error("Failed to update tyre in Appwrite. Action aborted:", err);
+        alert("Error: Failed to update tyre in server database. Please check your connection or permissions.");
+        return;
+      }
+    }
+
     const next = tyres.map(t => t.id === updated.id ? merged : t);
     saveTyres(next);
 
@@ -126,17 +158,20 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
       alert("Cannot delete an active tyre currently mounted on a running vehicle. Dismount it first.");
       return;
     }
-    const next = tyres.filter(t => t.id !== id);
-    saveTyres(next);
 
     if (isAppwriteConfigured() && tyreToDelete) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'tyres', id);
       } catch (err) {
-        console.warn("Failed to delete tyre from Appwrite:", err);
+        console.error("Failed to delete tyre from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete tyre from server database. Please check your connection or permissions.");
+        return;
       }
     }
+
+    const next = tyres.filter(t => t.id !== id);
+    saveTyres(next);
 
     logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre serial ${tyreToDelete.tyreNo} specification datasheet.`);
     showNotification(`Tyre archived.`);

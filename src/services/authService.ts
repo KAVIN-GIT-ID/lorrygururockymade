@@ -253,10 +253,13 @@ export const authService = {
             try {
               const members = await appwrite.getTeamMemberships(appwriteOrgId);
               if (members && members.length > 0) {
-                const myMembership = members.find(m => m.userEmail.toLowerCase().trim() === email);
-                if (myMembership && myMembership.roles && myMembership.roles.includes('owner')) {
-                  isAdminUser = true;
-                }
+                 const myMembership = members.find(m => 
+                   (m.userEmail && m.userEmail.toLowerCase().trim() === email) ||
+                   (m.email && m.email.toLowerCase().trim() === email)
+                 );
+                 if (myMembership && myMembership.roles && myMembership.roles.includes('owner')) {
+                   isAdminUser = true;
+                 }
               }
             } catch {}
 

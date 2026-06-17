@@ -45,10 +45,27 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
       return nextLogs;
     });
 
-
+    if (isAppwriteConfigured()) {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      appwrite.saveFleetDocument(databaseId, 'audit_logs', newLog.id, newLog.organizationId || currentUserOrgId, newLog).catch(err => {
+        console.warn("Failed to save audit log to Appwrite:", err);
+      });
+    }
   };
 
-  const handleClearAuditLogs = () => {
+  const handleClearAuditLogs = async () => {
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        // Delete each log from the database
+        const logsToDelete = [...auditLogs];
+        for (const log of logsToDelete) {
+          await appwrite.deleteFleetDocument(databaseId, 'audit_logs', log.id);
+        }
+      } catch (err) {
+        console.error("Failed to clear audit logs from Appwrite server:", err);
+      }
+    }
     setAuditLogs([]);
     localStorage.removeItem('fleet_audit_logs');
     showNotification("Audit logs history successfully cleared.");

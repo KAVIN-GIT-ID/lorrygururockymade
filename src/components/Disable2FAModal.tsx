@@ -9,14 +9,16 @@ interface Disable2FAModalProps {
   isOpen: boolean;
   onClose: () => void;
   showNotification: (msg: string) => void;
+  reconcileSession: (user: any) => Promise<any>;
 }
 
 export default function Disable2FAModal({
   isOpen,
   onClose,
-  showNotification
+  showNotification,
+  reconcileSession
 }: Disable2FAModalProps) {
-  const { currentUser, reconcileSession } = useAuth();
+  const { currentUser } = useAuth();
   const { userRightsList, setUserRightsList, currentUserRights, pushPermissions: pushPermissionsToCloud } = usePermissions();
 
   const [disable2FACode, setDisable2FACode] = useState('');
@@ -122,7 +124,7 @@ export default function Disable2FAModal({
                   setUserRightsList(updated);
                   localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
                   await pushPermissionsToCloud(updated);
-                  await reconcileSession(currentUser);
+                  await reconcileSession(currentUser, updated);
 
                   showNotification('Two-Factor Authentication successfully disabled.');
                   onClose();

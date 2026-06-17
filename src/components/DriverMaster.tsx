@@ -906,7 +906,7 @@ export default function DriverMaster({
             isDirect: false
           }));
 
-          const timeline = [...advItems, ...expItems, ...computedTripDriverCredits, ...timelineRecoveryItems].sort((a, b) => b.date.localeCompare(a.date));
+          const timeline = [...advItems, ...expItems, ...computedTripDriverCredits, ...timelineRecoveryItems].sort((a, b) => a.date.localeCompare(b.date));
 
           return (
             <div className="space-y-6 animate-fade-in pt-2">

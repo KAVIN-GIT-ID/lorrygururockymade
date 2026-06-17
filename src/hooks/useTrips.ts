@@ -48,10 +48,41 @@ export function useTrips({
     .filter(t => !t.deletedAt);
 
   const postTripEntry = async (entryInput: Omit<TripEntry, 'id'>, editingTrip: TripEntry | null) => {
+    const tripId = editingTrip ? editingTrip.id : 't_id_' + Date.now();
+
+    // Map sub-trip IDs to the backend structure (sub_${tripId}_${idx})
+    const idMap: Record<string, string> = {};
+    const mappedSubTrips = (entryInput.subTrips || []).map((sub, idx) => {
+      const newSubId = `sub_${tripId}_${idx}`;
+      idMap[sub.id] = newSubId;
+      return { ...sub, id: newSubId };
+    });
+
+    const mappedPayments = (entryInput.payments || []).map(p => {
+      if (p.subTripId && idMap[p.subTripId]) {
+        return { ...p, subTripId: idMap[p.subTripId] };
+      }
+      return p;
+    });
+
+    const mappedAdvances = (entryInput.advances || []).map(adv => {
+      if (adv.subTripId && idMap[adv.subTripId]) {
+        return { ...adv, subTripId: idMap[adv.subTripId] };
+      }
+      return adv;
+    });
+
+    const finalEntryInput = {
+      ...entryInput,
+      subTrips: mappedSubTrips,
+      payments: mappedPayments,
+      advances: mappedAdvances
+    };
+
     if (editingTrip) {
       // Update logic
       const updated = mutateRecord(editingTrip, {
-        ...entryInput,
+        ...finalEntryInput,
         organizationId: editingTrip.organizationId || orgId
       } as any, currentUserId);
 
@@ -99,14 +130,20 @@ export function useTrips({
       });
 
       if (isAppwriteConfigured()) {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
-        
-        for (const mId of modifiedTripIds) {
-          const mTrip = next.find(x => x.id === mId);
-          if (mTrip) {
-            await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
+          
+          for (const mId of modifiedTripIds) {
+            const mTrip = next.find(x => x.id === mId);
+            if (mTrip) {
+              await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+            }
           }
+        } catch (err) {
+          console.error("Failed to update trip in Appwrite:", err);
+          alert("Error: Failed to save trip changes to server database. Please check your connection or permissions.");
+          return;
         }
       }
 
@@ -120,21 +157,27 @@ export function useTrips({
       showNotification(`Trip ${updated.tripNo} changes successfully committed.`);
     } else {
       // Create path
-      const isDup = orgTrips.some(t => t.tripNo.toUpperCase().trim() === entryInput.tripNo.toUpperCase().trim());
+      const isDup = orgTrips.some(t => t.tripNo.toUpperCase().trim() === finalEntryInput.tripNo.toUpperCase().trim());
       if (isDup) {
         alert("Trip Number is already in use by another active ledger.");
         return;
       }
 
       const newEntry = createRecord<TripEntry>({
-        ...entryInput,
-        id: 't_id_' + Date.now(),
+        ...finalEntryInput,
+        id: tripId,
         organizationId: orgId
       }, currentUserId);
 
       if (isAppwriteConfigured()) {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
+        } catch (err) {
+          console.error("Failed to create trip in Appwrite:", err);
+          alert("Error: Failed to register new trip in server database. Please check your connection or permissions.");
+          return;
+        }
       }
 
       const nextTrips = [...trips, newEntry];
@@ -175,14 +218,20 @@ export function useTrips({
     });
 
     if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      await appwrite.saveFleetDocument(databaseId, 'trips', id, orgId, updatedTrip);
-      
-      for (const mId of modifiedTripIds) {
-        const mTrip = next.find(x => x.id === mId);
-        if (mTrip) {
-          await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trips', id, orgId, updatedTrip);
+        
+        for (const mId of modifiedTripIds) {
+          const mTrip = next.find(x => x.id === mId);
+          if (mTrip) {
+            await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+          }
         }
+      } catch (err) {
+        console.error("Failed to delete trip from Appwrite. Action aborted:", err);
+        alert("Error: Failed to archive trip in server database. Please check your connection or permissions.");
+        return;
       }
     }
 

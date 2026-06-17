@@ -36,17 +36,19 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
       return;
     }
     const n = { ...accountInput, id: 'a_id_' + Date.now(), organizationId: orgId };
-    saveAccounts([...accounts, n]);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'accounts', n.id, orgId, n);
       } catch (err) {
-        console.warn("Failed to save account to Appwrite:", err);
+        console.error("Failed to save account to Appwrite. Action aborted:", err);
+        alert("Error: Failed to register account in server database. Please check your connection or permissions.");
+        return;
       }
     }
 
+    saveAccounts([...accounts, n]);
     logAction('Created', 'Account', n.accountName, `Opened account register for ${n.accountName} (Type: ${n.type})`);
     showNotification(`Account ledger ${n.accountName} registered.`);
   };
@@ -54,17 +56,20 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
   const updateAccount = async (updated: Account) => {
     const oldAccount = accounts.find(a => a.id === updated.id);
     const merged: Account = oldAccount ? { ...oldAccount, ...updated } : updated;
-    const next = accounts.map(a => a.id === updated.id ? merged : a);
-    saveAccounts(next);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'accounts', merged.id, orgId, merged);
       } catch (err) {
-        console.warn("Failed to update account in Appwrite:", err);
+        console.error("Failed to update account in Appwrite. Action aborted:", err);
+        alert("Error: Failed to update account in server database. Please check your connection or permissions.");
+        return;
       }
     }
+
+    const next = accounts.map(a => a.id === updated.id ? merged : a);
+    saveAccounts(next);
 
     const diff = oldAccount ? getAccountDiff(oldAccount, merged) : `Adjusted ledger account balances or info`;
     if (diff) {
@@ -83,17 +88,20 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
       alert(`Cannot delete Account ${current?.accountName}. It represents outstanding or past receipts.`);
       return;
     }
-    const next = accounts.filter(a => a.id !== id);
-    saveAccounts(next);
 
     if (isAppwriteConfigured() && current) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'accounts', id);
       } catch (err) {
-        console.warn("Failed to delete account from Appwrite:", err);
+        console.error("Failed to delete account from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete account from server database. Please check your connection or permissions.");
+        return;
       }
     }
+
+    const next = accounts.filter(a => a.id !== id);
+    saveAccounts(next);
 
     if (current) {
       logAction('Deleted', 'Account', current.accountName, `Removed ledger account ${current.accountName}`);

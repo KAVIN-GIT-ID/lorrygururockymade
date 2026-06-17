@@ -41,8 +41,14 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
     }, currentUserId);
 
     if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, orgId, newExp);
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, orgId, newExp);
+      } catch (err) {
+        console.error("Failed to save expense to Appwrite. Action aborted:", err);
+        alert("Error: Failed to register expense in server database. Please check your connection or permissions.");
+        return;
+      }
     }
 
     const nextExpenses = [...expenses, newExp];
@@ -60,8 +66,14 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       : createRecord<ExpenseEntry>({ ...updated, organizationId: orgId } as any, currentUserId);
 
     if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, orgId, merged);
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, orgId, merged);
+      } catch (err) {
+        console.error("Failed to update expense in Appwrite. Action aborted:", err);
+        alert("Error: Failed to update expense in server database. Please check your connection or permissions.");
+        return;
+      }
     }
 
     const next = expenses.map(e => e.id === updated.id ? merged : e);
@@ -77,20 +89,26 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
 
   const deleteExpense = async (id: string) => {
     const exp = expenses.find(e => e.id === id);
+    if (!exp) return;
 
     const updatedExpense = mutateRecord(exp, { deletedAt: new Date().toISOString() }, currentUserId);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'expenses', id, orgId, updatedExpense);
+      } catch (err) {
+        console.error("Failed to delete expense from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete expense from server database. Please check your connection or permissions.");
+        return;
+      }
+    }
+
     const next = expenses.map(e => e.id === id ? updatedExpense : e);
     saveExpenses(next);
-
-    if (isAppwriteConfigured() && exp) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      await appwrite.saveFleetDocument(databaseId, 'expenses', id, orgId, updatedExpense);
-    }
     await loadDashboardData(activeMonth, activeYear);
 
-    if (exp) {
-      logAction('Deleted', 'Expense', exp.truckNo, `Canceled/archived ₹${exp.amount} voucher`);
-    }
+    logAction('Deleted', 'Expense', exp.truckNo, `Canceled/archived ₹${exp.amount} voucher`);
     showNotification(`Expense record deleted.`);
   };
 

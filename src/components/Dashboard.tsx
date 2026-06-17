@@ -1,6 +1,6 @@
 import React from 'react';
 import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile, ExpenseEntry } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield } from 'lucide-react';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield, Building2 } from 'lucide-react';
 import { getOutstandingAge, formatToDisplayDate, calculateDaysLeft } from '../lib/dateUtils';
 import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './TruckMaster';
 import PayEmiModal from './PayEmiModal';
@@ -58,6 +58,8 @@ export default function Dashboard({
 
   // Tooltip interactive state
   const [hoveredTruck, setHoveredTruck] = React.useState<string | null>(null);
+  const [hoveredOffice, setHoveredOffice] = React.useState<string | null>(null);
+  const [outstandingTab, setOutstandingTab] = React.useState<'office' | 'truck'>('office');
   const [hoverPosition, setHoverPosition] = React.useState({ x: 0, y: 0 });
   const closeTimeoutRef = React.useRef<any>(null);
 
@@ -100,12 +102,27 @@ export default function Dashboard({
     });
   };
 
+  const handleMouseEnterOfficeRow = (officeName: string, e: React.MouseEvent) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const showOnRight = rect.left < 340;
+    setHoveredOffice(officeName);
+    setHoverPosition({
+      x: showOnRight ? rect.right + 12 : rect.left - 332,
+      y: rect.top + window.scrollY - 30
+    });
+  };
+
   const handleMouseLeaveRowOrTooltip = () => {
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
     }
     closeTimeoutRef.current = setTimeout(() => {
       setHoveredTruck(null);
+      setHoveredOffice(null);
     }, 150);
   };
 
@@ -137,7 +154,7 @@ export default function Dashboard({
   const pendingCount = trips.filter(t => t.status === 'Pending').length;
   const inProgressCount = trips.filter(t => t.status === 'In Progress').length;
   const completedCount = trips.filter(t => t.status === 'Completed').length;
-  const paidCount = trips.filter(t => t.status === 'Paid').length;
+  const paidCount = trips.filter(t => t.status === 'Settled').length;
 
 
 
@@ -184,6 +201,80 @@ export default function Dashboard({
 
   const topOutstandingTrucks = Object.entries(truckOutstandingMap).map(([truckNo, amount]) => ({
     truckNo,
+    amount
+  })).sort((a, b) => b.amount - a.amount);
+
+  // Group outstanding balance by Office
+  const officeOutstandingMap: { [key: string]: number } = {};
+  allTrips.forEach(t => {
+    const m = getTripMetrics(t);
+    if (m.outstandingBalance > 0) {
+      const segDetails: { office: string; balance: number }[] = [];
+      const subTrips = t.subTrips || [];
+      subTrips.forEach(st => {
+        let segDeductions = 0;
+        let segOfficeBears = 0;
+
+        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+          st.cargoExpenses.forEach(exp => {
+            const amt = Number(exp.amount) || 0;
+            if (exp.deductedFrom === 'OrgRental') {
+              segDeductions += amt;
+            }
+            if (exp.bears === 'Office') {
+              segOfficeBears += amt;
+            }
+          });
+        } else {
+          // Legacy fallbacks for segment
+          const loadAmt = Number(st.loadingExpense) || 0;
+          const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
+          if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
+
+          const unloadAmt = Number(st.unloadingExpense) || 0;
+          const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
+          if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
+
+          const brokerageAmt = Number(st.brokerageExpense) || 0;
+          const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
+          if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
+
+          const crossingAmt = Number(st.crossingExpense) || 0;
+          const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
+          if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
+
+          const rmcAmt = Number(st.rmcExpense) || 0;
+          const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
+          if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+        }
+
+        const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+        const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
+
+        segDetails.push({
+          office: st.officeName || 'Indirect/General',
+          balance: segBalance
+        });
+      });
+
+      const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+      if (unassignedPayments > 0 && segDetails.length > 0) {
+        const share = Math.round(unassignedPayments / segDetails.length);
+        segDetails.forEach(item => {
+          item.balance = Math.max(0, item.balance - share);
+        });
+      }
+
+      segDetails.forEach(item => {
+        if (item.balance > 0) {
+          officeOutstandingMap[item.office] = (officeOutstandingMap[item.office] || 0) + item.balance;
+        }
+      });
+    }
+  });
+
+  const topOutstandingOffices = Object.entries(officeOutstandingMap).map(([officeName, amount]) => ({
+    officeName,
     amount
   })).sort((a, b) => b.amount - a.amount);
 
@@ -281,6 +372,113 @@ export default function Dashboard({
     };
   };
 
+  // Detailed hover information per office
+  const getOfficeHoverDetails = (oName: string) => {
+    let totalIncome = 0;
+    let totalPaid = 0;
+    let totalBalance = 0;
+    const trucksUsed = new Set<string>();
+    const detailsList: { truckNo: string; income: number; advance: number; balance: number; date: string }[] = [];
+
+    allTrips.forEach(t => {
+      const m = getTripMetrics(t);
+      if (m.outstandingBalance > 0) {
+        const matchingSegs: { st: any; segDeductions: number; segOfficeBears: number; segPayments: number; segBalance: number }[] = [];
+        
+        (t.subTrips || []).forEach(st => {
+          const stOffice = st.officeName || 'Indirect/General';
+          if (stOffice === oName) {
+            trucksUsed.add(t.truckNo);
+            
+            let segDeductions = 0;
+            let segOfficeBears = 0;
+
+            if (st.cargoExpenses && st.cargoExpenses.length > 0) {
+              st.cargoExpenses.forEach(exp => {
+                const amt = Number(exp.amount) || 0;
+                if (exp.deductedFrom === 'OrgRental') {
+                  segDeductions += amt;
+                }
+                if (exp.bears === 'Office') {
+                  segOfficeBears += amt;
+                }
+              });
+            } else {
+              // Legacy fallbacks
+              const loadAmt = Number(st.loadingExpense) || 0;
+              const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
+              if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
+
+              const unloadAmt = Number(st.unloadingExpense) || 0;
+              const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
+              if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
+
+              const brokerageAmt = Number(st.brokerageExpense) || 0;
+              const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
+              if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
+
+              const crossingAmt = Number(st.crossingExpense) || 0;
+              const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
+              if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
+
+              const rmcAmt = Number(st.rmcExpense) || 0;
+              const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
+              if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+            }
+
+            const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+            const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
+
+            matchingSegs.push({
+              st,
+              segDeductions,
+              segOfficeBears,
+              segPayments,
+              segBalance
+            });
+          }
+        });
+
+        // We also need to calculate proportional share of unassigned payments if this trip has any matching segments
+        const tripTotalSegs = (t.subTrips || []).length;
+        if (matchingSegs.length > 0 && tripTotalSegs > 0) {
+          const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+          const sharePerSeg = Math.round(unassignedPayments / tripTotalSegs);
+          
+          matchingSegs.forEach(item => {
+            const finalAdvance = item.segPayments + sharePerSeg;
+            const finalBalance = Math.max(0, item.segBalance - sharePerSeg);
+            
+            totalIncome += item.st.income;
+            totalPaid += finalAdvance;
+            totalBalance += finalBalance;
+
+            if (finalBalance > 0) {
+              detailsList.push({
+                truckNo: t.truckNo,
+                income: item.st.income,
+                advance: finalAdvance,
+                balance: finalBalance,
+                date: item.st.loadingDate || t.startDate || '—'
+              });
+            }
+          });
+        }
+      }
+    });
+
+    const truckList = Array.from(trucksUsed).join(', ') || 'N/A';
+    totalBalance = Math.max(0, totalBalance);
+
+    return {
+      truckList,
+      totalIncome,
+      totalPaid,
+      totalBalance,
+      detailsList
+    };
+  };
+
   // Calculations for beautiful visual progress rings
   const recoveryRate = totalRental > 0 
     ? Math.round((totalAdvances / totalRental) * 100) 
@@ -358,19 +556,19 @@ export default function Dashboard({
 
       // 3. Document Expiry alerts
       const docs = [
-        { label: 'Insurance Expiry', date: truck.insuranceDate },
-        { label: 'Fitness Cert (FC)', date: truck.fcDate },
-        { label: 'Quarterly Tax (Q Tax)', date: truck.qTaxDate },
-        { label: 'Green Tax Cert', date: truck.greenTaxDate },
-        { label: 'National Permit Tax', date: truck.npTaxDate },
-        { label: '5 Year Permit Date', date: truck.fiveYearPermitDate },
-        { label: 'Subscription Expiry', date: truck.registrationExpiryDate }
+        { label: 'Insurance Expiry', date: truck.insuranceDate, warningDays: orgProfile?.insuranceWarningDays ?? 30 },
+        { label: 'Fitness Cert (FC)', date: truck.fcDate, warningDays: orgProfile?.fcWarningDays ?? 30 },
+        { label: 'Quarterly Tax (Q Tax)', date: truck.qTaxDate, warningDays: orgProfile?.qTaxWarningDays ?? 30 },
+        { label: 'Green Tax Cert', date: truck.greenTaxDate, warningDays: orgProfile?.greenTaxWarningDays ?? 30 },
+        { label: 'National Permit Tax', date: truck.npTaxDate, warningDays: orgProfile?.npTaxWarningDays ?? 30 },
+        { label: '5 Year Permit Date', date: truck.fiveYearPermitDate, warningDays: orgProfile?.fiveYearPermitWarningDays ?? 30 },
+        { label: 'Subscription Expiry', date: truck.registrationExpiryDate, warningDays: orgProfile?.subscriptionWarningDays ?? 30 }
       ];
 
       docs.forEach(doc => {
         if (doc.date) {
           const daysLeft = calculateDaysLeft(doc.date, anchor);
-          if (daysLeft !== null && daysLeft <= 30) {
+          if (daysLeft !== null && daysLeft <= doc.warningDays) {
             let metadata: any = undefined;
             if (['Insurance Expiry', 'Quarterly Tax (Q Tax)', 'National Permit Tax', '5 Year Permit Date'].includes(doc.label)) {
               const taxType = doc.label === 'Insurance Expiry' ? 'Insurance'
@@ -702,39 +900,96 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* TOP OUTSTANDING LIABILITIES BY TRUCK */}
+          {/* COMBINED OUTSTANDING LIABILITIES CARD */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1 font-sans">Outstanding by Truck</h3>
-              <p className="text-xs text-slate-500 font-sans">Active pending outstandings grouped per truck datasheet reference.</p>
+              <div className="flex items-center justify-between border-b border-slate-105 pb-3 mb-3">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans">Outstanding</h3>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/60 no-print">
+                  <button
+                    type="button"
+                    onClick={() => setOutstandingTab('office')}
+                    className={`px-2 py-1 text-[10px] font-bold rounded-md transition duration-150 cursor-pointer ${
+                      outstandingTab === 'office'
+                        ? 'bg-white text-blue-600 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    By Office
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOutstandingTab('truck')}
+                    className={`px-2 py-1 text-[10px] font-bold rounded-md transition duration-150 cursor-pointer ${
+                      outstandingTab === 'truck'
+                        ? 'bg-white text-blue-600 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    By Truck
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 font-sans">
+                {outstandingTab === 'office'
+                  ? 'Active pending outstandings grouped per loading office branch.'
+                  : 'Active pending outstandings grouped per truck datasheet reference.'}
+              </p>
             </div>
 
             <div className="my-4 divide-y divide-slate-100 overflow-y-auto max-h-[180px] pr-1 flex-1">
-              {topOutstandingTrucks.length === 0 ? (
-                <p className="text-center py-12 text-xs text-emerald-600 italic font-medium font-sans">Excellent! All truck balances are fully settled.</p>
+              {outstandingTab === 'office' ? (
+                topOutstandingOffices.length === 0 ? (
+                  <p className="text-center py-12 text-xs text-emerald-600 italic font-medium font-sans">Excellent! All office balances are fully settled.</p>
+                ) : (
+                  topOutstandingOffices.map(({ officeName, amount }) => (
+                    <div 
+                      key={officeName} 
+                      className="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
+                      onMouseEnter={(e) => handleMouseEnterOfficeRow(officeName, e)}
+                      onMouseLeave={handleMouseLeaveRowOrTooltip}
+                    >
+                      <span className="text-xs font-bold text-slate-705 uppercase font-mono tracking-wider flex items-center gap-1.5 truncate max-w-[160px]">
+                        <Building2 className="w-3 h-3 text-slate-400" />
+                        {officeName}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-red-650 bg-red-50 border border-red-100 px-2 py-0.5 rounded shadow-3xs text-red-600 shrink-0">
+                        ₹{amount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ))
+                )
               ) : (
-                topOutstandingTrucks.map(({ truckNo, amount }) => (
-                  <div 
-                    key={truckNo} 
-                    className="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
-                    onMouseEnter={(e) => handleMouseEnterRow(truckNo, e)}
-                    onMouseLeave={handleMouseLeaveRowOrTooltip}
-                  >
-                    <span className="text-xs font-bold text-slate-705 uppercase font-mono tracking-wider flex items-center gap-1.5">
-                      <Navigation className="w-3 h-3 text-slate-400 rotate-45" />
-                      {truckNo}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-red-650 bg-red-50 border border-red-100 px-2 py-0.5 rounded shadow-3xs text-red-600">
-                      ₹{amount.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                ))
+                topOutstandingTrucks.length === 0 ? (
+                  <p className="text-center py-12 text-xs text-emerald-600 italic font-medium font-sans">Excellent! All truck balances are fully settled.</p>
+                ) : (
+                  topOutstandingTrucks.map(({ truckNo, amount }) => (
+                    <div 
+                      key={truckNo} 
+                      className="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
+                      onMouseEnter={(e) => handleMouseEnterRow(truckNo, e)}
+                      onMouseLeave={handleMouseLeaveRowOrTooltip}
+                    >
+                      <span className="text-xs font-bold text-slate-705 uppercase font-mono tracking-wider flex items-center gap-1.5">
+                        <Navigation className="w-3 h-3 text-slate-400 rotate-45" />
+                        {truckNo}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-red-650 bg-red-50 border border-red-100 px-2 py-0.5 rounded shadow-3xs text-red-600">
+                        ₹{amount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ))
+                )
               )}
             </div>
 
             <div className="text-[10px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2 mt-4 shadow-3xs font-sans">
               <ShieldAlert className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-              <span>Provides direct oversight over customer-side defaults.</span>
+              <span>
+                {outstandingTab === 'office'
+                  ? 'Track aged collections and limits per booking branch.'
+                  : 'Provides direct oversight over customer-side defaults.'}
+              </span>
             </div>
           </div>
 
@@ -974,6 +1229,69 @@ export default function Dashboard({
                     <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
                       <div className="flex justify-between font-bold text-slate-350">
                         <span className="truncate text-white font-semibold">{seg.office}</span>
+                        <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
+                      </div>
+                      <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">
+                        <span>Inc: ₹{seg.income}</span>
+                        <span>Adv: ₹{seg.advance}</span>
+                        <span className="text-rose-400 font-bold">Bal: ₹{seg.balance}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {hoveredOffice && (() => {
+        const det = getOfficeHoverDetails(hoveredOffice);
+        return (
+          <div 
+            className="fixed z-50 w-80 bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs pointer-events-auto transition-all duration-150 animate-fade-in"
+            style={{ 
+              left: `${hoverPosition.x}px`, 
+              top: `${hoverPosition.y}px`,
+              boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.3)'
+            }}
+            onMouseEnter={handleMouseEnterTooltip}
+            onMouseLeave={handleMouseLeaveRowOrTooltip}
+          >
+            <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center">
+              <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate max-w-[200px]">{hoveredOffice}</span>
+              <span className="text-[9px] text-slate-400 font-bold uppercase">Office Drilldown</span>
+            </div>
+
+            <div className="space-y-1.5 font-sans mb-3 text-slate-300">
+              <p>
+                <strong className="text-slate-400 uppercase text-[8px] block tracking-wide">Active Truck(s):</strong>
+                <span className="font-semibold text-white text-[11px] leading-tight block truncate">{det.truckList || 'N/A'}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                  <span className="text-slate-400 block font-bold text-[8px] uppercase">Billed Income</span>
+                  <span className="font-mono font-bold text-emerald-400">₹{det.totalIncome.toLocaleString()}</span>
+                </div>
+                <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                  <span className="text-slate-400 block font-bold text-[8px] uppercase">Advance Information</span>
+                  <span className="font-mono font-bold text-indigo-400">₹{det.totalPaid.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="bg-rose-950/40 border border-rose-900/40 p-1.5 rounded mt-1.5 flex justify-between items-center">
+                <span className="text-rose-300 font-bold text-[8px] uppercase">Net Outstanding</span>
+                <span className="font-mono font-bold text-rose-400 text-xs">₹{det.totalBalance.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {det.detailsList.length > 0 && (
+              <div className="border-t border-slate-800 pt-2">
+                <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Truck Segment Logs</span>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
+                  {det.detailsList.map((seg, sIdx) => (
+                    <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
+                      <div className="flex justify-between font-bold text-slate-350">
+                        <span className="truncate text-white font-semibold">{seg.truckNo}</span>
                         <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
                       </div>
                       <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">

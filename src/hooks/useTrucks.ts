@@ -61,19 +61,22 @@ export function useTrucks({
       registrationExpiryDate: expiryStr
     }, currentUserId);
 
+    // Optimistic update
     saveTrucks([...trucks, n]);
+    logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
+    showNotification(`Truck ${n.truckNo} added successfully.`);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'trucks', n.id, orgId, n);
       } catch (err) {
-        console.warn("Failed to save truck to Appwrite:", err);
+        console.error("Failed to save truck to Appwrite. Rolling back:", err);
+        // Rollback state
+        saveTrucks(trucks);
+        alert("Error: Failed to register truck in server database. Connection offline or permissions missing.");
       }
     }
-
-    logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
-    showNotification(`Truck ${n.truckNo} added successfully.`);
   };
 
   const updateTruck = async (updated: Truck) => {
@@ -82,36 +85,42 @@ export function useTrucks({
       ? mutateRecord(oldTruck, updated, currentUserId)
       : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
     
+    // Optimistic update
     const next = trucks.map(t => t.id === updated.id ? merged : t);
     saveTrucks(next);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'trucks', merged.id, orgId, merged);
-      } catch (err) {
-        console.warn("Failed to update truck in Appwrite:", err);
-      }
-
-      if (oldTruck) {
-        if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
-          appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
-            console.warn("Failed to delete replaced RC file:", err);
-          });
-        }
-        if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
-          appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
-            console.warn("Failed to delete replaced Insurance file:", err);
-          });
-        }
-      }
-    }
-
+ 
     const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
     if (diff) {
       logAction('Edited', 'Truck', merged.truckNo, diff);
     }
     showNotification(`Truck ${merged.truckNo} database specifications updated.`);
+
+    if (isAppwriteConfigured()) {
+      try {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        await appwrite.saveFleetDocument(databaseId, 'trucks', merged.id, orgId, merged);
+ 
+        if (oldTruck) {
+          if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
+            appwrite.deleteFile(oldTruck.rcFileId).catch(err => {
+              console.warn("Failed to delete replaced RC file:", err);
+            });
+          }
+          if (oldTruck.insuranceFileId && oldTruck.insuranceFileId !== merged.insuranceFileId) {
+            appwrite.deleteFile(oldTruck.insuranceFileId).catch(err => {
+              console.warn("Failed to delete replaced Insurance file:", err);
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to update truck in Appwrite. Rolling back:", err);
+        if (oldTruck) {
+          const rollback = trucks.map(t => t.id === updated.id ? oldTruck : t);
+          saveTrucks(rollback);
+        }
+        alert("Error: Failed to update truck in server database. Connection offline or permissions missing.");
+      }
+    }
   };
 
   const deleteTruck = async (id: string) => {
@@ -122,15 +131,14 @@ export function useTrucks({
       alert(`Cannot delete Truck ${truckToDelete?.truckNo}. It is associated with active trip registers.`);
       return;
     }
-    const next = trucks.filter(t => t.id !== id);
-    saveTrucks(next);
-
     if (isAppwriteConfigured() && truckToDelete) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'trucks', id);
       } catch (err) {
-        console.warn("Failed to delete truck from Appwrite:", err);
+        console.error("Failed to delete truck from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete truck from server database. Please check your connection or permissions.");
+        return;
       }
 
       if (truckToDelete.rcFileId) {
@@ -144,6 +152,9 @@ export function useTrucks({
         });
       }
     }
+
+    const next = trucks.filter(t => t.id !== id);
+    saveTrucks(next);
 
     const targetOrgId = truckToDelete?.organizationId || orgId;
     if (truckToDelete && (truckToDelete.isApproved === false || truckToDelete.requestStatus === 'Rejected') && targetOrgId) {

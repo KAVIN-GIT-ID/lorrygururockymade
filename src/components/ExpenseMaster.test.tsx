@@ -143,7 +143,7 @@ describe('ExpenseMaster Component Tests', () => {
       amount: 800,
       paymentMode: 'Cash/General',
       date: expect.any(String),
-      status: 'Paid',
+      status: 'Settled',
       accountType: 'Account',
       driverName: undefined
     });

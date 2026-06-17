@@ -36,17 +36,19 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
       return;
     }
     const n = { ...officeInput, id: 'o_id_' + Date.now(), organizationId: orgId };
-    saveOffices([...offices, n]);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'offices', n.id, orgId, n);
       } catch (err) {
-        console.warn("Failed to save office to Appwrite:", err);
+        console.error("Failed to save office to Appwrite. Action aborted:", err);
+        alert("Error: Failed to register office in server database. Please check your connection or permissions.");
+        return;
       }
     }
 
+    saveOffices([...offices, n]);
     logAction('Created', 'Office', n.officeName, `Opened trading office branch at ${n.officeName} (${n.city || 'N/A'})`);
     showNotification(`Office branch ${n.officeName} created.`);
   };
@@ -54,17 +56,20 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
   const updateOffice = async (updated: Office) => {
     const oldOffice = offices.find(o => o.id === updated.id);
     const merged: Office = oldOffice ? { ...oldOffice, ...updated } : updated;
-    const next = offices.map(o => o.id === updated.id ? merged : o);
-    saveOffices(next);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'offices', merged.id, orgId, merged);
       } catch (err) {
-        console.warn("Failed to update office in Appwrite:", err);
+        console.error("Failed to update office in Appwrite. Action aborted:", err);
+        alert("Error: Failed to update office in server database. Please check your connection or permissions.");
+        return;
       }
     }
+
+    const next = offices.map(o => o.id === updated.id ? merged : o);
+    saveOffices(next);
 
     const diff = oldOffice ? getOfficeDiff(oldOffice, merged) : `Updated branch details or manager settings`;
     if (diff) {
@@ -81,17 +86,20 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
       alert(`Cannot delete Office ${off?.officeName}. This office has historical load consignments associated.`);
       return;
     }
-    const next = offices.filter(o => o.id !== id);
-    saveOffices(next);
 
     if (isAppwriteConfigured() && off) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.deleteFleetDocument(databaseId, 'offices', id);
       } catch (err) {
-        console.warn("Failed to delete office from Appwrite:", err);
+        console.error("Failed to delete office from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete office from server database. Please check your connection or permissions.");
+        return;
       }
     }
+
+    const next = offices.filter(o => o.id !== id);
+    saveOffices(next);
 
     if (off) {
       logAction('Deleted', 'Office', off.officeName, `Removed office branch ${off.officeName}`);

@@ -138,6 +138,13 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction, organiz
                 const parsed = JSON.parse(doc.data);
                 return {
                   id: doc.$id,
+                  organizationId: doc.organizationId,
+                  timestamp: doc.timestamp || '',
+                  user: doc.user || '',
+                  action: doc.action || 'Cloud',
+                  category: doc.category || '',
+                  reference: doc.reference || '',
+                  details: doc.details || '',
                   ...parsed
                 };
               }

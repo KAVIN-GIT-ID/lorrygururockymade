@@ -43,6 +43,7 @@ import AppHeader from './components/AppHeader';
 import VerificationRequiredScreen from './components/VerificationRequiredScreen';
 import ProfileModal from './components/ProfileModal';
 import MobileChangeWizardModal from './components/MobileChangeWizardModal';
+import AppwriteCloudSync from './components/AppwriteCloudSync';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import { useDrivers } from './hooks/useDrivers';
 import { useOffices } from './hooks/useOffices';
@@ -380,10 +381,10 @@ function AppContent() {
     localStorage.setItem('ttt_user_rights', JSON.stringify(nextList));
   };
 
-  const reconcileSession = async (user: any) => {
+  const reconcileSession = async (user: any, freshRightsList?: UserPermission[]) => {
     return reconcileUserSession(
       user,
-      userRightsList,
+      freshRightsList || userRightsList,
       setUserRightsList,
       organizationProfiles,
       setOrganizationProfiles,
@@ -1222,9 +1223,47 @@ function AppContent() {
 
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
-  const saveSupportTickets = (nextTickets: SupportTicket[]) => {
-    setSupportTickets(nextTickets);
-    localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+  const saveSupportTickets = (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
+    setSupportTickets(prev => {
+      const nextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(prev) : nextTicketsOrFn;
+
+      // Find modified or new tickets to sync to Appwrite
+      const changedTickets = nextTickets.filter(t => {
+        const existing = prev.find(x => x.id === t.id);
+        return !existing || JSON.stringify(existing) !== JSON.stringify(t);
+      });
+
+      // Find deleted tickets
+      const deletedTickets = prev.filter(t => !nextTickets.some(x => x.id === t.id));
+
+      localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+
+      if (isAppwriteConfigured()) {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        
+        if (changedTickets.length > 0) {
+          changedTickets.forEach(async (t) => {
+            try {
+              await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId, t);
+            } catch (err) {
+              console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err);
+            }
+          });
+        }
+
+        if (deletedTickets.length > 0) {
+          deletedTickets.forEach(async (t) => {
+            try {
+              await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
+            } catch (err) {
+              console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
+            }
+          });
+        }
+      }
+
+      return nextTickets;
+    });
   };
 
   const handleInitiateRefund = async (orgId: string, truckNo: string, paymentRecord: any) => {
@@ -1582,35 +1621,23 @@ function AppContent() {
   const [dashboardExpenses, setDashboardExpenses] = useState<ExpenseEntry[]>([]);
 
   async function loadDashboardData(month: string, year: string) {
-    if (!isAppwriteConfigured()) {
-      const localTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
-      const localExpenses = JSON.parse(localStorage.getItem('ttt_expenses') || '[]');
+    const orgId = currentUserOrgId || 'org_default';
+    
+    // Filter by organization and ensure deleted records are excluded
+    const activeTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
+      .filter(t => !t.deletedAt);
+    const activeExpenses = (orgId === 'org_backend' ? expenses : expenses.filter(e => e.organizationId === orgId))
+      .filter(e => !e.deletedAt);
 
-      const filteredTrips = year === 'All Time'
-        ? localTrips
-        : localTrips.filter((t: any) => t.startDate && t.startDate.startsWith(`${year}-${month}`));
-      const filteredExpenses = year === 'All Time'
-        ? localExpenses
-        : localExpenses.filter((e: any) => e.date && e.date.startsWith(`${year}-${month}`) && e.status !== 'Declined');
+    const filteredTrips = year === 'All Time'
+      ? activeTrips
+      : activeTrips.filter((t: any) => t.startDate && t.startDate.startsWith(`${year}-${month}`));
+    const filteredExpenses = year === 'All Time'
+      ? activeExpenses
+      : activeExpenses.filter((e: any) => e.date && e.date.startsWith(`${year}-${month}`) && e.status !== 'Declined');
 
-      setDashboardTrips(filteredTrips);
-      setDashboardExpenses(filteredExpenses);
-      return;
-    }
-
-    try {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      const orgId = currentUserOrgId || 'org_default';
-      const { trips: parsedTrips, expenses: parsedExpenses } = await appwrite.fetchMonthlyTripsAndExpenses(databaseId, orgId, year, month);
-
-      const mappedTrips = parsedTrips.map(doc => JSON.parse(doc.data));
-      const mappedExpenses = parsedExpenses.map(doc => JSON.parse(doc.data));
-
-      setDashboardTrips(mappedTrips);
-      setDashboardExpenses(mappedExpenses);
-    } catch (err) {
-      console.warn("Failed to load monthly dashboard data from Appwrite:", err);
-    }
+    setDashboardTrips(filteredTrips);
+    setDashboardExpenses(filteredExpenses);
   }
 
   useEffect(() => {
@@ -1864,23 +1891,45 @@ function AppContent() {
 
     if (!result) return false;
 
-    if (result.userRightsList) {
+    const hasChanged = (local: any[], next: any[] | undefined) => {
+      if (!next) return false;
+      if (local.length !== next.length) return true;
+      return JSON.stringify(local) !== JSON.stringify(next);
+    };
+
+    if (result.userRightsList && hasChanged(userRightsList, result.userRightsList)) {
       setUserRightsList(result.userRightsList);
     }
-    if (result.organizationProfiles) {
+    if (result.organizationProfiles && hasChanged(organizationProfiles, result.organizationProfiles)) {
       setOrganizationProfiles(result.organizationProfiles);
     }
-    if (result.trucks) {
+    if (result.trucks && hasChanged(trucks, result.trucks)) {
       setTrucks(result.trucks);
     }
-    if (result.drivers) setDrivers(result.drivers);
-    if (result.offices) setOffices(result.offices);
-    if (result.accounts) setAccounts(result.accounts);
-    if (result.trips) setTrips(result.trips);
-    if (result.expenses) setExpenses(result.expenses);
-    if (result.tyres) setTyres(result.tyres);
-    if (result.auditLogs) setAuditLogs(result.auditLogs);
-    if (result.supportTickets) setSupportTickets(result.supportTickets);
+    if (result.drivers && hasChanged(drivers, result.drivers)) {
+      setDrivers(result.drivers);
+    }
+    if (result.offices && hasChanged(offices, result.offices)) {
+      setOffices(result.offices);
+    }
+    if (result.accounts && hasChanged(accounts, result.accounts)) {
+      setAccounts(result.accounts);
+    }
+    if (result.trips && hasChanged(trips, result.trips)) {
+      setTrips(result.trips);
+    }
+    if (result.expenses && hasChanged(expenses, result.expenses)) {
+      setExpenses(result.expenses);
+    }
+    if (result.tyres && hasChanged(tyres, result.tyres)) {
+      setTyres(result.tyres);
+    }
+    if (result.auditLogs && hasChanged(auditLogs, result.auditLogs)) {
+      setAuditLogs(result.auditLogs);
+    }
+    if (result.supportTickets && hasChanged(supportTickets, result.supportTickets)) {
+      setSupportTickets(result.supportTickets);
+    }
 
     if (result.notifications && result.notifications.length > 0) {
       result.notifications.forEach(n => {
@@ -2110,6 +2159,9 @@ function AppContent() {
   };
 
   const handleBackendUpdateTruck = async (targetOrgId: string, updatedTruck: Truck) => {
+    const startTime = performance.now();
+    console.log(`[Timer] Start updating truck ${updatedTruck.truckNo} at ${new Date().toISOString()}`);
+
     const oldTruck = trucks.find(t => t.id === updatedTruck.id);
     const mutatedTruck = oldTruck
       ? mutateRecord(oldTruck, updatedTruck, currentUserId)
@@ -2120,13 +2172,18 @@ function AppContent() {
       localStorage.setItem('ttt_trucks', JSON.stringify(next));
       return next;
     });
+    console.log(`[Timer] Local state updated in ${(performance.now() - startTime).toFixed(1)}ms`);
 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
+        const saveStart = performance.now();
+        console.log(`[Timer] Pushing truck document update to Appwrite proxy...`);
         await appwrite.saveFleetDocument(databaseId, 'trucks', mutatedTruck.id, targetOrgId, mutatedTruck);
+        console.log(`[Timer] Appwrite proxy save completed in ${(performance.now() - saveStart).toFixed(1)}ms`);
 
+        const auditStart = performance.now();
         const userEmail = currentUser ? (currentUser.email || currentUser.name || 'SuperAdmin') : 'SuperAdmin';
         const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
         const newAuditLog: AuditLog = {
@@ -2140,6 +2197,7 @@ function AppContent() {
           organizationId: targetOrgId
         };
         await appwrite.saveFleetDocument(databaseId, 'audit_logs', logId, targetOrgId, newAuditLog);
+        console.log(`[Timer] Audit log saved in ${(performance.now() - auditStart).toFixed(1)}ms`);
       } catch (err: any) {
         console.error("Backend failed to push remote truck updates to database:", err);
         alert(`Error pushing truck updates to organization database: ${err.message}`);
@@ -2148,6 +2206,7 @@ function AppContent() {
 
     logAction('Edited', 'Truck', updatedTruck.truckNo, `Super Admin modified remote truck details for Org ${targetOrgId}. Status: ${updatedTruck.status}`, targetOrgId);
     showNotification(`Updated truck ${updatedTruck.truckNo} details.`);
+    console.log(`[Timer] Total disable operation took ${(performance.now() - startTime).toFixed(1)}ms`);
   };
 
   const handleAddTruckRequest = async (truckPayload: Omit<Truck, 'id'>) => {
@@ -2455,11 +2514,9 @@ function AppContent() {
                 };
               }
 
-              try {
-                const record = JSON.parse(doc.data);
+              const record = appwrite.reconstructRecord(doc);
+              if (record) {
                 orgFleetData[orgId][cat.key].push(record);
-              } catch (e) {
-                console.warn(`Failed to parse document payload in ${cat.collection}:`, e);
               }
             }
           } catch (catErr: any) {
@@ -2676,6 +2733,7 @@ function AppContent() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectDelay = 5000;
     const MAX_DELAY = 60000;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const teardown = () => {
       if (unsubscribe) {
@@ -2715,8 +2773,14 @@ function AppContent() {
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
         try {
           const subPromise = appwrite.getRealtime().subscribe(channels, (_response: any) => {
-            console.log("Super Admin Realtime Socket: Reloading datasets on DB changes...");
-            reloadBackendData();
+            console.log("Super Admin Realtime Socket: Event received, scheduling debounced reload...");
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+              if (!destroyed) {
+                console.log("Super Admin Realtime Socket: Reloading datasets on DB changes...");
+                reloadBackendData();
+              }
+            }, 1500);
           });
           subPromise.then(sub => {
             if (destroyed) {
@@ -2750,13 +2814,13 @@ function AppContent() {
 
         } catch (subErr: any) {
           if (subErr?.code !== 1008) {
-            console.warn("Super Admin websocket channel error, relying on polling:", subErr);
+            console.warn("Super Admin websocket channel error:", subErr);
           }
           scheduleReconnect();
         }
       } catch (e: any) {
         if (!e?.message?.includes('CLOSING') && !e?.message?.includes('CLOSED')) {
-          console.warn("Super Admin websocket registration failed, relying on polling:", e);
+          console.warn("Super Admin websocket registration failed:", e);
         }
         scheduleReconnect();
       }
@@ -2764,17 +2828,11 @@ function AppContent() {
 
     setupRealtime();
 
-    // Polling fallback every 60 seconds
-    const interval = setInterval(() => {
-      console.log("Super Admin Polling: Reloading datasets...");
-      reloadBackendData();
-    }, 60000);
-
     return () => {
       destroyed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (debounceTimer) clearTimeout(debounceTimer);
       teardown();
-      clearInterval(interval);
     };
   }, [currentUserRights.isSuperAdmin]);
 
@@ -3088,21 +3146,79 @@ function AppContent() {
 
   if (currentUser && isOrgDisabled && !currentUserRights.isSuperAdmin) {
     return (
-      <OrgDisabledScreen
-        currentUserOrgId={currentUserOrgId}
-        onLogout={handleLogout}
-      />
+      <>
+        <AppwriteCloudSync
+          currentLocalState={{
+            trucks,
+            drivers,
+            offices,
+            accounts,
+            trips,
+            expenses,
+            tyres,
+            auditLogs,
+            supportTickets
+          }}
+          onLoadCloudState={onLoadCloudState}
+          showNotification={showNotification}
+          logAction={logAction}
+          currentUserOrgId={currentUserOrgId}
+          currentUserEmail={currentUser?.email}
+          currentUserId={currentUser?.email || ''}
+          isAdmin={currentUserRights.isAdmin}
+          onInitialSyncComplete={setInitialPullDone}
+          onConnectionChange={(online, reason) => {
+            setIsOnline(online);
+            setDisconnectReason(reason);
+          }}
+          activeTicketId={activeTicketId}
+          hideUI={true}
+        />
+        <OrgDisabledScreen
+          currentUserOrgId={currentUserOrgId}
+          onLogout={handleLogout}
+        />
+      </>
     );
   }
 
   if (currentUser && !currentUserRights.isApproved) {
     return (
-      <PendingApprovalScreen
-        currentUserRights={currentUserRights}
-        onLogout={handleLogout}
-        onRequestToJoinOrganization={handleRequestToJoinOrganization}
-        showNotification={showNotification}
-      />
+      <>
+        <AppwriteCloudSync
+          currentLocalState={{
+            trucks,
+            drivers,
+            offices,
+            accounts,
+            trips,
+            expenses,
+            tyres,
+            auditLogs,
+            supportTickets
+          }}
+          onLoadCloudState={onLoadCloudState}
+          showNotification={showNotification}
+          logAction={logAction}
+          currentUserOrgId={currentUserOrgId}
+          currentUserEmail={currentUser?.email}
+          currentUserId={currentUser?.email || ''}
+          isAdmin={currentUserRights.isAdmin}
+          onInitialSyncComplete={setInitialPullDone}
+          onConnectionChange={(online, reason) => {
+            setIsOnline(online);
+            setDisconnectReason(reason);
+          }}
+          activeTicketId={activeTicketId}
+          hideUI={true}
+        />
+        <PendingApprovalScreen
+          currentUserRights={currentUserRights}
+          onLogout={handleLogout}
+          onRequestToJoinOrganization={handleRequestToJoinOrganization}
+          showNotification={showNotification}
+        />
+      </>
     );
   }
 
@@ -3611,6 +3727,7 @@ function AppContent() {
         onClose={() => setSetup2FAOpen(false)}
         setup2FASecret={setup2FASecret}
         showNotification={showNotification}
+        reconcileSession={reconcileSession}
       />
 
       {/* DISABLE 2FA WIZARD MODAL */}
@@ -3618,6 +3735,7 @@ function AppContent() {
         isOpen={disable2FAOpen}
         onClose={() => setDisable2FAOpen(false)}
         showNotification={showNotification}
+        reconcileSession={reconcileSession}
       />
 
       <ConfirmModal

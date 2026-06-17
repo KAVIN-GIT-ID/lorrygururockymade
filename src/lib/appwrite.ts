@@ -461,6 +461,99 @@ class AppwriteService {
     return await this.account.updateRecovery(userId, secret, passwordStr);
   }
 
+  normalizeTrip(trip: any): any {
+    if (!trip) return trip;
+    const arrayFields = ['payments', 'advances', 'fuels', 'subTrips'];
+    arrayFields.forEach(field => {
+      if (typeof trip[field] === 'string') {
+        try {
+          trip[field] = JSON.parse(trip[field]);
+        } catch {
+          trip[field] = [];
+        }
+      }
+      if (!Array.isArray(trip[field])) {
+        trip[field] = [];
+      }
+    });
+
+    if (Array.isArray(trip.subTrips)) {
+      trip.subTrips = trip.subTrips.map((st: any) => {
+        let cargoExpenses = st.cargoExpenses;
+        if (typeof cargoExpenses === 'string') {
+          try {
+            cargoExpenses = JSON.parse(cargoExpenses);
+          } catch {
+            cargoExpenses = [];
+          }
+        }
+        if (!Array.isArray(cargoExpenses)) {
+          cargoExpenses = [];
+        }
+        return {
+          ...st,
+          cargoExpenses
+        };
+      });
+    }
+    return trip;
+  }
+
+  reconstructRecord(doc: any): any {
+    if (!doc) return null;
+    // Keep global_configs format unchanged (uses key/data)
+    if (doc.$collectionId === 'global_configs' || doc.collectionId === 'global_configs') {
+      return {
+        key: doc.key,
+        data: doc.data,
+        id: doc.$id
+      };
+    }
+
+    const record: any = {};
+
+    for (const [key, val] of Object.entries(doc)) {
+      if (key.startsWith('$') || key === 'data') continue;
+      
+      if (key === 'loans' || key === 'payments' || key === 'advances' || key === 'fuels' || key === 'movementHistory' || key === 'cargoExpenses') {
+        try {
+          record[key] = val ? JSON.parse(val as string) : [];
+        } catch {
+          record[key] = [];
+        }
+      } else {
+        record[key] = val;
+      }
+    }
+
+    if (doc.data) {
+      try {
+        const parsed = JSON.parse(doc.data);
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(record, parsed);
+        }
+      } catch (e) {
+        // Fallback to flat property mapping
+      }
+    }
+
+    if (!record.status) {
+      record.status = 'Pending';
+    } else if (record.status === 'Pald' || record.status === 'Paid') {
+      record.status = 'Settled';
+    }
+
+    record.id = doc.$id || doc.id || record.id;
+    record.organizationId = doc.organizationId || record.organizationId;
+    record.createdAt = doc.$createdAt || record.createdAt;
+    record.updatedAt = doc.$updatedAt || record.updatedAt;
+
+    if (doc.$collectionId === 'trips' || doc.collectionId === 'trips') {
+      return this.normalizeTrip(record);
+    }
+    return record;
+  }
+
   /**
    * Fetch all records for the active organization in a dynamic collection.
    */
@@ -478,7 +571,37 @@ class AppwriteService {
         collectionId,
         queries
       );
-      return response.documents || [];
+      const docs = response.documents || [];
+
+      // If we are listing trips, also list sub_trips and stitch them together
+      if (collectionId === 'trips') {
+        let subDocs: any[] = [];
+        try {
+          subDocs = await this.listFleetDocuments(dbId, 'sub_trips', orgId);
+        } catch (subErr) {
+          console.warn("Failed to load sub-trips for stitching, returning trips without sub-trips:", subErr);
+        }
+
+        const subTripsByTripId: Record<string, any[]> = {};
+        for (const subDoc of subDocs) {
+          const subTripRecord = this.reconstructRecord(subDoc);
+          const tripId = subDoc.tripId;
+          if (tripId) {
+            if (!subTripsByTripId[tripId]) {
+              subTripsByTripId[tripId] = [];
+            }
+            subTripsByTripId[tripId].push(subTripRecord);
+          }
+        }
+
+        return docs.map(doc => {
+          const tripRecord = this.reconstructRecord(doc);
+          tripRecord.subTrips = subTripsByTripId[doc.$id] || tripRecord.subTrips || [];
+          return this.normalizeTrip(tripRecord);
+        });
+      }
+
+      return docs.map(doc => this.reconstructRecord(doc));
     } catch (err: any) {
       const isNotFound = err.code === 404 || 
         err.type === 'collection_not_found' || 
@@ -503,10 +626,25 @@ class AppwriteService {
     await this.initSession();
     try {
       const response = await this.databases.getDocument(dbId, collectionId, docId);
-      if (response && response.data) {
-        return JSON.parse(response.data);
+      if (!response) return null;
+
+      const record = this.reconstructRecord(response);
+
+      if (collectionId === 'trips' && record) {
+        try {
+          const subDocs = await this.databases.listDocuments(dbId, 'sub_trips', [
+            Query.equal('tripId', docId),
+            Query.limit(100)
+          ]);
+          record.subTrips = (subDocs.documents || []).map(sub => this.reconstructRecord(sub));
+        } catch (subErr) {
+          console.warn(`Failed to load sub-trips for single trip ${docId}:`, subErr);
+          record.subTrips = [];
+        }
+        return this.normalizeTrip(record);
       }
-      return null;
+
+      return record;
     } catch (err: any) {
       if (err.code === 404 || err.type === 'document_not_found') {
         return null;
@@ -516,216 +654,60 @@ class AppwriteService {
     }
   }
 
-  /**
-   * Save a single document (upsert) to Appwrite Database.
-   */
-  async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
-    await this.initSession();
-
-    let documentData: any = {
-      organizationId: orgId,
-      data: JSON.stringify(dataObj)
-    };
-
-    if (collectionId === 'audit_logs') {
-      documentData = {
-        organizationId: orgId,
-        timestamp: dataObj.timestamp || '',
-        user: dataObj.user || '',
-        action: dataObj.action || 'Cloud',
-        category: dataObj.category || '',
-        reference: dataObj.reference || '',
-        details: dataObj.details || '',
-        data: JSON.stringify(dataObj)
-      };
-    } else if (collectionId === 'trips') {
-      documentData = {
-        organizationId: orgId,
-        tripNo: dataObj.tripNo || '',
-        truckNo: dataObj.truckNo || '',
-        startDate: dataObj.startDate || '',
-        endDate: dataObj.endDate || '',
-        driverName: dataObj.driverName || '',
-        status: dataObj.status || 'Pending',
-        notes: dataObj.notes || '',
-        data: JSON.stringify(dataObj)
-      };
-    } else if (collectionId === 'expenses') {
-      documentData = {
-        organizationId: orgId,
-        truckNo: dataObj.truckNo || '',
-        expenseType: dataObj.expenseType || '',
-        shopName: dataObj.shopName || '',
-        amount: Number(dataObj.amount) || 0,
-        paymentMode: dataObj.paymentMode || '',
-        date: dataObj.date || '',
-        status: dataObj.status || 'Pending',
-        accountType: dataObj.accountType || 'Account',
-        driverName: dataObj.driverName || '',
-        data: JSON.stringify(dataObj)
-      };
-    } else if (collectionId === 'tyres') {
-      documentData = {
-        organizationId: orgId,
-        tyreNo: dataObj.tyreNo || '',
-        manufacturer: dataObj.manufacturer || '',
-        status: dataObj.status || 'Available',
-        currentTruckNo: dataObj.currentTruckNo || '',
-        purchaseDate: dataObj.purchaseDate || '',
-        data: JSON.stringify(dataObj)
-      };
-    } else if (collectionId === 'support_tickets') {
-      documentData = {
-        organizationId: orgId,
-        ticketNo: dataObj.ticketNo || '',
-        requesterName: dataObj.requesterName || '',
-        requesterEmail: dataObj.requesterEmail || '',
-        requesterPhone: dataObj.requesterPhone || '',
-        category: dataObj.category || 'General',
-        title: dataObj.title || '',
-        description: dataObj.description || '',
-        status: dataObj.status || 'Open',
-        assignedTeam: dataObj.assignedTeam || 'General',
-        assignedTo: dataObj.assignedTo || '',
-        data: JSON.stringify(dataObj)
-      };
-    } else if (collectionId === 'payments') {
-      documentData = {
-        organizationId: orgId,
-        truckNo: dataObj.truckNo || '',
-        amount: Number(dataObj.amount) || 0,
-        transactionId: dataObj.transactionId || '',
-        paymentDate: dataObj.paymentDate || '',
-        duration: dataObj.duration || '',
-        status: dataObj.status || 'Success',
-        customerEmail: dataObj.customerEmail || '',
-        customerName: dataObj.customerName || '',
-        customerPhone: dataObj.customerPhone || '',
-        data: JSON.stringify(dataObj)
-      };
-    }
-
-    const fallbackData = {
-      organizationId: orgId,
-      data: JSON.stringify(dataObj)
-    };
-
-    const isSchemaError = (err: any) => {
-      if (!err) return false;
-      const errMsg = (err.message || '').toLowerCase();
-      return err.code === 400 ||
-        errMsg.includes('attribute') ||
-        errMsg.includes('schema') ||
-        errMsg.includes('not found') ||
-        errMsg.includes('invalid document structure');
-    };
-
-    const tryUpdateFirst = collectionId !== 'audit_logs';
-
-    if (tryUpdateFirst) {
-      try {
-        const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
-        return response.$id;
-      } catch (err: any) {
-        const isNotFound = err.code === 404 ||
-          String(err.code) === '404' ||
-          err.type === 'document_not_found' ||
-          (err.message && err.message.toLowerCase().includes('not found'));
-        if (isNotFound) {
-          try {
-            const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
-            return response.$id;
-          } catch (createErr: any) {
-            if (isSchemaError(createErr)) {
-              console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
-              const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
-              return response.$id;
-            }
-            console.error(`Appwrite Database create failure for ${docId} in ${collectionId}:`, createErr);
-            throw createErr;
-          }
-        }
-        if (isSchemaError(err)) {
-          console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
-          try {
-            const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
-            return response.$id;
-          } catch (fallbackUpdateErr: any) {
-            console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackUpdateErr);
-            throw fallbackUpdateErr;
-          }
-        }
-        console.error(`Appwrite Database save failure for ${docId} in ${collectionId}:`, err);
-        throw err;
-      }
-    } else {
-      try {
-        // Try creating first (ideal for new records like audit logs)
-        const response = await this.databases.createDocument(dbId, collectionId, docId, documentData);
-        return response.$id;
-      } catch (err: any) {
-        const isConflict = err.code === 409 ||
-          String(err.code) === '409' ||
-          err.type === 'document_already_exists' ||
-          (err.message && (err.message.toLowerCase().includes('already exists') || err.message.toLowerCase().includes('conflict')));
-        if (isConflict) {
-          try {
-            const response = await this.databases.updateDocument(dbId, collectionId, docId, documentData);
-            return response.$id;
-          } catch (updateErr: any) {
-            if (isSchemaError(updateErr)) {
-              console.warn(`Appwrite schema mismatch on update for ${collectionId} (${docId}). Retrying with fallback schema...`);
-              const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
-              return response.$id;
-            }
-            console.error(`Appwrite Database update failure for ${docId} in ${collectionId}:`, updateErr);
-            throw updateErr;
-          }
-        }
-
-        // Schema error on initial create
-        if (isSchemaError(err)) {
-          console.warn(`Appwrite schema mismatch on create for ${collectionId} (${docId}). Retrying with fallback schema...`);
-          try {
-            const response = await this.databases.createDocument(dbId, collectionId, docId, fallbackData);
-            return response.$id;
-          } catch (fallbackErr: any) {
-            if (fallbackErr.code === 409 || fallbackErr.type === 'document_already_exists') {
-              try {
-                const response = await this.databases.updateDocument(dbId, collectionId, docId, fallbackData);
-                return response.$id;
-              } catch (fallbackUpdateErr: any) {
-                console.error(`Appwrite Database update failure with fallback for ${docId} in ${collectionId}:`, fallbackUpdateErr);
-                throw fallbackUpdateErr;
-              }
-            }
-            console.error(`Appwrite Database create failure with fallback for ${docId} in ${collectionId}:`, fallbackErr);
-            throw fallbackErr;
-          }
-        }
-
-        console.error(`Appwrite Database save failure for ${docId} in ${collectionId}:`, err);
-        throw err;
-      }
+  isRealtimeConnected(): boolean {
+    if (!isAppwriteConfigured()) return true;
+    try {
+      const ws = (this.realtime as any).socket;
+      return !!(ws && ws.readyState === 1); // 1 = WebSocket.OPEN
+    } catch (_) {
+      return false;
     }
   }
 
+  private async proxyRequest(path: string, body: any): Promise<any> {
+    if (!this.isRealtimeConnected()) {
+      throw new Error('Backend system down, please try again later. Save only when online.');
+    }
+    await this.initSession();
+    let jwtToken = '';
+    try {
+      const jwtResult = await this.account.createJWT();
+      jwtToken = jwtResult.jwt;
+    } catch (err: any) {
+      console.warn("Could not generate session JWT for database proxy request:", err);
+      throw new Error("Session expired or authentication failed. Please re-login.");
+    }
+
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${jwtToken}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `Proxy request to ${path} failed with status ${response.status}`);
+    }
+    return data;
+  }
+
   /**
-   * Delete a single document from Appwrite Database.
+   * Save a single document (upsert) to Appwrite Database via secure proxy.
+   */
+  async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
+    const res = await this.proxyRequest('/api/database/save', { dbId, collectionId, docId, orgId, dataObj });
+    return res.docId;
+  }
+
+  /**
+   * Delete a single document from Appwrite Database via secure proxy.
    */
   async deleteFleetDocument(dbId: string, collectionId: string, docId: string): Promise<boolean> {
-    await this.initSession();
-    try {
-      await this.databases.deleteDocument(dbId, collectionId, docId);
-      return true;
-    } catch (err: any) {
-      // If it's already deleted or doesn't exist, ignore the error
-      if (err.code === 404 || err.type === 'document_not_found') {
-        return true;
-      }
-      console.error(`Appwrite Database delete failure for ${docId} in ${collectionId}:`, err);
-      throw err;
-    }
+    const res = await this.proxyRequest('/api/database/delete', { dbId, collectionId, docId });
+    return !!res.success;
   }
 
   getEmailDocId(email: string): string {
@@ -760,26 +742,21 @@ class AppwriteService {
       if (err.code === 404 || err.type === 'database_not_found' || err.type === 'collection_not_found') {
         return [];
       }
-      console.error(`Appwrite Database listGlobalConfigs failure:`, err);
+      console.error("Appwrite Database listGlobalConfigs failure:", err);
       throw err;
     }
   }
 
   /**
-   * Delete a global configuration document by key from Appwrite Database.
+   * Delete a global configuration document by key from Appwrite Database via secure proxy.
    */
   async deleteGlobalConfig(dbId: string, key: string): Promise<boolean> {
-    await this.initSession();
-    try {
-      await this.databases.deleteDocument(dbId, 'global_configs', key);
-      return true;
-    } catch (err: any) {
-      if (err.code === 404 || err.type === 'document_not_found') {
-        return true;
-      }
-      console.error(`Appwrite Database deleteGlobalConfig failure for key ${key}:`, err);
-      throw err;
-    }
+    const res = await this.proxyRequest('/api/database/delete', {
+      dbId,
+      collectionId: 'global_configs',
+      docId: key
+    });
+    return !!res.success;
   }
 
   /**
@@ -802,36 +779,18 @@ class AppwriteService {
     }
   }
 
+  /**
+   * Save a global configuration document by key to Appwrite Database via secure proxy.
+   */
   async saveGlobalConfig(dbId: string, key: string, payload: any): Promise<string> {
-    await this.initSession();
-    const documentData = {
-      key: key,
-      data: JSON.stringify(payload)
-    };
-    try {
-      const response = await this.databases.updateDocument(dbId, 'global_configs', key, documentData);
-      return response.$id;
-    } catch (err: any) {
-      if (err.code === 404 || err.type === 'document_not_found') {
-        try {
-          const response = await this.databases.createDocument(dbId, 'global_configs', key, documentData);
-          return response.$id;
-        } catch (createErr: any) {
-          const isConflict = createErr.code === 409 ||
-            createErr.type === 'document_already_exists' ||
-            (createErr.message && createErr.message.toLowerCase().includes('already exists'));
-          if (isConflict) {
-            console.log(`Document "${key}" created concurrently in global_configs. Updating instead.`);
-            const response = await this.databases.updateDocument(dbId, 'global_configs', key, documentData);
-            return response.$id;
-          }
-          console.error(`Appwrite Database saveGlobalConfig create failure for key ${key}:`, createErr);
-          throw createErr;
-        }
-      }
-      console.error(`Appwrite Database saveGlobalConfig update failure for key ${key}:`, err);
-      throw err;
-    }
+    const res = await this.proxyRequest('/api/database/save', {
+      dbId,
+      collectionId: 'global_configs',
+      docId: key,
+      orgId: payload.organizationId || 'global',
+      dataObj: payload
+    });
+    return res.docId;
   }
 
   /**
@@ -920,7 +879,11 @@ class AppwriteService {
     if (!isAppwriteConfigured()) return [];
     try {
       const result = await this.teams.listMemberships(teamId);
-      return result.memberships || [];
+      console.log('Appwrite getTeamMemberships raw response:', result);
+      if (Array.isArray(result)) return result;
+      if (result && Array.isArray(result.memberships)) return result.memberships;
+      if (result && Array.isArray((result as any).members)) return (result as any).members;
+      return [];
     } catch (err) {
       console.warn('Appwrite getTeamMemberships failed:', err);
       return [];
@@ -951,7 +914,10 @@ class AppwriteService {
     if (!isAppwriteConfigured()) return false;
     try {
       const list = await this.teams.listMemberships(teamId);
-      const match = list.memberships.find(m => m.userEmail.toLowerCase() === email.toLowerCase());
+      const match = list.memberships.find(m => 
+        (m.userEmail && m.userEmail.toLowerCase() === email.toLowerCase()) ||
+        ((m as any).email && (m as any).email.toLowerCase() === email.toLowerCase())
+      );
       if (match) {
         await this.teams.deleteMembership(teamId, match.$id);
         return true;
@@ -969,7 +935,11 @@ class AppwriteService {
       const user = await this.account.get();
       if (!user) return false;
       const list = await this.teams.listMemberships(teamId);
-      const match = list.memberships.find(m => m.userId === user.$id || m.userEmail.toLowerCase() === user.email.toLowerCase());
+      const match = list.memberships.find(m => 
+        m.userId === user.$id || 
+        (m.userEmail && m.userEmail.toLowerCase() === user.email.toLowerCase()) ||
+        ((m as any).email && (m as any).email.toLowerCase() === user.email.toLowerCase())
+      );
       if (match) {
         await this.teams.deleteMembership(teamId, match.$id);
         return true;
@@ -993,6 +963,23 @@ class AppwriteService {
   ): Promise<{ documents: any[]; total: number; fallback?: boolean }> {
     await this.initSession();
     try {
+      if (filters.search) {
+        const baseQueries = [];
+        if (orgId !== 'ALL') {
+          baseQueries.push(Query.equal('organizationId', orgId));
+        }
+        const response = await this.databases.listDocuments(dbId, 'audit_logs', [
+          ...baseQueries,
+          Query.orderDesc('timestamp'),
+          Query.limit(300)
+        ]);
+        return {
+          documents: response.documents || [],
+          total: response.total || 0,
+          fallback: true
+        };
+      }
+
       const baseQueries = [];
       if (orgId !== 'ALL') {
         baseQueries.push(Query.equal('organizationId', orgId));
@@ -1057,7 +1044,7 @@ class AppwriteService {
   async queryTrips(
     dbId: string,
     orgId: string,
-    filters: { search?: string; truckNo?: string; status?: string; startDate?: string; endDate?: string },
+    filters: { search?: string; truckNo?: string; status?: string | string[]; startDate?: string; endDate?: string },
     page: number,
     limit: number,
     sortField: string = 'startDate',
@@ -1073,7 +1060,15 @@ class AppwriteService {
         queries.push(Query.equal('truckNo', filters.truckNo));
       }
       if (filters.status) {
-        queries.push(Query.equal('status', filters.status));
+        let statusQueryVal = filters.status;
+        if (Array.isArray(statusQueryVal)) {
+          if (statusQueryVal.includes('Settled')) {
+            statusQueryVal = [...statusQueryVal, 'Paid', 'Pald'];
+          }
+        } else if (statusQueryVal === 'Settled') {
+          statusQueryVal = ['Settled', 'Paid', 'Pald'];
+        }
+        queries.push(Query.equal('status', statusQueryVal));
       }
       if (filters.search) {
         queries.push(Query.search('tripNo', filters.search));
@@ -1095,8 +1090,57 @@ class AppwriteService {
       queries.push(Query.offset((page - 1) * limit));
 
       const response = await this.databases.listDocuments(dbId, 'trips', queries);
+      const docs = response.documents || [];
+
+      let subDocs: any[] = [];
+      if (docs.length > 0) {
+        try {
+          const tripIds = docs.map(d => d.$id);
+          const subResponse = await this.databases.listDocuments(dbId, 'sub_trips', [
+            Query.equal('tripId', tripIds),
+            Query.limit(500)
+          ]);
+          subDocs = subResponse.documents || [];
+        } catch (subErr) {
+          console.warn("Failed to load sub-trips for queryTrips stitching, returning trips without sub-trips:", subErr);
+        }
+      }
+
+      const subTripsByTripId = subDocs.reduce((acc, doc) => {
+        const tId = doc.tripId;
+        if (!acc[tId]) acc[tId] = [];
+        let subTripData = { ...doc };
+        if (doc.data) {
+          try {
+            subTripData = { ...subTripData, ...JSON.parse(doc.data) };
+          } catch (e) {
+            console.warn("Failed to parse data for sub-trip:", doc.$id, e);
+          }
+        }
+        subTripData.id = doc.$id || doc.id || subTripData.id;
+        acc[tId].push(subTripData);
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      const reconstructedDocs = docs.map(doc => {
+        let tripRecord = { ...doc };
+        if (doc.data) {
+          try {
+            const parsed = JSON.parse(doc.data);
+            tripRecord = { ...tripRecord, ...parsed };
+          } catch (e) {
+            console.warn("Failed to parse data for trip:", doc.$id, e);
+          }
+        }
+        if (tripRecord.status === 'Pald' || tripRecord.status === 'Paid') {
+          tripRecord.status = 'Settled';
+        }
+        tripRecord.subTrips = subTripsByTripId[doc.$id] || tripRecord.subTrips || [];
+        return this.normalizeTrip(tripRecord);
+      });
+
       return {
-        documents: response.documents || [],
+        documents: reconstructedDocs,
         total: response.total || 0
       };
     } catch (err: any) {
@@ -1123,7 +1167,10 @@ class AppwriteService {
               console.warn("Failed to parse data for fallback queryTrips:", doc.$id, e);
             }
           }
-          return item;
+          if (item.status === 'Pald' || item.status === 'Paid') {
+            item.status = 'Settled';
+          }
+          return this.normalizeTrip(item);
         });
 
         // Apply filters
@@ -1131,7 +1178,11 @@ class AppwriteService {
           parsedList = parsedList.filter(t => t.truckNo === filters.truckNo);
         }
         if (filters.status) {
-          parsedList = parsedList.filter(t => t.status === filters.status);
+          if (Array.isArray(filters.status)) {
+            parsedList = parsedList.filter(t => filters.status!.includes(t.status));
+          } else {
+            parsedList = parsedList.filter(t => t.status === filters.status);
+          }
         }
         if (filters.search) {
           const s = filters.search.toLowerCase();
@@ -1175,7 +1226,7 @@ class AppwriteService {
             startDate: item.startDate || '',
             endDate: item.endDate || '',
             driverName: item.driverName || '',
-            status: item.status || 'Pending',
+            status: (item.status === 'Pald' || item.status === 'Paid') ? 'Settled' : (item.status || 'Pending'),
             notes: item.notes || '',
             data: item.data || JSON.stringify(rest),
             ...rest

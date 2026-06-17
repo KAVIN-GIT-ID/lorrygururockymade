@@ -243,7 +243,7 @@ export const cloudSyncService = {
       const cloudExportDate = parsed.exportDate
         ? (isNaN(Number(parsed.exportDate)) ? new Date(parsed.exportDate).getTime() : Number(parsed.exportDate))
         : 0;
-      const localIsNewer = !quiet && localLastModified > 0 && cloudExportDate > 0 && localLastModified > cloudExportDate + 4000;
+      const localIsNewer = false;
       if (!localIsNewer) {
         const migrated = migrateTrucks(parsed.trucks);
 
@@ -309,7 +309,9 @@ export const cloudSyncService = {
                 (t.isApproved && !existing.isApproved) ||
                 (t.requestStatus === 'Pending' && existing.requestStatus === 'Rejected') ||
                 (t.requestStatus === 'Rejected' && existing.requestStatus === 'Pending') ||
-                (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_'))
+                (!existing.isApproved && !t.isApproved && t.id.startsWith('t_id_') && existing.id.startsWith('tr_')) ||
+                ((t.version || 0) > (existing.version || 0)) ||
+                (t.version === existing.version && new Date(t.updatedAt || 0).getTime() > new Date(existing.updatedAt || 0).getTime())
               ));
             if (keepNew) {
               if (isAppwriteConfigured()) {

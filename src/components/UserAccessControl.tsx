@@ -63,9 +63,18 @@ export default function UserAccessControl({
   const [pinpushInterval, setPinpushInterval] = useState<number | ''>('');
   const [wheelGreaseInterval, setWheelGreaseInterval] = useState<number | ''>('');
   const [brokeragePolicy, setBrokeragePolicy] = useState<'OrgBears' | 'DriverBears'>('DriverBears');
+  const [insuranceWarningDays, setInsuranceWarningDays] = useState<number | ''>('');
+  const [fcWarningDays, setFcWarningDays] = useState<number | ''>('');
+  const [npTaxWarningDays, setNpTaxWarningDays] = useState<number | ''>('');
+  const [fiveYearPermitWarningDays, setFiveYearPermitWarningDays] = useState<number | ''>('');
+  const [qTaxWarningDays, setQTaxWarningDays] = useState<number | ''>('');
+  const [greenTaxWarningDays, setGreenTaxWarningDays] = useState<number | ''>('');
+  const [subscriptionWarningDays, setSubscriptionWarningDays] = useState<number | ''>('');
+
+  const [lastOrgId, setLastOrgId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (orgProfile) {
+    if (orgProfile && orgProfile.organizationId !== lastOrgId) {
       setEngineOilInterval(orgProfile.engineOilIntervalKM !== undefined && orgProfile.engineOilIntervalKM !== null ? orgProfile.engineOilIntervalKM : '');
       setCrownOilInterval(orgProfile.crownOilIntervalKM !== undefined && orgProfile.crownOilIntervalKM !== null ? orgProfile.crownOilIntervalKM : '');
       setGearBoxOilInterval(orgProfile.gearBoxOilIntervalKM !== undefined && orgProfile.gearBoxOilIntervalKM !== null ? orgProfile.gearBoxOilIntervalKM : '');
@@ -73,8 +82,16 @@ export default function UserAccessControl({
       setPinpushInterval(orgProfile.pinpushIntervalKM !== undefined && orgProfile.pinpushIntervalKM !== null ? orgProfile.pinpushIntervalKM : '');
       setWheelGreaseInterval(orgProfile.wheelGreaseIntervalKM !== undefined && orgProfile.wheelGreaseIntervalKM !== null ? orgProfile.wheelGreaseIntervalKM : '');
       setBrokeragePolicy(orgProfile.brokeragePolicy || 'DriverBears');
+      setInsuranceWarningDays(orgProfile.insuranceWarningDays !== undefined && orgProfile.insuranceWarningDays !== null ? orgProfile.insuranceWarningDays : '');
+      setFcWarningDays(orgProfile.fcWarningDays !== undefined && orgProfile.fcWarningDays !== null ? orgProfile.fcWarningDays : '');
+      setNpTaxWarningDays(orgProfile.npTaxWarningDays !== undefined && orgProfile.npTaxWarningDays !== null ? orgProfile.npTaxWarningDays : '');
+      setFiveYearPermitWarningDays(orgProfile.fiveYearPermitWarningDays !== undefined && orgProfile.fiveYearPermitWarningDays !== null ? orgProfile.fiveYearPermitWarningDays : '');
+      setQTaxWarningDays(orgProfile.qTaxWarningDays !== undefined && orgProfile.qTaxWarningDays !== null ? orgProfile.qTaxWarningDays : '');
+      setGreenTaxWarningDays(orgProfile.greenTaxWarningDays !== undefined && orgProfile.greenTaxWarningDays !== null ? orgProfile.greenTaxWarningDays : '');
+      setSubscriptionWarningDays(orgProfile.subscriptionWarningDays !== undefined && orgProfile.subscriptionWarningDays !== null ? orgProfile.subscriptionWarningDays : '');
+      setLastOrgId(orgProfile.organizationId);
     }
-  }, [orgProfile]);
+  }, [orgProfile, lastOrgId]);
 
   const handleSaveOrgDefaults = (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +105,13 @@ export default function UserAccessControl({
       pinpushIntervalKM: pinpushInterval !== '' ? Number(pinpushInterval) : undefined,
       wheelGreaseIntervalKM: wheelGreaseInterval !== '' ? Number(wheelGreaseInterval) : undefined,
       brokeragePolicy: brokeragePolicy,
+      insuranceWarningDays: insuranceWarningDays !== '' ? Number(insuranceWarningDays) : undefined,
+      fcWarningDays: fcWarningDays !== '' ? Number(fcWarningDays) : undefined,
+      npTaxWarningDays: npTaxWarningDays !== '' ? Number(npTaxWarningDays) : undefined,
+      fiveYearPermitWarningDays: fiveYearPermitWarningDays !== '' ? Number(fiveYearPermitWarningDays) : undefined,
+      qTaxWarningDays: qTaxWarningDays !== '' ? Number(qTaxWarningDays) : undefined,
+      greenTaxWarningDays: greenTaxWarningDays !== '' ? Number(greenTaxWarningDays) : undefined,
+      subscriptionWarningDays: subscriptionWarningDays !== '' ? Number(subscriptionWarningDays) : undefined,
     });
     showNotification("Organization defaults updated successfully!");
   };
@@ -337,7 +361,16 @@ export default function UserAccessControl({
 
   /** Find this user's live Appwrite membership record (by email match) */
   const getAppwriteMembership = (email: string): TeamMember | undefined => {
-    return teamMembers.find(m => m.userEmail?.toLowerCase() === email.toLowerCase());
+    const cleanEmail = email.trim().toLowerCase();
+    const match = teamMembers.find(m => {
+      const mEmail = (m.userEmail || (m as any).email || '').trim().toLowerCase();
+      return mEmail === cleanEmail;
+    });
+    console.log(`[getAppwriteMembership] Matching email: "${cleanEmail}" -> found:`, match, "in list:", teamMembers);
+    if (teamMembers.length > 0) {
+      console.log(`[getAppwriteMembership] Raw memberships list JSON:`, JSON.stringify(teamMembers));
+    }
+    return match;
   };
 
   return (
@@ -480,6 +513,93 @@ export default function UserAccessControl({
                 </select>
               </div>
             </div>
+
+            {/* COMPLIANCE ALERT THRESHOLDS */}
+            <div className="border-t border-slate-200/60 pt-4 space-y-3">
+              <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">
+                Compliance Alert Thresholds (Warning Days before Expiry)
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <label htmlFor="input-org-insurance-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Insurance Alert (Days)</label>
+                  <input
+                    id="input-org-insurance-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={insuranceWarningDays}
+                    onChange={(e) => setInsuranceWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-fc-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">FC Alert (Days)</label>
+                  <input
+                    id="input-org-fc-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={fcWarningDays}
+                    onChange={(e) => setFcWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-np-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">National Permit Alert (Days)</label>
+                  <input
+                    id="input-org-np-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={npTaxWarningDays}
+                    onChange={(e) => setNpTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-5y-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">5Y Permit Alert (Days)</label>
+                  <input
+                    id="input-org-5y-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={fiveYearPermitWarningDays}
+                    onChange={(e) => setFiveYearPermitWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-qtax-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Q Tax Alert (Days)</label>
+                  <input
+                    id="input-org-qtax-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={qTaxWarningDays}
+                    onChange={(e) => setQTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-greentax-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Green Tax Alert (Days)</label>
+                  <input
+                    id="input-org-greentax-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={greenTaxWarningDays}
+                    onChange={(e) => setGreenTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="input-org-subscription-warning" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Subscription Alert (Days)</label>
+                  <input
+                    id="input-org-subscription-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={subscriptionWarningDays}
+                    onChange={(e) => setSubscriptionWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="flex justify-end">
               <button
                 type="submit"

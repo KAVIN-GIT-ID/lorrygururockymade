@@ -30,7 +30,6 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
 
   const orgDrivers = (orgId === 'org_backend' ? drivers : drivers.filter(d => d.organizationId === orgId))
     .filter(d => !d.deletedAt);
-
   const addDriver = async (driverInput: Omit<Driver, 'id'>) => {
     const isDup = orgDrivers.some(d => d.driverName.toUpperCase().trim() === driverInput.driverName.toUpperCase().trim());
     if (isDup) {
@@ -43,17 +42,18 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       organizationId: orgId
     }, currentUserId);
 
-    saveDrivers([...drivers, d]);
-
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', d.id, orgId, d);
       } catch (err) {
-        console.warn("Failed to save driver to Appwrite:", err);
+        console.error("Failed to save driver to Appwrite. Action aborted:", err);
+        alert("Error: Failed to register driver in server database. Please check your connection or permissions.");
+        return;
       }
     }
 
+    saveDrivers([...drivers, d]);
     logAction('Created', 'Driver', d.driverName, `Added operator driver ${d.driverName} (License: ${d.licenseNo || 'N/A'})`);
     showNotification(`Driver ${d.driverName} added successfully.`);
   };
@@ -64,15 +64,14 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       ? mutateRecord(oldDriver, updated, currentUserId)
       : createRecord<Driver>({ ...updated, organizationId: orgId } as any, currentUserId);
     
-    const next = drivers.map(d => d.id === updated.id ? merged : d);
-    saveDrivers(next);
-
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', merged.id, orgId, merged);
       } catch (err) {
-        console.warn("Failed to update driver in Appwrite:", err);
+        console.error("Failed to update driver in Appwrite. Action aborted:", err);
+        alert("Error: Failed to update driver in server database. Please check your connection or permissions.");
+        return;
       }
 
       if (oldDriver && oldDriver.licenseFileId && oldDriver.licenseFileId !== merged.licenseFileId) {
@@ -81,6 +80,9 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
         });
       }
     }
+
+    const next = drivers.map(d => d.id === updated.id ? merged : d);
+    saveDrivers(next);
 
     const diff = oldDriver ? getDriverDiff(oldDriver, merged) : `Updated driver specs or active status to ${merged.status}`;
     if (diff) {
@@ -98,15 +100,15 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       return;
     }
     const updatedDriver = mutateRecord(dr, { deletedAt: new Date().toISOString() }, currentUserId);
-    const next = drivers.map(d => d.id === id ? updatedDriver : d);
-    saveDrivers(next);
-
+    
     if (isAppwriteConfigured() && dr) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', id, orgId, updatedDriver);
       } catch (err) {
-        console.warn("Failed to delete driver (soft-delete) from Appwrite:", err);
+        console.error("Failed to delete driver from Appwrite. Action aborted:", err);
+        alert("Error: Failed to delete driver from server database. Please check your connection or permissions.");
+        return;
       }
 
       if (dr.licenseFileId) {
@@ -115,6 +117,9 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
         });
       }
     }
+
+    const next = drivers.map(d => d.id === id ? updatedDriver : d);
+    saveDrivers(next);
 
     if (dr) {
       logAction('Deleted', 'Driver', dr.driverName, `Permanently deleted driver ${dr.driverName} record`);

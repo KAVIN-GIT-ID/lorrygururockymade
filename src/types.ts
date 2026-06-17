@@ -158,7 +158,7 @@ export interface TripAdvance {
   receivedByDriverDirectly?: boolean; // True if received directly by driver (e.g. direct party payment)
 }
 
-export type TripStatus = 'Pending' | 'In Progress' | 'Completed' | 'Paid';
+export type TripStatus = 'Pending' | 'In Progress' | 'Completed' | 'Settled';
 
 export interface TripPayment {
   id: string;
@@ -254,6 +254,15 @@ export interface SubTrip {
   noOfTons?: number;
   material?: string;
   ratePerTon?: number;
+  pod?: SubTripPod;
+}
+
+export interface SubTripPod {
+  courierName: string;
+  refNo: string;
+  date: string;
+  status: string;
+  attachmentId?: string;
 }
 
 export interface TripEntry extends BaseRecord {
@@ -318,7 +327,7 @@ export interface TripMetrics {
 }
 
 export function getTripMetrics(trip: TripEntry): TripMetrics {
-  const subTrips = trip.subTrips || [];
+  const subTrips = Array.isArray(trip.subTrips) ? trip.subTrips : [];
 
   const income = subTrips.reduce((sum, s) => sum + (Number(s.income) || 0), 0);
 
@@ -452,7 +461,7 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
   const rtoExpense = trip.rtoExpense !== undefined ? Number(trip.rtoExpense) : subTrips.reduce((sum, s) => sum + (Number(s.rtoExpense) || 0), 0);
 
   // Calculate total fuel liters and expense from fuels list under TripEntry or single field fallback
-  const fuels = trip.fuels || [];
+  const fuels = Array.isArray(trip.fuels) ? trip.fuels : [];
   const fuelLiters = fuels.length > 0
     ? fuels.reduce((sum, f) => sum + (Number(f.liters) || 0), 0)
     : (trip.dieselLiters !== undefined ? Number(trip.dieselLiters) : subTrips.reduce((sum, s) => sum + (Number(s.dieselLiters) || 0), 0));
@@ -487,11 +496,11 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
     noOfDays = isNaN(diffDays) || diffDays < 1 ? 1 : diffDays;
   }
 
-  const paymentsReceived = (trip.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const paymentsReceived = (Array.isArray(trip.payments) ? trip.payments : []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const outstandingBalance = income - totalOrgRentalDeductions + officeBearsExpenseTotal - paymentsReceived;
 
   // Fuels paid by driver
-  const fuelsDriverSpend = (trip.fuels || []).reduce((sum, f) => {
+  const fuelsDriverSpend = (Array.isArray(trip.fuels) ? trip.fuels : []).reduce((sum, f) => {
     if (f.paymentMode === 'driver' || f.paymentMode === 'Driver') {
       return sum + (Number(f.amount) || 0);
     }
@@ -508,10 +517,10 @@ export function getTripMetrics(trip: TripEntry): TripMetrics {
   const totalDriverSpend = fuelsDriverSpend + tripLevelDriverSpend + driverPaidDirect + driverWages;
 
   // Driver Advances (Category 4)
-  const category4CategoryAdvances = (trip.advances || []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+  const category4CategoryAdvances = (Array.isArray(trip.advances) ? trip.advances : []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
 
   // Category 3 paid to driver advance
-  const category3DriverAdvancePayments = (trip.payments || [])
+  const category3DriverAdvancePayments = (Array.isArray(trip.payments) ? trip.payments : [])
     .filter(p => p.receivedBy === 'paid_to_driver_advance')
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
@@ -559,7 +568,7 @@ export interface ExpenseEntry extends BaseRecord {
   amount: number;
   paymentMode: string; // Account ID / Name (e.g. Axis) or Driver Name
   date: string;
-  status: 'Pending' | 'Paid' | 'Approved' | 'Declined';
+  status: 'Pending' | 'Paid' | 'Approved' | 'Declined' | 'Settled';
   accountType?: 'Account' | 'Driver'; // To select Driver as account type
   driverName?: string; // Driver Name if accountType is 'Driver'
   notes?: string;      // Optional service notes (e.g. early service reason)
@@ -766,6 +775,13 @@ export interface OrganizationProfile {
   panNo?: string;
   aadhaarNo?: string;
   address?: string;
+  insuranceWarningDays?: number;
+  fcWarningDays?: number;
+  npTaxWarningDays?: number;
+  fiveYearPermitWarningDays?: number;
+  qTaxWarningDays?: number;
+  greenTaxWarningDays?: number;
+  subscriptionWarningDays?: number;
 }
 
 // ─── Service Done Types ────────────────────────────────────────────────────────

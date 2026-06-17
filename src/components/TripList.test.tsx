@@ -101,7 +101,7 @@ describe('TripList Component Tests', () => {
     );
 
     const searchInput = screen.getByPlaceholderText(/Search Trips, Trucks, Drivers/i);
-    
+
     // Search for "MH-12"
     fireEvent.change(searchInput, { target: { value: 'MH-12' } });
 
@@ -133,7 +133,7 @@ describe('TripList Component Tests', () => {
   it('should trigger onDeleteEntry after user confirms deletion', () => {
     const handleDelete = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm()); // Auto-confirm
-    
+
     render(
       <TripList
         trips={mockTrips}
@@ -346,7 +346,7 @@ describe('TripList Component Tests', () => {
     // Verify handleSaveTrips was called with updated advances
     expect(handleSaveTrips).toHaveBeenCalledTimes(1);
     const savedTrips = handleSaveTrips.mock.calls[0][0] as TripEntry[];
-    
+
     // Source Trip (TRIP-A) should have a negative advance added to offset balance to 0
     const sourceTrip = savedTrips.find(t => t.id === 't-a')!;
     expect(sourceTrip.advances).toHaveLength(2);
@@ -624,6 +624,69 @@ describe('TripList Component Tests', () => {
     expect(sourceTrip.advances).toHaveLength(2);
     expect(sourceTrip.advances![1].amount).toBe(-2000);
     expect(sourceTrip.advances![1].fromAccountId).toBe('Cash');
+  });
+
+  it('should filter based on checked status boxes, defaulting to Pending, In Progress, Completed', () => {
+    const testTrips: TripEntry[] = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-PENDING',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh',
+        status: 'Pending',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: []
+      },
+      {
+        id: 't-2',
+        tripNo: 'TRIP-SETTLED',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh',
+        status: 'Settled',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: []
+      }
+    ];
+
+    render(
+      <TripList
+        trips={testTrips}
+        trucks={[]}
+        offices={[]}
+        accounts={[]}
+        onEditEntry={vi.fn()}
+        onDeleteEntry={vi.fn()}
+      />
+    );
+
+    // Default select should include Pending (TRIP-PENDING visible) but exclude Settled (TRIP-SETTLED hidden)
+    expect(screen.getAllByText('TRIP-PENDING')[0]).toBeInTheDocument();
+    expect(screen.queryByText('TRIP-SETTLED')).not.toBeInTheDocument();
+
+    // Open status dropdown
+    const dropdownTrigger = screen.getByRole('button', { name: /Pending, In Progress, Completed/i });
+    fireEvent.click(dropdownTrigger);
+
+    // Toggle Settled checkbox to show Settled trips
+    const settledCheckbox = screen.getByLabelText('Settled');
+    fireEvent.click(settledCheckbox);
+
+    // Both should be visible now
+    expect(screen.getAllByText('TRIP-PENDING')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-SETTLED')[0]).toBeInTheDocument();
+
+    // Toggle Pending checkbox off to hide Pending trips
+    const pendingCheckbox = screen.getByLabelText('Pending');
+    fireEvent.click(pendingCheckbox);
+
+    expect(screen.queryByText('TRIP-PENDING')).not.toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-SETTLED')[0]).toBeInTheDocument();
   });
 });
 

@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance } from '../types';
-import { 
-  Search, Edit2, Trash2, Calendar, Filter, FileSpreadsheet, 
-  Eye, ChevronRight, ChevronDown, X, AlertCircle, Fuel, 
+import {
+  Search, Edit2, Trash2, Calendar, Filter, FileSpreadsheet,
+  Eye, ChevronRight, ChevronDown, X, AlertCircle, Fuel,
   Gauge, TrendingUp, DollarSign, User, MapPin, ListCollapse, ArrowRightLeft,
-  ArrowUp, ArrowDown, ArrowUpDown
+  ArrowUp, ArrowDown, ArrowUpDown, Printer, FileText, Download, Copy, Check
 } from 'lucide-react';
+
 
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { useEffect } from 'react';
+import { generateTripPDF, generateDriverReportPDF } from '../utils/tripPdfGenerator';
 
 interface TripListProps {
   trips: TripEntry[];
@@ -41,14 +43,19 @@ export default function TripList({
 }: TripListProps) {
   // Mouse hover scroll redirection for horizontal overflow
   const scrollRef = React.useRef<HTMLDivElement>(null);
-
   React.useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY !== 0) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
+        const canScrollLeft = el.scrollLeft > 0;
+        const canScrollRight = el.scrollLeft < (el.scrollWidth - el.clientWidth - 1);
+        if (el.scrollWidth > el.clientWidth) {
+          if ((e.deltaY < 0 && canScrollLeft) || (e.deltaY > 0 && canScrollRight)) {
+            e.preventDefault();
+            el.scrollLeft += e.deltaY;
+          }
+        }
       }
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
@@ -56,14 +63,28 @@ export default function TripList({
       el.removeEventListener('wheel', handleWheel);
     };
   }, []);
-
   // Filters state
   const [search, setSearch] = useState('');
   const [selectedTruck, setSelectedTruck] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['Pending', 'In Progress', 'Completed']);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  
+
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsStatusDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Sorting state
   const [sortField, setSortField] = useState<'tripNo' | 'truckNo' | 'startDate' | 'income' | 'totalExpense' | 'profit' | 'outstandingBalance' | 'status'>('tripNo');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -75,17 +96,27 @@ export default function TripList({
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (e: React.MouseEvent, id: string, text: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   const online = isAppwriteConfigured();
 
   // Reset to page 1 when any filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, selectedTruck, selectedStatus, startDate, endDate]);
+  }, [search, selectedTruck, selectedStatuses, startDate, endDate]);
 
   // Offline / fallback local logic
   useEffect(() => {
     if (!online) {
       const filtered = trips.filter(trip => {
+        if (!trip.tripNo || trip.tripNo.trim() === '') return false;
         const matchesSearch = !search ? true : (
           trip.tripNo.toLowerCase().includes(search.toLowerCase()) ||
           trip.truckNo.toLowerCase().includes(search.toLowerCase()) ||
@@ -94,7 +125,7 @@ export default function TripList({
         );
 
         const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-        const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+        const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
 
         const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
         const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
@@ -150,7 +181,7 @@ export default function TripList({
       const startIdx = (currentPage - 1) * pageSize;
       setDisplayedTrips(sorted.slice(startIdx, startIdx + pageSize));
     }
-  }, [trips, search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online]);
+  }, [trips, search, selectedTruck, selectedStatuses, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online]);
 
   // Online Appwrite logic
   useEffect(() => {
@@ -160,7 +191,7 @@ export default function TripList({
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
-          
+
           let serverSortField = 'startDate';
           if (['tripNo', 'truckNo', 'startDate', 'status'].includes(sortField)) {
             serverSortField = sortField;
@@ -172,7 +203,7 @@ export default function TripList({
             {
               search: search || undefined,
               truckNo: selectedTruck || undefined,
-              status: selectedStatus || undefined,
+              status: selectedStatuses.length > 0 ? selectedStatuses : undefined,
               startDate: startDate || undefined,
               endDate: endDate || undefined
             },
@@ -182,32 +213,13 @@ export default function TripList({
             sortDirection
           );
 
-          const mapped = (res.documents || []).map(doc => {
-            try {
-              if (doc.data) {
-                const parsed = JSON.parse(doc.data);
-                return { id: doc.$id, ...parsed };
-              }
-            } catch (e) {
-              console.warn("Failed to parse doc.data for trip:", doc.$id, e);
-            }
-            return {
-              id: doc.$id,
-              organizationId: doc.organizationId,
-              tripNo: doc.tripNo || '',
-              truckNo: doc.truckNo || '',
-              startDate: doc.startDate || '',
-              endDate: doc.endDate || '',
-              driverName: doc.driverName || '',
-              status: doc.status || 'Pending',
-              notes: doc.notes || '',
-              payments: [],
-              subTrips: [],
-              fuels: []
-            };
-          });
-          setDisplayedTrips(mapped);
-          setTotalCount(res.total || 0);
+          const mapped = (res.documents || []).map(doc => ({
+            ...doc,
+            id: doc.id || doc.$id
+          }));
+          const validTrips = mapped.filter(t => t.tripNo && t.tripNo.trim() !== '');
+          setDisplayedTrips(validTrips);
+          setTotalCount(validTrips.length);
         } catch (err) {
           console.error("Failed to query trips from Appwrite:", err);
         } finally {
@@ -221,7 +233,7 @@ export default function TripList({
 
       return () => clearTimeout(delayDebounce);
     }
-  }, [trips, search, selectedTruck, selectedStatus, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online, organizationId]);
+  }, [trips, search, selectedTruck, selectedStatuses, startDate, endDate, sortField, sortDirection, currentPage, pageSize, online, organizationId]);
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
@@ -234,10 +246,10 @@ export default function TripList({
 
   // Selection/Expansion state
   const [expandedTripId, setExpandedTripId] = useState<string | null>(null);
-  
+
   // Master Details modal state for viewing full list of 21+ columns cleanly
   const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
-  
+
   // Selected next trip ID for forwarding deficit/surplus
   const [selectedFwdTripId, setSelectedFwdTripId] = useState<string>('');
   const [selectedFwdMode, setSelectedFwdMode] = useState<'trip' | 'account'>('trip');
@@ -274,7 +286,7 @@ export default function TripList({
       (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
     );
     const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-    const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+    const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
     const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
     const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
     return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -309,7 +321,7 @@ export default function TripList({
         (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
       );
       const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-      const matchesStatus = !selectedStatus ? true : trip.status === selectedStatus;
+      const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
       const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
       const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
       return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -318,11 +330,11 @@ export default function TripList({
     const exportList = online ? displayedTrips : localFiltered;
     if (exportList.length === 0) return;
     const headers = [
-      "Trip No", "Truck No", "Trip Start Date", "Trip End Date", "Driver Name", 
-      "Income (₹)", "Loading Expense (₹)", "Unloading Expense (₹)", "RTO Expense (₹)", 
-      "Diesel Expense (₹)", "Add Blue Expense (₹)", "Fastag Expense (₹)", "Driver Wages (₹)", 
-      "Other Expense (₹)", "Fuel Liters", "Starting KM", "Ending KM", "Total KM", 
-      "Mileage (KM/L)", "Per KM Expense (₹)", "No of Days", "Total Expense (₹)", "Profit (₹)", 
+      "Trip No", "Truck No", "Trip Start Date", "Trip End Date", "Driver Name",
+      "Income (₹)", "Loading Expense (₹)", "Unloading Expense (₹)", "RTO Expense (₹)",
+      "Diesel Expense (₹)", "Add Blue Expense (₹)", "Fastag Expense (₹)", "Driver Wages (₹)",
+      "Other Expense (₹)", "Fuel Liters", "Starting KM", "Ending KM", "Total KM",
+      "Mileage (KM/L)", "Per KM Expense (₹)", "No of Days", "Total Expense (₹)", "Profit (₹)",
       "Payments Received (₹)", "Outstanding Balance (₹)", "Status"
     ];
 
@@ -407,7 +419,7 @@ export default function TripList({
         return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-amber-200 bg-amber-50 text-amber-700">In Progress</span>;
       case 'Completed':
         return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-blue-200 bg-blue-50 text-blue-700">Completed</span>;
-      case 'Paid':
+      case 'Settled':
         return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">Settled</span>;
       default:
         return null;
@@ -417,15 +429,21 @@ export default function TripList({
   const handleResetFilters = () => {
     setSearch('');
     setSelectedTruck('');
-    setSelectedStatus('');
+    setSelectedStatuses(['Pending', 'In Progress', 'Completed']);
     setStartDate('');
     setEndDate('');
+  };
+
+  const getStatusDropdownLabel = () => {
+    if (selectedStatuses.length === 4) return 'All Statuses';
+    if (selectedStatuses.length === 0) return '- Choose Status -';
+    return selectedStatuses.join(', ');
   };
 
   const renderSortableHeader = (label: string, field: typeof sortField, customClass = "px-4 py-4") => {
     const isCurrent = sortField === field;
     return (
-      <th 
+      <th
         onClick={() => handleSort(field)}
         className={`${customClass} cursor-pointer hover:bg-slate-100 select-none transition group`}
       >
@@ -447,7 +465,7 @@ export default function TripList({
 
   return (
     <div className="space-y-6 animate-fade-in font-sans">
-      
+
       {/* FILTER CONTROL PANEL */}
       <div id="trip-filter-hud" className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -458,7 +476,7 @@ export default function TripList({
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">Fleet performance auditing. Select custom master records to inspect sub-trip segments & expenditures.</p>
           </div>
-          
+
           <button
             id="export-csv-btn"
             disabled={totalCount === 0}
@@ -498,20 +516,60 @@ export default function TripList({
             </select>
           </div>
 
-          {/* STATUS SELECT FILTER */}
-          <div>
-            <select
-              id="filter-status-select"
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-semibold"
+          {/* STATUS SELECT DROPDOWN */}
+          <div className="relative" ref={dropdownRef} id="filter-status-dropdown-container">
+            <button
+              id="filter-status-dropdown-trigger"
+              type="button"
+              onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-semibold flex justify-between items-center cursor-pointer select-none h-[34px]"
             >
-              <option value="">&mdash; Choose Status &mdash;</option>
-              <option value="Pending">Pending (Not Initiated)</option>
-              <option value="In Progress">In Progress (Active)</option>
-              <option value="Completed">Completed (No Debt)</option>
-              <option value="Paid">Settled (Fully Zero Out)</option>
-            </select>
+              <span className="truncate pr-2">{getStatusDropdownLabel()}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            </button>
+
+            {isStatusDropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 animate-fade-in max-h-60 overflow-y-auto">
+                <label className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-705 hover:bg-slate-55 bg-white hover:bg-slate-50 cursor-pointer select-none border-b border-slate-100 mb-1 pb-1.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedStatuses.length === 4}
+                    onChange={() => {
+                      if (selectedStatuses.length === 4) {
+                        setSelectedStatuses([]);
+                      } else {
+                        setSelectedStatuses(['Pending', 'In Progress', 'Completed', 'Settled']);
+                      }
+                    }}
+                    className="rounded border-slate-350 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span>All Status</span>
+                </label>
+                {(['Pending', 'In Progress', 'Completed', 'Settled'] as const).map((status) => {
+                  const isChecked = selectedStatuses.includes(status);
+                  return (
+                    <label
+                      key={status}
+                      className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setSelectedStatuses(prev => prev.filter(s => s !== status));
+                          } else {
+                            setSelectedStatuses(prev => [...prev, status]);
+                          }
+                        }}
+                        className="rounded border-slate-350 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span>{status}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* STARTING DATE */}
@@ -540,21 +598,31 @@ export default function TripList({
         </div>
 
         {/* ACTIVE FILTER DISMISS BLOCKS */}
-        {(selectedTruck || selectedStatus || startDate || endDate || search) && (
-          <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-lg p-3 px-4 shadow-3xs">
-            <span className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
-              <Filter className="w-3.5 h-3.5 text-blue-500" />
-              Matched <strong>{totalCount}</strong> transport records.
-            </span>
-            <button
-              id="reset-filters"
-              onClick={handleResetFilters}
-              className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
-            >
-              Reset Filters
-            </button>
-          </div>
-        )}
+        {(() => {
+          const isDefaultStatuses = selectedStatuses.length === 3 &&
+            selectedStatuses.includes('Pending') &&
+            selectedStatuses.includes('In Progress') &&
+            selectedStatuses.includes('Completed');
+
+          if (selectedTruck || !isDefaultStatuses || startDate || endDate || search) {
+            return (
+              <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-lg p-3 px-4 shadow-3xs">
+                <span className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
+                  <Filter className="w-3.5 h-3.5 text-blue-500" />
+                  Matched <strong>{totalCount}</strong> transport records.
+                </span>
+                <button
+                  id="reset-filters"
+                  onClick={handleResetFilters}
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                >
+                  Reset Filters
+                </button>
+              </div>
+            );
+          }
+          return null;
+        })()}
       </div>
 
       {/* CORE MASTER LIST TABLE CONTAINER */}
@@ -588,15 +656,39 @@ export default function TripList({
                   return (
                     <React.Fragment key={trip.id}>
                       {/* MAIN MASTERS ROW */}
-                      <tr 
-                        id={`trip-row-${trip.id}`} 
+                      <tr
+                        id={`trip-row-${trip.id}`}
                         className="hover:bg-slate-50/50 transition duration-150 cursor-pointer"
                         onClick={() => setViewingEntry(trip)}
                       >
                         {/* TRIP ID */}
                         <td className="px-6 py-4 pl-6">
-                          <span className="font-mono font-extrabold text-blue-600 text-xs block">{trip.tripNo}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-extrabold text-blue-600 text-xs block">{trip.tripNo}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopy(e, trip.id, trip.tripNo)}
+                              className="text-slate-400 hover:text-blue-700 transition cursor-pointer p-0.5 rounded-md hover:bg-slate-100 flex items-center justify-center shrink-0"
+                              title="Copy Trip ID"
+                            >
+                              {copiedId === trip.id ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
                           <span className="text-[10px] text-slate-400 italic block mt-0.5">Segs: {trip.subTrips?.length || 0}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              generateTripPDF(trip, accounts);
+                            }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 mt-1 font-semibold cursor-pointer"
+                            title="Download Trip Report"
+                          >
+                            <Download className="w-3 h-3" /> Download Report
+                          </button>
                         </td>
 
                         {/* TRUCK & OPERATOR */}
@@ -604,25 +696,37 @@ export default function TripList({
                           <span className="font-mono font-bold text-slate-900 tracking-wider text-[13px] block">{trip.truckNo}</span>
                           <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5 font-sans">
                             <User className="w-3 h-3 text-slate-400" />
-                            {trip.driverName || 'No Driver'}
+                            <span>{trip.driverName || 'No Driver'}</span>
+                            {trip.driverName && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  generateDriverReportPDF(trip, accounts);
+                                }}
+                                className="text-slate-400 hover:text-blue-600 transition ml-1 cursor-pointer flex items-center"
+                                title="Download Driver Report"
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                            )}
                           </span>
                           {(() => {
-                             const balance = m.driverBalance;
-                             if (balance < 0) {
-                               return (
-                                 <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
-                                   Recover: ₹{Math.abs(balance).toLocaleString('en-IN')}
-                                 </span>
-                               );
-                             } else if (balance > 0) {
-                               return (
-                                 <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
-                                   Pay: ₹{balance.toLocaleString('en-IN')}
-                                 </span>
-                               );
-                             }
-                             return null;
-                           })()}
+                            const balance = m.driverBalance;
+                            if (balance < 0) {
+                              return (
+                                <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
+                                  Recover: ₹{Math.abs(balance).toLocaleString('en-IN')}
+                                </span>
+                              );
+                            } else if (balance > 0) {
+                              return (
+                                <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[9px] font-bold uppercase tracking-tight block w-max select-none">
+                                  Pay: ₹{balance.toLocaleString('en-IN')}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                         </td>
 
                         {/* TRIP TIMEFRAME */}
@@ -648,7 +752,7 @@ export default function TripList({
                         {/* PROFITS */}
                         <td className={`px-4 py-4 text-right font-mono font-bold ${m.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                           ₹{m.profit.toLocaleString('en-IN')}
-                          <span className="text-[9px] text-slate-400 block font-normal font-sans mt-0.5">Margin: {m.income > 0 ? Math.round((m.profit/m.income)*100) : 0}%</span>
+                          <span className="text-[9px] text-slate-400 block font-normal font-sans mt-0.5">Margin: {m.income > 0 ? Math.round((m.profit / m.income) * 100) : 0}%</span>
                         </td>
 
                         {/* TOTAL OUTSTANDING */}
@@ -764,9 +868,21 @@ export default function TripList({
                 <div>
                   {/* Top Row: Trip ID & Status */}
                   <div className="flex justify-between items-center gap-2 mb-3">
-                    <span className="font-mono font-extrabold text-blue-600 text-xs">
-                      {trip.tripNo}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-mono font-extrabold text-blue-600 text-xs">
+                        {trip.tripNo}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateTripPDF(trip, accounts);
+                        }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 mt-0.5 font-semibold cursor-pointer"
+                        title="Download Trip Report"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Report
+                      </button>
+                    </div>
                     {getStatusBadge(trip.status)}
                   </div>
 
@@ -778,7 +894,19 @@ export default function TripList({
                     <span className="w-px h-3.5 bg-slate-200" />
                     <span className="text-slate-500 font-medium flex items-center gap-1">
                       <User className="w-3.5 h-3.5 text-slate-400 animate-none shrink-0" />
-                      {trip.driverName || 'No Driver'}
+                      <span>{trip.driverName || 'No Driver'}</span>
+                      {trip.driverName && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            generateDriverReportPDF(trip, accounts);
+                          }}
+                          className="text-slate-400 hover:text-blue-600 transition ml-1 cursor-pointer flex items-center"
+                          title="Download Driver Report"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </span>
                   </div>
 
@@ -837,29 +965,26 @@ export default function TripList({
                         ₹{m.profit.toLocaleString('en-IN')}
                       </span>
                     </div>
-                    <div className={`${
-                      m.outstandingBalance > 0 
-                      ? 'bg-rose-50/20 border border-rose-100/40' 
-                      : m.outstandingBalance === 0 
-                      ? 'bg-emerald-50/20 border border-emerald-100/40' 
-                      : 'bg-amber-50/20 border border-amber-100/40'
-                    } rounded-lg p-2 flex flex-col justify-between`}>
-                      <span className={`${
-                        m.outstandingBalance > 0 
-                        ? 'text-rose-700' 
-                        : m.outstandingBalance === 0 
-                        ? 'text-emerald-700' 
-                        : 'text-amber-800'
-                      } font-bold uppercase text-[9px]`}>
+                    <div className={`${m.outstandingBalance > 0
+                        ? 'bg-rose-50/20 border border-rose-100/40'
+                        : m.outstandingBalance === 0
+                          ? 'bg-emerald-50/20 border border-emerald-100/40'
+                          : 'bg-amber-50/20 border border-amber-100/40'
+                      } rounded-lg p-2 flex flex-col justify-between`}>
+                      <span className={`${m.outstandingBalance > 0
+                          ? 'text-rose-700'
+                          : m.outstandingBalance === 0
+                            ? 'text-emerald-700'
+                            : 'text-amber-800'
+                        } font-bold uppercase text-[9px]`}>
                         {m.outstandingBalance > 0 ? 'Outstanding' : m.outstandingBalance === 0 ? 'Settled' : 'Return Office'}
                       </span>
-                      <span className={`font-black mt-1 ${
-                        m.outstandingBalance > 0 
-                        ? 'text-rose-850 text-red-600' 
-                        : m.outstandingBalance === 0 
-                        ? 'text-emerald-800' 
-                        : 'text-amber-805 text-amber-800'
-                      }`}>
+                      <span className={`font-black mt-1 ${m.outstandingBalance > 0
+                          ? 'text-rose-850 text-red-600'
+                          : m.outstandingBalance === 0
+                            ? 'text-emerald-800'
+                            : 'text-amber-805 text-amber-800'
+                        }`}>
                         ₹{Math.abs(m.outstandingBalance).toLocaleString('en-IN')}
                       </span>
                     </div>
@@ -867,7 +992,7 @@ export default function TripList({
                 </div>
 
                 {/* Actions Grid */}
-                <div 
+                <div
                   className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto"
                   onClick={(e) => e.stopPropagation()} // Prevent triggering viewport modal
                 >
@@ -957,23 +1082,35 @@ export default function TripList({
       {viewingEntry && (() => {
         const m = getTripMetrics(viewingEntry);
         return (
-          <div 
-            id="inspector-overlay" 
+          <div
+            id="inspector-overlay"
             onClick={() => setViewingEntry(null)}
             className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4"
           >
-            <div 
-              id="inspector-card" 
+            <div
+              id="inspector-card"
               onClick={(e) => e.stopPropagation()}
               className="bg-white border border-slate-200 rounded-xl w-full max-w-4xl shadow-xl overflow-hidden animate-scale-up"
             >
-              
+
               <div className="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                 <div>
                   <span className="text-[10px] text-blue-600 uppercase tracking-wider font-extrabold block">Ultimate Fleet-Book Document Ledger</span>
                   <h3 className="text-lg font-bold text-slate-900 font-mono tracking-wide">{viewingEntry.tripNo} &bull; {viewingEntry.truckNo}</h3>
                 </div>
                 <div className="flex items-center flex-wrap gap-2 shrink-0">
+                  <button
+                    onClick={() => generateTripPDF(viewingEntry, accounts)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print PDF
+                  </button>
+                  <button
+                    onClick={() => generateDriverReportPDF(viewingEntry, accounts)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5" /> Driver Report PDF
+                  </button>
                   {canEditTrips && (
                     <button
                       onClick={() => {
@@ -1195,7 +1332,7 @@ export default function TripList({
 
                     const eligibleFwdTrips = trips.filter(
                       t => t.id !== viewingEntry.id &&
-                           t.status !== 'Paid'
+                        t.status !== 'Settled'
                     ).sort((a, b) => {
                       const aSame = a.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
                       const bSame = b.driverName?.toLowerCase().trim() === viewingEntry.driverName?.toLowerCase().trim();
@@ -1216,22 +1353,20 @@ export default function TripList({
                             <button
                               type="button"
                               onClick={() => setSelectedFwdMode('trip')}
-                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                                activeMode === 'trip'
+                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'trip'
                                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
                                   : 'text-slate-500 hover:text-slate-800'
-                              }`}
+                                }`}
                             >
                               Move to Another Trip
                             </button>
                             <button
                               type="button"
                               onClick={() => setSelectedFwdMode('account')}
-                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                                activeMode === 'account'
+                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'account'
                                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
                                   : 'text-slate-500 hover:text-slate-800'
-                              }`}
+                                }`}
                             >
                               Settle with Company Account
                             </button>
@@ -1305,7 +1440,7 @@ export default function TripList({
                                       if (!destTrip) return;
 
                                       const confirmMsg = `Are you sure you want to carry forward the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to ${destTrip.tripNo}?\n\nThis will offset the negative balance on ${viewingEntry.tripNo} and add it as a new advance on ${destTrip.tripNo}.`;
-                                      
+
                                       const performFwd = () => {
                                         const fwdAdvanceSource: TripAdvance = {
                                           id: 'fwd_out_' + Date.now(),
@@ -1378,7 +1513,7 @@ export default function TripList({
                               amount: isDeficit ? -balanceAmt : balanceAmt,
                               date: selectedFwdDate || new Date().toISOString().substring(0, 10),
                               fromAccountId: selectedFwdAccountId,
-                              notes: isDeficit 
+                              notes: isDeficit
                                 ? `Negative balance moved/returned to company account: ${accountName}`
                                 : `Positive balance paid to driver from company account: ${accountName}`,
                               receivedByDriverDirectly: false
@@ -1483,7 +1618,7 @@ export default function TripList({
                     {(!viewingEntry.subTrips || viewingEntry.subTrips.length === 0) ? (
                       <p className="p-4 text-center text-slate-400 italic">No sub-trip segments logged.</p>
                     ) : (
-                      viewingEntry.subTrips.map((s, idx) => {
+                      [...viewingEntry.subTrips].sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || '')).map((s, idx) => {
                         const segmentDeductions = (() => {
                           if (s.cargoExpenses && s.cargoExpenses.length > 0) {
                             return s.cargoExpenses
@@ -1531,8 +1666,8 @@ export default function TripList({
                               <span className="font-sans font-bold text-slate-500 text-[10px] bg-slate-205 py-0.5 px-2 rounded-md bg-slate-200 uppercase leading-none">Office: {s.officeName}</span>
                             </div>
 
-                            {(s.material || s.noOfTons !== undefined || s.ratePerTon !== undefined) && (
-                              <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
+                            {(s.material || s.noOfTons !== undefined || s.ratePerTon !== undefined || segmentReceivable > 0) && (
+                              <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
                                 {s.material && (
                                   <div>
                                     <span className="text-slate-400 block uppercase text-[8px] font-bold">Material</span>
@@ -1551,6 +1686,12 @@ export default function TripList({
                                     <strong className="text-slate-800 font-mono">₹{s.ratePerTon.toLocaleString()}</strong>
                                   </div>
                                 )}
+                                {segmentReceivable > 0 && (
+                                  <div className="ml-auto text-right">
+                                    <span className="text-amber-600 block uppercase text-[8px] font-bold">Outstanding</span>
+                                    <strong className="text-amber-700 font-mono">₹{segmentReceivable.toLocaleString()}</strong>
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -1559,17 +1700,15 @@ export default function TripList({
                                 <span className="text-slate-450 block font-sans text-[9px] uppercase">Income (₹)</span>
                                 <span className="font-mono font-bold text-emerald-800">₹{s.income.toLocaleString()}</span>
                               </div>
-                              <div className={`p-1 px-2 border-l-2 ${
-                                segmentReceivable > 0 ? 'border-blue-500' :
-                                segmentReceivable === 0 ? 'border-slate-300' :
-                                'border-amber-500'
-                              }`}>
-                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Receivable (₹)</span>
-                                <span className={`font-mono font-bold ${
-                                  segmentReceivable > 0 ? 'text-blue-800' :
-                                  segmentReceivable === 0 ? 'text-slate-500' :
-                                  'text-amber-805 text-amber-800'
+                              <div className={`p-1 px-2 border-l-2 ${segmentReceivable > 0 ? 'border-blue-500' :
+                                  segmentReceivable === 0 ? 'border-slate-300' :
+                                    'border-amber-500'
                                 }`}>
+                                <span className="text-slate-450 block font-sans text-[9px] uppercase">Receivable (₹)</span>
+                                <span className={`font-mono font-bold ${segmentReceivable > 0 ? 'text-blue-800' :
+                                    segmentReceivable === 0 ? 'text-slate-500' :
+                                      'text-amber-805 text-amber-800'
+                                  }`}>
                                   ₹{segmentReceivable.toLocaleString()}
                                 </span>
                               </div>
@@ -1583,126 +1722,174 @@ export default function TripList({
                               </div>
                             </div>
 
-                          {/* Segment Charges Settlement Info */}
-                          <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]">
-                            {s.cargoExpenses && s.cargoExpenses.length > 0 ? (
-                              s.cargoExpenses.map((exp) => (
-                                <div key={exp.id} className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                  <span className="text-slate-500 block font-bold uppercase text-[8px]">{exp.expenseType} Expense</span>
-                                  <strong className="text-slate-855 block">₹{exp.amount.toLocaleString()}</strong>
-                                  <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                    {exp.paidByDriver ? 'Driver Paid' : exp.deductedFrom === 'OrgPaid' ? 'Org Paid (Direct)' : 'Office Deduct'}
-                                  </span>
-                                  <span className={`text-[9px] font-semibold block mt-0.5 font-mono ${
-                                    exp.bears === 'Org' ? 'text-blue-650' :
-                                    exp.bears === 'Driver' ? 'text-amber-600' :
-                                    'text-purple-600'
-                                  }`}>
-                                    {exp.bears === 'Org' ? 'Fully Org' : exp.bears === 'Driver' ? 'Fully Driver' : 'Fully Office'}
-                                  </span>
+                            {/* Segment Charges Settlement Info */}
+                            <div className="mt-3.5 pt-3.5 border-t border-slate-100 grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]">
+                              {s.cargoExpenses && s.cargoExpenses.length > 0 ? (
+                                s.cargoExpenses.map((exp) => (
+                                  <div key={exp.id} className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                    <span className="text-slate-500 block font-bold uppercase text-[8px]">{exp.expenseType} Expense</span>
+                                    <strong className="text-slate-855 block">₹{exp.amount.toLocaleString()}</strong>
+                                    <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                      {exp.paidByDriver ? 'Driver Paid' : exp.deductedFrom === 'OrgPaid' ? 'Org Paid (Direct)' : 'Office Deduct'}
+                                    </span>
+                                    <span className={`text-[9px] font-semibold block mt-0.5 font-mono ${exp.bears === 'Org' ? 'text-blue-650' :
+                                        exp.bears === 'Driver' ? 'text-amber-600' :
+                                          'text-purple-600'
+                                      }`}>
+                                      {exp.bears === 'Org' ? 'Fully Org' : exp.bears === 'Driver' ? 'Fully Driver' : 'Fully Office'}
+                                    </span>
+                                  </div>
+                                ))
+                              ) : (
+                                <>
+                                  {s.loadingExpense !== undefined && s.loadingExpense > 0 && (() => {
+                                    const df = s.loadingDeductedFrom || 'DriverDirect';
+                                    const isSplit = s.loadingBearsOrg !== undefined || s.loadingBearsDriver !== undefined;
+                                    const bearsOrg = s.loadingBearsOrg !== undefined ? s.loadingBearsOrg : (s.loadingBears === 'Org' ? s.loadingExpense : 0);
+                                    const bearsDriver = s.loadingBearsDriver !== undefined ? s.loadingBearsDriver : (s.loadingBears === 'Driver' ? s.loadingExpense : 0);
+                                    return (
+                                      <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                        <span className="text-slate-500 block font-bold uppercase text-[8px]">Loading Expense</span>
+                                        <strong className="text-slate-855 block">₹{s.loadingExpense.toLocaleString()}</strong>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                          {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                        </span>
+                                        <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                          {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.loadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {s.unloadingExpense !== undefined && s.unloadingExpense > 0 && (() => {
+                                    const df = s.unloadingDeductedFrom || 'DriverDirect';
+                                    const isSplit = s.unloadingBearsOrg !== undefined || s.unloadingBearsDriver !== undefined;
+                                    const bearsOrg = s.unloadingBearsOrg !== undefined ? s.unloadingBearsOrg : (s.unloadingBears === 'Org' ? s.unloadingExpense : 0);
+                                    const bearsDriver = s.unloadingBearsDriver !== undefined ? s.unloadingBearsDriver : (s.unloadingBears === 'Driver' ? s.unloadingExpense : 0);
+                                    return (
+                                      <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                        <span className="text-slate-500 block font-bold uppercase text-[8px]">Unloading Expense</span>
+                                        <strong className="text-slate-855 block">₹{s.unloadingExpense.toLocaleString()}</strong>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                          {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                        </span>
+                                        <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                          {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.unloadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {s.brokerageExpense !== undefined && s.brokerageExpense > 0 && (() => {
+                                    const df = s.brokerageDeductedFrom || 'DriverDirect';
+                                    const isSplit = s.brokerageBearsOrg !== undefined || s.brokerageBearsDriver !== undefined;
+                                    const bearsOrg = s.brokerageBearsOrg !== undefined ? s.brokerageBearsOrg : (s.brokerageBears === 'Org' ? s.brokerageExpense : 0);
+                                    const bearsDriver = s.brokerageBearsDriver !== undefined ? s.brokerageBearsDriver : (s.brokerageBears === 'Driver' ? s.brokerageExpense : 0);
+                                    return (
+                                      <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                        <span className="text-slate-500 block font-bold uppercase text-[8px]">Brokerage Expense</span>
+                                        <strong className="text-slate-855 block">₹{s.brokerageExpense.toLocaleString()}</strong>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                          {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                        </span>
+                                        <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                          {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.brokerageBears === 'Org' ? 'Fully Org' : 'Fully Driver')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {s.crossingExpense !== undefined && s.crossingExpense > 0 && (() => {
+                                    const df = s.crossingDeductedFrom || 'DriverDirect';
+                                    const isSplit = s.crossingBearsOrg !== undefined || s.crossingBearsDriver !== undefined;
+                                    const bearsOrg = s.crossingBearsOrg !== undefined ? s.crossingBearsOrg : (s.crossingBears === 'Org' ? s.crossingExpense : 0);
+                                    const bearsDriver = s.crossingBearsDriver !== undefined ? s.crossingBearsDriver : (s.crossingBears === 'Driver' ? s.crossingExpense : 0);
+                                    return (
+                                      <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                        <span className="text-slate-500 block font-bold uppercase text-[8px]">Crossing Expense</span>
+                                        <strong className="text-slate-855 block">₹{s.crossingExpense.toLocaleString()}</strong>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                          {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                        </span>
+                                        <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                          {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.crossingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {s.rmcExpense !== undefined && s.rmcExpense > 0 && (() => {
+                                    const df = s.rmcDeductedFrom || 'DriverDirect';
+                                    const isSplit = s.rmcBearsOrg !== undefined || s.rmcBearsDriver !== undefined;
+                                    const bearsOrg = s.rmcBearsOrg !== undefined ? s.rmcBearsOrg : (s.rmcBears === 'Org' ? s.rmcExpense : 0);
+                                    const bearsDriver = s.rmcBearsDriver !== undefined ? s.rmcBearsDriver : (s.rmcBears === 'Driver' ? s.rmcExpense : 0);
+                                    return (
+                                      <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
+                                        <span className="text-slate-500 block font-bold uppercase text-[8px]">RMC Expense</span>
+                                        <strong className="text-slate-855 block">₹{s.rmcExpense.toLocaleString()}</strong>
+                                        <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
+                                          {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
+                                        </span>
+                                        <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
+                                          {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.rmcBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+                                </>
+                              )}
+
+                              {/* Segment POD Details */}
+                              {s.pod && (
+                                <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-sans text-slate-700">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-slate-450 uppercase text-[8px] font-bold block">POD Status</span>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.pod.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                        s.pod.status === 'Delayed' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                          'bg-blue-50 text-blue-700 border border-blue-200'
+                                      }`}
+                                      title={`Delivery Date: ${s.pod.date || 'N/A'}`}
+                                    >
+                                      {s.pod.status || 'Pending'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-450 block uppercase text-[8px] font-bold">Courier</span>
+                                    <strong className="text-slate-800">{s.pod.courierName}</strong>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-450 block uppercase text-[8px] font-bold">Ref No / Tracking ID</span>
+                                    <strong className="text-slate-800 font-mono">{s.pod.refNo}</strong>
+                                  </div>
+                                  {s.pod.date && (
+                                    <div>
+                                      <span className="text-slate-450 block uppercase text-[8px] font-bold">POD Date</span>
+                                      <strong className="text-slate-800 font-mono">{s.pod.date}</strong>
+                                    </div>
+                                  )}
+                                  {s.pod.attachmentId && (
+                                    <div className="ml-auto flex gap-2">
+                                      <a
+                                        href={appwrite.getFileView(s.pod.attachmentId)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800 font-bold hover:underline"
+                                      >
+                                        View POD File
+                                      </a>
+                                      <a
+                                        href={appwrite.getFileDownload(s.pod.attachmentId)}
+                                        className="text-slate-600 hover:text-slate-800 font-bold hover:underline"
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  )}
                                 </div>
-                              ))
-                            ) : (
-                              <>
-                                {s.loadingExpense !== undefined && s.loadingExpense > 0 && (() => {
-                                  const df = s.loadingDeductedFrom || 'DriverDirect';
-                                  const isSplit = s.loadingBearsOrg !== undefined || s.loadingBearsDriver !== undefined;
-                                  const bearsOrg = s.loadingBearsOrg !== undefined ? s.loadingBearsOrg : (s.loadingBears === 'Org' ? s.loadingExpense : 0);
-                                  const bearsDriver = s.loadingBearsDriver !== undefined ? s.loadingBearsDriver : (s.loadingBears === 'Driver' ? s.loadingExpense : 0);
-                                  return (
-                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Loading Expense</span>
-                                      <strong className="text-slate-855 block">₹{s.loadingExpense.toLocaleString()}</strong>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
-                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.loadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-                                
-                                {s.unloadingExpense !== undefined && s.unloadingExpense > 0 && (() => {
-                                  const df = s.unloadingDeductedFrom || 'DriverDirect';
-                                  const isSplit = s.unloadingBearsOrg !== undefined || s.unloadingBearsDriver !== undefined;
-                                  const bearsOrg = s.unloadingBearsOrg !== undefined ? s.unloadingBearsOrg : (s.unloadingBears === 'Org' ? s.unloadingExpense : 0);
-                                  const bearsDriver = s.unloadingBearsDriver !== undefined ? s.unloadingBearsDriver : (s.unloadingBears === 'Driver' ? s.unloadingExpense : 0);
-                                  return (
-                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Unloading Expense</span>
-                                      <strong className="text-slate-855 block">₹{s.unloadingExpense.toLocaleString()}</strong>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
-                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.unloadingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-
-                                {s.brokerageExpense !== undefined && s.brokerageExpense > 0 && (() => {
-                                  const df = s.brokerageDeductedFrom || 'DriverDirect';
-                                  const isSplit = s.brokerageBearsOrg !== undefined || s.brokerageBearsDriver !== undefined;
-                                  const bearsOrg = s.brokerageBearsOrg !== undefined ? s.brokerageBearsOrg : (s.brokerageBears === 'Org' ? s.brokerageExpense : 0);
-                                  const bearsDriver = s.brokerageBearsDriver !== undefined ? s.brokerageBearsDriver : (s.brokerageBears === 'Driver' ? s.brokerageExpense : 0);
-                                  return (
-                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Brokerage Expense</span>
-                                      <strong className="text-slate-855 block">₹{s.brokerageExpense.toLocaleString()}</strong>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
-                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.brokerageBears === 'Org' ? 'Fully Org' : 'Fully Driver')}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-
-                                {s.crossingExpense !== undefined && s.crossingExpense > 0 && (() => {
-                                  const df = s.crossingDeductedFrom || 'DriverDirect';
-                                  const isSplit = s.crossingBearsOrg !== undefined || s.crossingBearsDriver !== undefined;
-                                  const bearsOrg = s.crossingBearsOrg !== undefined ? s.crossingBearsOrg : (s.crossingBears === 'Org' ? s.crossingExpense : 0);
-                                  const bearsDriver = s.crossingBearsDriver !== undefined ? s.crossingBearsDriver : (s.crossingBears === 'Driver' ? s.crossingExpense : 0);
-                                  return (
-                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">Crossing Expense</span>
-                                      <strong className="text-slate-855 block">₹{s.crossingExpense.toLocaleString()}</strong>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
-                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.crossingBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-
-                                {s.rmcExpense !== undefined && s.rmcExpense > 0 && (() => {
-                                  const df = s.rmcDeductedFrom || 'DriverDirect';
-                                  const isSplit = s.rmcBearsOrg !== undefined || s.rmcBearsDriver !== undefined;
-                                  const bearsOrg = s.rmcBearsOrg !== undefined ? s.rmcBearsOrg : (s.rmcBears === 'Org' ? s.rmcExpense : 0);
-                                  const bearsDriver = s.rmcBearsDriver !== undefined ? s.rmcBearsDriver : (s.rmcBears === 'Driver' ? s.rmcExpense : 0);
-                                  return (
-                                    <div className="p-1.5 px-2 bg-slate-50 border border-slate-200 rounded">
-                                      <span className="text-slate-500 block font-bold uppercase text-[8px]">RMC Expense</span>
-                                      <strong className="text-slate-855 block">₹{s.rmcExpense.toLocaleString()}</strong>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5 font-semibold">
-                                        {df === 'OrgRental' ? 'Office Deduct' : 'Driver Paid'}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-blue-650 block mt-0.5 font-mono">
-                                        {isSplit ? `Org: ₹${bearsOrg.toLocaleString()} | Drv: ₹${bearsDriver.toLocaleString()}` : (s.rmcBears === 'Driver' ? 'Fully Driver' : 'Fully Org')}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-                              </>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
+                        );
                       }))
                     }
                   </div>
@@ -1717,7 +1904,7 @@ export default function TripList({
                     {(!viewingEntry.payments || viewingEntry.payments.length === 0) ? (
                       <div className="p-4 text-center text-xs text-slate-400 italic">No payments or receipts registered. Balance is 100% collectable.</div>
                     ) : (
-                      viewingEntry.payments.map((p, pidx) => (
+                      [...viewingEntry.payments].sort((a, b) => a.date.localeCompare(b.date)).map((p, pidx) => (
                         <div key={p.id} className="p-3 text-xs flex justify-between items-center items-center hover:bg-slate-50/50">
                           <div>
                             <span className="font-bold text-slate-700">Receipt Line #{pidx + 1}</span>

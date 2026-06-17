@@ -493,9 +493,8 @@ describe('App Component Root Integration Tests', () => {
       if (collectionId === 'trips') {
         const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
         return storedTrips.map((t: any) => ({
-          $id: t.id,
-          organizationId: orgId,
-          data: JSON.stringify(t)
+          ...t,
+          organizationId: orgId
         }));
       }
       return [];
@@ -504,9 +503,8 @@ describe('App Component Root Integration Tests', () => {
       const storedTrips = JSON.parse(localStorage.getItem('ttt_trips') || '[]');
       return {
         documents: storedTrips.map((t: any) => ({
-          $id: t.id,
-          organizationId: orgId,
-          data: JSON.stringify(t)
+          ...t,
+          organizationId: orgId
         })),
         total: storedTrips.length
       };

@@ -10,15 +10,17 @@ interface Setup2FAModalProps {
   onClose: () => void;
   setup2FASecret: string;
   showNotification: (msg: string) => void;
+  reconcileSession: (user: any) => Promise<any>;
 }
 
 export default function Setup2FAModal({
   isOpen,
   onClose,
   setup2FASecret,
-  showNotification
+  showNotification,
+  reconcileSession
 }: Setup2FAModalProps) {
-  const { currentUser, reconcileSession } = useAuth();
+  const { currentUser } = useAuth();
   const { userRightsList, setUserRightsList, pushPermissions: pushPermissionsToCloud } = usePermissions();
 
   const [setup2FACode, setSetup2FACode] = useState('');
@@ -158,7 +160,7 @@ export default function Setup2FAModal({
                   setUserRightsList(updated);
                   localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
                   await pushPermissionsToCloud(updated);
-                  await reconcileSession(currentUser);
+                  await reconcileSession(currentUser, updated);
 
                   showNotification('Two-Factor Authentication successfully enabled!');
                   onClose();

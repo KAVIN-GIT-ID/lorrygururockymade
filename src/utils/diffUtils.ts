@@ -249,13 +249,17 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   // Added Payments
   const addedPays = newPay.filter(nP => !oldPay.some(oP => oP.id === nP.id));
   for (const p of addedPays) {
-    changes.push(`Added Payment: "(None)" ➔ "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})"`);
+    const sidx = newTrip.subTrips ? newTrip.subTrips.findIndex(st => st.id === p.subTripId) : -1;
+    const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (p.subTripId ? `SubTrip ID: ${p.subTripId}` : 'General');
+    changes.push(`Added Payment (${segInfo}): "(None)" ➔ "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})"`);
   }
 
   // Deleted Payments
   const deletedPays = oldPay.filter(oP => !newPay.some(nP => nP.id === oP.id));
   for (const p of deletedPays) {
-    changes.push(`Deleted Payment: "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})" ➔ "(None)"`);
+    const sidx = oldTrip.subTrips ? oldTrip.subTrips.findIndex(st => st.id === p.subTripId) : -1;
+    const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (p.subTripId ? `SubTrip ID: ${p.subTripId}` : 'General');
+    changes.push(`Deleted Payment (${segInfo}): "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})" ➔ "(None)"`);
   }
 
   // Modified Payments
@@ -263,6 +267,8 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   for (const nP of modifiedPays) {
     const oP = oldPay.find(o => o.id === nP.id)!;
     if (JSON.stringify(oP) !== JSON.stringify(nP)) {
+      const sidx = newTrip.subTrips ? newTrip.subTrips.findIndex(st => st.id === nP.subTripId) : -1;
+      const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (nP.subTripId ? `SubTrip ID: ${nP.subTripId}` : 'General');
       const payLabels: Partial<Record<keyof TripPayment, string>> = {
         amount: 'Amount',
         date: 'Date',
@@ -272,7 +278,7 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
         const oldValue = oP[key];
         const newValue = nP[key];
         if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-          const label = `Payment [₹${oP.amount}] ${payLabels[key]}`;
+          const label = `Payment [₹${oP.amount}] (${segInfo}) ${payLabels[key]}`;
           const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
           const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
           changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);

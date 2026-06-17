@@ -91,7 +91,7 @@ export const calculateSingleLoanStats = (
     const isPaidInExpenses = expenses.some(e => 
       e.truckNo === truckNo && 
       (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
-      e.status === 'Paid' && 
+      (e.status === 'Paid' || e.status === 'Settled') && 
       e.notes?.includes(dueDateStr) &&
       (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
     );
@@ -117,7 +117,7 @@ export const calculateSingleLoanStats = (
     const isPaidInExpenses = expenses.some(e => 
       e.truckNo === truckNo && 
       (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
-      e.status === 'Paid' && 
+      (e.status === 'Paid' || e.status === 'Settled') && 
       e.notes?.includes(dueDateStr) &&
       (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
     );
@@ -296,7 +296,7 @@ export default function TruckMaster({
     setTempLoanStatus('Active');
     setTempLoanNotes('');
   };
-  
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -305,8 +305,14 @@ export default function TruckMaster({
 
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY !== 0) {
-        e.preventDefault();
-        container.scrollLeft += e.deltaY * 1.5;
+        const canScrollLeft = container.scrollLeft > 0;
+        const canScrollRight = container.scrollLeft < (container.scrollWidth - container.clientWidth - 1);
+        if (container.scrollWidth > container.clientWidth) {
+          if ((e.deltaY < 0 && canScrollLeft) || (e.deltaY > 0 && canScrollRight)) {
+            e.preventDefault();
+            container.scrollLeft += e.deltaY * 1.5;
+          }
+        }
       }
     };
 
@@ -315,6 +321,17 @@ export default function TruckMaster({
       container.removeEventListener('wheel', handleWheel);
     };
   }, []);
+
+  // Monitor if the currently edited truck is disabled by admin in the background
+  useEffect(() => {
+    if (isEditing) {
+      const currentTruck = trucks.find(t => t.id === isEditing);
+      if (currentTruck && currentTruck.status === 'Admin Disabled') {
+        alert(`Vehicle ${currentTruck.truckNo} has been disabled by the administrator. Access is locked.`);
+        resetForm();
+      }
+    }
+  }, [trucks, isEditing]);
   
   // Base Information
   const [truckNo, setTruckNo] = useState('');
@@ -695,7 +712,7 @@ export default function TruckMaster({
     return calculateDaysLeftUtil(dateStr, new Date());
   };
 
-  const getExpiryCellProps = (dateStr: string | undefined, days: number | null) => {
+  const getExpiryCellProps = (dateStr: string | undefined, days: number | null, warningThreshold: number = 30) => {
     if (!dateStr) {
       return {
         className: "px-2.5 py-3 text-center font-mono text-slate-300",
@@ -718,7 +735,7 @@ export default function TruckMaster({
         displayText: displayVal
       };
     }
-    if (days <= 30) {
+    if (days <= warningThreshold) {
       return {
         className: "px-2.5 py-3 text-center font-mono font-bold bg-amber-50 text-amber-800 border border-amber-100 cursor-help transition hover:bg-amber-100/75",
         title: `WARNING NEAR EXPIRY: Respective compliance expiry date is ${displayVal} (${days} days left).`,
@@ -848,7 +865,7 @@ export default function TruckMaster({
     );
   };
 
-  const renderComplianceRow = (label: string, dateStr: string | undefined, days: number | null, fileId: string | undefined) => {
+  const renderComplianceRow = (label: string, dateStr: string | undefined, days: number | null, fileId: string | undefined, warningThreshold: number = 30) => {
     if (!dateStr) return (
       <div className="flex justify-between items-center py-1">
         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{label}</span>
@@ -863,7 +880,7 @@ export default function TruckMaster({
       if (days <= 0) {
         badgeClass = "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 font-bold uppercase";
         statusText = "(EXPIRED)";
-      } else if (days <= 30) {
+      } else if (days <= warningThreshold) {
         badgeClass = "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 font-bold";
       }
     }
@@ -1154,7 +1171,7 @@ export default function TruckMaster({
                 <input
                   type="number"
                   placeholder="Limit"
-                  value={pinpushKM}
+                  value={pinpushKM ?? ''}
                   onChange={(e) => setPinpushKM(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                 />
@@ -1164,7 +1181,7 @@ export default function TruckMaster({
                 <input
                   type="number"
                   placeholder="Limit"
-                  value={wheelGreaseKM}
+                  value={wheelGreaseKM ?? ''}
                   onChange={(e) => setWheelGreaseKM(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                 />
@@ -1173,7 +1190,7 @@ export default function TruckMaster({
                 <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Alignment Next Date</label>
                 <input
                   type="date"
-                  value={alignmentNextDate}
+                  value={alignmentNextDate ?? ''}
                   onChange={(e) => setAlignmentNextDate(e.target.value)}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500"
                 />
@@ -1183,7 +1200,7 @@ export default function TruckMaster({
                 <input
                   type="text"
                   placeholder="Owner / Vendor Name"
-                  value={ownerName}
+                  value={ownerName ?? ''}
                   onChange={(e) => setOwnerName(e.target.value)}
                   className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1 text-xs focus:outline-none"
                 />
@@ -1201,7 +1218,7 @@ export default function TruckMaster({
                     id="input-engine-oil-km"
                     type="number"
                     placeholder="Future KM"
-                    value={engineOilKM}
+                    value={engineOilKM ?? ''}
                     onChange={(e) => setEngineOilKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1221,7 +1238,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.engineOilIntervalKM || 15000).toLocaleString()} KM`}
-                    value={engineOilIntervalKM}
+                    value={engineOilIntervalKM ?? ''}
                     onChange={(e) => setEngineOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1236,7 +1253,7 @@ export default function TruckMaster({
                     id="input-crown-oil-km"
                     type="number"
                     placeholder="Future KM"
-                    value={crownOilKM}
+                    value={crownOilKM ?? ''}
                     onChange={(e) => setCrownOilKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1256,7 +1273,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.crownOilIntervalKM || 40000).toLocaleString()} KM`}
-                    value={crownOilIntervalKM}
+                    value={crownOilIntervalKM ?? ''}
                     onChange={(e) => setCrownOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1271,7 +1288,7 @@ export default function TruckMaster({
                     id="input-gear-box-oil-km"
                     type="number"
                     placeholder="Future KM"
-                    value={gearBoxOilKM}
+                    value={gearBoxOilKM ?? ''}
                     onChange={(e) => setGearBoxOilKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1291,7 +1308,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.gearBoxOilIntervalKM || 40000).toLocaleString()} KM`}
-                    value={gearBoxOilIntervalKM}
+                    value={gearBoxOilIntervalKM ?? ''}
                     onChange={(e) => setGearBoxOilIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1306,7 +1323,7 @@ export default function TruckMaster({
                     id="input-radiator-km"
                     type="number"
                     placeholder="Future KM"
-                    value={radiatorKM}
+                    value={radiatorKM ?? ''}
                     onChange={(e) => setRadiatorKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1326,7 +1343,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.radiatorIntervalKM || 20000).toLocaleString()} KM`}
-                    value={radiatorIntervalKM}
+                    value={radiatorIntervalKM ?? ''}
                     onChange={(e) => setRadiatorIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1341,7 +1358,7 @@ export default function TruckMaster({
                     id="input-pinpush-km"
                     type="number"
                     placeholder="Future KM"
-                    value={pinpushKM}
+                    value={pinpushKM ?? ''}
                     onChange={(e) => setPinpushKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1361,7 +1378,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.pinpushIntervalKM || 5000).toLocaleString()} KM`}
-                    value={pinpushIntervalKM}
+                    value={pinpushIntervalKM ?? ''}
                     onChange={(e) => setPinpushIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1376,7 +1393,7 @@ export default function TruckMaster({
                     id="input-wheel-grease-km"
                     type="number"
                     placeholder="Future KM"
-                    value={wheelGreaseKM}
+                    value={wheelGreaseKM ?? ''}
                     onChange={(e) => setWheelGreaseKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1396,7 +1413,7 @@ export default function TruckMaster({
                   <input
                     type="number"
                     placeholder={`Uses Org Default: ${(orgProfile?.wheelGreaseIntervalKM || 5000).toLocaleString()} KM`}
-                    value={wheelGreaseIntervalKM}
+                    value={wheelGreaseIntervalKM ?? ''}
                     onChange={(e) => setWheelGreaseIntervalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
                   />
@@ -1923,14 +1940,14 @@ export default function TruckMaster({
                   {/* Taxes & Validity Compliance Logs */}
                   <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200/40 dark:border-slate-850 rounded-xl p-3.5 space-y-2 mb-4">
                     <h5 className="text-[9px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-widest mb-1 pb-1 border-b border-slate-200/35 dark:border-slate-800/10">Compliance Certifications</h5>
-                    {renderComplianceRow('Insurance', truck.insuranceDate, insDays, truck.insuranceFileId)}
-                    {renderComplianceRow('Fitness Cert (FC)', truck.fcDate, fcDays, undefined)}
-                    {renderComplianceRow('National Permit', truck.npTaxDate, npDays, undefined)}
-                    {renderComplianceRow('5Y Permit Date', truck.fiveYearPermitDate, fvDays, undefined)}
-                    {renderComplianceRow('Q Tax validity', truck.qTaxDate, qDays, undefined)}
-                    {renderComplianceRow('Green Tax Cert', truck.greenTaxDate, gDays, undefined)}
-                    {renderComplianceRow('NP Tax Validity', truck.npTaxDate, npDays, undefined)}
-                    {renderComplianceRow('Subscription Expiry', truck.registrationExpiryDate, regDays, undefined)}
+                    {renderComplianceRow('Insurance', truck.insuranceDate, insDays, truck.insuranceFileId, orgProfile?.insuranceWarningDays ?? 30)}
+                    {renderComplianceRow('Fitness Cert (FC)', truck.fcDate, fcDays, undefined, orgProfile?.fcWarningDays ?? 30)}
+                    {renderComplianceRow('National Permit', truck.npTaxDate, npDays, undefined, orgProfile?.npTaxWarningDays ?? 30)}
+                    {renderComplianceRow('5Y Permit Date', truck.fiveYearPermitDate, fvDays, undefined, orgProfile?.fiveYearPermitWarningDays ?? 30)}
+                    {renderComplianceRow('Q Tax validity', truck.qTaxDate, qDays, undefined, orgProfile?.qTaxWarningDays ?? 30)}
+                    {renderComplianceRow('Green Tax Cert', truck.greenTaxDate, gDays, undefined, orgProfile?.greenTaxWarningDays ?? 30)}
+                    {renderComplianceRow('NP Tax Validity', truck.npTaxDate, npDays, undefined, orgProfile?.npTaxWarningDays ?? 30)}
+                    {renderComplianceRow('Subscription Expiry', truck.registrationExpiryDate, regDays, undefined, orgProfile?.subscriptionWarningDays ?? 30)}
                   </div>
 
                   {/* Active Loan summary banner if present */}

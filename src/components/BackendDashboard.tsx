@@ -574,7 +574,8 @@ export default function BackendDashboard({
     if (!selectedTicket) return;
     const newUrls = { ...resolvedUrls };
     let changed = false;
-    for (const msg of selectedTicket.messages) {
+    const messages = Array.isArray(selectedTicket.messages) ? selectedTicket.messages : [];
+    for (const msg of messages) {
       if (msg.attachmentUrl && !newUrls[msg.id]) {
         const isFileId = !msg.attachmentUrl.startsWith('http');
         if (isFileId && isAppwriteConfigured()) {
@@ -2211,18 +2212,29 @@ export default function BackendDashboard({
                     <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Description</span>
                     <p className="whitespace-pre-line leading-relaxed">{selectedTicket.description}</p>
                   </div>
-
                   {/* Chat Messages */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
                     {selectedTicket.messages?.map((msg) => {
+                      const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
                       const isAgent = msg.sender === 'Agent';
+
+                      if (isSystem) {
+                        return (
+                          <div key={msg.id} className="flex justify-center my-2">
+                            <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
+                              {msg.content}
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div key={msg.id} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
                           <div
-                            className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs ${
+                            className={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
                               isAgent
-                                ? 'bg-purple-600 text-white border-purple-500 rounded-tr-none'
-                                : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 rounded-tl-none'
+                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-purple-500/10'
+                                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none shadow-xs'
                             }`}
                           >
                             <div className="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
@@ -2233,7 +2245,7 @@ export default function BackendDashboard({
 
                             {msg.attachmentUrl && (
                               <div className={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                                isAgent ? 'bg-purple-700/60 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
+                                isAgent ? 'bg-purple-705 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
                               }`}>
                                 <div className="flex items-center gap-1.5 truncate">
                                   <FileText className="w-3.5 h-3.5 shrink-0 opacity-80" />

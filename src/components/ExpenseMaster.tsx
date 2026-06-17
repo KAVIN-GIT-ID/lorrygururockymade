@@ -40,7 +40,7 @@ export default function ExpenseMaster({
   const [amount, setAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [status, setStatus] = useState<ExpenseEntry['status']>('Paid');
+  const [status, setStatus] = useState<ExpenseEntry['status']>('Settled');
   const [accountType, setAccountType] = useState<'Account' | 'Driver'>('Account');
   const [selectedDriverName, setSelectedDriverName] = useState('');
 
@@ -56,7 +56,7 @@ export default function ExpenseMaster({
     setAmount('');
     setPaymentMode('');
     setDate(new Date().toISOString().split('T')[0]);
-    setStatus('Paid');
+    setStatus('Settled');
     setAccountType('Account');
     setSelectedDriverName('');
     setIsEditing(null);
@@ -94,7 +94,7 @@ export default function ExpenseMaster({
       amount: parseFloat(amount),
       paymentMode: accountType === 'Driver' ? selectedDriverName : (paymentMode || 'Cash/General'),
       date,
-      status,
+      status: status || 'Pending',
       accountType,
       driverName: accountType === 'Driver' ? selectedDriverName : undefined
     };
@@ -120,7 +120,7 @@ export default function ExpenseMaster({
     setAmount(exp.amount.toString());
     setPaymentMode(exp.paymentMode);
     setDate(exp.date);
-    setStatus(exp.status);
+    setStatus(exp.status || 'Pending');
     setAccountType(exp.accountType || 'Account');
     setSelectedDriverName(exp.driverName || '');
     setShowForm(true);
@@ -187,28 +187,12 @@ export default function ExpenseMaster({
           );
 
           const mapped = (res.documents || []).map(doc => {
-            try {
-              if (doc.data) {
-                const parsed = JSON.parse(doc.data);
-                return { id: doc.$id, ...parsed };
-              }
-            } catch (e) {
-              console.warn("Failed to parse doc.data for expense:", doc.$id, e);
+            const record = appwrite.reconstructRecord(doc);
+            if (record) {
+              record.amount = Number(record.amount) || Number(doc.amount) || 0;
             }
-            return {
-              id: doc.$id,
-              organizationId: doc.organizationId,
-              truckNo: doc.truckNo || '',
-              expenseType: doc.expenseType || '',
-              shopName: doc.shopName || '',
-              amount: Number(doc.amount) || 0,
-              paymentMode: doc.paymentMode || '',
-              date: doc.date || '',
-              status: doc.status || 'Pending',
-              accountType: doc.accountType || 'Account',
-              driverName: doc.driverName || ''
-            };
-          });
+            return record;
+          }).filter(Boolean);
           setDisplayedExpenses(mapped);
           setTotalCount(res.total || 0);
         } catch (err) {
@@ -224,7 +208,7 @@ export default function ExpenseMaster({
 
       return () => clearTimeout(delayDebounce);
     }
-  }, [searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online, organizationId]);
+  }, [expenses, searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online, organizationId]);
 
   const totalExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
     const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -254,7 +238,7 @@ export default function ExpenseMaster({
     const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
     const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-  })).filter(e => e.status === 'Paid').reduce((sum, item) => sum + item.amount, 0);
+  })).filter(e => e.status === 'Paid' || e.status === 'Settled').reduce((sum, item) => sum + item.amount, 0);
 
   const uniqueExpenseTypes = Array.from(new Set(expenses.map(e => e.expenseType).filter(Boolean)));
 
@@ -511,7 +495,7 @@ export default function ExpenseMaster({
                 onChange={(e) => setStatus(e.target.value as ExpenseEntry['status'])}
                 className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
               >
-                <option value="Paid">Paid</option>
+                <option value="Settled">Settled</option>
                 <option value="Pending">Pending</option>
                 <option value="Approved">Approved</option>
                 <option value="Declined">Declined</option>
@@ -680,11 +664,11 @@ export default function ExpenseMaster({
                     )}
                   </td>
                   <td className="p-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                    ₹{exp.amount.toLocaleString('en-IN', { minimumFractionDigits: 1 })}
+                    ₹{Number(exp.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 1 })}
                   </td>
                   <td className="p-3 text-center whitespace-nowrap">
                     <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-black border uppercase tracking-wider ${
-                      exp.status === 'Paid' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
+                      (exp.status === 'Paid' || exp.status === 'Settled') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
                       exp.status === 'Approved' ? 'border-blue-200 bg-blue-50 text-blue-700' :
                       exp.status === 'Declined' ? 'border-rose-200 bg-rose-50 text-rose-700' :
                       'border-amber-200 bg-amber-50 text-amber-700'
@@ -739,7 +723,7 @@ export default function ExpenseMaster({
                     {exp.date}
                   </span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    exp.status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                    (exp.status === 'Paid' || exp.status === 'Settled') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                     'bg-amber-50 text-amber-705 border border-amber-100'
                   }`}>
                     {exp.status}
@@ -775,7 +759,7 @@ export default function ExpenseMaster({
                 <div className="flex justify-between items-center text-xs mb-4">
                   <span className="text-slate-500 font-semibold">Expense Amount:</span>
                   <span className="font-mono font-black text-rose-650 text-[14px]">
-                    ₹{exp.amount.toLocaleString('en-IN')}
+                    ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>

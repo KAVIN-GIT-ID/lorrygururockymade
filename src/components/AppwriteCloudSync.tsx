@@ -35,6 +35,7 @@ interface AppwriteCloudSyncProps {
   onInitialSyncComplete?: (completed: boolean) => void;
   onConnectionChange?: (isOnline: boolean, reason?: 'offline' | 'realtime_lost') => void;
   activeTicketId?: string | null;
+  hideUI?: boolean;
 }
 
 export default function AppwriteCloudSync({
@@ -48,7 +49,8 @@ export default function AppwriteCloudSync({
   isAdmin,
   onInitialSyncComplete,
   onConnectionChange,
-  activeTicketId
+  activeTicketId,
+  hideUI
 }: AppwriteCloudSyncProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured] = useState(isAppwriteConfigured());
@@ -66,13 +68,6 @@ export default function AppwriteCloudSync({
   });
 
   const [realtimeConnected, setRealtimeConnected] = useState(true);
-  const [disableRealtime, setDisableRealtime] = useState(() => {
-    return localStorage.getItem('appwrite_disable_realtime') === 'true';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('appwrite_disable_realtime', disableRealtime ? 'true' : 'false');
-  }, [disableRealtime]);
 
   // Monitor hardware/browser network connectivity status
   useEffect(() => {
@@ -119,55 +114,8 @@ export default function AppwriteCloudSync({
   const activeTicketIdRef = useRef(activeTicketId);
   useEffect(() => { activeTicketIdRef.current = activeTicketId; }, [activeTicketId]);
 
-  // Keep a baseline of the last synchronized state to perform delta queries
-  const baselineStateRef = useRef<{
-    trucks: any[];
-    drivers: any[];
-    offices: any[];
-    accounts: any[];
-    trips: any[];
-    expenses: any[];
-    tyres: any[];
-    auditLogs: any[];
-    supportTickets: any[];
-  }>({
-    trucks: [],
-    drivers: [],
-    offices: [],
-    accounts: [],
-    trips: [],
-    expenses: [],
-    tyres: [],
-    auditLogs: [],
-    supportTickets: []
-  });
-
   const [initialPullDone, setInitialPullDone] = useState(false);
   const isSyncing = useRef(false);
-
-  // Reset initial sync status and baseline when organization resolves/changes
-  const prevOrgIdRef = useRef(orgId);
-  useEffect(() => {
-    const wasRealOrg = prevOrgIdRef.current && prevOrgIdRef.current !== 'org_default' && prevOrgIdRef.current !== '';
-    const isRealOrg = orgId && orgId !== 'org_default' && orgId !== '';
-
-    if (wasRealOrg && isRealOrg && prevOrgIdRef.current !== orgId) {
-      console.log(`Appwrite Sync: Organization changed from ${prevOrgIdRef.current} to ${orgId}. Resetting sync state.`);
-      setInitialPullDone(false);
-      baselineStateRef.current = {
-        trucks: [],
-        drivers: [],
-        offices: [],
-        accounts: [],
-        trips: [],
-        expenses: [],
-        tyres: [],
-        auditLogs: [],
-        supportTickets: []
-      };
-    }
-    prevOrgIdRef.current = orgId;
-  }, [orgId]);
 
   useEffect(() => {
     localStorage.setItem('appwrite_database_id', databaseId);
@@ -176,24 +124,6 @@ export default function AppwriteCloudSync({
   useEffect(() => {
     localStorage.setItem('appwrite_collection_id', collectionId);
   }, [collectionId]);
-
-  // Generate a fingerprint of current organization state to watch for edits
-  const getScopedFingerprint = (state: typeof currentLocalState) => {
-    return JSON.stringify({
-      trucks: (state.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      drivers: (state.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-      offices: (state.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-      accounts: (state.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-      trips: (state.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      expenses: (state.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-      tyres: (state.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      auditLogs: (state.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId),
-      supportTickets: (state.supportTickets || []).filter(st => orgId === 'org_backend' || st.organizationId === orgId)
-    });
-  };
-
-  const stateFingerprint = getScopedFingerprint(currentLocalState);
-  const previousFingerprint = useRef(stateFingerprint);
 
   const allowedCollectionsRef = useRef<string[]>(['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets']);
 
@@ -243,22 +173,16 @@ export default function AppwriteCloudSync({
         try {
           const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
           verifiedCollections.push(cat.collection);
-          const parsedRecords: any[] = [];
+          
           for (const doc of docs) {
-            try {
-              const record = JSON.parse(doc.data);
-              parsedRecords.push(record);
-              if (doc.$updatedAt) {
-                const docTime = new Date(doc.$updatedAt).getTime();
-                if (docTime > maxUpdatedAt) {
-                  maxUpdatedAt = docTime;
-                }
+            if (doc.updatedAt) {
+              const docTime = new Date(doc.updatedAt).getTime();
+              if (docTime > maxUpdatedAt) {
+                maxUpdatedAt = docTime;
               }
-            } catch (e) {
-              console.warn(`Failed to parse document payload for ${doc.$id} in ${cat.collection}:`, e);
             }
           }
-          loadedState[cat.key] = parsedRecords;
+          loadedState[cat.key] = docs;
         } catch (catErr: any) {
           console.warn(`Failed to fetch/parse documents for collection ${cat.collection}:`, catErr.message);
         }
@@ -296,27 +220,8 @@ export default function AppwriteCloudSync({
         loadedState.exportDate = maxUpdatedAt;
       }
 
-      // Sync local baseline — IMPORTANT: always filter by orgId.
-      // For org_backend, listFleetDocuments returns ALL records across ALL orgs
-      // (no org filter). If we stored them unfiltered here, the delta sync would
-      // see them in the baseline but NOT in currentList (which filters by orgId),
-      // and would incorrectly delete them as "removed" items.
-      baselineStateRef.current = {
-        trucks: loadedState.trucks.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        drivers: loadedState.drivers.filter((d: any) => orgId === 'org_backend' || d.organizationId === orgId),
-        offices: loadedState.offices.filter((o: any) => orgId === 'org_backend' || o.organizationId === orgId),
-        accounts: loadedState.accounts.filter((a: any) => orgId === 'org_backend' || a.organizationId === orgId),
-        trips: loadedState.trips.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        expenses: loadedState.expenses.filter((e: any) => orgId === 'org_backend' || e.organizationId === orgId),
-        tyres: loadedState.tyres.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        auditLogs: loadedState.auditLogs.filter((l: any) => orgId === 'org_backend' || l.organizationId === orgId),
-        supportTickets: loadedState.supportTickets.filter((st: any) => orgId === 'org_backend' || st.organizationId === orgId)
-      };
-
       // Load state into local UI
       const didChange = onLoadCloudState(loadedState, userRightsData, quiet);
-
-      previousFingerprint.current = getScopedFingerprint(loadedState);
 
       if (!quiet) {
         setSuccessMsg('Active registers successfully loaded from Appwrite Database!');
@@ -361,133 +266,6 @@ export default function AppwriteCloudSync({
     performInitialSync();
   }, [databaseId, isConfigured, orgId, initialPullDone]);
 
-  // Delta Sync Engine (Pushes local modifications to DB)
-  const syncLocalToDatabase = async () => {
-    if (!isConfigured || isSyncing.current) return;
-
-    isSyncing.current = true;
-    const currentState = currentLocalStateRef.current;
-    const baseline = baselineStateRef.current;
-
-    const categories: { key: keyof typeof currentState; collection: string }[] = [
-      { key: 'trucks', collection: 'trucks' },
-      { key: 'drivers', collection: 'drivers' },
-      { key: 'offices', collection: 'offices' },
-      { key: 'accounts', collection: 'accounts' },
-      { key: 'trips', collection: 'trips' },
-      { key: 'expenses', collection: 'expenses' },
-      { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' },
-      { key: 'supportTickets', collection: 'support_tickets' }
-    ];
-
-    try {
-      let changeDetected = false;
-      let localStateNeedsPurge = false;
-
-      const nextState = {
-        trucks: [...currentState.trucks],
-        drivers: [...currentState.drivers],
-        offices: [...currentState.offices],
-        accounts: [...currentState.accounts],
-        trips: [...currentState.trips],
-        expenses: [...currentState.expenses],
-        tyres: [...currentState.tyres],
-        auditLogs: [...currentState.auditLogs],
-        supportTickets: [...(currentState.supportTickets || [])]
-      };
-
-      for (const cat of categories) {
-        const currentList = (currentState[cat.key] || []).filter(x => orgId === 'org_backend' || x.organizationId === orgId);
-        const baselineList = baseline[cat.key] || [];
-
-        // 1. Find Created & Updated documents
-        for (const item of currentList) {
-          // If soft-deleted locally, push physical deletion to Appwrite
-          if (item.deletedAt) {
-            console.log(`Appwrite DB [Delta Sync]: Deleting (soft-deleted locally) doc for ${cat.collection} (${item.id})`);
-            try {
-              await appwrite.deleteFleetDocument(databaseId, cat.collection, item.id);
-              nextState[cat.key] = (nextState[cat.key] as any[]).filter(x => x.id !== item.id);
-              localStateNeedsPurge = true;
-              changeDetected = true;
-            } catch (err: any) {
-              console.warn(`Failed to push deletion for ${item.id}:`, err.message);
-            }
-            continue;
-          }
-
-          const baseItem = baselineList.find(b => b.id === item.id);
-          const baseVersion = baseItem ? (baseItem.version ?? 1) : 0;
-          const currentVersion = item.version ?? 1;
-
-          if (!baseItem) {
-            // Created item
-            console.log(`Appwrite DB [Delta Sync]: Creating doc for ${cat.collection} (${item.id})`);
-            const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
-            await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, targetOrgId, item);
-            changeDetected = true;
-          } else if (currentVersion > baseVersion) {
-            // Updated item
-            console.log(`Appwrite DB [Delta Sync]: Updating doc for ${cat.collection} (${item.id})`);
-            const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
-            await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, targetOrgId, item);
-            changeDetected = true;
-          }
-        }
-
-        // 2. Find Deleted documents fallback (hard deletions)
-        for (const baseItem of baselineList) {
-          if (orgId !== 'org_backend' && baseItem.organizationId && baseItem.organizationId !== orgId) {
-            continue;
-          }
-          const currentItem = currentList.find(c => c.id === baseItem.id);
-          if (!currentItem) {
-            console.log(`Appwrite DB [Delta Sync]: Deleting doc for ${cat.collection} (${baseItem.id})`);
-            await appwrite.deleteFleetDocument(databaseId, cat.collection, baseItem.id);
-            changeDetected = true;
-          }
-        }
-      }
-
-      if (changeDetected) {
-        console.log("Appwrite DB [Delta Sync]: Sync completed successfully.");
-
-        if (localStateNeedsPurge) {
-          onLoadCloudStateRef.current(nextState, null, true);
-        }
-
-        // Update baseline with next/purged state
-        const nextBaselineState = localStateNeedsPurge ? nextState : currentState;
-        baselineStateRef.current = {
-          trucks: (nextBaselineState.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          drivers: (nextBaselineState.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-          offices: (nextBaselineState.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-          accounts: (nextBaselineState.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-          trips: (nextBaselineState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          expenses: (nextBaselineState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-          tyres: (nextBaselineState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          auditLogs: (nextBaselineState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId),
-          supportTickets: (nextBaselineState.supportTickets || []).filter(st => orgId === 'org_backend' || st.organizationId === orgId)
-        };
-      }
-
-      previousFingerprint.current = getScopedFingerprint(localStateNeedsPurge ? nextState : currentState);
-    } catch (e: any) {
-      console.warn("Appwrite Database auto-push failed:", e.message);
-    } finally {
-      isSyncing.current = false;
-    }
-  };
-
-  // Delta-push engine: fires whenever local state diverges from the last-synced baseline
-  useEffect(() => {
-    if (!isConfigured || !initialPullDone) return;
-    if (stateFingerprint === previousFingerprint.current) return;
-    // Local state changed — push deltas to Appwrite
-    syncLocalToDatabase();
-  }, [stateFingerprint, isConfigured, initialPullDone]);
-
   // Real-Time Web Socket subscription using Appwrite real-time channel
   // Auto-reconnects with exponential backoff when the socket drops.
   useEffect(() => {
@@ -496,11 +274,7 @@ export default function AppwriteCloudSync({
       return;
     }
 
-    if (disableRealtime) {
-      console.info("Appwrite Sync: Realtime WebSocket disabled by user. Falling back to REST polling.");
-      setRealtimeConnected(false);
-      return;
-    }
+
 
     let unsubscribe: any = null;
     let destroyed = false;          // set true on useEffect cleanup
@@ -571,6 +345,8 @@ export default function AppwriteCloudSync({
             await appwrite.listGlobalConfigs(databaseId);
             verifiedCols.push('global_configs');
           } catch (_) { }
+        } else {
+          verifiedCols.push('global_configs');
         }
 
         const colList = verifiedCols;
@@ -585,12 +361,7 @@ export default function AppwriteCloudSync({
           return;
         }
         const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
-        if (orgId !== 'org_backend' && currentUserEmail) {
-          const myUserDocId = appwrite.getEmailDocId(currentUserEmail);
-          const myOrgDocId = appwrite.getOrgDocId(orgId);
-          channels.push(`databases.${databaseId}.collections.global_configs.documents.${myUserDocId}`);
-          channels.push(`databases.${databaseId}.collections.global_configs.documents.${myOrgDocId}`);
-        }
+
         console.log(`Appwrite socket: Subscribing to authorized channels:`, channels);
 
         try {
@@ -669,7 +440,7 @@ export default function AppwriteCloudSync({
                 updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
               } else {
                 try {
-                  const parsedRecord = JSON.parse(doc.data);
+                  const parsedRecord = appwrite.reconstructRecord(doc);
                   const cloudVersion = parsedRecord.version ?? 1;
                   const cloudUpdatedBy = parsedRecord.updatedBy ?? '';
 
@@ -730,21 +501,8 @@ export default function AppwriteCloudSync({
                 }
               }
 
-              // Update the baseline for ONLY this collection
-              baselineStateRef.current = {
-                ...baselineStateRef.current,
-                [key]: updatedCollection.filter(x => orgId === 'org_backend' || x.organizationId === orgId)
-              };
-
               // Call onLoadCloudStateRef with only the changed collection
               onLoadCloudStateRef.current({ [key]: updatedCollection }, null, true);
-
-              // Update previousFingerprint
-              const nextFingerprintState = {
-                ...currentState,
-                [key]: updatedCollection
-              };
-              previousFingerprint.current = getScopedFingerprint(nextFingerprintState);
             }
           );
 
@@ -784,35 +542,19 @@ export default function AppwriteCloudSync({
               const handleSocketClose = (event: CloseEvent) => {
                 disconnectCount++;
                 console.warn(`Appwrite socket closed (code: ${event.code}). Total disconnects: ${disconnectCount}`);
-                
-                if (event.code === 1008 || disconnectCount >= 3) {
-                  console.warn('Appwrite socket: Persistent connection issues or policy violation detected. Bypassing Realtime and falling back to REST/Polling.');
-                  teardown();
-                  if (reconnectTimer) {
-                    clearTimeout(reconnectTimer);
-                    reconnectTimer = null;
-                  }
-                  setRealtimeConnected(false);
-                  if (onConnectionChange) onConnectionChange(true);
-                } else {
-                  setRealtimeConnected(false);
-                }
+                setRealtimeConnected(false);
+                if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
+                scheduleReconnect();
               };
 
               const handleSocketMessage = (event: MessageEvent) => {
                 try {
                   const payload = JSON.parse(event.data);
                   if (payload.data?.code === 1008 || payload.code === 1008 || (payload.type === 'error' && payload.data?.code === 1008)) {
-                    console.warn('Appwrite socket: Received async policy error message 1008. This usually means either collections are empty (document-level permissions) or cross-origin session cookies are blocked. Bypassing Realtime and falling back to REST/Polling.');
-                    teardown();
-                    if (reconnectTimer) {
-                      clearTimeout(reconnectTimer);
-                      reconnectTimer = null;
-                    }
-                    // Mute the connection modal by marking it cleanly as bypassed rather than lost
+                    console.warn('Appwrite socket: Received async policy error message 1008. Reconnecting...');
                     setRealtimeConnected(false);
-                    // Silently propagate that online REST mode is functional
-                    if (onConnectionChange) onConnectionChange(true);
+                    if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
+                    scheduleReconnect();
                   }
                 } catch (_) { }
               };
@@ -849,14 +591,14 @@ export default function AppwriteCloudSync({
         } catch (subErr: any) {
           // code 1008 = Missing channel(s) — some collections don't exist yet
           if (subErr?.code !== 1008) {
-            console.warn('Realtime channel subscription failed, relying on polling:', subErr?.message);
+            console.warn('Realtime channel subscription failed:', subErr?.message);
           }
           scheduleReconnect();
         }
       } catch (err: any) {
         // Ignore 'WebSocket is already in CLOSING or CLOSED state' noise
         if (!err?.message?.includes('CLOSING') && !err?.message?.includes('CLOSED')) {
-          console.warn('Realtime socket setup failed, relying on polling:', err?.message);
+          console.warn('Realtime socket setup failed:', err?.message);
         }
         scheduleReconnect();
       }
@@ -869,20 +611,8 @@ export default function AppwriteCloudSync({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       teardown();
     };
-  }, [databaseId, isConfigured, orgId, initialPullDone, currentUserEmail, disableRealtime]);
+  }, [databaseId, isConfigured, orgId, initialPullDone, currentUserEmail]);
 
-  // Polling fallback to keep data and permissions in sync if WebSocket events are blocked
-  useEffect(() => {
-    if (!isConfigured || !initialPullDone) return;
-
-    const pollInterval = realtimeConnected ? 20000 : 3500;
-
-    const interval = setInterval(() => {
-      handlePullFromDB(true);
-    }, pollInterval);
-
-    return () => clearInterval(interval);
-  }, [isConfigured, initialPullDone, databaseId, orgId, realtimeConnected]);
 
   const handleManualPushToDB = async () => {
 
@@ -941,20 +671,7 @@ export default function AppwriteCloudSync({
         totalRecords += 1;
       }
 
-      // Re-initialize baseline state
-      baselineStateRef.current = {
-        trucks: (currentState.trucks || []).filter(t => t.organizationId === orgId),
-        drivers: (currentState.drivers || []).filter(d => d.organizationId === orgId),
-        offices: (currentState.offices || []).filter(o => o.organizationId === orgId),
-        accounts: (currentState.accounts || []).filter(a => a.organizationId === orgId),
-        trips: (currentState.trips || []).filter(t => t.organizationId === orgId),
-        expenses: (currentState.expenses || []).filter(e => e.organizationId === orgId),
-        tyres: (currentState.tyres || []).filter(t => t.organizationId === orgId),
-        auditLogs: (currentState.auditLogs || []).filter(l => l.organizationId === orgId),
-        supportTickets: (currentState.supportTickets || []).filter(st => st.organizationId === orgId)
-      };
 
-      previousFingerprint.current = getScopedFingerprint(currentState);
 
       setSuccessMsg(`Successfully uploaded ${totalRecords} records to Appwrite Database!`);
       logActionRef.current('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId}" with 9 separate collections.`);
@@ -971,6 +688,8 @@ export default function AppwriteCloudSync({
       isSyncing.current = false;
     }
   };
+
+  if (hideUI) return null;
 
   return (
     <div className="relative inline-block text-left">
@@ -1050,20 +769,7 @@ export default function AppwriteCloudSync({
                         className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
                       />
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id="chk-disable-realtime"
-                      checked={disableRealtime}
-                      onChange={(e) => setDisableRealtime(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-800 text-blue-605 focus:ring-0 focus:ring-offset-0 cursor-pointer"
-                    />
-                    <label htmlFor="chk-disable-realtime" className="text-[10px] text-slate-400 font-bold cursor-pointer select-none">
-                      Force REST Polling (Disable WebSocket)
-                    </label>
-                  </div>
+                    </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
