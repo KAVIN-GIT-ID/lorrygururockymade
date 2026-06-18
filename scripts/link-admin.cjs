@@ -6,9 +6,9 @@ const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
 const databaseId = process.env.VITE_APPWRITE_DATABASE_ID;
 const apiKey = process.env.VITE_APPWRITE_API_KEY;
 
-const email = 'prasath.sakthi@gmail.com';
-const name = 'Prasath Sakthi';
-const orgId = '6a1c7429000bcd098cab';
+const email = process.argv[2] || process.env.ADMIN_EMAIL || 'admin@example.com';
+const name = process.argv[3] || process.env.ADMIN_NAME || 'Admin User';
+const orgId = process.argv[4] || process.env.ADMIN_ORG_ID || 'org_example';
 
 console.log('=== Link Admin & Authorize Permissions ===');
 console.log(`Email:        ${email}`);

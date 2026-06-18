@@ -96,6 +96,8 @@ interface BackendDashboardProps {
   onSetActiveTicketId?: (id: string | null) => void;
   payments?: any[];
   onInitiateRefund?: (orgId: string, truckNo: string, paymentRecord: any) => Promise<void>;
+  appUpdateConfig?: { version: string; releaseNotes: string; downloadUrl: string; updatedAt?: string } | null;
+  onSaveAppUpdateConfig?: (config: any) => Promise<void>;
 }
 
 const SCHEMA_TEMPLATES = {
@@ -283,7 +285,9 @@ export default function BackendDashboard({
   activeTicketId,
   onSetActiveTicketId,
   payments = [],
-  onInitiateRefund
+  onInitiateRefund,
+  appUpdateConfig = null,
+  onSaveAppUpdateConfig
 }: BackendDashboardProps) {
   const myRights = userRightsList.find(u => u.email === currentUser?.email);
   const mySupportRoles = Array.isArray(myRights?.supportRole)
@@ -295,7 +299,7 @@ export default function BackendDashboard({
   const myCanTransfer = myRights?.canTransferTickets || false;
   const isSuperAdmin = myRights?.role === 'SuperAdmin';
 
-  const [activeSubTab, setActiveSubTab] = useState<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA' | 'TICKETS'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA' | 'TICKETS' | 'SYSTEM' | 'UPDATES'>(() => {
     if (canViewBackend !== false) return 'ORGANIZATIONS';
     if (canViewTruckRequests !== false) return 'REQUESTS';
     if (canViewDatabaseConsole !== false) return 'RAW_DATA';
@@ -309,6 +313,7 @@ export default function BackendDashboard({
       if (tab === 'REQUESTS') return !!canViewTruckRequests;
       if (tab === 'RAW_DATA') return !!canViewDatabaseConsole;
       if (tab === 'TICKETS') return !!(isSuperAdmin || (myRights?.canViewTickets && hasSupportRole));
+      if (tab === 'UPDATES') return isSuperAdmin;
       return false;
     };
 
@@ -336,6 +341,7 @@ export default function BackendDashboard({
   const [jsonEditorIsValid, setJsonEditorIsValid] = useState<boolean>(true);
   const [jsonEditorError, setJsonEditorError] = useState<string | null>(null);
   const [isAddingNewRecord, setIsAddingNewRecord] = useState<boolean>(false);
+  const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
   // Support Tickets States
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -1100,6 +1106,18 @@ export default function BackendDashboard({
                   {getAgentUnreadTicketsCount()}
                 </span>
               )}
+            </button>
+          )}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveSubTab('UPDATES')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer relative ${activeSubTab === 'UPDATES'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
+                }`}
+            >
+              <Download className="w-4 h-4" />
+              <span>App Updates</span>
             </button>
           )}
         </div>
@@ -2372,6 +2390,26 @@ export default function BackendDashboard({
         </div>
       )}
 
+      {/* TAB CONTENT: APP UPDATES */}
+      {activeSubTab === 'UPDATES' && isSuperAdmin && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm text-left max-w-2xl mx-auto space-y-6">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+              Publish Application Update
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Upload a new APK version and release notes. Logged-in mobile clients will receive update alerts in real-time.
+            </p>
+          </div>
+
+          <AppUpdateForm
+            appUpdateConfig={appUpdateConfig}
+            onSaveAppUpdateConfig={onSaveAppUpdateConfig}
+            currentUser={currentUser}
+          />
+        </div>
+      )}
+
       {/* OVERRIDE TRUCK SPECS / EXPIRIES MODAL POPUP */}
       {editingTruck && editingTruckOrgId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
@@ -2541,5 +2579,262 @@ export default function BackendDashboard({
         </div>
       )}
     </div>
+  );
+}
+
+interface AppUpdateFormProps {
+  appUpdateConfig: any;
+  onSaveAppUpdateConfig?: (config: any) => Promise<void>;
+  currentUser?: any;
+}
+
+const getNextVersion = (ver?: string) => {
+  if (!ver) return '1.0.1';
+  const parts = ver.split('.').map(Number);
+  if (parts.length >= 3) {
+    parts[2] = parts[2] + 1;
+    return parts.join('.');
+  }
+  return ver + '.1';
+};
+
+function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: AppUpdateFormProps) {
+  const [version, setVersion] = useState(() => getNextVersion(appUpdateConfig?.version));
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [apkFile, setApkFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    if (appUpdateConfig) {
+      setVersion(getNextVersion(appUpdateConfig.version));
+      setReleaseNotes('');
+      setDownloadUrl('');
+      setApkFile(null);
+    }
+  }, [appUpdateConfig]);
+
+  const handlePublish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!version.trim()) {
+      alert("Version is required.");
+      return;
+    }
+
+    setIsUploading(true);
+    let finalDownloadUrl = downloadUrl;
+
+    try {
+      if (apkFile) {
+        if (isAppwriteConfigured()) {
+          // Upload APK to Appwrite Storage
+          const fileId = await appwrite.uploadFile(apkFile, `app_update_${version.replace(/\./g, '_')}`);
+          finalDownloadUrl = appwrite.getFileDownload(fileId);
+          setDownloadUrl(finalDownloadUrl);
+        } else {
+          // Fallback if Appwrite is not configured
+          finalDownloadUrl = URL.createObjectURL(apkFile);
+          setDownloadUrl(finalDownloadUrl);
+        }
+      }
+
+      const oldVersion = appUpdateConfig?.version || 'None';
+      const historyEntry = {
+        version: version.trim(),
+        oldVersion: oldVersion,
+        downloadUrl: finalDownloadUrl.trim(),
+        releaseNotes: releaseNotes.trim(),
+        uploadedBy: currentUser?.email || 'System Admin',
+        updatedAt: new Date().toISOString()
+      };
+
+      const existingHistory = Array.isArray(appUpdateConfig?.history) ? appUpdateConfig.history : [];
+      const updatedHistory = [historyEntry, ...existingHistory];
+
+      if (onSaveAppUpdateConfig) {
+        await onSaveAppUpdateConfig({
+          version: version.trim(),
+          releaseNotes: releaseNotes.trim(),
+          downloadUrl: finalDownloadUrl.trim(),
+          updatedAt: new Date().toISOString(),
+          history: updatedHistory
+        });
+        alert("App update published successfully!");
+        setApkFile(null);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to publish update: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handlePublish} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-505 uppercase mb-1">Latest Version Number</label>
+          <input
+            type="text"
+            placeholder="e.g. 1.0.1"
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-purple-500"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-505 uppercase mb-1">Upload New APK File</label>
+          <input
+            type="file"
+            accept=".apk"
+            onChange={(e) => setApkFile(e.target.files?.[0] || null)}
+            className="w-full text-xs text-slate-655 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-bold text-slate-505 uppercase mb-1">Download URL Link (Auto-Generated or Custom)</label>
+        <input
+          type="url"
+          placeholder="Direct URL link to download APK if not uploading file"
+          value={downloadUrl}
+          onChange={(e) => setDownloadUrl(e.target.value)}
+          className="w-full bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-purple-505"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-bold text-slate-505 uppercase mb-1">Release Changelog Notes</label>
+        <textarea
+          rows={4}
+          placeholder="Describe features, bug fixes, or improvements in this release..."
+          value={releaseNotes}
+          onChange={(e) => setReleaseNotes(e.target.value)}
+          className="w-full bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-purple-505"
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={isUploading}
+        className="w-full py-2.5 bg-purple-600 hover:bg-purple-750 text-white rounded-lg font-bold text-xs transition shadow-md shadow-purple-500/10 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+      >
+        {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+        <span>{isUploading ? "Uploading & Publishing Update..." : "Publish Release Update"}</span>
+      </button>
+
+      {appUpdateConfig && (
+        <div className="border-t border-slate-150 dark:border-slate-800 pt-4 space-y-4 text-xs">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-2">
+              Currently Active Release
+            </span>
+            <div className="bg-slate-50 dark:bg-slate-955/40 p-4 rounded-xl border border-slate-100 dark:border-slate-850 space-y-2">
+              <p><strong>Active Version:</strong> <span className="font-mono text-purple-655 font-bold">v{appUpdateConfig.version}</span></p>
+              {appUpdateConfig.updatedAt && (
+                <p><strong>Published Date:</strong> {new Date(appUpdateConfig.updatedAt).toLocaleString()}</p>
+              )}
+              
+              <div className="border-t border-slate-100 dark:border-slate-850 pt-2 mt-2">
+                <strong className="block mb-1">Download Link:</strong>
+                <div className="flex items-center gap-2 justify-between bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-2.5 rounded-lg">
+                  <span className="truncate font-mono text-purple-600 dark:text-purple-400 select-all font-semibold">{appUpdateConfig.downloadUrl}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(appUpdateConfig.downloadUrl);
+                      alert("Download link copied to clipboard!");
+                    }}
+                    className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 rounded-md font-bold text-[10px] transition cursor-pointer shrink-0"
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              </div>
+
+              {appUpdateConfig.releaseNotes && (
+                <div className="border-t border-slate-100 dark:border-slate-855 pt-2 mt-2">
+                  <strong>Release Notes:</strong>
+                  <p className="mt-1 text-slate-605 whitespace-pre-wrap leading-relaxed">{appUpdateConfig.releaseNotes}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {Array.isArray(appUpdateConfig.history) && appUpdateConfig.history.length > 0 && (
+            <div className="space-y-2.5">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                Update & Rollback History Logs
+              </span>
+              <div className="overflow-x-auto border border-slate-150 dark:border-slate-800 rounded-xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                      <th className="p-3">Version</th>
+                      <th className="p-3">Uploaded By</th>
+                      <th className="p-3">Release Date</th>
+                      <th className="p-3">Notes</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                    {appUpdateConfig.history.map((h: any, idx: number) => {
+                      const isActive = h.version === appUpdateConfig.version;
+                      return (
+                        <tr key={idx} className={isActive ? "bg-purple-50/20 dark:bg-purple-955/10 font-semibold" : ""}>
+                          <td className="p-3 font-mono text-purple-600 dark:text-purple-400 font-bold">
+                            v{h.version}
+                            {isActive && <span className="ml-1.5 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[8px] rounded-md font-bold uppercase tracking-wider">Active</span>}
+                          </td>
+                          <td className="p-3 text-slate-600 dark:text-slate-400">{h.uploadedBy}</td>
+                          <td className="p-3 text-slate-500">{new Date(h.updatedAt).toLocaleString()}</td>
+                          <td className="p-3 text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={h.releaseNotes}>{h.releaseNotes || '-'}</td>
+                          <td className="p-3 text-right space-x-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(h.downloadUrl);
+                                alert("Download link copied to clipboard!");
+                              }}
+                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded text-[10px] font-bold transition cursor-pointer"
+                            >
+                              Copy Link
+                            </button>
+                            {!isActive && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Are you sure you want to rollback/activate version v${h.version}? All client apps running other versions will be prompted to update/revert to this version.`)) {
+                                    if (onSaveAppUpdateConfig) {
+                                      await onSaveAppUpdateConfig({
+                                        version: h.version,
+                                        releaseNotes: h.releaseNotes,
+                                        downloadUrl: h.downloadUrl,
+                                        updatedAt: new Date().toISOString(),
+                                        history: appUpdateConfig.history
+                                      });
+                                    }
+                                  }
+                                }}
+                                className="px-2 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded text-[10px] font-bold transition cursor-pointer"
+                              >
+                                Activate
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </form>
   );
 }

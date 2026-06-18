@@ -44,7 +44,10 @@ import VerificationRequiredScreen from './components/VerificationRequiredScreen'
 import ProfileModal from './components/ProfileModal';
 import MobileChangeWizardModal from './components/MobileChangeWizardModal';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
+import AppUpdateModal from './components/AppUpdateModal';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
+import versionData from './version.json';
+const APP_VERSION = versionData.version;
 import { useDrivers } from './hooks/useDrivers';
 import { useOffices } from './hooks/useOffices';
 import { useAccounts } from './hooks/useAccounts';
@@ -1223,47 +1226,102 @@ function AppContent() {
 
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
+  const [appUpdateConfig, setAppUpdateConfig] = useState<{
+    version: string;
+    releaseNotes: string;
+    downloadUrl: string;
+    updatedAt?: string;
+  } | null>(() => {
+    try {
+      const stored = localStorage.getItem('ttt_app_update_config');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
+
+  const isVersionNewer = (current: string, latest: string) => {
+    if (!current || !latest) return false;
+    const currParts = current.split('.').map(Number);
+    const lateParts = latest.split('.').map(Number);
+    for (let i = 0; i < Math.max(currParts.length, lateParts.length); i++) {
+      const curr = currParts[i] || 0;
+      const late = lateParts[i] || 0;
+      if (late > curr) return true;
+      if (curr > late) return false;
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    const handleUpdateEvent = (e: any) => {
+      if (e.detail) {
+        setAppUpdateConfig(e.detail);
+      }
+    };
+    window.addEventListener('ttt_app_update_event', handleUpdateEvent);
+    return () => window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
+  }, []);
+
+  const handleSaveAppUpdateConfig = async (config: any) => {
+    try {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      const payload = {
+        key: 'cfg_app_version',
+        ...config
+      };
+      await appwrite.saveGlobalConfig(databaseId, 'cfg_app_version', payload);
+      setAppUpdateConfig(payload);
+      localStorage.setItem('ttt_app_update_config', JSON.stringify(payload));
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: payload }));
+      }
+    } catch (err: any) {
+      console.error("Failed to save app update config:", err);
+      throw err;
+    }
+  };
+
   const saveSupportTickets = (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
-    setSupportTickets(prev => {
-      const nextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(prev) : nextTicketsOrFn;
+    const nextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets) : nextTicketsOrFn;
 
-      // Find modified or new tickets to sync to Appwrite
-      const changedTickets = nextTickets.filter(t => {
-        const existing = prev.find(x => x.id === t.id);
-        return !existing || JSON.stringify(existing) !== JSON.stringify(t);
-      });
+    // Find modified or new tickets to sync to Appwrite
+    const changedTickets = nextTickets.filter(t => {
+      const existing = supportTickets.find(x => x.id === t.id);
+      return !existing || JSON.stringify(existing) !== JSON.stringify(t);
+    });
 
-      // Find deleted tickets
-      const deletedTickets = prev.filter(t => !nextTickets.some(x => x.id === t.id));
+    // Find deleted tickets
+    const deletedTickets = supportTickets.filter(t => !nextTickets.some(x => x.id === t.id));
 
-      localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+    setSupportTickets(nextTickets);
+    localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
 
-      if (isAppwriteConfigured()) {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        
-        if (changedTickets.length > 0) {
-          changedTickets.forEach(async (t) => {
-            try {
-              await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId, t);
-            } catch (err) {
-              console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err);
-            }
-          });
-        }
-
-        if (deletedTickets.length > 0) {
-          deletedTickets.forEach(async (t) => {
-            try {
-              await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
-            } catch (err) {
-              console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
-            }
-          });
-        }
+    if (isAppwriteConfigured()) {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      
+      if (changedTickets.length > 0) {
+        changedTickets.forEach(async (t) => {
+          try {
+            await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId, t);
+          } catch (err) {
+            console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err);
+          }
+        });
       }
 
-      return nextTickets;
-    });
+      if (deletedTickets.length > 0) {
+        deletedTickets.forEach(async (t) => {
+          try {
+            await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
+          } catch (err) {
+            console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
+          }
+        });
+      }
+    }
   };
 
   const handleInitiateRefund = async (orgId: string, truckNo: string, paymentRecord: any) => {
@@ -2491,7 +2549,8 @@ function AppContent() {
           { key: 'trips', collection: 'trips' },
           { key: 'expenses', collection: 'expenses' },
           { key: 'tyres', collection: 'tyres' },
-          { key: 'auditLogs', collection: 'audit_logs' }
+          { key: 'auditLogs', collection: 'audit_logs' },
+          { key: 'supportTickets', collection: 'support_tickets' }
         ];
 
         const fetchPromises = categories.map(async (cat) => {
@@ -2510,7 +2569,8 @@ function AppContent() {
                   trips: [],
                   expenses: [],
                   tyres: [],
-                  auditLogs: []
+                  auditLogs: [],
+                  supportTickets: []
                 };
               }
 
@@ -2544,6 +2604,10 @@ function AppContent() {
           if (userRightsData.organizationProfiles && Array.isArray(userRightsData.organizationProfiles)) {
             setOrganizationProfiles(userRightsData.organizationProfiles);
             localStorage.setItem('ttt_organization_profiles', JSON.stringify(userRightsData.organizationProfiles));
+          }
+          if (userRightsData.appUpdateConfig) {
+            setAppUpdateConfig(userRightsData.appUpdateConfig);
+            localStorage.setItem('ttt_app_update_config', JSON.stringify(userRightsData.appUpdateConfig));
           }
         }
 
@@ -2719,6 +2783,21 @@ function AppContent() {
           return updated;
         });
 
+        setSupportTickets(prev => {
+          let updated = [...prev];
+          for (const orgId in orgFleetData) {
+            const orgData = orgFleetData[orgId];
+            if (orgData.supportTickets && Array.isArray(orgData.supportTickets)) {
+              updated = [
+                ...updated.filter(t => t.organizationId !== orgId),
+                ...orgData.supportTickets.map(t => ({ ...t, organizationId: orgId }))
+              ];
+            }
+          }
+          localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
+          return updated;
+        });
+
       } catch (err) {
         console.warn("Backend live data sync failed:", err);
       }
@@ -2766,7 +2845,7 @@ function AppContent() {
       teardown();
       try {
         await appwrite.initSession();
-        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs'];
+        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets'];
         if (currentUserOrgId === 'org_backend') {
           colList.push('global_configs');
         }
@@ -3543,6 +3622,8 @@ function AppContent() {
                 onSetActiveTicketId={setActiveTicketId}
                 payments={payments}
                 onInitiateRefund={handleInitiateRefund}
+                appUpdateConfig={appUpdateConfig}
+                onSaveAppUpdateConfig={handleSaveAppUpdateConfig}
               />
             )}
 
@@ -3736,6 +3817,21 @@ function AppContent() {
       <ConfirmModal
         confirmModal={confirmModal}
         onClose={() => setConfirmModal(null)}
+      />
+
+      <AppUpdateModal
+        isOpen={
+          typeof window !== 'undefined' &&
+          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor) &&
+          !!appUpdateConfig &&
+          APP_VERSION !== appUpdateConfig.version &&
+          dismissedVersion !== appUpdateConfig.version
+        }
+        onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
+        currentVersion={APP_VERSION}
+        latestVersion={appUpdateConfig?.version || ''}
+        releaseNotes={appUpdateConfig?.releaseNotes || ''}
+        downloadUrl={appUpdateConfig?.downloadUrl || ''}
       />
 
       {!isOnline && (

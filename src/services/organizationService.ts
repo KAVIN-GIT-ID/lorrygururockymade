@@ -123,11 +123,16 @@ export const organizationService = {
     }
   },
 
-  async fetchAllGlobalConfigs(databaseId: string): Promise<{ userRightsList: UserPermission[]; organizationProfiles: OrganizationProfile[] }> {
+  async fetchAllGlobalConfigs(databaseId: string): Promise<{
+    userRightsList: UserPermission[];
+    organizationProfiles: OrganizationProfile[];
+    appUpdateConfig?: { version: string; releaseNotes: string; downloadUrl: string; updatedAt?: string } | null;
+  }> {
     try {
       const allConfigs = await appwrite.listGlobalConfigs(databaseId);
       const userRightsList: UserPermission[] = [];
       const organizationProfiles: OrganizationProfile[] = [];
+      let appUpdateConfig = null;
       for (const doc of allConfigs) {
         try {
           const parsed = JSON.parse(doc.data);
@@ -138,15 +143,17 @@ export const organizationService = {
             if (parsed && parsed.organizationId) {
               organizationProfiles.push(parsed);
             }
+          } else if (keyVal === 'cfg_app_version') {
+            appUpdateConfig = parsed;
           }
         } catch (e) {
           console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
         }
       }
-      return { userRightsList, organizationProfiles };
+      return { userRightsList, organizationProfiles, appUpdateConfig };
     } catch (e) {
       console.warn("Could not fetch global configs:", e);
-      return { userRightsList: [], organizationProfiles: [] };
+      return { userRightsList: [], organizationProfiles: [], appUpdateConfig: null };
     }
   }
 };

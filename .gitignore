@@ -24,3 +24,9 @@ docs/
 
 # Server repository files
 server/
+
+# Auto-generated app version file
+src/version.json
+
+# Temporary agent scratch scripts
+scratch_*

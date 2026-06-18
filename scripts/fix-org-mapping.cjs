@@ -6,8 +6,8 @@ const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
 const databaseId = process.env.VITE_APPWRITE_DATABASE_ID;
 const apiKey = process.env.VITE_APPWRITE_API_KEY;
 
-const email = 'prasath.sakthi@gmail.com';
-const orgId = '6a1708180016e88d6b82';
+const email = process.argv[2] || process.env.ADMIN_EMAIL || 'admin@example.com';
+const orgId = process.argv[3] || process.env.ADMIN_ORG_ID || 'org_example';
 
 console.log('=== Relinking Registered User to Migrated Org ===');
 
@@ -47,7 +47,7 @@ async function run() {
       data: JSON.stringify(parsedData)
     });
 
-    console.log(`\n🎉 SUCCESS! Linked prasath.sakthi@gmail.com to organization: ${orgId}`);
+    console.log(`\n🎉 SUCCESS! Linked ${email} to organization: ${orgId}`);
     console.log('Please refresh your browser window to see your restored trucks, drivers, and trips!');
   } catch (err) {
     console.error('\n❌ Failed to relink user profile:', err.message);

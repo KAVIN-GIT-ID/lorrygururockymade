@@ -202,6 +202,11 @@ export default function AppwriteCloudSync({
                 if (parsed && parsed.organizationId) {
                   userRightsData.organizationProfiles.push(parsed);
                 }
+              } else if (keyVal === 'cfg_app_version') {
+                localStorage.setItem('ttt_app_update_config', doc.data);
+                if (typeof window !== 'undefined' && window.dispatchEvent) {
+                  window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsed }));
+                }
               }
             } catch (e) {
               console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
@@ -388,12 +393,14 @@ export default function AppwriteCloudSync({
                   let localRights = storedRights ? JSON.parse(storedRights) : [];
                   let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
 
-                  if (eventType.endsWith('.delete')) {
+                   if (eventType.endsWith('.delete')) {
                     if (doc.$id.startsWith('usr_')) {
                       localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
                     } else if (doc.$id.startsWith('prf_')) {
                       const orgId = doc.$id.replace('prf_', '');
                       localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgId);
+                    } else if (doc.$id === 'cfg_app_version') {
+                      localStorage.removeItem('ttt_app_update_config');
                     }
                   } else {
                     const parsedItem = JSON.parse(doc.data);
@@ -405,6 +412,11 @@ export default function AppwriteCloudSync({
                       if (parsedItem && parsedItem.organizationId) {
                         const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
                         if (idx > -1) { localProfiles[idx] = parsedItem; } else { localProfiles.push(parsedItem); }
+                      }
+                    } else if (keyVal === 'cfg_app_version') {
+                      localStorage.setItem('ttt_app_update_config', doc.data);
+                      if (typeof window !== 'undefined' && window.dispatchEvent) {
+                        window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsedItem }));
                       }
                     }
                   }

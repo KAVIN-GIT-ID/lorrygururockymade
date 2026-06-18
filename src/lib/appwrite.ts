@@ -678,7 +678,11 @@ class AppwriteService {
       throw new Error("Session expired or authentication failed. Please re-login.");
     }
 
-    const response = await fetch(path, {
+    const serverUrl = (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:' || (window as any).Capacitor)
+      ? 'https://api.lorryguru.in/truck-backend'
+      : (import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend');
+
+    const response = await fetch(`${serverUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
