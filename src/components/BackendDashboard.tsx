@@ -2832,36 +2832,42 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
                           <td className="p-3 text-slate-500">{new Date(h.updatedAt).toLocaleString()}</td>
                           <td className="p-3 text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={h.releaseNotes}>{h.releaseNotes || '-'}</td>
                           <td className="p-3 text-right space-x-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(h.downloadUrl);
-                                alert("Download link copied to clipboard!");
-                              }}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded text-[10px] font-bold transition cursor-pointer"
-                            >
-                              Copy Link
-                            </button>
-                            {!isActive && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (confirm(`Are you sure you want to rollback/activate version v${h.version}? All client apps running other versions will be prompted to update/revert to this version.`)) {
-                                    if (onSaveAppUpdateConfig) {
-                                      await onSaveAppUpdateConfig({
-                                        version: h.version,
-                                        releaseNotes: h.releaseNotes,
-                                        downloadUrl: h.downloadUrl,
-                                        updatedAt: new Date().toISOString(),
-                                        history: appUpdateConfig.history
-                                      });
-                                    }
-                                  }
-                                }}
-                                className="px-2 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded text-[10px] font-bold transition cursor-pointer"
-                              >
-                                Activate
-                              </button>
+                            {h.downloadUrl ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(h.downloadUrl);
+                                    alert("Download link copied to clipboard!");
+                                  }}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded text-[10px] font-bold transition cursor-pointer"
+                                >
+                                  Copy Link
+                                </button>
+                                {!isActive && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm(`Are you sure you want to rollback/activate version v${h.version}? All client apps running other versions will be prompted to update/revert to this version.`)) {
+                                        if (onSaveAppUpdateConfig) {
+                                          await onSaveAppUpdateConfig({
+                                            version: h.version,
+                                            releaseNotes: h.releaseNotes,
+                                            downloadUrl: h.downloadUrl,
+                                            updatedAt: new Date().toISOString(),
+                                            history: appUpdateConfig.history
+                                          });
+                                        }
+                                      }
+                                    }}
+                                    className="px-2 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-955/40 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded text-[10px] font-bold transition cursor-pointer"
+                                  >
+                                    Activate
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">Unavailable</span>
                             )}
                           </td>
                         </tr>

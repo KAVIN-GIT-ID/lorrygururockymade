@@ -4,7 +4,8 @@ import {
   Search, Edit2, Trash2, Calendar, Filter, FileSpreadsheet,
   Eye, ChevronRight, ChevronDown, X, AlertCircle, Fuel,
   Gauge, TrendingUp, DollarSign, User, MapPin, ListCollapse, ArrowRightLeft,
-  ArrowUp, ArrowDown, ArrowUpDown, Printer, FileText, Download, Copy, Check
+  ArrowUp, ArrowDown, ArrowUpDown, Printer, FileText, Download, Copy, Check,
+  MoreVertical, Plus, Settings
 } from 'lucide-react';
 
 
@@ -96,6 +97,7 @@ export default function TripList({
   const [displayedTrips, setDisplayedTrips] = useState<TripEntry[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = useState<string | null>(null);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -880,12 +882,12 @@ export default function TripList({
             return (
               <div
                 key={trip.id}
-                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition relative"
                 onClick={() => setViewingEntry(trip)}
               >
                 <div>
                   {/* Top Row: Trip ID & Status */}
-                  <div className="flex justify-between items-center gap-2 mb-3">
+                  <div className="flex justify-between items-center gap-2 mb-3 pr-8">
                     <div className="flex flex-col">
                       <span className="font-mono font-extrabold text-blue-600 text-xs">
                         {trip.tripNo}
@@ -1011,51 +1013,73 @@ export default function TripList({
                       </span>
                     </div>
                   </div>
-                </div>
-
-                {/* Actions Grid */}
-                <div
-                  className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto"
-                  onClick={(e) => e.stopPropagation()} // Prevent triggering viewport modal
-                >
+                {/* Micro-FAB Speed Dial */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full p-1 pl-2.5 pr-1.5 shadow-md transition-all duration-300 ease-out origin-right transform whitespace-nowrap ${
+                    activeSpeedDialId === trip.id 
+                      ? 'opacity-100 scale-100 translate-x-0 pointer-events-auto' 
+                      : 'opacity-0 scale-90 translate-x-2 pointer-events-none'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewingEntry(trip);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer"
+                      title="View Details"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canEditTrips}
+                      onClick={() => {
+                        onEditEntry(trip);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer disabled:opacity-45"
+                      title="Edit Record"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canDeleteTrips}
+                      onClick={() => {
+                        const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
+                        const onDeleteAction = () => {
+                          onDeleteEntry(trip.id);
+                          setActiveSpeedDialId(null);
+                        };
+                        if (confirmAction) {
+                          confirmAction(msg, onDeleteAction, "Delete Cargo Entry Record");
+                        } else if (confirm(msg)) {
+                          onDeleteAction();
+                        }
+                      }}
+                      className="w-7 h-7 rounded-full bg-rose-50 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer disabled:opacity-45"
+                      title="Delete Journey"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setViewingEntry(trip)}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer"
+                    onClick={() => setActiveSpeedDialId(activeSpeedDialId === trip.id ? null : trip.id)}
+                    className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-200"
                   >
-                    <Eye className="w-3.5 h-3.5 text-slate-400" />
-                    <span>View</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canEditTrips}
-                    onClick={() => onEditEntry(trip)}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Edit</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canDeleteTrips}
-                    onClick={() => {
-                      const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
-                      if (confirmAction) {
-                        confirmAction(msg, () => onDeleteEntry(trip.id), "Delete Cargo Entry Record");
-                      } else if (confirm(msg)) {
-                        onDeleteEntry(trip.id);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
+                    {activeSpeedDialId === trip.id ? (
+                      <X className="w-4 h-4 transition-transform duration-300 rotate-90" />
+                    ) : (
+                      <Settings className="w-4 h-4 transition-transform duration-300" />
+                    )}
                   </button>
                 </div>
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        }))}
       </div>
 
       {/* PAGINATION FOOTER */}

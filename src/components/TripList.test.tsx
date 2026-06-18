@@ -638,7 +638,8 @@ describe('TripList Component Tests', () => {
         status: 'Pending',
         startingKM: 0,
         endingKM: 0,
-        subTrips: []
+        subTrips: [],
+        payments: []
       },
       {
         id: 't-2',
@@ -650,7 +651,8 @@ describe('TripList Component Tests', () => {
         status: 'Settled',
         startingKM: 0,
         endingKM: 0,
-        subTrips: []
+        subTrips: [],
+        payments: []
       }
     ];
 

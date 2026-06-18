@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile } from '../types';
-import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X, MoreVertical, Settings } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import CountryCodePhoneInput from './CountryCodePhoneInput';
 
@@ -17,6 +17,8 @@ interface DriverMasterProps {
   canDeleteDrivers?: boolean;
   organizationId?: string;
   orgProfile?: OrganizationProfile;
+  autoOpenAdd?: boolean;
+  onAutoOpenCleared?: () => void;
 }
 
 export default function DriverMaster({
@@ -31,10 +33,23 @@ export default function DriverMaster({
   canEditDrivers = true,
   canDeleteDrivers = true,
   organizationId = '',
-  orgProfile
+  orgProfile,
+  autoOpenAdd,
+  onAutoOpenCleared,
 }: DriverMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (autoOpenAdd) {
+      resetForm();
+      setShowAddForm(true);
+      if (onAutoOpenCleared) {
+        onAutoOpenCleared();
+      }
+    }
+  }, [autoOpenAdd]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
 
   // Form States
@@ -154,8 +169,8 @@ export default function DriverMaster({
       </div>
 
       {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="driver-form-backdrop">
-          <form id="driver-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="driver-form-backdrop">
+          <form id="driver-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left my-auto">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div className="flex items-center gap-2">
                 <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -399,13 +414,13 @@ export default function DriverMaster({
           </div>
         ) : (
           drivers.map((driver) => (
-            <div 
-              key={driver.id}
-              className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
-            >
+              <div 
+                key={driver.id}
+                className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition relative"
+              >
               <div>
                 {/* Top Row: Name, Initials Avatar & Duty Status */}
-                <div className="flex justify-between items-start gap-2 mb-3">
+                <div className="flex justify-between items-start gap-2 mb-3 pr-8">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-[11px] font-bold shrink-0">
                       {driver.driverName ? driver.driverName.substring(0, 2).toUpperCase() : 'DR'}
@@ -469,44 +484,69 @@ export default function DriverMaster({
                     </div>
                   )}
                 </div>
+
+                {/* Micro-FAB Speed Dial */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full p-1 pl-2.5 pr-1.5 shadow-md transition-all duration-300 ease-out origin-right transform whitespace-nowrap ${
+                    activeSpeedDialId === driver.id 
+                      ? 'opacity-100 scale-100 translate-x-0 pointer-events-auto' 
+                      : 'opacity-0 scale-90 translate-x-2 pointer-events-none'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDriverId(driver.id);
+                        setTimeout(() => {
+                          document.getElementById('driver-settlement-module')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer"
+                      title="Ledger"
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canEditDrivers}
+                      onClick={() => {
+                        startEdit(driver);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer disabled:opacity-45"
+                      title="Edit specifications"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canDeleteDrivers}
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to permanently delete driver record ${driver.driverName}?`)) {
+                          onDeleteDriver(driver.id);
+                        }
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-rose-50 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer disabled:opacity-45"
+                      title="Delete Operator"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSpeedDialId(activeSpeedDialId === driver.id ? null : driver.id)}
+                    className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-200"
+                  >
+                    {activeSpeedDialId === driver.id ? (
+                      <X className="w-4 h-4 transition-transform duration-300 rotate-90" />
+                    ) : (
+                      <Settings className="w-4 h-4 transition-transform duration-300" />
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Actions Grid */}
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedDriverId(driver.id);
-                    document.getElementById('driver-settlement-module')?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer"
-                >
-                  <Calculator className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Ledger</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!canEditDrivers}
-                  onClick={() => startEdit(driver)}
-                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!canDeleteDrivers}
-                  onClick={() => {
-                    if (confirm(`Are you sure you want to permanently delete driver record ${driver.driverName}?`)) {
-                      onDeleteDriver(driver.id);
-                    }
-                  }}
-                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
-              </div>
             </div>
           ))
         )}

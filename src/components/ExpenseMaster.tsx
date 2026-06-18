@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ExpenseEntry, Truck, Account, Driver } from '../types';
-import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface ExpenseMasterProps {
@@ -15,6 +15,8 @@ interface ExpenseMasterProps {
   canEditExpenses?: boolean;
   canDeleteExpenses?: boolean;
   organizationId?: string;
+  autoOpenAdd?: boolean;
+  onAutoOpenCleared?: () => void;
 }
 
 export default function ExpenseMaster({
@@ -28,10 +30,23 @@ export default function ExpenseMaster({
   canViewExpenses = true,
   canEditExpenses = true,
   canDeleteExpenses = true,
-  organizationId
+  organizationId,
+  autoOpenAdd,
+  onAutoOpenCleared,
 }: ExpenseMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (autoOpenAdd) {
+      resetForm();
+      setShowForm(true);
+      if (onAutoOpenCleared) {
+        onAutoOpenCleared();
+      }
+    }
+  }, [autoOpenAdd]);
 
   // Form states
   const [truckNo, setTruckNo] = useState('');
@@ -309,8 +324,8 @@ export default function ExpenseMaster({
 
       {/* EXPENSE REGISTRATION FORM */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="expense-form-backdrop">
-          <form id="expense-registration-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="expense-form-backdrop">
+          <form id="expense-registration-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left my-auto">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-450" />
@@ -727,11 +742,11 @@ export default function ExpenseMaster({
           displayedExpenses.map((exp) => (
             <div 
               key={exp.id}
-              className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
+              className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition relative"
             >
               <div>
                 {/* Top Row: Date & Status */}
-                <div className="flex justify-between items-center gap-2 mb-3">
+                <div className="flex justify-between items-center gap-2 mb-3 pr-8">
                   <span className="font-mono text-[10px] text-slate-500 flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     {exp.date}
@@ -776,33 +791,55 @@ export default function ExpenseMaster({
                     ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
                   </span>
                 </div>
+
+                {/* Micro-FAB Speed Dial */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full p-1 pl-2.5 pr-1.5 shadow-md transition-all duration-300 ease-out origin-right transform whitespace-nowrap ${
+                    activeSpeedDialId === exp.id 
+                      ? 'opacity-100 scale-100 translate-x-0 pointer-events-auto' 
+                      : 'opacity-0 scale-90 translate-x-2 pointer-events-none'
+                  }`}>
+                    <button
+                      type="button"
+                      disabled={!canEditExpenses}
+                      onClick={() => {
+                        startEdit(exp);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer disabled:opacity-45"
+                      title="Modify Expense"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canDeleteExpenses}
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete this expense record of ₹${exp.amount}?`)) {
+                          onDeleteExpense(exp.id);
+                        }
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-rose-55 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer disabled:opacity-45"
+                      title="Delete Expense"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSpeedDialId(activeSpeedDialId === exp.id ? null : exp.id)}
+                    className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-200"
+                  >
+                    {activeSpeedDialId === exp.id ? (
+                      <X className="w-4 h-4 transition-transform duration-300 rotate-90" />
+                    ) : (
+                      <Settings className="w-4 h-4 transition-transform duration-300" />
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Actions Grid */}
-              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
-                <button
-                  type="button"
-                  disabled={!canEditExpenses}
-                  onClick={() => startEdit(exp)}
-                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!canDeleteExpenses}
-                  onClick={() => {
-                    if (confirm(`Are you sure you want to delete this expense record of ₹${exp.amount}?`)) {
-                      onDeleteExpense(exp.id);
-                    }
-                  }}
-                  className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
-              </div>
             </div>
           ))
         )}

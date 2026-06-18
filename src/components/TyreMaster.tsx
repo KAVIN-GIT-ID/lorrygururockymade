@@ -18,10 +18,9 @@ import {
   TrendingUp, 
   UserCheck, 
   Activity,
-  Tag, X 
+  Tag, X, MoreVertical 
 } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-
 interface TyreMasterProps {
   tyres: Tyre[];
   trucks: Truck[];
@@ -41,6 +40,8 @@ interface TyreMasterProps {
   canEditTyres?: boolean;
   canDeleteTyres?: boolean;
   organizationId?: string;
+  autoOpenAdd?: boolean;
+  onAutoOpenCleared?: () => void;
 }
 
 export default function TyreMaster({ 
@@ -54,9 +55,23 @@ export default function TyreMaster({
   canViewTyres = true,
   canEditTyres = true,
   canDeleteTyres = true,
-  organizationId
+  organizationId,
+  autoOpenAdd,
+  onAutoOpenCleared,
 }: TyreMasterProps) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (autoOpenAdd) {
+      resetAddForm();
+      setShowAddForm(true);
+      if (onAutoOpenCleared) {
+        onAutoOpenCleared();
+      }
+    }
+  }, [autoOpenAdd]);
+
   const [tyreNo, setTyreNo] = useState('');
   const [manufacturer, setManufacturer] = useState('');
   const [size, setSize] = useState('10.00R20');
@@ -464,8 +479,8 @@ export default function TyreMaster({
       </div>
 
       {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="tyre-form-backdrop">
-          <form id="tyre-form" onSubmit={handleCreateTyre} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="tyre-form-backdrop">
+          <form id="tyre-form" onSubmit={handleCreateTyre} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left my-auto">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div className="flex items-center gap-2">
                 <Compass className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -722,7 +737,7 @@ export default function TyreMaster({
 
                 {/* Card Top Information */}
                 <div className="space-y-3">
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start pr-8">
                     <div>
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{tyre.manufacturer}</span>
                       <h4 className="text-sm font-extrabold text-slate-850 font-mono tracking-wider flex items-center gap-1.5 mt-0.5">
@@ -731,14 +746,16 @@ export default function TyreMaster({
                       </h4>
                     </div>
 
-                    <span className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded ${
-                      tyre.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                      tyre.status === 'Available' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                      tyre.status === 'Sold' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                      'bg-rose-50 text-rose-700 border border-rose-100'
-                    }`}>
-                      {tyre.status}
-                    </span>
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <span className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded ${
+                        tyre.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                        tyre.status === 'Available' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                        tyre.status === 'Sold' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                        'bg-rose-50 text-rose-700 border border-rose-100'
+                      }`}>
+                        {tyre.status}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Operational Location Badge */}
@@ -819,7 +836,7 @@ export default function TyreMaster({
                 </div>
 
                 {/* Cards Bottom Actions */}
-                <div className="pt-4 border-t border-slate-100 mt-4 flex justify-between items-center gap-1.5 flex-wrap">
+                <div className="pt-4 border-t border-slate-100 mt-4 hidden md:flex justify-between items-center gap-1.5 flex-wrap">
                   <button
                     onClick={() => setViewHistoryTyreId(tyre.id)}
                     className="text-[10px] font-bold text-slate-500 hover:text-blue-600 flex items-center gap-1 cursor-pointer transition"
@@ -880,6 +897,109 @@ export default function TyreMaster({
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* Micro-FAB Speed Dial */}
+                <div className="md:hidden absolute top-3 right-3 z-10 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full p-1 pl-2.5 pr-1.5 shadow-md transition-all duration-300 ease-out origin-right transform whitespace-nowrap ${
+                    activeSpeedDialId === tyre.id 
+                      ? 'opacity-100 scale-100 translate-x-0 pointer-events-auto' 
+                      : 'opacity-0 scale-90 translate-x-2 pointer-events-none'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewHistoryTyreId(tyre.id);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer"
+                      title={`Logs (${tyre.movementHistory.length})`}
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
+
+                    {canEditTyres && tyre.status === 'Available' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            startMounting(tyre);
+                            setActiveSpeedDialId(null);
+                          }}
+                          className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-emerald-600 hover:bg-slate-50 transition cursor-pointer"
+                          title="Mount"
+                        >
+                          <TruckIcon className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            startSelling(tyre);
+                            setActiveSpeedDialId(null);
+                          }}
+                          className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-amber-600 hover:bg-slate-50 transition cursor-pointer"
+                          title="Sell tyre"
+                        >
+                          <DollarSign className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            startScrapping(tyre);
+                            setActiveSpeedDialId(null);
+                          }}
+                          className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-rose-600 hover:bg-slate-50 transition cursor-pointer"
+                          title="Scrap"
+                        >
+                          <Wrench className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+
+                    {canEditTyres && tyre.status === 'Active' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          startRemoving(tyre);
+                          setActiveSpeedDialId(null);
+                        }}
+                        className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-blue-600 hover:bg-slate-50 transition cursor-pointer"
+                        title="Dismount"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {canDeleteTyres && tyre.status === 'Available' && tyre.movementHistory.length <= 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const msg = `Are you sure you want to delete Tyre record ${tyre.tyreNo}?`;
+                          if (confirmAction) {
+                            confirmAction(msg, () => onDeleteTyre(tyre.id), "Delete Tyre Ledger Record");
+                          } else if (confirm(msg)) {
+                            onDeleteTyre(tyre.id);
+                          }
+                          setActiveSpeedDialId(null);
+                        }}
+                        className="w-7 h-7 rounded-full bg-rose-50 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer"
+                        title="Delete record"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSpeedDialId(activeSpeedDialId === tyre.id ? null : tyre.id)}
+                    className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 cursor-pointer hover:bg-slate-850 dark:hover:bg-slate-200"
+                  >
+                    {activeSpeedDialId === tyre.id ? (
+                      <X className="w-4 h-4 transition-transform duration-300 rotate-90" />
+                    ) : (
+                      <Settings className="w-4 h-4 transition-transform duration-300" />
+                    )}
+                  </button>
                 </div>
 
               </div>
@@ -1327,7 +1447,6 @@ export default function TyreMaster({
           </div>
         );
       })()}
-
     </div>
   );
 }

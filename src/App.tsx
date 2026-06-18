@@ -1279,10 +1279,14 @@ function AppContent() {
   const [registrySubTab, setRegistrySubTab] = useState<string>('TRUCKS');
 
   const [fabOpened, setFabOpened] = useState(false);
+  const [autoOpenFormTab, setAutoOpenFormTab] = useState<string | null>(null);
 
   const triggerOpenAddForm = (tabId: string) => {
     setRegistrySubTab(tabId);
+    setAutoOpenFormTab(tabId);
     setFabOpened(false);
+    
+    // Fallback/Legacy button click timeout (runs concurrently for safety)
     setTimeout(() => {
       let btnId = '';
       let formQuery = '';
@@ -3780,6 +3784,8 @@ function AppContent() {
                       currentUserName={currentUser?.name || ''}
                       currentUserPhone={currentUser?.phone || ''}
                       onProcessTruckPayment={handleProcessTruckPayment}
+                      autoOpenAdd={autoOpenFormTab === 'TRUCKS'}
+                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
                     />
                   )}
                   {registrySubTab === 'DRIVERS' && (
@@ -3796,6 +3802,8 @@ function AppContent() {
                       canDeleteDrivers={currentUserRights.canDeleteDrivers}
                       organizationId={currentUserOrgId}
                       orgProfile={currentOrgProfile}
+                      autoOpenAdd={autoOpenFormTab === 'DRIVERS'}
+                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
                     />
                   )}
                   {registrySubTab === 'EXPENSES' && (
@@ -3811,6 +3819,8 @@ function AppContent() {
                       canEditExpenses={currentUserRights.canEditExpenses}
                       canDeleteExpenses={currentUserRights.canDeleteExpenses}
                       organizationId={currentUserOrgId}
+                      autoOpenAdd={autoOpenFormTab === 'EXPENSES'}
+                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
                     />
                   )}
                   {registrySubTab === 'TYRES' && (
@@ -3826,6 +3836,8 @@ function AppContent() {
                       canEditTyres={currentUserRights.canEditTyres}
                       canDeleteTyres={currentUserRights.canDeleteTyres}
                       organizationId={currentUserOrgId}
+                      autoOpenAdd={autoOpenFormTab === 'TYRES'}
+                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
                     />
                   )}
                   {registrySubTab === 'OFFICES' && (

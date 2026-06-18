@@ -44,8 +44,8 @@ export default function AppUpdateModal({
   const downgrade = isDowngrade();
 
   return (
-    <div className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-slate-955/65 backdrop-blur-md animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-y-auto max-h-[90vh] flex flex-col gap-5 text-left font-sans animate-scale-up">
+    <div className="fixed inset-0 z-250 flex items-start justify-center p-4 bg-slate-955/65 backdrop-blur-md animate-fade-in overflow-y-auto py-8">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-y-auto max-h-[90vh] flex flex-col gap-5 text-left font-sans animate-scale-up my-auto">
         {/* Decorative background glow */}
         <div className="absolute -top-12 -right-12 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl"></div>
         <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl"></div>
@@ -122,7 +122,7 @@ export default function AppUpdateModal({
           className={`w-full h-12 text-white rounded-2xl flex items-center justify-center gap-2 text-xs font-bold transition shadow-lg cursor-pointer active:scale-98 ${
             downgrade
               ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-amber-500/10'
-              : 'bg-gradient-to-r from-blue-650 to-indigo-650 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/10'
+              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/10'
           }`}
         >
           <Download className="w-4 h-4" />

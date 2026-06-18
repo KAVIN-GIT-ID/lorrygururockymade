@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry } from '../types';
-import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark, Search, MoreVertical } from 'lucide-react';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
 import { formatTruckNumber } from '../lib/formatUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -189,6 +189,8 @@ interface TruckMasterProps {
     },
     existingTruckId?: string | null
   ) => Promise<void> | void;
+  autoOpenAdd?: boolean;
+  onAutoOpenCleared?: () => void;
 }
 
 export default function TruckMaster({ 
@@ -217,9 +219,22 @@ export default function TruckMaster({
   currentUserName = '',
   currentUserPhone = '',
   onProcessTruckPayment,
+  autoOpenAdd,
+  onAutoOpenCleared,
 }: TruckMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (autoOpenAdd) {
+      if (showAddForm) resetForm();
+      setShowAddForm(true);
+      if (onAutoOpenCleared) {
+        onAutoOpenCleared();
+      }
+    }
+  }, [autoOpenAdd]);
   const [viewingTruckId, setViewingTruckId] = useState<string | null>(null);
   const [expandedTruckId, setExpandedTruckId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -998,8 +1013,8 @@ export default function TruckMaster({
       </div>
 
       {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="truck-form-backdrop">
-          <form id="truck-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="truck-form-backdrop">
+          <form id="truck-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left my-auto">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div className="flex items-center gap-2">
                 <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -1859,7 +1874,7 @@ export default function TruckMaster({
               >
                 <div>
                   {/* Top Row: Vehicle No + Status Badges */}
-                  <div className="flex justify-between items-start gap-2 mb-4">
+                  <div className="flex justify-between items-start gap-2 mb-4 pr-8">
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="shrink-0 text-blue-600 dark:text-blue-400">
@@ -1889,17 +1904,17 @@ export default function TruckMaster({
                     </div>
 
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${
-                      truck.status === 'Active' 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-450 dark:border-emerald-900/30' 
-                        : truck.status === 'Admin Disabled'
-                          ? 'bg-red-50 text-red-700 border border-red-200 font-extrabold animate-pulse dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
-                          : truck.status === 'Sold'
-                            ? 'bg-slate-100 text-slate-700 border border-slate-350 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                            : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${truck.status === 'Active' ? 'bg-emerald-500 animate-pulse' : truck.status === 'Sold' ? 'bg-slate-405' : 'bg-rose-500'}`}></span>
-                      {truck.status === 'Active' ? 'Active' : truck.status === 'Admin Disabled' ? 'Admin Disabled' : truck.status === 'Sold' ? 'Sold' : 'Inactive'}
-                    </span>
+                        truck.status === 'Active' 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-450 dark:border-emerald-900/30' 
+                          : truck.status === 'Admin Disabled'
+                            ? 'bg-red-50 text-red-700 border border-red-200 font-extrabold animate-pulse dark:bg-rose-955/20 dark:text-rose-455 dark:border-rose-900/30'
+                            : truck.status === 'Sold'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-350 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-450 dark:border-rose-900/30'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${truck.status === 'Active' ? 'bg-emerald-500 animate-pulse' : truck.status === 'Sold' ? 'bg-slate-405' : 'bg-rose-500'}`}></span>
+                        {truck.status === 'Active' ? 'Active' : truck.status === 'Admin Disabled' ? 'Admin Disabled' : truck.status === 'Sold' ? 'Sold' : 'Inactive'}
+                      </span>
                   </div>
 
                   {/* Core Technical Specifications Banner */}
@@ -2044,42 +2059,70 @@ export default function TruckMaster({
                   )}
                 </div>
 
-                {/* Bottom Actions Row */}
-                <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-100 dark:border-slate-800/40 mt-auto">
+                {/* Micro-FAB Speed Dial */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className={`flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full p-1 pl-2.5 pr-1.5 shadow-md transition-all duration-300 ease-out origin-right transform whitespace-nowrap ${
+                    activeSpeedDialId === truck.id 
+                      ? 'opacity-100 scale-100 translate-x-0 pointer-events-auto' 
+                      : 'opacity-0 scale-90 translate-x-2 pointer-events-none'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (truck.isApproved !== false) {
+                          setViewingTruckId(truck.id);
+                        }
+                        setActiveSpeedDialId(null);
+                      }}
+                      disabled={truck.isApproved === false}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer disabled:opacity-45"
+                      title="Financials"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canEditTrucks}
+                      onClick={() => {
+                        startEdit(truck);
+                        setActiveSpeedDialId(null);
+                      }}
+                      className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer disabled:opacity-45"
+                      title={(!truck.isApproved || (truck.registrationExpiryDate && truck.registrationExpiryDate < new Date().toISOString().split('T')[0]) || truck.requestStatus === 'Rejected') ? 'Subscribe' : 'Edit Specs'}
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canDeleteTrucks}
+                      onClick={() => {
+                        const msg = `Caution! Are you sure you want to permanently delete vehicle entry ${truck.truckNo}? This will delete all compliance records.`;
+                        const onDeleteAction = () => {
+                          onDeleteTruck(truck.id);
+                          setActiveSpeedDialId(null);
+                        };
+                        if (confirmAction) {
+                          confirmAction(msg, onDeleteAction, "Delete Vehicle Database Record");
+                        } else if (confirm(msg)) {
+                          onDeleteAction();
+                        }
+                      }}
+                      className="w-7 h-7 rounded-full bg-rose-50 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer disabled:opacity-45"
+                      title="Delete Truck"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => truck.isApproved !== false && setViewingTruckId(truck.id)}
-                    disabled={truck.isApproved === false}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
+                    onClick={() => setActiveSpeedDialId(activeSpeedDialId === truck.id ? null : truck.id)}
+                    className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-200"
                   >
-                    <Eye className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Financials</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canEditTrucks}
-                    onClick={() => startEdit(truck)}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-855 text-slate-700 hover:text-slate-900 dark:text-slate-350 dark:hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
-                  >
-                    <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{(!truck.isApproved || (truck.registrationExpiryDate && truck.registrationExpiryDate < new Date().toISOString().split('T')[0]) || truck.requestStatus === 'Rejected') ? 'Subscribe' : 'Edit Specs'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canDeleteTrucks}
-                    title="Delete Truck"
-                    onClick={() => {
-                      const msg = `Caution! Are you sure you want to permanently delete vehicle entry ${truck.truckNo}? This will delete all compliance records.`;
-                      if (confirmAction) {
-                        confirmAction(msg, () => onDeleteTruck(truck.id), "Delete Vehicle Database Record");
-                      } else if (confirm(msg)) {
-                        onDeleteTruck(truck.id);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 hover:text-rose-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
+                    {activeSpeedDialId === truck.id ? (
+                      <X className="w-4 h-4 transition-transform duration-300 rotate-90" />
+                    ) : (
+                      <Settings className="w-4 h-4 transition-transform duration-300" />
+                    )}
                   </button>
                 </div>
               </div>
