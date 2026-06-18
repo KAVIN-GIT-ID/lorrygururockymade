@@ -513,7 +513,7 @@ function AppContent() {
   const handleVerifyPhonePePayment = async (txnId: string, truckNo: string) => {
     try {
       showNotification("Verifying PhonePe payment status...");
-      const serverUrl = '';
+      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
       
       const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
       const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
@@ -1270,7 +1270,7 @@ function AppContent() {
     try {
       showNotification("Initiating refund via PhonePe gateway...");
       
-      const serverUrl = '';
+      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
       const response = await fetch(`${serverUrl}/api/payment/refund`, {
         method: 'POST',
         headers: {

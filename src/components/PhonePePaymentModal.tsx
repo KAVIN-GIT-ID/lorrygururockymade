@@ -83,7 +83,7 @@ export default function PhonePePaymentModal({
     if (isOpen && initialTxnId && step === 'verifying') {
       const verify = async () => {
         try {
-          const serverUrl = '';
+          const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
           const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
           const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
           const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
@@ -220,7 +220,7 @@ export default function PhonePePaymentModal({
     localStorage.setItem('ttt_temp_payment_duration', selectedPlan.duration);
 
     try {
-      const serverUrl = '';
+      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
       const res = await fetch(`${serverUrl}/api/payment/initiate`, {
         method: 'POST',
         headers: {
