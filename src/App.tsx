@@ -2794,35 +2794,31 @@ function AppContent() {
               } catch (_) { }
             } else {
               unsubscribe = sub;
-              reconnectDelay = 5000; // reset on success
               console.log("Super Admin realtime socket established.");
             }
           });
 
-          // Health-check every 30s — reconnect if socket is dead
+          // Health-check every 15s — ping socket to keep it active
           const healthCheck = setInterval(() => {
             if (destroyed) { clearInterval(healthCheck); return; }
             try {
               const ws = (appwrite.getRealtime() as any).socket;
-              if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
-                console.info('Super Admin socket: health-check detected dead WebSocket — reconnecting...');
-                clearInterval(healthCheck);
-                scheduleReconnect();
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                // Keep-alive ping frame
+                ws.send(JSON.stringify({ type: 'ping' }));
               }
             } catch (_) { /* ignore */ }
-          }, 30000);
+          }, 15000);
 
         } catch (subErr: any) {
           if (subErr?.code !== 1008) {
             console.warn("Super Admin websocket channel error:", subErr);
           }
-          scheduleReconnect();
         }
       } catch (e: any) {
         if (!e?.message?.includes('CLOSING') && !e?.message?.includes('CLOSED')) {
           console.warn("Super Admin websocket registration failed:", e);
         }
-        scheduleReconnect();
       }
     };
 
@@ -2830,7 +2826,6 @@ function AppContent() {
 
     return () => {
       destroyed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (debounceTimer) clearTimeout(debounceTimer);
       teardown();
     };

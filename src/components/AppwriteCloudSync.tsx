@@ -353,10 +353,6 @@ export default function AppwriteCloudSync({
 
         if (colList.length === 0) {
           console.warn("Appwrite socket: No allowed collections to subscribe to. Realtime connection bypassed.");
-          if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-          }
           setRealtimeConnected(false);
           return;
         }
@@ -518,89 +514,42 @@ export default function AppwriteCloudSync({
               } catch (_) { }
             } else {
               unsubscribe = sub;
-              // Reset backoff on successful connect
-              reconnectDelay = 5000;
               setRealtimeConnected(true);
               if (onConnectionChange) onConnectionChange(true);
               console.log('Appwrite realtime socket pipeline successfully established.');
-              
-              // Reset disconnect count only if connection remains stable for 5 seconds
-              setTimeout(() => {
-                if (!destroyed && unsubscribe) {
-                  disconnectCount = 0;
-                }
-              }, 5000);
             }
           });
 
-          // Setup error recovery listener by waiting for the socket instance to instantiate
-          let attachAttempts = 0;
-          const attachInterval = setInterval(() => {
-            const wsInstance = (appwrite.getRealtime() as any).socket;
-            if (wsInstance) {
-              clearInterval(attachInterval);
-              const handleSocketClose = (event: CloseEvent) => {
-                disconnectCount++;
-                console.warn(`Appwrite socket closed (code: ${event.code}). Total disconnects: ${disconnectCount}`);
-                setRealtimeConnected(false);
-                if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
-                scheduleReconnect();
-              };
-
-              const handleSocketMessage = (event: MessageEvent) => {
-                try {
-                  const payload = JSON.parse(event.data);
-                  if (payload.data?.code === 1008 || payload.code === 1008 || (payload.type === 'error' && payload.data?.code === 1008)) {
-                    console.warn('Appwrite socket: Received async policy error message 1008. Reconnecting...');
-                    setRealtimeConnected(false);
-                    if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
-                    scheduleReconnect();
-                  }
-                } catch (_) { }
-              };
-
-              const handleSocketError = (err: Event) => {
-                console.warn('Appwrite socket error event:', err);
-                setRealtimeConnected(false);
-              };
-
-              wsInstance.addEventListener('close', handleSocketClose);
-              wsInstance.addEventListener('message', handleSocketMessage);
-              wsInstance.addEventListener('error', handleSocketError);
-            }
-            if (++attachAttempts > 50) clearInterval(attachInterval); // timeout after 5 seconds
-          }, 100);
-
-          // Health-check: ping the socket every 30s — if it's dead, reconnect
+          // Health-check: ping the socket every 15s and dynamically update UI connection state
           healthCheckInterval = setInterval(() => {
             if (destroyed) { if (healthCheckInterval) clearInterval(healthCheckInterval); return; }
             try {
-              // Attempt to get the underlying WebSocket state via Appwrite client internals
               const ws = (appwrite.getRealtime() as any).socket;
-              if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
-                console.info('Appwrite socket: health-check detected dead WebSocket — reconnecting...');
-                if (healthCheckInterval) {
-                  clearInterval(healthCheckInterval);
-                  healthCheckInterval = null;
+              if (ws) {
+                const isConnected = ws.readyState === WebSocket.OPEN;
+                setRealtimeConnected(isConnected);
+                if (onConnectionChange) onConnectionChange(isConnected, isConnected ? undefined : 'realtime_lost');
+                
+                if (isConnected) {
+                  // Keep-alive ping frame
+                  ws.send(JSON.stringify({ type: 'ping' }));
                 }
-                scheduleReconnect();
+              } else {
+                setRealtimeConnected(false);
+                if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
               }
-            } catch (_) { /* ignore inspection errors */ }
-          }, 30000);
+            } catch (_) { /* ignore */ }
+          }, 15000);
 
         } catch (subErr: any) {
-          // code 1008 = Missing channel(s) — some collections don't exist yet
           if (subErr?.code !== 1008) {
             console.warn('Realtime channel subscription failed:', subErr?.message);
           }
-          scheduleReconnect();
         }
       } catch (err: any) {
-        // Ignore 'WebSocket is already in CLOSING or CLOSED state' noise
         if (!err?.message?.includes('CLOSING') && !err?.message?.includes('CLOSED')) {
           console.warn('Realtime socket setup failed:', err?.message);
         }
-        scheduleReconnect();
       }
     };
 
@@ -608,7 +557,6 @@ export default function AppwriteCloudSync({
 
     return () => {
       destroyed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       teardown();
     };
   }, [databaseId, isConfigured, orgId, initialPullDone, currentUserEmail]);
