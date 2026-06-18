@@ -271,6 +271,32 @@ export default function AppwriteCloudSync({
     performInitialSync();
   }, [databaseId, isConfigured, orgId, initialPullDone]);
 
+  // Listen for app gained focus (app returned from background/memory) to trigger checks
+  useEffect(() => {
+    const handleResume = () => {
+      if (isConfigured) {
+        console.log("App gained focus/returned from background, performing silent configuration sync...");
+        handlePullFromDB(true);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResume();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('resume', handleResume);
+    window.addEventListener('focus', handleResume);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('resume', handleResume);
+      window.removeEventListener('focus', handleResume);
+    };
+  }, [isConfigured, databaseId, orgId]);
+
   // Real-Time Web Socket subscription using Appwrite real-time channel
   // Auto-reconnects with exponential backoff when the socket drops.
   useEffect(() => {

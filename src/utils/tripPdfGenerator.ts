@@ -503,11 +503,22 @@ export function generateTripPDF(trip: TripEntry, accounts: Account[]) {
     </html>
   `;
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
+  const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
+  if (isCapacitor) {
+    import('@capgo/capacitor-printer').then(({ Printer }) => {
+      Printer.printHtml({ name: `Trip-Report-${trip.tripNo}`, html: htmlContent }).catch(err => {
+        console.error("Native print failed:", err);
+      });
+    }).catch(err => {
+      console.error("Failed to load printer plugin:", err);
+    });
+  } else {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+    }
   }
 }
 
@@ -1127,11 +1138,22 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
     </html>
   `;
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
+  const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
+  if (isCapacitor) {
+    import('@capgo/capacitor-printer').then(({ Printer }) => {
+      Printer.printHtml({ name: `Driver-Settlement-Report-${trip.tripNo}`, html: htmlContent }).catch(err => {
+        console.error("Native print failed:", err);
+      });
+    }).catch(err => {
+      console.error("Failed to load printer plugin:", err);
+    });
+  } else {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+    }
   }
 }
 

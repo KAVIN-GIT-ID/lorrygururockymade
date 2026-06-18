@@ -45,6 +45,9 @@ import ProfileModal from './components/ProfileModal';
 import MobileChangeWizardModal from './components/MobileChangeWizardModal';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
 import AppUpdateModal from './components/AppUpdateModal';
+import MobileBottomTabBar from './components/MobileBottomTabBar';
+import MobileHomeTab from './components/MobileHomeTab';
+import MobileAccountTab from './components/MobileAccountTab';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import versionData from './version.json';
 const APP_VERSION = versionData.version;
@@ -75,6 +78,8 @@ import {
   CheckCircle,
   AlertCircle,
   Loader,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 const LoadingTab = () => (
@@ -1242,6 +1247,134 @@ function AppContent() {
 
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const confirmAction = (message: string, onConfirm: () => void, title = 'Confirm Action') => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [mobileTab, setMobileTab] = useState<'HOME' | 'TRIPS' | 'REGISTRY' | 'ACCOUNT'>('HOME');
+  const [registrySubTab, setRegistrySubTab] = useState<string>('TRUCKS');
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Native back button intercept using Capacitor App plugin
+  useEffect(() => {
+    let backListener: any = null;
+
+    const setupBackButton = async () => {
+      try {
+        const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
+        if (!isCapacitor) return;
+
+        // Dynamically import @capacitor/app to prevent issues on non-mobile platforms
+        const { App: CapApp } = await import('@capacitor/app');
+
+        backListener = await CapApp.addListener('backButton', (data) => {
+          // 1. Dispatch custom event for child views/modals to handle
+          const customEvent = new CustomEvent('app-back-press', {
+            cancelable: true
+          });
+          window.dispatchEvent(customEvent);
+
+          if (customEvent.defaultPrevented) {
+            // Event was handled by a modal/sub-view, do not close the app
+            return;
+          }
+
+          // 2. If no custom handlers, check if we can navigate back in tab states or exit app
+          if (mobileTab !== 'HOME') {
+            setMobileTab('HOME');
+          } else if (data.canGoBack) {
+            window.history.back();
+          } else {
+            CapApp.exitApp();
+          }
+        });
+      } catch (err) {
+        console.warn("Capacitor BackButton listener initialization failed:", err);
+      }
+    };
+
+    setupBackButton();
+
+    return () => {
+      if (backListener && typeof backListener.remove === 'function') {
+        backListener.remove();
+      }
+    };
+  }, [mobileTab]);
+
+  // Listen for native back button to dismiss modals
+  useEffect(() => {
+    const handleBackPress = (e: Event) => {
+      let closedSomething = false;
+      if (profileModalOpen) {
+        setProfileModalOpen(false);
+        closedSomething = true;
+      }
+      if (setup2FAOpen) {
+        setSetup2FAOpen(false);
+        closedSomething = true;
+      }
+      if (disable2FAOpen) {
+        setDisable2FAOpen(false);
+        closedSomething = true;
+      }
+      if (confirmModal) {
+        setConfirmModal(null);
+        closedSomething = true;
+      }
+      if (showPhoneUpdateModal) {
+        setShowPhoneUpdateModal(false);
+        closedSomething = true;
+      }
+      
+      if (closedSomething) {
+        e.preventDefault(); // Stop default action (don't exit app or navigate back)
+      }
+    };
+    window.addEventListener('app-back-press', handleBackPress);
+    return () => window.removeEventListener('app-back-press', handleBackPress);
+  }, [profileModalOpen, setup2FAOpen, disable2FAOpen, confirmModal, showPhoneUpdateModal]);
+
+  const renderAppUpdateModal = () => (
+    <AppUpdateModal
+      isOpen={
+        typeof window !== 'undefined' &&
+        (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor) &&
+        !!appUpdateConfig &&
+        APP_VERSION !== appUpdateConfig.version &&
+        dismissedVersion !== appUpdateConfig.version
+      }
+      onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
+      currentVersion={APP_VERSION}
+      latestVersion={appUpdateConfig?.version || ''}
+      releaseNotes={appUpdateConfig?.releaseNotes || ''}
+      downloadUrl={appUpdateConfig?.downloadUrl || ''}
+    />
+  );
+
   const isVersionNewer = (current: string, latest: string) => {
     if (!current || !latest) return false;
     const currParts = current.split('.').map(Number);
@@ -1256,14 +1389,58 @@ function AppContent() {
   };
 
   useEffect(() => {
+    const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+
+    const fetchAppVersion = async () => {
+      try {
+        const config = await appwrite.loadGlobalConfig(databaseId, 'cfg_app_version');
+        if (config) {
+          localStorage.setItem('ttt_app_update_config', JSON.stringify(config));
+          setAppUpdateConfig(config);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch app version config:", err);
+      }
+    };
+
     const handleUpdateEvent = (e: any) => {
       if (e.detail) {
         setAppUpdateConfig(e.detail);
       }
     };
+
+    const handleResume = () => {
+      console.log("App resumed/focused: checking for update configuration...");
+      fetchAppVersion();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResume();
+      }
+    };
+
+    // 1. Initial check on mount/load
+    fetchAppVersion();
+
+    // 2. Listeners
     window.addEventListener('ttt_app_update_event', handleUpdateEvent);
-    return () => window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('resume', handleResume);
+    window.addEventListener('focus', handleResume);
+
+    // 3. Periodic check (every 3 minutes) while app is open
+    const interval = setInterval(fetchAppVersion, 3 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('resume', handleResume);
+      window.removeEventListener('focus', handleResume);
+      clearInterval(interval);
+    };
   }, []);
+
 
   const handleSaveAppUpdateConfig = async (config: any) => {
     try {
@@ -1702,24 +1879,7 @@ function AppContent() {
     loadDashboardData(activeMonth, activeYear);
   }, [activeMonth, activeYear, currentUserOrgId, trips, expenses]);
 
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
 
-  const confirmAction = (message: string, onConfirm: () => void, title = 'Confirm Action') => {
-    setConfirmModal({
-      isOpen: true,
-      title,
-      message,
-      onConfirm: () => {
-        onConfirm();
-        setConfirmModal(null);
-      }
-    });
-  };
 
   const approvedOrgTrucks = React.useMemo(() => orgTrucks.filter(t => t.isApproved !== false), [orgTrucks]);
   const orgUserRights = React.useMemo(() => userRightsList.filter(u => u.organizationId === currentUserOrgId), [userRightsList, currentUserOrgId]);
@@ -3152,34 +3312,40 @@ function AppContent() {
   if (!currentUser) {
     if (location.pathname === '/login') {
       return (
-        <LoginScreen
-          onLoginSuccess={async (user) => {
-            const method = isAppwriteConfigured() ? 'appwrite' : 'mock';
-            localStorage.setItem('ttt_login_method', method);
-            if (method === 'mock') {
-              localStorage.setItem('ttt_mock_user', JSON.stringify(user));
-            }
-            localStorage.removeItem('ttt_guest_user');
-            setLoadingUser(true);
-            setInitialPullDone(false);
-            try {
-              await reconcileSession(user);
-              showNotification(`Successfully logged in as ${user.name || user.email}`);
-              navigate('/console/dashboard');
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setLoadingUser(false);
-            }
-          }}
-          checkUserApproval={checkUserApproval}
-          onRegisterUserPermissions={handleRegisterUserPermissions}
-          onBackToHome={() => navigate('/')}
-        />
+        <>
+          <LoginScreen
+            onLoginSuccess={async (user) => {
+              const method = isAppwriteConfigured() ? 'appwrite' : 'mock';
+              localStorage.setItem('ttt_login_method', method);
+              if (method === 'mock') {
+                localStorage.setItem('ttt_mock_user', JSON.stringify(user));
+              }
+              localStorage.removeItem('ttt_guest_user');
+              setLoadingUser(true);
+              setInitialPullDone(false);
+              try {
+                await reconcileSession(user);
+                showNotification(`Successfully logged in as ${user.name || user.email}`);
+                navigate('/console/dashboard');
+              } catch (err) {
+                console.error(err);
+              } finally {
+                setLoadingUser(false);
+              }
+            }}
+            checkUserApproval={checkUserApproval}
+            onRegisterUserPermissions={handleRegisterUserPermissions}
+            onBackToHome={() => navigate('/')}
+          />
+          {renderAppUpdateModal()}
+        </>
       );
     }
     return (
-      <LandingPage onEnterConsole={() => navigate('/login')} />
+      <>
+        <LandingPage onEnterConsole={() => navigate('/login')} />
+        {renderAppUpdateModal()}
+      </>
     );
   }
 
@@ -3190,31 +3356,34 @@ function AppContent() {
 
   if (isVerificationPending) {
     return (
-      <VerificationRequiredScreen
-        currentUser={currentUser}
-        currentUserRights={currentUserRights}
-        userRightsList={userRightsList}
-        setUserRightsList={setUserRightsList}
-        pushPermissionsToCloud={pushPermissionsToCloud}
-        reconcileSession={reconcileSession}
-        showNotification={showNotification}
-        toastMessage={toastMessage}
-        emailTimer={emailTimer}
-        setEmailTimer={setEmailTimer}
-        phoneTimer={phoneTimer}
-        setPhoneTimer={setPhoneTimer}
-        verificationOtpSent={verificationOtpSent}
-        setVerificationOtpSent={setVerificationOtpSent}
-        showPhoneUpdateModal={showPhoneUpdateModal}
-        setShowPhoneUpdateModal={setShowPhoneUpdateModal}
-        whatsappOtpCode={whatsappOtpCode}
-        setWhatsappOtpCode={setWhatsappOtpCode}
-        sendWhatsAppOTP={sendWhatsAppOTP}
-        handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
-        handleLogout={handleLogout}
-        setLoadingUser={setLoadingUser}
-        setOrganizationProfiles={setOrganizationProfiles}
-      />
+      <>
+        <VerificationRequiredScreen
+          currentUser={currentUser}
+          currentUserRights={currentUserRights}
+          userRightsList={userRightsList}
+          setUserRightsList={setUserRightsList}
+          pushPermissionsToCloud={pushPermissionsToCloud}
+          reconcileSession={reconcileSession}
+          showNotification={showNotification}
+          toastMessage={toastMessage}
+          emailTimer={emailTimer}
+          setEmailTimer={setEmailTimer}
+          phoneTimer={phoneTimer}
+          setPhoneTimer={setPhoneTimer}
+          verificationOtpSent={verificationOtpSent}
+          setVerificationOtpSent={setVerificationOtpSent}
+          showPhoneUpdateModal={showPhoneUpdateModal}
+          setShowPhoneUpdateModal={setShowPhoneUpdateModal}
+          whatsappOtpCode={whatsappOtpCode}
+          setWhatsappOtpCode={setWhatsappOtpCode}
+          sendWhatsAppOTP={sendWhatsAppOTP}
+          handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
+          handleLogout={handleLogout}
+          setLoadingUser={setLoadingUser}
+          setOrganizationProfiles={setOrganizationProfiles}
+        />
+        {renderAppUpdateModal()}
+      </>
     );
   }
 
@@ -3252,6 +3421,7 @@ function AppContent() {
           currentUserOrgId={currentUserOrgId}
           onLogout={handleLogout}
         />
+        {renderAppUpdateModal()}
       </>
     );
   }
@@ -3292,6 +3462,7 @@ function AppContent() {
           onRequestToJoinOrganization={handleRequestToJoinOrganization}
           showNotification={showNotification}
         />
+        {renderAppUpdateModal()}
       </>
     );
   }
@@ -3307,6 +3478,375 @@ function AppContent() {
   };
 
   const isBackendTeam = currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin;
+
+  if (isMobile) {
+    return (
+      <div className="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans overflow-hidden select-none">
+        
+        {/* GLOBAL TOAST BANNER */}
+        {toastMessage && (
+          <div id="toast-notify" className="fixed bottom-20 left-4 right-4 z-50 bg-blue-600 border border-blue-400/30 text-white p-3 px-5 rounded-2xl shadow-xl flex items-center gap-2.5 animate-bounce">
+            <CheckCircle className="w-4 h-4 text-white" />
+            <span className="text-xs font-semibold">{toastMessage}</span>
+          </div>
+        )}
+
+        {/* Dynamic Mobile Header */}
+        <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 p-4 shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <img src={logo} alt="LorryGuru Logo" className="h-7 w-auto" />
+            <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">LorryGuru</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1 cursor-pointer"
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-rose-500 animate-pulse'}`}></span>
+          </div>
+        </div>
+
+        {/* Mobile Viewport / Tab Content */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-50 dark:bg-slate-955">
+          <Suspense fallback={<LoadingTab />}>
+            {mobileTab === 'HOME' && (
+              <MobileHomeTab
+                currentUser={currentUser}
+                orgTrips={orgTrips}
+                orgTrucks={orgTrucks}
+                orgDrivers={orgDrivers}
+                setActiveTab={setMobileTab}
+                onNavigateToSubTab={(sub) => {
+                  setMobileTab('REGISTRY');
+                  setRegistrySubTab(sub);
+                }}
+                onQuickAction={(action) => {
+                  if (action === 'ADD_TRIP') {
+                    setEditingTrip(null);
+                    setBookingModalOpen(true);
+                  } else if (action === 'ADD_EXPENSE') {
+                    setMobileTab('REGISTRY');
+                    setRegistrySubTab('EXPENSES');
+                  } else if (action === 'VOICE') {
+                    setIsVoiceAssistantOpen(true);
+                  }
+                }}
+              />
+            )}
+
+            {mobileTab === 'TRIPS' && (
+              <div className="flex-1 overflow-y-auto p-4 pb-20 space-y-4">
+                <TripList
+                  trips={orgTrips}
+                  trucks={approvedOrgTrucks}
+                  offices={orgOffices}
+                  accounts={orgAccounts}
+                  onEditEntry={handleEditTripTrigger}
+                  onDeleteEntry={deleteTripEntry}
+                  confirmAction={confirmAction}
+                  canViewTrips={currentUserRights.canViewTrips}
+                  canEditTrips={currentUserRights.canEditTrips}
+                  canDeleteTrips={currentUserRights.canDeleteTrips}
+                  organizationId={currentUserOrgId}
+                  onSaveTrips={saveTrips}
+                />
+              </div>
+            )}
+
+            {mobileTab === 'REGISTRY' && (
+              <div className="flex-1 overflow-hidden flex flex-col pb-20">
+                {/* Scrollable Sub-Tab Bar for Registry Lists */}
+                <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 overflow-x-auto whitespace-nowrap scrollbar-hide flex gap-1.5 shrink-0">
+                  {[
+                    { id: 'TRUCKS', label: 'Trucks' },
+                    { id: 'DRIVERS', label: 'Drivers' },
+                    { id: 'EXPENSES', label: 'Expenses' },
+                    { id: 'TYRES', label: 'Tyres' },
+                    { id: 'OFFICES', label: 'Offices' },
+                    { id: 'ACCOUNTS', label: 'Accounts' },
+                    { id: 'AUDIT', label: 'Audit Logs' }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setRegistrySubTab(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        registrySubTab === tab.id
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-slate-800'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sub-Tab Viewport Content */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {registrySubTab === 'TRUCKS' && (
+                    <TruckMaster
+                      trucks={orgTrucks}
+                      trips={orgTrips}
+                      expenses={orgExpenses}
+                      onAddTruck={addTruck}
+                      onUpdateTruck={updateTruck}
+                      onDeleteTruck={deleteTruck}
+                      confirmAction={confirmAction}
+                      canViewTrucks={currentUserRights.canViewTrucks}
+                      canEditTrucks={currentUserRights.canEditTrucks}
+                      canDeleteTrucks={currentUserRights.canDeleteTrucks}
+                      maxTrucksAllowed={currentOrgProfile?.maxTrucksAllowed || 2}
+                      onAddTruckRequest={handleAddTruckRequest}
+                      organizationId={currentUserOrgId}
+                      orgProfile={currentOrgProfile}
+                      onServiceDone={(currentUserRights.canEditTrucks || currentUserRights.canEditExpenses) ? handleServiceDone : undefined}
+                      accounts={orgAccounts}
+                      drivers={orgDrivers}
+                      onAddExpense={addExpense}
+                      canEditLoans={currentUserRights.canEditLoans !== false}
+                      canDeleteLoans={currentUserRights.canDeleteLoans !== false}
+                      canEditExpenses={currentUserRights.canEditExpenses !== false}
+                      currentUserEmail={currentUser?.email || ''}
+                      currentUserName={currentUser?.name || ''}
+                      currentUserPhone={currentUser?.phone || ''}
+                      onProcessTruckPayment={handleProcessTruckPayment}
+                    />
+                  )}
+                  {registrySubTab === 'DRIVERS' && (
+                    <DriverMaster
+                      drivers={orgDrivers}
+                      trips={orgTrips}
+                      expenses={orgExpenses}
+                      accounts={orgAccounts}
+                      onAddDriver={addDriver}
+                      onUpdateDriver={updateDriver}
+                      onDeleteDriver={deleteDriver}
+                      canViewDrivers={currentUserRights.canViewDrivers}
+                      canEditDrivers={currentUserRights.canEditDrivers}
+                      canDeleteDrivers={currentUserRights.canDeleteDrivers}
+                      organizationId={currentUserOrgId}
+                      orgProfile={currentOrgProfile}
+                    />
+                  )}
+                  {registrySubTab === 'EXPENSES' && (
+                    <ExpenseMaster
+                      expenses={orgExpenses}
+                      trucks={approvedOrgTrucks}
+                      accounts={orgAccounts}
+                      drivers={orgDrivers}
+                      onAddExpense={addExpense}
+                      onUpdateExpense={updateExpense}
+                      onDeleteExpense={deleteExpense}
+                      canViewExpenses={currentUserRights.canViewExpenses}
+                      canEditExpenses={currentUserRights.canEditExpenses}
+                      canDeleteExpenses={currentUserRights.canDeleteExpenses}
+                      organizationId={currentUserOrgId}
+                    />
+                  )}
+                  {registrySubTab === 'TYRES' && (
+                    <TyreMaster
+                      tyres={orgTyres}
+                      trucks={approvedOrgTrucks}
+                      accounts={orgAccounts}
+                      onAddTyre={addTyre}
+                      onUpdateTyre={updateTyre}
+                      onDeleteTyre={deleteTyre}
+                      confirmAction={confirmAction}
+                      canViewTyres={currentUserRights.canViewTyres}
+                      canEditTyres={currentUserRights.canEditTyres}
+                      canDeleteTyres={currentUserRights.canDeleteTyres}
+                      organizationId={currentUserOrgId}
+                    />
+                  )}
+                  {registrySubTab === 'OFFICES' && (
+                    <OfficeMaster
+                      offices={orgOffices}
+                      onAddOffice={addOffice}
+                      onUpdateOffice={updateOffice}
+                      onDeleteOffice={deleteOffice}
+                      confirmAction={confirmAction}
+                      canViewOffices={currentUserRights.canViewOffices}
+                      canEditOffices={currentUserRights.canEditOffices}
+                      canDeleteOffices={currentUserRights.canDeleteOffices}
+                    />
+                  )}
+                  {registrySubTab === 'ACCOUNTS' && (
+                    <AccountMaster
+                      accounts={orgAccounts}
+                      onAddAccount={addAccount}
+                      onUpdateAccount={updateAccount}
+                      onDeleteAccount={deleteAccount}
+                      confirmAction={confirmAction}
+                      canViewAccounts={currentUserRights.canViewAccounts}
+                      canEditAccounts={currentUserRights.canEditAccounts}
+                      canDeleteAccounts={currentUserRights.canDeleteAccounts}
+                    />
+                  )}
+                  {registrySubTab === 'AUDIT' && (
+                    <AuditLogView
+                      logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
+                      onClearLogs={handleClearAuditLogs}
+                      confirmAction={confirmAction}
+                      organizationProfiles={organizationProfiles}
+                      currentUserOrgId={currentUserOrgId}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {mobileTab === 'ACCOUNT' && (
+              <MobileAccountTab
+                currentUser={currentUser}
+                currentUserOrgId={currentUserOrgId}
+                currentUserRights={currentUserRights}
+                theme={theme}
+                setTheme={setTheme}
+                handleLogout={handleLogout}
+                setProfileActiveTab={setProfileActiveTab}
+                setProfileModalOpen={setProfileModalOpen}
+                setSetup2FAOpen={setSetup2FAOpen}
+                setDisable2FAOpen={setDisable2FAOpen}
+                clientUnreadCount={getClientUnreadTicketsCount()}
+                showNotification={showNotification}
+              />
+            )}
+          </Suspense>
+        </div>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <MobileBottomTabBar
+          activeTab={mobileTab}
+          setActiveTab={setMobileTab}
+          clientUnreadCount={getClientUnreadTicketsCount()}
+        />
+
+        {/* Global Modals rendered on top */}
+        {profileModalOpen && (
+          <ProfileModal
+            isOpen={profileModalOpen}
+            onClose={() => setProfileModalOpen(false)}
+            profileActiveTab={profileActiveTab}
+            setProfileActiveTab={setProfileActiveTab}
+            isBackendTeam={isBackendTeam}
+            getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+            currentUser={currentUser}
+            currentUserRights={currentUserRights}
+            organizationProfiles={organizationProfiles}
+            profileName={profileName}
+            setProfileName={setProfileName}
+            profileOrgName={profileOrgName}
+            setProfileOrgName={setProfileOrgName}
+            profileVoiceLang={profileVoiceLang}
+            setProfileVoiceLang={setProfileVoiceLang}
+            userRightsList={userRightsList}
+            setUserRightsList={setUserRightsList}
+            databaseId={localStorage.getItem('appwrite_database_id') || 'fleet_db'}
+            isAppwriteConfigured={isAppwriteConfigured}
+            saveUserRightsList={saveUserRightsListWithSync}
+            showNotification={showNotification}
+            supportTickets={supportTickets}
+            onSaveSupportTickets={saveSupportTickets}
+            activeTicketId={activeTicketId}
+            onSetActiveTicketId={setActiveTicketId}
+            reconcileSession={reconcileSession}
+          />
+        )}
+
+        <Setup2FAModal
+          isOpen={setup2FAOpen}
+          onClose={() => setSetup2FAOpen(false)}
+          setup2FASecret={setup2FASecret}
+          showNotification={showNotification}
+          reconcileSession={reconcileSession}
+        />
+
+        <Disable2FAModal
+          isOpen={disable2FAOpen}
+          onClose={() => setDisable2FAOpen(false)}
+          showNotification={showNotification}
+          reconcileSession={reconcileSession}
+        />
+
+        <ConfirmModal
+          confirmModal={confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
+
+        <Suspense fallback={null}>
+          <TripForm
+            isOpen={bookingModalOpen}
+            onClose={() => {
+              setBookingModalOpen(false);
+              setEditingTrip(null);
+            }}
+            trucks={approvedOrgTrucks}
+            drivers={orgDrivers}
+            offices={orgOffices}
+            accounts={orgAccounts}
+            existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
+            onSubmit={handlePostTripEntry}
+            editingEntry={editingTrip}
+            canViewDrivers={currentUserRights.canViewDrivers}
+            orgProfile={currentOrgProfile}
+            trips={orgTrips}
+          />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <VoiceAssistant
+            isOpen={isVoiceAssistantOpen}
+            onClose={() => setIsVoiceAssistantOpen(false)}
+            trucks={approvedOrgTrucks}
+            drivers={orgDrivers}
+            offices={orgOffices}
+            accounts={orgAccounts}
+            existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
+            onSubmitTrip={handlePostTripEntry}
+            onSubmitExpense={addExpense}
+            voiceLang={userVoiceLang}
+          />
+        </Suspense>
+
+        {renderAppUpdateModal()}
+
+        {/* Sync background module */}
+        <AppwriteCloudSync
+          currentLocalState={{
+            trucks,
+            drivers,
+            offices,
+            accounts,
+            trips,
+            expenses,
+            tyres,
+            auditLogs,
+            supportTickets
+          }}
+          onLoadCloudState={onLoadCloudState}
+          showNotification={showNotification}
+          logAction={logAction}
+          currentUserOrgId={currentUserOrgId}
+          currentUserEmail={currentUser?.email}
+          currentUserId={currentUser?.email || ''}
+          isAdmin={currentUserRights.isAdmin}
+          onInitialSyncComplete={setInitialPullDone}
+          onConnectionChange={(online, reason) => {
+            setIsOnline(online);
+            setDisconnectReason(reason);
+          }}
+          activeTicketId={activeTicketId}
+          hideUI={true}
+        />
+
+        {!isOnline && (
+          <ConnectionStatusBlocker reason={disconnectReason} />
+        )}
+
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
@@ -3819,20 +4359,7 @@ function AppContent() {
         onClose={() => setConfirmModal(null)}
       />
 
-      <AppUpdateModal
-        isOpen={
-          typeof window !== 'undefined' &&
-          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor) &&
-          !!appUpdateConfig &&
-          APP_VERSION !== appUpdateConfig.version &&
-          dismissedVersion !== appUpdateConfig.version
-        }
-        onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
-        currentVersion={APP_VERSION}
-        latestVersion={appUpdateConfig?.version || ''}
-        releaseNotes={appUpdateConfig?.releaseNotes || ''}
-        downloadUrl={appUpdateConfig?.downloadUrl || ''}
-      />
+       {renderAppUpdateModal()}
 
       {!isOnline && (
         <ConnectionStatusBlocker reason={disconnectReason} />

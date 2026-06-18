@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node scripts/prebuild-version.js && vite --port=3000 --host=0.0.0.0",
     "build": "node scripts/prebuild-version.js && vite build",
+    "build:apk": "node scripts/build-apk.js",
     "preview": "npm run build && wrangler dev",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
@@ -24,12 +25,14 @@
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",
     "@capacitor/android": "^8.4.0",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/camera": "^8.2.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.4.0",
     "@capacitor/push-notifications": "^8.1.1",
+    "@capgo/capacitor-printer": "^8.0.17",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",

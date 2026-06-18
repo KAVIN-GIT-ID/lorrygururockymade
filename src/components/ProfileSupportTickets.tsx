@@ -153,10 +153,7 @@ export default function ProfileSupportTickets({
     const cgst = (parseFloat(gstAmount) / 2).toFixed(2);
     const sgst = cgst;
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    printWindow.document.write(`
+    const htmlContent = `
       <html>
         <head>
           <title>Tax Invoice - ${invoiceNo}</title>
@@ -272,8 +269,24 @@ export default function ProfileSupportTickets({
           </script>
         </body>
       </html>
-    `);
-    printWindow.document.close();
+    `;
+
+    const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
+    if (isCapacitor) {
+      import('@capgo/capacitor-printer').then(({ Printer }) => {
+        Printer.printHtml({ name: invoiceNo, html: htmlContent }).catch(err => {
+          console.error("Native print failed:", err);
+        });
+      }).catch(err => {
+        console.error("Failed to load printer plugin:", err);
+      });
+    } else {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+      }
+    }
   };
 
   return (

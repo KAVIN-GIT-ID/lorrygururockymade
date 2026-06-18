@@ -1549,8 +1549,8 @@ export default function TruckMaster({
                         />
                       </div>
                     </div>
-                    <div className="flex justify-between items-center text-xs pt-1">
-                      <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 text-xs pt-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
                         <div>
                           <label className="inline-flex items-center gap-1.5 cursor-pointer">
                             <input
@@ -1559,23 +1559,23 @@ export default function TruckMaster({
                               onChange={(e) => setTempLoanStatus(e.target.checked ? 'Closed' : 'Active')}
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <span className="text-[10px] text-slate-500 font-bold uppercase">Mark Closed</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-semibold">Mark Closed</span>
                           </label>
                         </div>
-                        <div className="flex-1">
+                        <div className="w-full sm:w-auto">
                           <input
                             type="text"
                             placeholder="Loan Notes / Remarks"
                             value={tempLoanNotes}
                             onChange={(e) => setTempLoanNotes(e.target.value)}
-                            className="bg-white border border-slate-205 text-slate-805 rounded px-2 py-1 text-xs w-64 focus:outline-none focus:border-blue-500"
+                            className="bg-white border border-slate-205 text-slate-805 rounded px-2 py-1 text-xs w-full sm:w-64 focus:outline-none focus:border-blue-500 font-semibold"
                           />
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={handleAddLoanToForm}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3 py-1.5 rounded transition cursor-pointer"
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3 py-1.5 rounded transition cursor-pointer w-full sm:w-auto text-center"
                       >
                         Add Loan
                       </button>

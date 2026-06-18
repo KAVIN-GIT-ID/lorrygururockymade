@@ -276,6 +276,19 @@ export default function TripList({
     };
   }, [viewingEntry]);
 
+  useEffect(() => {
+    const handleBackPress = (e: Event) => {
+      if (viewingEntry) {
+        setViewingEntry(null);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('app-back-press', handleBackPress);
+    return () => {
+      window.removeEventListener('app-back-press', handleBackPress);
+    };
+  }, [viewingEntry]);
+
 
   // Calculate totals of matched items for footer reporting
   const totals = (online ? displayedTrips : trips.filter(trip => {
@@ -1402,22 +1415,22 @@ export default function TripList({
                                     Move this negative balance of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> to another active trip.
                                   </span>
                                 </div>
-                                <div className="flex items-end gap-2 shrink-0">
-                                  <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-col sm:flex-row sm:items-end w-full sm:w-auto gap-3 shrink-0">
+                                  <div className="flex flex-col gap-0.5 w-full sm:w-auto">
                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
                                     <input
                                       type="date"
                                       value={selectedFwdDate}
                                       onChange={(e) => setSelectedFwdDate(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-28"
                                     />
                                   </div>
-                                  <div className="flex flex-col gap-0.5">
+                                  <div className="flex flex-col gap-0.5 w-full sm:w-auto">
                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Target Trip</span>
                                     <select
                                       value={selectedFwdTripId}
                                       onChange={(e) => setSelectedFwdTripId(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-auto"
                                     >
                                       <option value="">-- Select Next Trip --</option>
                                       {eligibleFwdTrips.map(t => {
@@ -1488,7 +1501,7 @@ export default function TripList({
                                         performFwd();
                                       }
                                     }}
-                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans w-full sm:w-auto"
                                   >
                                     Move Funds
                                   </button>
@@ -1557,22 +1570,22 @@ export default function TripList({
                                     )}
                                   </span>
                                 </div>
-                                <div className="flex items-end gap-2 shrink-0">
-                                  <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-col sm:flex-row sm:items-end w-full sm:w-auto gap-3 shrink-0">
+                                  <div className="flex flex-col gap-0.5 w-full sm:w-auto">
                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
                                     <input
                                       type="date"
                                       value={selectedFwdDate}
                                       onChange={(e) => setSelectedFwdDate(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium w-28"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-28"
                                     />
                                   </div>
-                                  <div className="flex flex-col gap-0.5">
+                                  <div className="flex flex-col gap-0.5 w-full sm:w-auto">
                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
                                     <select
                                       value={selectedFwdAccountId}
                                       onChange={(e) => setSelectedFwdAccountId(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-705 focus:outline-none focus:border-blue-500 font-sans font-medium"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-auto"
                                     >
                                       <option value="">-- Select Company Account --</option>
                                       <option value="Cash">Cash</option>
@@ -1595,7 +1608,7 @@ export default function TripList({
                                         performAccountSettle();
                                       }
                                     }}
-                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans"
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer font-sans w-full sm:w-auto"
                                   >
                                     Move Funds
                                   </button>

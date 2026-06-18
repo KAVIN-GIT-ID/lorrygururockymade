@@ -1,6 +1,6 @@
 import React from 'react';
 import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile, ExpenseEntry } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield, Building2 } from 'lucide-react';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield, Building2, X } from 'lucide-react';
 import { getOutstandingAge, formatToDisplayDate, calculateDaysLeft } from '../lib/dateUtils';
 import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './TruckMaster';
 import PayEmiModal from './PayEmiModal';
@@ -1184,6 +1184,71 @@ export default function Dashboard({
 
       {hoveredTruck && (() => {
         const det = getTruckHoverDetails(hoveredTruck);
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+              <div 
+                className="w-full max-w-xs bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs relative animate-fade-in"
+                box-shadow="0 10px 25px -5px rgb(0 0 0 / 0.3)"
+              >
+                <button
+                  type="button"
+                  onClick={() => setHoveredTruck(null)}
+                  className="absolute top-2 right-2 text-slate-400 hover:text-white p-1 rounded-md"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center pr-6">
+                  <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase">Balance Drilldown</span>
+                </div>
+
+                <div className="space-y-1.5 font-sans mb-3 text-slate-300">
+                  <p>
+                    <strong className="text-slate-400 uppercase text-[8px] block tracking-wide">Loading Office(s):</strong>
+                    <span className="font-semibold text-white text-[11px] leading-tight block">{det.officeList || 'Indirect/General'}</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                    <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                      <span className="text-slate-400 block font-bold text-[8px] uppercase">Billed Income</span>
+                      <span className="font-mono font-bold text-emerald-400">₹{det.totalIncome.toLocaleString()}</span>
+                    </div>
+                    <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                      <span className="text-slate-400 block font-bold text-[8px] uppercase">Advance Info</span>
+                      <span className="font-mono font-bold text-indigo-400">₹{det.totalPaid.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="bg-rose-950/40 border border-rose-900/40 p-1.5 rounded mt-1.5 flex justify-between items-center">
+                    <span className="text-rose-300 font-bold text-[8px] uppercase">Net Outstanding</span>
+                    <span className="font-mono font-bold text-rose-400 text-xs">₹{det.totalBalance.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {det.detailsList.length > 0 && (
+                  <div className="border-t border-slate-800 pt-2">
+                    <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Segment Ledger Logs</span>
+                    <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
+                      {det.detailsList.map((seg, sIdx) => (
+                        <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
+                          <div className="flex justify-between font-bold text-slate-350">
+                            <span className="truncate text-white font-semibold">{seg.office}</span>
+                            <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
+                          </div>
+                          <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">
+                            <span>Inc: ₹{seg.income}</span>
+                            <span>Adv: ₹{seg.advance}</span>
+                            <span className="text-rose-400 font-bold">Bal: ₹{seg.balance}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <div 
             className="fixed z-50 w-80 bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs pointer-events-auto transition-all duration-150 animate-fade-in"
@@ -1247,6 +1312,71 @@ export default function Dashboard({
 
       {hoveredOffice && (() => {
         const det = getOfficeHoverDetails(hoveredOffice);
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+              <div 
+                className="w-full max-w-xs bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs relative animate-fade-in"
+                box-shadow="0 10px 25px -5px rgb(0 0 0 / 0.3)"
+              >
+                <button
+                  type="button"
+                  onClick={() => setHoveredOffice(null)}
+                  className="absolute top-2 right-2 text-slate-400 hover:text-white p-1 rounded-md"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center pr-6">
+                  <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate max-w-[200px]">{hoveredOffice}</span>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase">Office Drilldown</span>
+                </div>
+
+                <div className="space-y-1.5 font-sans mb-3 text-slate-300">
+                  <p>
+                    <strong className="text-slate-400 uppercase text-[8px] block tracking-wide">Active Truck(s):</strong>
+                    <span className="font-semibold text-white text-[11px] leading-tight block truncate">{det.truckList || 'N/A'}</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
+                    <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                      <span className="text-slate-400 block font-bold text-[8px] uppercase">Billed Income</span>
+                      <span className="font-mono font-bold text-emerald-400">₹{det.totalIncome.toLocaleString()}</span>
+                    </div>
+                    <div className="bg-slate-800 p-1.5 rounded border border-slate-700">
+                      <span className="text-slate-400 block font-bold text-[8px] uppercase">Advance Info</span>
+                      <span className="font-mono font-bold text-indigo-400">₹{det.totalPaid.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="bg-rose-950/40 border border-rose-900/40 p-1.5 rounded mt-1.5 flex justify-between items-center">
+                    <span className="text-rose-300 font-bold text-[8px] uppercase">Net Outstanding</span>
+                    <span className="font-mono font-bold text-rose-400 text-xs">₹{det.totalBalance.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {det.detailsList.length > 0 && (
+                  <div className="border-t border-slate-800 pt-2">
+                    <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Truck Segment Logs</span>
+                    <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
+                      {det.detailsList.map((seg, sIdx) => (
+                        <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
+                          <div className="flex justify-between font-bold text-slate-350">
+                            <span className="truncate text-white font-semibold">{seg.truckNo}</span>
+                            <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
+                          </div>
+                          <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">
+                            <span>Inc: ₹{seg.income}</span>
+                            <span>Adv: ₹{seg.advance}</span>
+                            <span className="text-rose-400 font-bold">Bal: ₹{seg.balance}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <div 
             className="fixed z-50 w-80 bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 font-sans text-xs pointer-events-auto transition-all duration-150 animate-fade-in"
