@@ -2620,6 +2620,10 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
       alert("Version is required.");
       return;
     }
+    if (!apkFile && !downloadUrl.trim()) {
+      alert("Failed to publish: You must either upload an APK file or configure a Download URL Link.");
+      return;
+    }
 
     setIsUploading(true);
     let finalDownloadUrl = downloadUrl;

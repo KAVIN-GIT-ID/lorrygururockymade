@@ -45,7 +45,7 @@ export default function AppUpdateModal({
 
   return (
     <div className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-slate-955/65 backdrop-blur-md animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden flex flex-col gap-5 text-left font-sans animate-scale-up">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-y-auto max-h-[90vh] flex flex-col gap-5 text-left font-sans animate-scale-up">
         {/* Decorative background glow */}
         <div className="absolute -top-12 -right-12 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl"></div>
         <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl"></div>
