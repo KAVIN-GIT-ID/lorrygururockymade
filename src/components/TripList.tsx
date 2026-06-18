@@ -11,6 +11,7 @@ import {
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { useEffect } from 'react';
 import { generateTripPDF, generateDriverReportPDF } from '../utils/tripPdfGenerator';
+import ReportPreviewModal from './ReportPreviewModal';
 
 interface TripListProps {
   trips: TripEntry[];
@@ -97,6 +98,8 @@ export default function TripList({
   const [loading, setLoading] = useState(false);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>('');
 
   const handleCopy = (e: React.MouseEvent, id: string, text: string) => {
     e.stopPropagation();
@@ -695,7 +698,9 @@ export default function TripList({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              generateTripPDF(trip, accounts);
+                              const html = generateTripPDF(trip, accounts);
+                              setPreviewHtml(html);
+                              setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                             }}
                             className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 mt-1 font-semibold cursor-pointer"
                             title="Download Trip Report"
@@ -888,7 +893,9 @@ export default function TripList({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          generateTripPDF(trip, accounts);
+                          const html = generateTripPDF(trip, accounts);
+                          setPreviewHtml(html);
+                          setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                         }}
                         className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 mt-0.5 font-semibold cursor-pointer"
                         title="Download Trip Report"
@@ -912,7 +919,9 @@ export default function TripList({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            generateDriverReportPDF(trip, accounts);
+                            const html = generateDriverReportPDF(trip, accounts);
+                            setPreviewHtml(html);
+                            setPreviewTitle(`Driver Settlement - ${trip.tripNo}`);
                           }}
                           className="text-slate-400 hover:text-blue-600 transition ml-1 cursor-pointer flex items-center"
                           title="Download Driver Report"
@@ -1103,24 +1112,40 @@ export default function TripList({
             <div
               id="inspector-card"
               onClick={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 rounded-xl w-full max-w-4xl shadow-xl overflow-hidden animate-scale-up"
+              className="relative bg-white border border-slate-200 rounded-xl w-full max-w-4xl shadow-xl overflow-hidden animate-scale-up"
             >
+              {/* Close Button top-right absolute */}
+              <button
+                onClick={() => setViewingEntry(null)}
+                className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer z-10"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
 
               <div className="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                <div>
+                <div className="pr-8 sm:pr-0">
                   <span className="text-[10px] text-blue-600 uppercase tracking-wider font-extrabold block">Ultimate Fleet-Book Document Ledger</span>
                   <h3 className="text-lg font-bold text-slate-900 font-mono tracking-wide">{viewingEntry.tripNo} &bull; {viewingEntry.truckNo}</h3>
                 </div>
-                <div className="flex items-center flex-wrap gap-2 shrink-0">
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
                   <button
-                    onClick={() => generateTripPDF(viewingEntry, accounts)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                    onClick={() => {
+                      const html = generateTripPDF(viewingEntry, accounts);
+                      setPreviewHtml(html);
+                      setPreviewTitle(`Trip Report - ${viewingEntry.tripNo}`);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
                   >
                     <Printer className="w-3.5 h-3.5" /> Print PDF
                   </button>
                   <button
-                    onClick={() => generateDriverReportPDF(viewingEntry, accounts)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                    onClick={() => {
+                      const html = generateDriverReportPDF(viewingEntry, accounts);
+                      setPreviewHtml(html);
+                      setPreviewTitle(`Driver Settlement - ${viewingEntry.tripNo}`);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
                   >
                     <FileText className="w-3.5 h-3.5" /> Driver Report PDF
                   </button>
@@ -1130,7 +1155,7 @@ export default function TripList({
                         onEditEntry(viewingEntry);
                         setViewingEntry(null);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
                     >
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
@@ -1149,20 +1174,11 @@ export default function TripList({
                           setViewingEntry(null);
                         }
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs rounded-lg transition cursor-pointer"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
                   )}
-                  <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-                  <button
-                    id="btn-close-inspector"
-                    onClick={() => setViewingEntry(null)}
-                    className="p-1 px-2.5 text-slate-400 hover:text-slate-650 bg-slate-200/50 hover:bg-slate-250 rounded-lg transition shrink-0 cursor-pointer flex items-center justify-center"
-                    title="Close Details Overlay"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
 

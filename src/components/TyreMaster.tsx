@@ -447,6 +447,7 @@ export default function TyreMaster({
 
         {canEditTyres && (
           <button
+            id="btn-add-tyre"
             onClick={() => {
               resetAddForm();
               setShowAddForm(!showAddForm);
@@ -464,7 +465,7 @@ export default function TyreMaster({
 
       {/* Expandable registration form */}
       {showAddForm && (
-        <form onSubmit={handleCreateTyre} className="p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 shadow-3xs">
+        <form id="tyre-form" onSubmit={handleCreateTyre} className="p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 shadow-3xs">
           <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
             <Compass className="w-4 h-4 text-blue-600" />
             <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Register New Purchase Specification</h3>

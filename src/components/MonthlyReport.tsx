@@ -198,112 +198,107 @@ export default function MonthlyReport({
   };
 
   // Trigger browser print layout or native print
+  // Report Preview state
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>('');
+
+  // Trigger browser print layout or native print
   const handlePrint = () => {
-    const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
-    if (isCapacitor) {
-      const selectedMonthObj = months.find(m => m.value === selectedMonth);
-      const rowsHtml = reportData.map(d => `
-        <tr>
-          <td>
-            <strong>${d.truckNo}</strong><br/>
-            <span style="font-size: 9px; color: #666;">${d.make} ${d.model} &bull; ${d.type}</span>
-          </td>
-          <td style="text-align: center;">${d.tripsCount}</td>
-          <td style="text-align: right;">₹${d.totalIncome.toLocaleString('en-IN')}</td>
-          <td style="text-align: right;">₹${d.totalTripExpense.toLocaleString('en-IN')}</td>
-          <td style="text-align: right;">₹${d.totalGeneralExpense.toLocaleString('en-IN')}</td>
-          <td style="text-align: right; font-weight: bold; color: #b91c1c;">₹${d.totalExpense.toLocaleString('en-IN')}</td>
-          <td style="text-align: right; font-weight: bold; color: ${d.netProfit >= 0 ? '#166534' : '#b91c1c'};">₹${d.netProfit.toLocaleString('en-IN')}</td>
-          <td style="text-align: center; font-weight: bold;">${d.marginPct.toFixed(1)}%</td>
-        </tr>
-      `).join('');
+    const selectedMonthObj = months.find(m => m.value === selectedMonth);
+    const rowsHtml = reportData.map(d => `
+      <tr>
+        <td>
+          <strong>${d.truckNo}</strong><br/>
+          <span style="font-size: 9px; color: #666;">${d.make} ${d.model} &bull; ${d.type}</span>
+        </td>
+        <td style="text-align: center;">${d.tripsCount}</td>
+        <td style="text-align: right;">?${d.totalIncome.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">?${d.totalTripExpense.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">?${d.totalGeneralExpense.toLocaleString('en-IN')}</td>
+        <td style="text-align: right; font-weight: bold; color: #b91c1c;">?${d.totalExpense.toLocaleString('en-IN')}</td>
+        <td style="text-align: right; font-weight: bold; color: ${d.netProfit >= 0 ? '#166534' : '#b91c1c'};">?${d.netProfit.toLocaleString('en-IN')}</td>
+        <td style="text-align: center; font-weight: bold;">${d.marginPct.toFixed(1)}%</td>
+      </tr>
+    `).join('');
 
-      const totalTripExp = reportData.reduce((s,x)=> s + x.totalTripExpense, 0);
-      const totalGenExp = reportData.reduce((s,x)=> s + x.totalGeneralExpense, 0);
+    const totalTripExp = reportData.reduce((s,x)=> s + x.totalTripExpense, 0);
+    const totalGenExp = reportData.reduce((s,x)=> s + x.totalGeneralExpense, 0);
 
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Monthly Fleet Audit Report</title>
-          <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 30px; line-height: 1.4; font-size: 11px; }
-            h2 { margin: 0; color: #1e3a8a; font-size: 20px; font-weight: 800; text-transform: uppercase; }
-            p.meta { margin: 4px 0 20px 0; font-size: 10px; color: #666; font-family: monospace; font-weight: bold; text-transform: uppercase; }
-            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-            .card { border: 1px solid #e2e8f0; background-color: #f8fafc; border-radius: 6px; padding: 10px; }
-            .card .label { font-size: 8px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
-            .card .value { font-size: 13px; font-weight: 850; color: #0f172a; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { background-color: #f1f5f9; color: #334155; font-weight: 700; text-align: left; padding: 8px; font-size: 9px; text-transform: uppercase; border: 1px solid #cbd5e1; }
-            td { padding: 8px; border: 1px solid #e2e8f0; }
-            tr.total-row { font-weight: bold; background-color: #f8fafc; border-top: 2px solid #cbd5e1; }
-          </style>
-        </head>
-        <body>
-          <h2>Monthly Fleet Audit Report</h2>
-          <p class="meta">Accounting Period: ${selectedMonthObj?.label} ${selectedYear} | Generated on ${new Date().toLocaleDateString('en-IN')}</p>
-          
-          <div class="grid">
-            <div class="card">
-              <div class="label">Billed Income</div>
-              <div class="value">₹${overallIncome.toLocaleString('en-IN')}</div>
-            </div>
-            <div class="card">
-              <div class="label">Gross Expenditure</div>
-              <div class="value" style="color: #b91c1c;">₹${overallExpenses.toLocaleString('en-IN')}</div>
-            </div>
-            <div class="card">
-              <div class="label">Net Period Yield</div>
-              <div class="value" style="color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">₹${overallNetProfit.toLocaleString('en-IN')}</div>
-            </div>
-            <div class="card">
-              <div class="label">Operating Margin</div>
-              <div class="value">${overallMargin.toFixed(1)}%</div>
-            </div>
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Monthly Fleet Audit Report</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 30px; line-height: 1.4; font-size: 11px; }
+          h2 { margin: 0; color: #1e3a8a; font-size: 20px; font-weight: 800; text-transform: uppercase; }
+          p.meta { margin: 4px 0 20px 0; font-size: 10px; color: #666; font-family: monospace; font-weight: bold; text-transform: uppercase; }
+          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+          .card { border: 1px solid #e2e8f0; background-color: #f8fafc; border-radius: 6px; padding: 10px; }
+          .card .label { font-size: 8px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
+          .card .value { font-size: 13px; font-weight: 850; color: #0f172a; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { background-color: #f1f5f9; color: #334155; font-weight: 700; text-align: left; padding: 8px; font-size: 9px; text-transform: uppercase; border: 1px solid #cbd5e1; }
+          td { padding: 8px; border: 1px solid #e2e8f0; }
+          tr.total-row { font-weight: bold; background-color: #f8fafc; border-top: 2px solid #cbd5e1; }
+        </style>
+      </head>
+      <body>
+        <h2>Monthly Fleet Audit Report</h2>
+        <p class="meta">Accounting Period: ${selectedMonthObj?.label} ${selectedYear} | Generated on ${new Date().toLocaleDateString('en-IN')}</p>
+        
+        <div class="grid">
+          <div class="card">
+            <div class="label">Billed Income</div>
+            <div class="value">?${overallIncome.toLocaleString('en-IN')}</div>
           </div>
+          <div class="card">
+            <div class="label">Gross Expenditure</div>
+            <div class="value" style="color: #b91c1c;">?${overallExpenses.toLocaleString('en-IN')}</div>
+          </div>
+          <div class="card">
+            <div class="label">Net Period Yield</div>
+            <div class="value" style="color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">?${overallNetProfit.toLocaleString('en-IN')}</div>
+          </div>
+          <div class="card">
+            <div class="label">Operating Margin</div>
+            <div class="value">${overallMargin.toFixed(1)}%</div>
+          </div>
+        </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Vehicle Details</th>
-                <th style="text-align: center;">Trips</th>
-                <th style="text-align: right;">Income</th>
-                <th style="text-align: right;">Trip Exp</th>
-                <th style="text-align: right;">Ledger Exp</th>
-                <th style="text-align: right;">Total Exp</th>
-                <th style="text-align: right;">Net Profit</th>
-                <th style="text-align: center;">Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-              <tr class="total-row">
-                <td>TOTALS</td>
-                <td style="text-align: center;">${totalTripsRecorded}</td>
-                <td style="text-align: right; color: #2563eb;">₹${overallIncome.toLocaleString('en-IN')}</td>
-                <td style="text-align: right;">₹${totalTripExp.toLocaleString('en-IN')}</td>
-                <td style="text-align: right;">₹${totalGenExp.toLocaleString('en-IN')}</td>
-                <td style="text-align: right; color: #b91c1c;">₹${overallExpenses.toLocaleString('en-IN')}</td>
-                <td style="text-align: right; color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">₹${overallNetProfit.toLocaleString('en-IN')}</td>
-                <td style="text-align: center;">${overallMargin.toFixed(1)}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </body>
-        </html>
-      `;
+        <table>
+          <thead>
+            <tr>
+              <th>Vehicle Details</th>
+              <th style="text-align: center;">Trips</th>
+              <th style="text-align: right;">Income</th>
+              <th style="text-align: right;">Trip Exp</th>
+              <th style="text-align: right;">Ledger Exp</th>
+              <th style="text-align: right;">Total Exp</th>
+              <th style="text-align: right;">Net Profit</th>
+              <th style="text-align: center;">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+            <tr class="total-row">
+              <td>TOTALS</td>
+              <td style="text-align: center;">${totalTripsRecorded}</td>
+              <td style="text-align: right; color: #2563eb;">?${overallIncome.toLocaleString('en-IN')}</td>
+              <td style="text-align: right;">?${totalTripExp.toLocaleString('en-IN')}</td>
+              <td style="text-align: right;">?${totalGenExp.toLocaleString('en-IN')}</td>
+              <td style="text-align: right; color: #b91c1c;">?${overallExpenses.toLocaleString('en-IN')}</td>
+              <td style="text-align: right; color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">?${overallNetProfit.toLocaleString('en-IN')}</td>
+              <td style="text-align: center;">${overallMargin.toFixed(1)}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
 
-      import('@capgo/capacitor-printer').then(({ Printer }) => {
-        Printer.printHtml({ name: `Monthly-Report-${selectedYear}-${selectedMonth}`, html: htmlContent }).catch(err => {
-          console.error("Native print failed:", err);
-        });
-      }).catch(err => {
-        console.error("Failed to load printer plugin:", err);
-      });
-    } else {
-      window.print();
-    }
+    setPreviewHtml(htmlContent);
+    setPreviewTitle(`Monthly Fleet Audit Report - ${selectedMonthObj?.label} ${selectedYear}`);
   };
 
   const selectedMonthObj = months.find(m => m.value === selectedMonth);

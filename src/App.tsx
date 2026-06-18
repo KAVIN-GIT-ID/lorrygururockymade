@@ -80,6 +80,14 @@ import {
   Loader,
   Sun,
   Moon,
+  Bell,
+  Plus,
+  Truck as TruckIcon,
+  UserPlus,
+  Wrench,
+  MapPin,
+  CreditCard,
+  Coins,
 } from 'lucide-react';
 
 const LoadingTab = () => (
@@ -1269,6 +1277,78 @@ function AppContent() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [mobileTab, setMobileTab] = useState<'HOME' | 'TRIPS' | 'REGISTRY' | 'ACCOUNT'>('HOME');
   const [registrySubTab, setRegistrySubTab] = useState<string>('TRUCKS');
+
+  const [fabOpened, setFabOpened] = useState(false);
+
+  const triggerOpenAddForm = (tabId: string) => {
+    setRegistrySubTab(tabId);
+    setFabOpened(false);
+    setTimeout(() => {
+      let btnId = '';
+      let formQuery = '';
+      if (tabId === 'TRUCKS') {
+        btnId = 'btn-add-truck';
+        formQuery = '#truck-form';
+      } else if (tabId === 'DRIVERS') {
+        btnId = 'btn-add-driver';
+        formQuery = '#driver-form';
+      } else if (tabId === 'EXPENSES') {
+        btnId = 'btn-toggle-expense-form';
+        formQuery = '#expense-registration-form';
+      } else if (tabId === 'TYRES') {
+        btnId = 'btn-add-tyre';
+        formQuery = '#tyre-form';
+      } else if (tabId === 'OFFICES') {
+        btnId = 'btn-add-office';
+        formQuery = '#office-form';
+      } else if (tabId === 'ACCOUNTS') {
+        btnId = 'btn-add-account';
+        formQuery = '#account-form';
+      }
+      
+      if (btnId) {
+        const formExists = formQuery ? !!document.querySelector(formQuery) : false;
+        if (!formExists) {
+          const btn = document.getElementById(btnId);
+          if (btn) {
+            btn.click();
+          }
+        }
+      }
+    }, 200);
+  };
+
+  // Registry Touch Swipe / Anim refs
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const prevTabIdxRef = useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const diffY = e.changedTouches[0].clientY - touchStartYRef.current;
+    
+    if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
+      const tabs = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
+      const currentIdx = tabs.indexOf(registrySubTab);
+      if (diffX < 0) {
+        if (currentIdx < tabs.length - 1) {
+          setRegistrySubTab(tabs[currentIdx + 1]);
+        }
+      } else {
+        if (currentIdx > 0) {
+          setRegistrySubTab(tabs[currentIdx - 1]);
+        }
+      }
+    }
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -3477,6 +3557,12 @@ function AppContent() {
     }
   };
 
+  const tabsList = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
+  const currentTabIdx = tabsList.indexOf(registrySubTab);
+  const isSlideRight = currentTabIdx > prevTabIdxRef.current;
+  prevTabIdxRef.current = currentTabIdx;
+  const slideClassName = isSlideRight ? 'animate-slide-in-right' : 'animate-slide-in-left';
+
   const isBackendTeam = currentUserOrgId === 'org_backend' || currentUserRights.isSuperAdmin;
 
   if (isMobile) {
@@ -3498,6 +3584,14 @@ function AppContent() {
             <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">LorryGuru</span>
           </div>
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => alert("No new notifications")}
+              className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1.5 cursor-pointer relative"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
+            </button>
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1 cursor-pointer"
@@ -3556,7 +3650,7 @@ function AppContent() {
             )}
 
             {mobileTab === 'REGISTRY' && (
-              <div className="flex-1 overflow-hidden flex flex-col pb-20">
+              <div className="flex-1 overflow-hidden flex flex-col pb-20 relative">
                 {/* Scrollable Sub-Tab Bar for Registry Lists */}
                 <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 overflow-x-auto whitespace-nowrap scrollbar-hide flex gap-1.5 shrink-0">
                   {[
@@ -3583,7 +3677,12 @@ function AppContent() {
                 </div>
 
                 {/* Sub-Tab Viewport Content */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div 
+                  key={registrySubTab}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
+                  className={`flex-1 overflow-y-auto p-4 space-y-4 ${slideClassName}`}
+                >
                   {registrySubTab === 'TRUCKS' && (
                     <TruckMaster
                       trucks={orgTrucks}
@@ -3692,6 +3791,51 @@ function AppContent() {
                       currentUserOrgId={currentUserOrgId}
                     />
                   )}
+                </div>
+                {/* Custom Floating Action Button (FAB) */}
+                {fabOpened && (
+                  <div 
+                    className="fixed inset-0 bg-slate-950/35 backdrop-blur-3xs z-30 transition-opacity animate-fade-in"
+                    onClick={() => setFabOpened(false)}
+                  />
+                )}
+                
+                <div className="absolute bottom-24 right-6 z-40 flex flex-col items-end">
+                  {fabOpened && (
+                    <div className="flex flex-col items-end gap-3 mb-4 animate-scale-up origin-bottom">
+                      {[
+                        { id: 'TRUCKS', label: 'Add Truck', icon: <TruckIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-450" /> },
+                        { id: 'DRIVERS', label: 'Add Driver', icon: <UserPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" /> },
+                        { id: 'EXPENSES', label: 'Register Expense', icon: <Coins className="w-4 h-4 text-purple-600 dark:text-purple-400" /> },
+                        { id: 'TYRES', label: 'Register Tyre', icon: <Wrench className="w-4 h-4 text-amber-600 dark:text-amber-450" /> },
+                        { id: 'OFFICES', label: 'Add Office', icon: <MapPin className="w-4 h-4 text-rose-600 dark:text-rose-400" /> },
+                        { id: 'ACCOUNTS', label: 'Add Account', icon: <CreditCard className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> }
+                      ].map((act) => (
+                        <div 
+                          key={act.id} 
+                          className="flex items-center gap-3 cursor-pointer group active:scale-95 transition-transform" 
+                          onClick={() => triggerOpenAddForm(act.id)}
+                        >
+                          <span className="bg-slate-900/80 dark:bg-slate-950/90 backdrop-blur-xs text-white text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-md transition transform group-hover:-translate-x-1 uppercase tracking-wider select-none">
+                            {act.label}
+                          </span>
+                          <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center transition hover:bg-slate-50 dark:hover:bg-slate-750">
+                            {act.icon}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={() => setFabOpened(!fabOpened)}
+                    className={`w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-xl flex items-center justify-center transition-all duration-300 active:scale-90 cursor-pointer ${
+                      fabOpened ? 'rotate-135 bg-gradient-to-tr from-rose-650 to-red-500' : ''
+                    }`}
+                    title="Quick Actions"
+                  >
+                    <Plus className="w-6 h-6 transition-transform duration-300" />
+                  </button>
                 </div>
               </div>
             )}

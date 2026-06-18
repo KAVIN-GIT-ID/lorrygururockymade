@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SupportTicket } from '../types';
+import ReportPreviewModal from './ReportPreviewModal';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { MessageSquare, Plus, Paperclip, Send, X, FileText, Download, CheckCircle, Loader2 } from 'lucide-react';
 
@@ -27,6 +28,8 @@ export default function ProfileSupportTickets({
   address = ''
 }: ProfileSupportTicketsProps) {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'TICKETS' | 'BILLING'>('TICKETS');
   
@@ -271,22 +274,8 @@ export default function ProfileSupportTickets({
       </html>
     `;
 
-    const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
-    if (isCapacitor) {
-      import('@capgo/capacitor-printer').then(({ Printer }) => {
-        Printer.printHtml({ name: invoiceNo, html: htmlContent }).catch(err => {
-          console.error("Native print failed:", err);
-        });
-      }).catch(err => {
-        console.error("Failed to load printer plugin:", err);
-      });
-    } else {
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-      }
-    }
+    setPreviewHtml(htmlContent);
+    setPreviewTitle(`Tax Invoice - ${invoiceNo}`);
   };
 
   return (
@@ -630,6 +619,15 @@ export default function ProfileSupportTickets({
             </form>
           </div>
         </div>
+      )}
+
+      {previewHtml && (
+        <ReportPreviewModal
+          isOpen={!!previewHtml}
+          onClose={() => setPreviewHtml(null)}
+          htmlContent={previewHtml}
+          title={previewTitle}
+        />
       )}
     </div>
   );

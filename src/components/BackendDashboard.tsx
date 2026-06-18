@@ -2566,14 +2566,6 @@ export default function BackendDashboard({
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleSaveTruckClick}
-                className="flex items-center gap-1 px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold transition shadow-xs cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                Override & Save
-              </button>
             </div>
           </div>
         </div>
@@ -2606,13 +2598,13 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    if (appUpdateConfig) {
+    if (appUpdateConfig?.version) {
       setVersion(getNextVersion(appUpdateConfig.version));
       setReleaseNotes('');
       setDownloadUrl('');
       setApkFile(null);
     }
-  }, [appUpdateConfig]);
+  }, [appUpdateConfig?.version]);
 
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2673,7 +2665,6 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
       setIsUploading(false);
     }
   };
-
   return (
     <form onSubmit={handlePublish} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
