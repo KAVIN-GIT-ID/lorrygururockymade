@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ExpenseEntry, Truck, Account, Driver } from '../types';
-import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User } from 'lucide-react';
+import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface ExpenseMasterProps {
@@ -309,218 +309,232 @@ export default function ExpenseMaster({
 
       {/* EXPENSE REGISTRATION FORM */}
       {showForm && (
-        <form id="expense-registration-form" onSubmit={handleSubmit} className="mb-6 p-4 md:p-5 bg-indigo-50/30 rounded-xl border border-indigo-100 animate-fade-in space-y-4">
-          <div className="flex justify-between items-center border-b border-indigo-100/60 pb-2">
-            <h3 className="text-xs font-bold text-indigo-805 text-indigo-800 uppercase tracking-widest">
-              {isEditing ? '🖊️ Modify Registered Expense' : '📋 Register New Expense Voucher'}
-            </h3>
-            <span className="text-[9px] bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full font-bold">Standard Form</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            
-            {/* Truck No */}
-            <div>
-              <label htmlFor="expense-input-truck" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Truck ID No <span className="text-rose-500">*</span></label>
-              <select
-                id="expense-input-truck"
-                value={truckNo}
-                onChange={(e) => setTruckNo(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
-              >
-                <option value="">-- Choose Truck --</option>
-                {trucks.map(tk => {
-                  const todayStr = new Date().toISOString().substring(0, 10);
-                  const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
-                  const isAdminDisabled = tk.status === 'Admin Disabled';
-                  const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
-                  const isBlocked = isExpired || isAdminDisabled || isNotApproved;
-                  const isSelected = isEditing && (() => {
-                    const orig = expenses.find(e => e.id === isEditing);
-                    return orig && orig.truckNo === tk.truckNo;
-                  })();
-
-                  let labelSuffix = '';
-                  if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
-                  else if (isNotApproved) labelSuffix = ' (Not Approved)';
-                  else if (isExpired) labelSuffix = ' (Expired)';
-
-                  return (
-                    <option 
-                      key={tk.id} 
-                      value={tk.truckNo}
-                      disabled={isBlocked && !isSelected}
-                    >
-                      {tk.truckNo}
-                      {tk.make || tk.model ? ` [${[tk.make, tk.model].filter(Boolean).join(' / ')}]` : ''}
-                      {labelSuffix}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Expense Type */}
-            <div>
-              <label htmlFor="expense-input-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Type <span className="text-rose-500">*</span></label>
-              <select
-                id="expense-input-type"
-                value={expenseType}
-                onChange={(e) => setExpenseType(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
-              >
-                <option value="Temporary">Temporary</option>
-                <option value="Scheduled">Scheduled</option>
-                <option value="Maintenance">Maintenance</option>
-                <option value="Breakdown">Breakdown</option>
-                <option value="Spare Parts">Spare Parts</option>
-                <option value="Workshop Service">Workshop Service</option>
-                <option value="Driver Advance">Driver Advance</option>
-                <option value="Tolls & Mamuls">Tolls & Mamuls</option>
-                <option value="Lubricants & Oils">Lubricants & Oils</option>
-              </select>
-            </div>
-
-            {/* Shop / Supplier Name */}
-            <div>
-              <label htmlFor="expense-input-shop" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name No <span className="text-rose-500">*</span></label>
-              <input
-                id="expense-input-shop"
-                type="text"
-                placeholder="e.g. TVS Auto, MRF Tyres"
-                value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
-              />
-            </div>
-
-            {/* Expense Amount */}
-            <div>
-              <label htmlFor="expense-input-amount" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span className="text-rose-500">*</span></label>
-              <input
-                id="expense-input-amount"
-                type="number"
-                min="0.01"
-                step="any"
-                placeholder="0.00"
-                value={amount}
-                required
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-850 font-bold rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 font-mono outline-none text-right"
-              />
-            </div>
-
-            {/* Account Type Selector (Requirement 2) */}
-            <div>
-              <label htmlFor="expense-input-account-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Account Type <span className="text-rose-500">*</span></label>
-              <select
-                id="expense-input-account-type"
-                value={accountType}
-                onChange={(e) => {
-                  const val = e.target.value as 'Account' | 'Driver';
-                  setAccountType(val);
-                  if (val === 'Driver') {
-                    setPaymentMode('');
-                    setSelectedDriverName(drivers[0]?.driverName || '');
-                  } else {
-                    setSelectedDriverName('');
-                    setPaymentMode('Cash/General');
-                  }
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="expense-form-backdrop">
+          <form id="expense-registration-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-450" />
+                <h3 className="text-sm font-bold text-slate-805 dark:text-white tracking-wide">
+                  {isEditing ? 'Modify Registered Expense' : 'Register New Expense Voucher'}
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => {
+                  resetForm();
+                  setShowForm(false);
                 }}
-                className="w-full bg-white border border-slate-200 text-slate-800 font-bold rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none"
+                className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 rounded-xl transition cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               >
-                <option value="Account">Office Account</option>
-                <option value="Driver">Driver Operator Ledger</option>
-              </select>
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Account / Driver Selector depending on Account Type */}
-            {accountType === 'Account' ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              
+              {/* Truck No */}
               <div>
-                <label htmlFor="expense-input-payment-mode" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Ledger Account / Mode</label>
+                <label htmlFor="expense-input-truck" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Truck ID No <span className="text-rose-500">*</span></label>
                 <select
-                  id="expense-input-payment-mode"
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
-                >
-                  <option value="Cash/General">Cash/General State</option>
-                  <option value="Axis">Axis Office</option>
-                  <option value="HDFC">HDFC General</option>
-                  {accounts.map(acct => (
-                    <option key={acct.id} value={acct.accountName}>{acct.accountName} Ledger</option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label htmlFor="expense-input-driver-name" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Select Driver <span className="text-rose-500">*</span></label>
-                <select
-                  id="expense-input-driver-name"
-                  value={selectedDriverName}
-                  onChange={(e) => setSelectedDriverName(e.target.value)}
+                  id="expense-input-truck"
+                  value={truckNo}
+                  onChange={(e) => setTruckNo(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
                 >
-                  <option value="">-- Select Driver --</option>
-                  {drivers.map(drv => (
-                    <option key={drv.id} value={drv.driverName}>{drv.driverName}</option>
-                  ))}
+                  <option value="">-- Choose Truck --</option>
+                  {trucks.map(tk => {
+                    const todayStr = new Date().toISOString().substring(0, 10);
+                    const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
+                    const isAdminDisabled = tk.status === 'Admin Disabled';
+                    const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
+                    const isBlocked = isExpired || isAdminDisabled || isNotApproved;
+                    const isSelected = isEditing && (() => {
+                      const orig = expenses.find(e => e.id === isEditing);
+                      return orig && orig.truckNo === tk.truckNo;
+                    })();
+
+                    let labelSuffix = '';
+                    if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
+                    else if (isNotApproved) labelSuffix = ' (Not Approved)';
+                    else if (isExpired) labelSuffix = ' (Expired)';
+
+                    return (
+                      <option 
+                        key={tk.id} 
+                        value={tk.truckNo}
+                        disabled={isBlocked && !isSelected}
+                      >
+                        {tk.truckNo}
+                        {tk.make || tk.model ? ` [${[tk.make, tk.model].filter(Boolean).join(' / ')}]` : ''}
+                        {labelSuffix}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
-            )}
 
-            {/* Date */}
-            <div>
-              <label htmlFor="expense-input-date" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
-              <input
-                id="expense-input-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
-              />
+              {/* Expense Type */}
+              <div>
+                <label htmlFor="expense-input-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Type <span className="text-rose-500">*</span></label>
+                <select
+                  id="expense-input-type"
+                  value={expenseType}
+                  onChange={(e) => setExpenseType(e.target.value)}
+                  required
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
+                >
+                  <option value="Temporary">Temporary</option>
+                  <option value="Scheduled">Scheduled</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Breakdown">Breakdown</option>
+                  <option value="Spare Parts">Spare Parts</option>
+                  <option value="Workshop Service">Workshop Service</option>
+                  <option value="Driver Advance">Driver Advance</option>
+                  <option value="Tolls & Mamuls">Tolls & Mamuls</option>
+                  <option value="Lubricants & Oils">Lubricants & Oils</option>
+                </select>
+              </div>
+
+              {/* Shop / Supplier Name */}
+              <div>
+                <label htmlFor="expense-input-shop" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name <span className="text-rose-500">*</span></label>
+                <input
+                  id="expense-input-shop"
+                  type="text"
+                  placeholder="e.g. TVS Auto, MRF Tyres"
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
+                  required
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                />
+              </div>
+
+              {/* Expense Amount */}
+              <div>
+                <label htmlFor="expense-input-amount" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span className="text-rose-500">*</span></label>
+                <input
+                  id="expense-input-amount"
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  placeholder="0.00"
+                  value={amount}
+                  required
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-850 dark:text-white font-bold rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 font-mono outline-none text-right"
+                />
+              </div>
+
+              {/* Account Type Selector */}
+              <div>
+                <label htmlFor="expense-input-account-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Account Type <span className="text-rose-500">*</span></label>
+                <select
+                  id="expense-input-account-type"
+                  value={accountType}
+                  onChange={(e) => {
+                    const val = e.target.value as 'Account' | 'Driver';
+                    setAccountType(val);
+                    if (val === 'Driver') {
+                      setPaymentMode('');
+                      setSelectedDriverName(drivers[0]?.driverName || '');
+                    } else {
+                      setSelectedDriverName('');
+                      setPaymentMode('Cash/General');
+                    }
+                  }}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white font-bold rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Account">Office Account</option>
+                  <option value="Driver">Driver Operator Ledger</option>
+                </select>
+              </div>
+
+              {/* Account / Driver Selector depending on Account Type */}
+              {accountType === 'Account' ? (
+                <div>
+                  <label htmlFor="expense-input-payment-mode" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Ledger Account / Mode</label>
+                  <select
+                    id="expense-input-payment-mode"
+                    value={paymentMode}
+                    onChange={(e) => setPaymentMode(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                  >
+                    <option value="Cash/General">Cash/General State</option>
+                    <option value="Axis">Axis Office</option>
+                    <option value="HDFC">HDFC General</option>
+                    {accounts.map(acct => (
+                      <option key={acct.id} value={acct.accountName}>{acct.accountName} Ledger</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="expense-input-driver-name" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Select Driver <span className="text-rose-500">*</span></label>
+                  <select
+                    id="expense-input-driver-name"
+                    value={selectedDriverName}
+                    onChange={(e) => setSelectedDriverName(e.target.value)}
+                    required
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                  >
+                    <option value="">-- Select Driver --</option>
+                    {drivers.map(drv => (
+                      <option key={drv.id} value={drv.driverName}>{drv.driverName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Date */}
+              <div>
+                <label htmlFor="expense-input-date" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
+                <input
+                  id="expense-input-date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                />
+              </div>
+
+              {/* Ledger Status */}
+              <div>
+                <label htmlFor="expense-input-status" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
+                <select
+                  id="expense-input-status"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as ExpenseEntry['status'])}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
+                >
+                  <option value="Settled">Settled</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Declined">Declined</option>
+                </select>
+              </div>
+
+              {/* Submit Actions */}
+              <div className="flex items-end justify-end space-x-2 pt-1 lg:pt-0 col-span-full border-t border-slate-100 dark:border-slate-800 pt-4">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="px-3 py-1.5 border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50/50 rounded-lg text-xs font-semibold cursor-pointer active:scale-95 transition-all"
+                >
+                  Clear
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all"
+                >
+                  {isEditing ? 'Save Changes' : 'Save Ledger Entry'}
+                </button>
+              </div>
+
             </div>
-
-            {/* Ledger Status */}
-            <div>
-              <label htmlFor="expense-input-status" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
-              <select
-                id="expense-input-status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ExpenseEntry['status'])}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
-              >
-                <option value="Settled">Settled</option>
-                <option value="Pending">Pending</option>
-                <option value="Approved">Approved</option>
-                <option value="Declined">Declined</option>
-              </select>
-            </div>
-
-            {/* Submit Actions */}
-            <div className="flex items-end justify-end space-x-2 pt-1 lg:pt-0">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-3 py-1.5 border border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50/50 rounded-lg text-xs font-semibold cursor-pointer active:scale-95 transition-all"
-              >
-                Clear
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all"
-              >
-                {isEditing ? 'Save Changes' : 'Save Ledger Entry'}
-              </button>
-            </div>
-
-          </div>
-        </form>
+          </form>
+        </div>
       )}
       <div className="bg-slate-50 border border-slate-200 p-3.5 mb-5 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-center">
         

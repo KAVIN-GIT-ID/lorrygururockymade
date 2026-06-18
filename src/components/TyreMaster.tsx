@@ -18,7 +18,7 @@ import {
   TrendingUp, 
   UserCheck, 
   Activity,
-  Tag 
+  Tag, X 
 } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
@@ -463,223 +463,238 @@ export default function TyreMaster({
         )}
       </div>
 
-      {/* Expandable registration form */}
       {showAddForm && (
-        <form id="tyre-form" onSubmit={handleCreateTyre} className="p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 shadow-3xs">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-            <Compass className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Register New Purchase Specification</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label htmlFor="tyreNo" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Serial No <span className="text-red-500">*</span></label>
-              <input
-                id="tyreNo"
-                type="text"
-                required
-                placeholder="e.g. MRF-102948"
-                value={tyreNo}
-                onChange={(e) => setTyreNo(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
-              />
-            </div>
-            <div>
-              <label htmlFor="manufacturer" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Manufacturer <span className="text-red-500">*</span></label>
-              <select
-                id="manufacturer"
-                required
-                value={manufacturer}
-                onChange={(e) => setManufacturer(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-auto animate-fade-in" id="tyre-form-backdrop">
+          <form id="tyre-form" onSubmit={handleCreateTyre} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
+              <div className="flex items-center gap-2">
+                <Compass className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-bold text-slate-805 dark:text-white tracking-wide">
+                  Register New Purchase Specification
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => {
+                  resetAddForm();
+                  setShowAddForm(false);
+                }}
+                className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-250 rounded-xl transition cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               >
-                <option value="">-- Choose Manufacturer --</option>
-                <option value="MRF">MRF Ltd</option>
-                <option value="Apollo">Apollo Tyres</option>
-                <option value="JK Tyre">JK Tyre & Industries</option>
-                <option value="CEAT">CEAT Limited</option>
-                <option value="Michelin">Michelin</option>
-                <option value="Bridgestone">Bridgestone</option>
-                <option value="Goodyear">Goodyear India</option>
-                <option value="Yokohama">Yokohama</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="tyreSize" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Tyre Size Dimension</label>
-              <input
-                id="tyreSize"
-                type="text"
-                placeholder="e.g. 10.00R20, 295/85R22.5"
-                value={size}
-                onChange={(e) => setSize(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="purchaseDate" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Date</label>
-              <input
-                id="purchaseDate"
-                type="date"
-                value={purchaseDate}
-                onChange={(e) => setPurchaseDate(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none "
-              />
-            </div>
-            <div>
-              <label htmlFor="purchaseAmount" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Purchase Amount (₹)</label>
-              <input
-                id="purchaseAmount"
-                type="number"
-                placeholder="e.g. 24000"
-                value={purchaseAmount}
-                onChange={(e) => setPurchaseAmount(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
-              />
-            </div>
-          </div>
-
-          {/* Supplementary integration section for Auto Ledger */}
-          <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-blue-600" />
-                <h4 className="text-xs font-bold text-slate-750">Financial Ledger & Vehicle Allocation</h4>
-              </div>
-              <p className="text-[10px] text-slate-500 italic">Automatically posts transaction vouchers to your ledger</p>
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
-                <label htmlFor="associatedTruckNo" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Allocate Expense to</label>
+                <label htmlFor="tyreNo" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Tyre Serial No <span className="text-red-500">*</span></label>
+                <input
+                  id="tyreNo"
+                  type="text"
+                  required
+                  placeholder="e.g. MRF-102948"
+                  value={tyreNo}
+                  onChange={(e) => setTyreNo(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label htmlFor="manufacturer" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Manufacturer <span className="text-red-500">*</span></label>
                 <select
-                  id="associatedTruckNo"
-                  value={associatedTruckNo}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setAssociatedTruckNo(val);
-                    if (!val) {
-                      setMountDirectly(false);
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                  id="manufacturer"
+                  required
+                  value={manufacturer}
+                  onChange={(e) => setManufacturer(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                 >
-                  <option value="">YARD / STOCK (General Warehouse)</option>
-                  {trucks.map(tk => {
-                    const todayStr = new Date().toISOString().substring(0, 10);
-                    const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
-                    const isAdminDisabled = tk.status === 'Admin Disabled';
-                    const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
-                    const isBlocked = isExpired || isAdminDisabled || isNotApproved;
-
-                    let labelSuffix = '';
-                    if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
-                    else if (isNotApproved) labelSuffix = ' (Not Approved)';
-                    else if (isExpired) labelSuffix = ' (Expired)';
-
-                    return (
-                      <option 
-                        key={tk.id} 
-                        value={tk.truckNo}
-                        disabled={isBlocked}
-                      >
-                        Vehicle: {tk.truckNo}{labelSuffix}
-                      </option>
-                    );
-                  })}
+                  <option value="">-- Choose Manufacturer --</option>
+                  <option value="MRF">MRF Ltd</option>
+                  <option value="Apollo">Apollo Tyres</option>
+                  <option value="JK Tyre">JK Tyre & Industries</option>
+                  <option value="CEAT">CEAT Limited</option>
+                  <option value="Michelin">Michelin</option>
+                  <option value="Bridgestone">Bridgestone</option>
+                  <option value="Goodyear">Goodyear India</option>
+                  <option value="Yokohama">Yokohama</option>
                 </select>
               </div>
-
               <div>
-                <label htmlFor="paymentMode" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Paid From Ledger Account</label>
-                <select
-                  id="paymentMode"
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                >
-                  <option value="">Cash Account</option>
-                  {accounts.map(ac => (
-                    <option key={ac.id} value={ac.accountName}>{ac.accountName} ({ac.type})</option>
-                  ))}
-                </select>
+                <label htmlFor="tyreSize" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Tyre Size Dimension</label>
+                <input
+                  id="tyreSize"
+                  type="text"
+                  placeholder="e.g. 10.00R20, 295/85R22.5"
+                  value={size}
+                  onChange={(e) => setSize(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="purchaseDate" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Purchase Date</label>
+                <input
+                  id="purchaseDate"
+                  type="date"
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none "
+                />
+              </div>
+              <div>
+                <label htmlFor="purchaseAmount" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Purchase Amount (₹)</label>
+                <input
+                  id="purchaseAmount"
+                  type="number"
+                  placeholder="e.g. 24000"
+                  value={purchaseAmount}
+                  onChange={(e) => setPurchaseAmount(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-805 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
+                />
+              </div>
+            </div>
+
+            {/* Supplementary integration section for Auto Ledger */}
+            <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-blue-600" />
+                  <h4 className="text-xs font-bold text-slate-750">Financial Ledger & Vehicle Allocation</h4>
+                </div>
+                <p className="text-[10px] text-slate-500 italic">Automatically posts transaction vouchers to your ledger</p>
               </div>
 
-              <div className="flex flex-col justify-center">
-                <label htmlFor="createExpense" className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    id="createExpense"
-                    type="checkbox"
-                    checked={createExpense}
-                    onChange={(e) => setCreateExpense(e.target.checked)}
-                    disabled={!purchaseAmount}
-                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                  />
-                  <div className="text-xs font-semibold text-slate-700">
-                    Post to Expense Ledger
-                    {!purchaseAmount && <span className="block text-[10px] font-normal text-slate-400 font-mono"> (Enter purchase price first)</span>}
-                  </div>
-                </label>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label htmlFor="associatedTruckNo" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Allocate Expense to</label>
+                  <select
+                    id="associatedTruckNo"
+                    value={associatedTruckNo}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAssociatedTruckNo(val);
+                      if (!val) {
+                        setMountDirectly(false);
+                      }
+                    }}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">YARD / STOCK (General Warehouse)</option>
+                    {trucks.map(tk => {
+                      const todayStr = new Date().toISOString().substring(0, 10);
+                      const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
+                      const isAdminDisabled = tk.status === 'Admin Disabled';
+                      const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
+                      const isBlocked = isExpired || isAdminDisabled || isNotApproved;
 
-              {associatedTruckNo && (
-                <div className="flex flex-col justify-center border-l sm:border-l-0 lg:border-l border-slate-200 pl-0 lg:pl-4">
-                  <label htmlFor="mountDirectly" className="flex items-center gap-2 cursor-pointer select-none">
+                      let labelSuffix = '';
+                      if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
+                      else if (isNotApproved) labelSuffix = ' (Not Approved)';
+                      else if (isExpired) labelSuffix = ' (Expired)';
+
+                      return (
+                        <option 
+                          key={tk.id} 
+                          value={tk.truckNo}
+                          disabled={isBlocked}
+                        >
+                          Vehicle: {tk.truckNo}{labelSuffix}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="paymentMode" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Paid From Ledger Account</label>
+                  <select
+                    id="paymentMode"
+                    value={paymentMode}
+                    onChange={(e) => setPaymentMode(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">Cash Account</option>
+                    {accounts.map(ac => (
+                      <option key={ac.id} value={ac.accountName}>{ac.accountName} ({ac.type})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col justify-center">
+                  <label htmlFor="createExpense" className="flex items-center gap-2 cursor-pointer select-none">
                     <input
-                      id="mountDirectly"
+                      id="createExpense"
                       type="checkbox"
-                      checked={mountDirectly}
-                      onChange={(e) => setMountDirectly(e.target.checked)}
+                      checked={createExpense}
+                      onChange={(e) => setCreateExpense(e.target.checked)}
+                      disabled={!purchaseAmount}
                       className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     <div className="text-xs font-semibold text-slate-700">
-                      Mount immediately on {associatedTruckNo}
+                      Post to Expense Ledger
+                      {!purchaseAmount && <span className="block text-[10px] font-normal text-slate-400 font-mono"> (Enter purchase price first)</span>}
                     </div>
                   </label>
+                </div>
+
+                {associatedTruckNo && (
+                  <div className="flex flex-col justify-center border-l sm:border-l-0 lg:border-l border-slate-200 pl-0 lg:pl-4">
+                    <label htmlFor="mountDirectly" className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        id="mountDirectly"
+                        type="checkbox"
+                        checked={mountDirectly}
+                        onChange={(e) => setMountDirectly(e.target.checked)}
+                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                      />
+                      <div className="text-xs font-semibold text-slate-700">
+                        Mount immediately on {associatedTruckNo}
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {mountDirectly && associatedTruckNo && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-fade-in">
+                  <div>
+                    <label htmlFor="initialOdoKM" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">
+                      Installation Odometer Reading (KM) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="initialOdoKM"
+                      type="number"
+                      required={mountDirectly}
+                      placeholder={`Current Vehicle KM: ${trucks.find(t => t.truckNo === associatedTruckNo)?.currentKM || 0}`}
+                      value={initialOdoKM}
+                      onChange={(e) => setInitialOdoKM(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex items-end pl-1 pb-1">
+                    <p className="text-[11px] text-slate-500">
+                      The tyre status will auto-transition to <b className="text-emerald-600 font-bold">Active</b> and a mounting log at {initialOdoKM || '0'} KM will be written in movement history.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
 
-            {mountDirectly && associatedTruckNo && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 animate-fade-in">
-                <div>
-                  <label htmlFor="initialOdoKM" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">
-                    Installation Odometer Reading (KM) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="initialOdoKM"
-                    type="number"
-                    required={mountDirectly}
-                    placeholder={`Current Vehicle KM: ${trucks.find(t => t.truckNo === associatedTruckNo)?.currentKM || 0}`}
-                    value={initialOdoKM}
-                    onChange={(e) => setInitialOdoKM(e.target.value)}
-                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div className="flex items-end pl-1 pb-1">
-                  <p className="text-[11px] text-slate-500">
-                    The tyre status will auto-transition to <b className="text-emerald-600 font-bold">Active</b> and a mounting log at {initialOdoKM || '0'} KM will be written in movement history.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={resetAddForm}
-              className="px-4 py-1.5 bg-slate-200 hover:bg-slate-250 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Reset
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer"
-            >
-              Add Tyre record
-            </button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 pt-4 col-span-full">
+              <button
+                type="button"
+                onClick={resetAddForm}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-250 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Reset
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Add Tyre record
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* Main Grid display list */}

@@ -3584,14 +3584,84 @@ function AppContent() {
             <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">LorryGuru</span>
           </div>
           <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => alert("No new notifications")}
-              className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1.5 cursor-pointer relative"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
-            </button>
+            <div ref={notificationRef} className="relative">
+              <button
+                id="btn-notifications-toggle-mobile"
+                onClick={() => {
+                  setNotificationOpen(!notificationOpen);
+                  setProfileDropdownOpen(false);
+                  const now = Date.now();
+                  updateLastReadNotificationTime(now);
+                  if (currentUser) {
+                    const key = `ttt_last_read_notifications_${(currentUser.email || '').toLowerCase().trim()}`;
+                    localStorage.setItem(key, now.toString());
+                  }
+                }}
+                className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1.5 cursor-pointer relative flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
+                )}
+              </button>
+
+              {notificationOpen && (
+                <div className="
+                  fixed left-3 right-3 top-16
+                  bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800
+                  text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left
+                ">
+                  <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <span className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Recent Activity Logs</span>
+                    <button
+                      onClick={() => setNotificationOpen(false)}
+                      className="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {orgAuditLogs.length === 0 ? (
+                      <p className="text-center py-6 text-xs text-slate-400 dark:text-slate-500 italic">No recent activities logged.</p>
+                    ) : (
+                      orgAuditLogs.slice(0, 8).map((log) => (
+                        <div key={log.id} className="text-[11px] p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
+                              log.action === 'Rejected' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50' :
+                                log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
+                                  log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
+                                    log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
+                                      'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
+                              }`}>
+                              {log.action}
+                            </span>
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">{(log.timestamp || '').substring(11, 16)}</span>
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-300 leading-tight">
+                            <strong className="text-slate-900 dark:text-white">{log.category} ({log.reference}):</strong> {log.details}
+                          </p>
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500">By {log.user}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {orgAuditLogs.length > 0 && currentUserRights.isAdmin && (
+                    <button
+                      onClick={() => {
+                        setMobileTab('REGISTRY');
+                        setRegistrySubTab('AUDIT');
+                        setNotificationOpen(false);
+                      }}
+                      className="w-full text-center text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline pt-1 block border-t border-slate-100 dark:border-slate-800"
+                    >
+                      View Full Audit Trail
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1 cursor-pointer"

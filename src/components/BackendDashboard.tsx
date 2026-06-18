@@ -2619,12 +2619,14 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
 
     setIsUploading(true);
     let finalDownloadUrl = downloadUrl;
+    let newFileId: string | undefined = undefined;
 
     try {
       if (apkFile) {
         if (isAppwriteConfigured()) {
           // Upload APK to Appwrite Storage
           const fileId = await appwrite.uploadFile(apkFile, `app_update_${version.replace(/\./g, '_')}`);
+          newFileId = fileId;
           finalDownloadUrl = appwrite.getFileDownload(fileId);
           setDownloadUrl(finalDownloadUrl);
         } else {
@@ -2639,19 +2641,61 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
         version: version.trim(),
         oldVersion: oldVersion,
         downloadUrl: finalDownloadUrl.trim(),
+        fileId: newFileId,
         releaseNotes: releaseNotes.trim(),
         uploadedBy: currentUser?.email || 'System Admin',
         updatedAt: new Date().toISOString()
       };
 
       const existingHistory = Array.isArray(appUpdateConfig?.history) ? appUpdateConfig.history : [];
-      const updatedHistory = [historyEntry, ...existingHistory];
+      let updatedHistory = [historyEntry, ...existingHistory];
+
+      // Helper to parse file ID from download URLs if not explicitly stored
+      const getFileIdFromUrl = (url: string) => {
+        const match = url.match(/\/files\/([a-zA-Z0-9_-]+)/);
+        return match ? match[1] : null;
+      };
+
+      // Clean up older APKs: Keep at most 3 APK files on Appwrite
+      if (isAppwriteConfigured()) {
+        let apkCount = 0;
+        const processedHistory = await Promise.all(
+          updatedHistory.map(async (entry: any) => {
+            const fileId = entry.fileId || getFileIdFromUrl(entry.downloadUrl);
+            if (fileId) {
+              apkCount++;
+              if (apkCount > 3) {
+                // Delete the 4th or older APK file from Appwrite Storage
+                console.log(`Deleting old Appwrite APK file: ${fileId} for version ${entry.version}`);
+                await appwrite.deleteFile(fileId);
+                return {
+                  ...entry,
+                  fileId: undefined,
+                  downloadUrl: '',
+                  releaseNotes: entry.releaseNotes + ' (APK file deleted to free storage size)'
+                };
+              } else {
+                return {
+                  ...entry,
+                  fileId
+                };
+              }
+            }
+            return entry;
+          })
+        );
+        updatedHistory = processedHistory;
+      }
+
+      // If the currently active APK was deleted from history (i.e. if active downloadUrl was reset), update it
+      const currentActiveEntry = updatedHistory.find(h => h.version === version.trim());
+      const activeDownloadUrl = currentActiveEntry?.downloadUrl || finalDownloadUrl.trim();
 
       if (onSaveAppUpdateConfig) {
         await onSaveAppUpdateConfig({
           version: version.trim(),
           releaseNotes: releaseNotes.trim(),
-          downloadUrl: finalDownloadUrl.trim(),
+          downloadUrl: activeDownloadUrl,
           updatedAt: new Date().toISOString(),
           history: updatedHistory
         });
