@@ -118,7 +118,7 @@ export const organizationService = {
         await Promise.all(savePromises);
         console.log('Successfully synced organization profiles to Appwrite Database.');
       } catch (e) {
-        console.warn("Could not sync organization profiles to database:", e);
+        console.error("Could not sync organization profiles to database:", e);
       }
     }
   },

@@ -87,14 +87,14 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
             const docId = appwrite.getEmailDocId(ur.email);
             await appwrite.saveGlobalConfig(databaseId, docId, ur);
           } catch (singleErr) {
-            console.warn(`Could not sync user permission for ${ur.email}:`, singleErr);
+            console.error(`Could not sync user permission for ${ur.email}:`, singleErr);
           }
         });
 
         await Promise.all(savePromises);
         console.log('Successfully synced registration user permissions to Appwrite Database.');
       } catch (e: any) {
-        console.warn("Could not sync registration user permissions to database:", e);
+        console.error("Could not sync registration user permissions to database:", e);
       }
     }
   };

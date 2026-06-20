@@ -15,9 +15,13 @@ export const authService = {
         console.warn("Appwrite logout failed (already logged out or offline):", err);
       }
     }
-    // Clean session tokens / methods
-    storageService.remove('ttt_login_method');
-    storageService.remove('ttt_mock_user');
+    // Clean session tokens / methods and completely clear local storage cache
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (storageErr) {
+      console.warn("Failed to clear local/session storage on logout:", storageErr);
+    }
   },
 
   async handleEmailVerificationRedirect(
@@ -123,11 +127,14 @@ export const authService = {
               return exists;
             });
 
+            // Disable dangerous automatic cleanup of user permissions to avoid race conditions during new organization registration.
+            /*
             if (isSuper && orphanedCloudKeys.length > 0) {
               for (const key of orphanedCloudKeys) {
                 appwrite.deleteGlobalConfig(databaseId, key).catch(() => {});
               }
             }
+            */
 
             localRights = localRights.filter(ur => {
               if (ur.email.toLowerCase().trim() === email) return true;

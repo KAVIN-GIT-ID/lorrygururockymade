@@ -613,6 +613,7 @@ function AppContent() {
     }
     setCurrentUser(null);
     localStorage.clear();
+    sessionStorage.clear();
 
     // Clear all cookies to avoid session conflicts
     try {
@@ -976,7 +977,7 @@ function AppContent() {
           await appwrite.saveGlobalConfig(databaseId, docId, newOrgProfile);
           console.log('Directly saved new organization profile to Appwrite:', finalOrgId);
         } catch (e) {
-          console.warn("Could not save new organization profile directly to Appwrite:", e);
+          console.error("Could not save new organization profile directly to Appwrite:", e);
         }
       }
 

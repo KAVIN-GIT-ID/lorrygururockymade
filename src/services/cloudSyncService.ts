@@ -174,6 +174,8 @@ export const cloudSyncService = {
           return exists;
         });
 
+        // Disable dangerous automatic cleanup of user permissions to avoid race conditions during new organization registration.
+        /*
         if (isSuper && orphanedCloudKeys.length > 0) {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           console.info("Super Admin cleaning up orphaned user permissions from DB (onLoadCloudState):", orphanedCloudKeys);
@@ -183,6 +185,7 @@ export const cloudSyncService = {
             });
           }
         }
+        */
 
         localRights = localRights.filter(ur => {
           if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {

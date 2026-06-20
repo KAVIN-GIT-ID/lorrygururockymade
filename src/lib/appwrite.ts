@@ -207,7 +207,8 @@ class AppwriteService {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite is not configured.');
     }
-    return await this.account.create(ID.unique(), email, password, name);
+    const randomId = 'usr_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
+    return await this.account.create(randomId.substring(0, 36), email, password, name);
   }
 
   async logout() {
@@ -658,7 +659,13 @@ class AppwriteService {
     if (!isAppwriteConfigured()) return true;
     try {
       const ws = (this.realtime as any).socket;
-      return !!(ws && ws.readyState === 1); // 1 = WebSocket.OPEN
+      if (!ws) {
+        if (typeof navigator !== 'undefined') {
+          return navigator.onLine;
+        }
+        return true;
+      }
+      return ws.readyState === 1 || ws.readyState === 0; // 1 = WebSocket.OPEN, 0 = WebSocket.CONNECTING
     } catch (_) {
       return false;
     }
