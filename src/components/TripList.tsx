@@ -254,6 +254,7 @@ export default function TripList({
 
   // Master Details modal state for viewing full list of 21+ columns cleanly
   const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
+  const [activeTab, setActiveTab] = useState<'loads' | 'profit' | 'driver' | 'actions'>('loads');
 
   // Selected next trip ID for forwarding deficit/surplus
   const [selectedFwdTripId, setSelectedFwdTripId] = useState<string>('');
@@ -267,6 +268,7 @@ export default function TripList({
     setSelectedFwdAccountId('');
     setSelectedFwdMode('trip');
     setSelectedFwdDate(new Date().toISOString().substring(0, 10));
+    setActiveTab('loads');
   }, [viewingEntry]);
 
   useEffect(() => {
@@ -1127,6 +1129,14 @@ export default function TripList({
       {/* SINGLE MASTER TRIP COMPLETE 23-COLUMNS PRINT AUDIT TAB MODAL */}
       {viewingEntry && (() => {
         const m = getTripMetrics(viewingEntry);
+        const startingKM = Number(viewingEntry.startingKM) || 0;
+        const endingKM = Number(viewingEntry.endingKM) || 0;
+        const category4CategoryAdvances = (Array.isArray(viewingEntry.advances) ? viewingEntry.advances : []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+        const category3DriverAdvancePayments = (Array.isArray(viewingEntry.payments) ? viewingEntry.payments : [])
+          .filter(p => p.receivedBy === 'paid_to_driver_advance')
+          .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
+
         return (
           <div
             id="inspector-overlay"
@@ -1138,6 +1148,7 @@ export default function TripList({
               onClick={(e) => e.stopPropagation()}
               className="relative bg-white border border-slate-200 rounded-xl w-full max-w-4xl shadow-xl overflow-hidden animate-scale-up"
             >
+              <div className="hidden md:block">
               {/* Close Button top-right absolute */}
               <button
                 onClick={() => setViewingEntry(null)}
@@ -1992,7 +2003,376 @@ export default function TripList({
                   Finished Review
                 </button>
               </div>
+            </div>
 
+            {/* MOBILE VIEW */}
+            <div className="flex md:hidden flex-col max-h-[90vh] overflow-hidden bg-slate-50 text-slate-800">
+                {/* Mobile Sticky Header */}
+                <div className="p-4 bg-white border-b border-slate-200/85 sticky top-0 z-20 flex flex-col gap-2 shrink-0">
+                  <div className="flex justify-between items-center pr-8">
+                    <div>
+                      <span className="text-[10px] text-blue-600 font-extrabold uppercase tracking-wide">Trip Details</span>
+                      <h4 className="font-mono font-black text-slate-900 text-sm mt-0.5">{viewingEntry.tripNo}</h4>
+                    </div>
+                    {getStatusBadge(viewingEntry.status)}
+                  </div>
+                  
+                  {/* Vehicle & Driver Details HUD */}
+                  <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-150 rounded-lg p-2 mt-1">
+                    <div className="flex items-center gap-1 font-mono font-bold text-slate-900 shrink-0">
+                      <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                      {viewingEntry.truckNo}
+                    </div>
+                    <span className="text-slate-350">|</span>
+                    <div className="flex items-center gap-1 text-slate-600 truncate">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate font-semibold">{viewingEntry.driverName || 'No Driver'}</span>
+                    </div>
+                  </div>
+
+                  {/* Tab Selector */}
+                  <div className="flex border-b border-slate-200/50 mt-1.5 gap-2 text-xs font-semibold overflow-x-auto scrollbar-none py-1">
+                    {(['loads', 'profit', 'driver', 'actions'] as const).map((tab) => {
+                      const isActive = activeTab === tab;
+                      const label = {
+                        loads: 'Journey & Loads',
+                        profit: 'Profit & Costs',
+                        driver: 'Driver Ledger',
+                        actions: 'More Actions'
+                      }[tab];
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`pb-2 px-1 font-bold whitespace-nowrap transition-all border-b-2 cursor-pointer ${
+                            isActive 
+                              ? 'border-blue-600 text-blue-600 font-extrabold' 
+                              : 'border-transparent text-slate-500 hover:text-slate-750'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Tab Scrollable Body */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[60vh]">
+                  {/* LOADS TAB */}
+                  {activeTab === 'loads' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* Vertical timeline of subtrips */}
+                      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs space-y-4 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-2">Route Segments ({viewingEntry.subTrips?.length || 0})</h5>
+                        
+                        {(!viewingEntry.subTrips || viewingEntry.subTrips.length === 0) ? (
+                          <p className="text-xs text-slate-450 italic py-4 text-center">No route segments registered.</p>
+                        ) : (
+                          <div className="relative border-l border-slate-200 pl-4 ml-2 space-y-6 py-2">
+                            {viewingEntry.subTrips.map((s, idx) => (
+                              <div key={s.id || idx} className="relative">
+                                {/* Bullet indicator */}
+                                <span className="absolute -left-[21px] top-1 flex items-center justify-center w-3 h-3 rounded-full bg-blue-100 border border-blue-500">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                </span>
+                                
+                                <div className="space-y-1">
+                                  <div className="flex justify-between items-start">
+                                    <strong className="text-xs text-slate-900 block font-sans">
+                                      {s.routeFrom || 'Origin'} &rarr; {s.routeTo || 'Destination'}
+                                    </strong>
+                                    <span className="font-mono text-xs font-bold text-slate-800">
+                                      ₹{(s.income || 0).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                  
+                                  <p className="text-[10px] text-slate-500 flex items-center gap-2">
+                                    <span>Date: {dateFormatted(s.loadingDate)}</span>
+                                    <span>•</span>
+                                    <span>Odo: {s.startingKM} - {s.endingKM} KM ({(s.endingKM - s.startingKM) || 0} KM)</span>
+                                  </p>
+                                  <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
+                                    Broker: <span className="text-slate-800">{s.officeName || 'General'}</span>
+                                  </p>
+
+                                  {/* Cargo Expenses for this sub-trip */}
+                                  {s.cargoExpenses && s.cargoExpenses.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {s.cargoExpenses.map((ce) => (
+                                        <span key={ce.id} className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[9px] font-semibold border border-slate-200">
+                                          {ce.expenseType}: ₹{ce.amount} ({ce.bears === 'Org' ? 'Org' : 'Drv'})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mileage & Odometer Dashboard */}
+                      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs space-y-3">
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Odometer & Fuel Dashboard</h5>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="bg-slate-55 p-2.5 rounded-xl border border-slate-150">
+                            <span className="text-[9px] text-slate-450 uppercase font-bold">Odometer Range</span>
+                            <strong className="block text-slate-850 font-mono text-sm mt-1">{startingKM} &rarr; {endingKM}</strong>
+                            <span className="text-[10px] text-blue-600 font-bold block mt-0.5">{m.totalKM} KM Logged</span>
+                          </div>
+                          <div className="bg-slate-55 p-2.5 rounded-xl border border-slate-150">
+                            <span className="text-[9px] text-slate-455 uppercase font-bold">Fuel Efficiency</span>
+                            <strong className="block text-slate-850 font-mono text-sm mt-1">{m.fuelLiters > 0 ? `${m.millage.toFixed(2)} KM/L` : '0.00 KM/L'}</strong>
+                            <span className="text-[10px] text-amber-700 font-bold block mt-0.5">{m.fuelLiters} L / ₹{m.dieselExpense.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PROFIT TAB */}
+                  {activeTab === 'profit' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* Profit summary card */}
+                      <div className={`rounded-2xl border p-4.5 shadow-3xs relative overflow-hidden ${
+                        m.profit >= 0 
+                          ? 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-500/20 text-emerald-955' 
+                          : 'bg-gradient-to-br from-rose-500/10 to-red-500/5 border-rose-500/20 text-rose-955'
+                      }`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[9px] font-bold uppercase tracking-wider block opacity-75">Net Profit Margin</span>
+                            <strong className="text-xl font-black font-mono block mt-1">₹{m.profit.toLocaleString('en-IN')}</strong>
+                          </div>
+                          <div className={`px-2.5 py-1 rounded-full text-xs font-black border ${
+                            m.profit >= 0 ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-rose-100 border-rose-300 text-rose-800'
+                          }`}>
+                            {m.income > 0 ? Math.round((m.profit / m.income) * 100) : 0}% Margin
+                          </div>
+                        </div>
+                        
+                        {/* Split Bar */}
+                        <div className="mt-4 space-y-1">
+                          <div className="flex justify-between text-[10px] font-bold opacity-80">
+                            <span>Income: ₹{m.income.toLocaleString()}</span>
+                            <span>Expenses: ₹{m.totalExpense.toLocaleString()}</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden flex">
+                            <div className="bg-emerald-500 h-full" style={{ width: `${m.income > 0 ? Math.max(10, Math.min(90, (m.income - m.totalExpense) / m.income * 100)) : 50}%` }}></div>
+                            <div className="bg-rose-500 h-full flex-1"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Detailed expense group lists */}
+                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-3xs divide-y divide-slate-100">
+                        <div className="p-3.5 bg-slate-50/50 font-bold uppercase text-[9px] tracking-wider text-slate-500">Expenses Consolidated</div>
+                        
+                        {/* Diesel */}
+                        {m.dieselExpense > 0 && (
+                          <div className="p-3 text-xs flex justify-between items-center">
+                            <span className="font-semibold text-slate-705 flex items-center gap-1.5">
+                              <Fuel className="w-3.5 h-3.5 text-rose-500" /> Diesel / Fuel Expense
+                            </span>
+                            <strong className="font-mono text-rose-600">₹{m.dieselExpense.toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
+                        {/* Driver Wages */}
+                        {m.driverWages > 0 && (
+                          <div className="p-3 text-xs flex justify-between items-center">
+                            <span className="font-semibold text-slate-705 flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-blue-500" /> Driver Wages
+                            </span>
+                            <strong className="font-mono text-slate-800">₹{m.driverWages.toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
+                        {/* Loading / Unloading */}
+                        {(m.loadingExpense > 0 || m.unloadingExpense > 0) && (
+                          <div className="p-3 text-xs flex justify-between items-center">
+                            <span className="font-semibold text-slate-705 flex items-center gap-1.5">
+                              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" /> Cargo Loading & Unloading
+                            </span>
+                            <strong className="font-mono text-slate-800">₹{(m.loadingExpense + m.unloadingExpense).toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
+                        {/* RTO / Tolls */}
+                        {(m.rtoExpense > 0 || m.fastagExpense > 0) && (
+                          <div className="p-3 text-xs flex justify-between items-center">
+                            <span className="font-semibold text-slate-750 flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-500" /> RTO & Fastag Compliance
+                            </span>
+                            <strong className="font-mono text-slate-800">₹{(m.rtoExpense + m.fastagExpense).toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
+                        {/* Miscellaneous */}
+                        {m.otherExpense > 0 && (
+                          <div className="p-3 text-xs flex justify-between items-center">
+                            <span className="font-semibold text-slate-755 flex items-center gap-1.5">
+                              <Settings className="w-3.5 h-3.5 text-slate-500" /> Other/Misc Expenses
+                            </span>
+                            <strong className="font-mono text-slate-800">₹{m.otherExpense.toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DRIVER TAB */}
+                  {activeTab === 'driver' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* Driver Status Card */}
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold shrink-0">
+                            {viewingEntry.driverName ? viewingEntry.driverName.charAt(0).toUpperCase() : 'D'}
+                          </div>
+                          <div>
+                            <strong className="text-sm text-slate-900 block font-sans">{viewingEntry.driverName || 'No Assigned Driver'}</strong>
+                            <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Driver Balance
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Balance display */}
+                        <div className={`p-3 rounded-xl border flex justify-between items-center mt-1 ${
+                          m.driverBalance < 0 
+                            ? 'bg-amber-50 border-amber-200 text-amber-900' 
+                            : m.driverBalance > 0 
+                              ? 'bg-emerald-50 border-emerald-250 text-emerald-900' 
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                        }`}>
+                          <span className="text-[10px] font-bold uppercase tracking-wider">
+                            {m.driverBalance < 0 ? 'Recover from Driver' : m.driverBalance > 0 ? 'Pay Driver' : 'Balance Settled'}
+                          </span>
+                          <strong className="font-mono text-base font-black">
+                            ₹{Math.abs(m.driverBalance).toLocaleString('en-IN')}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Ledger logs */}
+                      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs space-y-3">
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Driver Ledger Logs</h5>
+                        <div className="space-y-2 text-xs">
+                          {/* Driver Wages */}
+                          {m.driverWages > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                              <span>Driver Wages Earned</span>
+                              <span className="text-emerald-700 font-bold font-mono">+₹{m.driverWages.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {/* Driver spend / reimbursement */}
+                          {m.driverPaidDirect > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                              <span>Direct Expenses Paid by Driver</span>
+                              <span className="text-emerald-700 font-bold font-mono">+₹{m.driverPaidDirect.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {/* Advances */}
+                          {totalIssuedToDriver > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                              <span>Advances Received</span>
+                              <span className="text-rose-600 font-bold font-mono">-₹{totalIssuedToDriver.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {/* Recoveries */}
+                          {m.driverRecovery > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                              <span>Direct Recoveries</span>
+                              <span className="text-rose-600 font-bold font-mono">-₹{m.driverRecovery.toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ACTIONS TAB */}
+                  {activeTab === 'actions' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* Quick sharing / printing list */}
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs space-y-3">
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Reports & Documents</h5>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <button
+                            onClick={() => {
+                              const html = generateTripPDF(viewingEntry, accounts);
+                              setPreviewHtml(html);
+                              setPreviewTitle(`Trip Report - ${viewingEntry.tripNo}`);
+                            }}
+                            className="flex flex-col items-center justify-center p-3 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100/60 transition gap-1.5 cursor-pointer font-semibold text-slate-700 font-sans"
+                          >
+                            <Printer className="w-5 h-5 text-emerald-600 animate-none shrink-0" />
+                            <span>Print Trip PDF</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const html = generateDriverReportPDF(viewingEntry, accounts);
+                              setPreviewHtml(html);
+                              setPreviewTitle(`Driver Settlement - ${viewingEntry.tripNo}`);
+                            }}
+                            className="flex flex-col items-center justify-center p-3 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100/60 transition gap-1.5 cursor-pointer font-semibold text-slate-700 font-sans"
+                          >
+                            <FileText className="w-5 h-5 text-indigo-600 animate-none shrink-0" />
+                            <span>Driver Report PDF</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Modify Record controls */}
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs space-y-3">
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-sans">Administration Options</h5>
+                        <div className="space-y-2">
+                          {canEditTrips && (
+                            <button
+                              onClick={() => {
+                                onEditEntry(viewingEntry);
+                                setViewingEntry(null);
+                              }}
+                              className="w-full py-2.5 border border-blue-200 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" /> Modify Journey Records
+                            </button>
+                          )}
+                          {canDeleteTrips && (
+                            <button
+                              onClick={() => {
+                                const msg = `Caution! Deleting Master Trip ${viewingEntry.tripNo} will permanently delete all sub-trip segments and payments. Continue?`;
+                                if (confirmAction) {
+                                  confirmAction(msg, () => {
+                                    onDeleteEntry(viewingEntry.id);
+                                    setViewingEntry(null);
+                                  }, "Delete Master Trip Journey");
+                                } else if (confirm(msg)) {
+                                  onDeleteEntry(viewingEntry.id);
+                                  setViewingEntry(null);
+                                }
+                              }}
+                              className="w-full py-2.5 border border-rose-200 rounded-xl bg-rose-50 hover:bg-rose-105 text-rose-705 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Wipe Trip Database Object
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Modal Footer */}
+                <div className="p-4 bg-white border-t border-slate-200/80 flex justify-end gap-2 sticky bottom-0 shrink-0">
+                  <button
+                    onClick={() => setViewingEntry(null)}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-750 text-white rounded-xl text-xs font-bold transition cursor-pointer text-center"
+                  >
+                    Done Reviewing
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         );

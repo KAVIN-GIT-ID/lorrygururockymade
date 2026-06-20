@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
 import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
+import { localChangelog } from '../local_changelog';
 import {
   Building2,
   Truck as TruckIcon,
@@ -49,6 +50,103 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
+
+const renderChangelog = (notes: string) => {
+  if (!notes) return <p className="italic text-slate-400">No details provided.</p>;
+  
+  const lines = notes
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  if (lines.length === 0) {
+    return <p className="italic text-slate-400">No details provided.</p>;
+  }
+
+  const newItems: string[] = [];
+  const changedItems: string[] = [];
+  const fixedItems: string[] = [];
+  const otherItems: string[] = [];
+
+  lines.forEach(line => {
+    let clean = line.replace(/^[\s\-*•+>]+/g, '').trim();
+    if (!clean) return;
+
+    const lower = clean.toLowerCase();
+    let matched = false;
+    
+    const newTags = ['[new]', '[added]', '[feature]', 'new:', 'added:', 'feature:'];
+    const changedTags = ['[changed]', '[removed]', '[updated]', '[improved]', 'changed:', 'removed:', 'updated:', 'improved:'];
+    const fixedTags = ['[fixed]', '[bugfix]', '[fix]', 'fixed:', 'bugfix:', 'fix:'];
+
+    for (const tag of newTags) {
+      if (lower.startsWith(tag)) {
+        clean = clean.slice(tag.length).trim();
+        newItems.push(clean);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) return;
+
+    for (const tag of changedTags) {
+      if (lower.startsWith(tag)) {
+        clean = clean.slice(tag.length).trim();
+        changedItems.push(clean);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) return;
+
+    for (const tag of fixedTags) {
+      if (lower.startsWith(tag)) {
+        clean = clean.slice(tag.length).trim();
+        fixedItems.push(clean);
+        matched = true;
+        break;
+      }
+    }
+    if (matched) return;
+
+    // Fallback classification based on keywords
+    if (lower.includes('fix') || lower.includes('bug') || lower.includes('issue') || lower.includes('error') || lower.includes('resolve')) {
+      fixedItems.push(clean);
+    } else if (lower.includes('change') || lower.includes('remove') || lower.includes('update') || lower.includes('improv') || lower.includes('replace') || lower.includes('delete') || lower.includes('refactor')) {
+      changedItems.push(clean);
+    } else if (lower.includes('add') || lower.includes('new') || lower.includes('create') || lower.includes('introduc')) {
+      newItems.push(clean);
+    } else {
+      otherItems.push(clean);
+    }
+  });
+
+  const renderSection = (title: string, items: string[], bulletColorClass: string, textColorClass: string) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="space-y-1 mt-2">
+        <span className={`text-[9px] font-black uppercase tracking-widest ${textColorClass} block mb-1`}>{title}</span>
+        <ul className="space-y-1.5 pl-0.5">
+          {items.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${bulletColorClass} mt-1.5 shrink-0`} />
+              <span className="text-slate-655 dark:text-slate-350 text-xs font-medium leading-relaxed">{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-3.5 mt-2">
+      {renderSection("What's New", newItems, 'bg-emerald-500 dark:bg-emerald-400', 'text-emerald-600 dark:text-emerald-400')}
+      {renderSection("Changes & Improvements", changedItems, 'bg-purple-500 dark:bg-purple-400', 'text-purple-650 dark:text-purple-400')}
+      {renderSection("Bug Fixes", fixedItems, 'bg-amber-500 dark:bg-amber-400', 'text-amber-600 dark:text-amber-400')}
+      {renderSection("Other Details", otherItems, 'bg-slate-500 dark:bg-slate-400', 'text-slate-550 dark:text-slate-455')}
+    </div>
+  );
+};
 
 interface BackendDashboardProps {
   organizationProfiles: OrganizationProfile[];
@@ -2592,7 +2690,7 @@ const getNextVersion = (ver?: string) => {
 
 function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: AppUpdateFormProps) {
   const [version, setVersion] = useState(() => getNextVersion(appUpdateConfig?.version));
-  const [releaseNotes, setReleaseNotes] = useState('');
+  const [releaseNotes, setReleaseNotes] = useState(() => localChangelog.join('\n'));
   const [downloadUrl, setDownloadUrl] = useState('');
   const [apkFile, setApkFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -2600,7 +2698,7 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
   useEffect(() => {
     if (appUpdateConfig?.version) {
       setVersion(getNextVersion(appUpdateConfig.version));
-      setReleaseNotes('');
+      setReleaseNotes(localChangelog.join('\n'));
       setDownloadUrl('');
       setApkFile(null);
     }
@@ -2637,12 +2735,21 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
       }
 
       const oldVersion = appUpdateConfig?.version || 'None';
+      const notesToPublish = releaseNotes.trim() || 
+        "[New] Premium tabbed Trip Details view for mobile screens\n" +
+        "[New] Vertical route stepper timeline showing segment info\n" +
+        "[New] Visual profit vs expense progress ratio chart indicator\n" +
+        "[New] Driver balance ledger cards and settlements panel\n" +
+        "[Changed] Replaced the complex desktop-first 23-column layout on mobile\n" +
+        "[Changed] Redesigned backend release logs into modern history cards\n" +
+        "[Fixed] Restructured update modal activation to prevent overlay issues on desktop";
+      
       const historyEntry = {
         version: version.trim(),
         oldVersion: oldVersion,
         downloadUrl: finalDownloadUrl.trim(),
         fileId: newFileId,
-        releaseNotes: releaseNotes.trim(),
+        releaseNotes: notesToPublish,
         uploadedBy: currentUser?.email || 'System Admin',
         updatedAt: new Date().toISOString()
       };
@@ -2694,11 +2801,22 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
       if (onSaveAppUpdateConfig) {
         await onSaveAppUpdateConfig({
           version: version.trim(),
-          releaseNotes: releaseNotes.trim(),
+          releaseNotes: notesToPublish,
           downloadUrl: activeDownloadUrl,
           updatedAt: new Date().toISOString(),
           history: updatedHistory
         });
+        
+        // Auto-clear local changelog file in local dev environment
+        try {
+          const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === 'local.lorryguru.in'
+            ? `${window.location.protocol}//${window.location.hostname}:5000`
+            : `${window.location.origin}/api`;
+          await fetch(`${backendUrl}/api/dev/clear-changelog`, { method: 'POST' });
+        } catch (e) {
+          console.warn("Auto-clearing local changelog failed (expected in production):", e);
+        }
+
         alert("App update published successfully!");
         setApkFile(null);
       }
@@ -2746,7 +2864,35 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
       </div>
 
       <div>
-        <label className="block text-[10px] font-bold text-slate-505 uppercase mb-1">Release Changelog Notes</label>
+        <div className="flex justify-between items-center mb-1">
+          <label className="block text-[10px] font-bold text-slate-505 uppercase">Release Changelog Notes</label>
+          {(window.location.hostname === 'localhost' || window.location.hostname === 'local.lorryguru.in') && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (window.confirm("Are you sure you want to clear the local changelog file?")) {
+                  try {
+                    const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === 'local.lorryguru.in'
+                      ? `${window.location.protocol}//${window.location.hostname}:5000`
+                      : `${window.location.origin}/api`;
+                    const res = await fetch(`${backendUrl}/api/dev/clear-changelog`, { method: 'POST' });
+                    if (res.ok) {
+                      setReleaseNotes('');
+                      alert("Local changelog cleared successfully!");
+                    } else {
+                      alert("Failed to clear local changelog file.");
+                    }
+                  } catch (err: any) {
+                    alert("Error: " + err.message);
+                  }
+                }
+              }}
+              className="text-[9px] font-bold text-red-500 hover:text-red-700 bg-red-50 dark:bg-red-955/20 px-2 py-0.5 rounded transition cursor-pointer"
+            >
+              Clear Local Changelog File
+            </button>
+          )}
+        </div>
         <textarea
           rows={4}
           placeholder="Describe features, bug fixes, or improvements in this release..."
@@ -2797,84 +2943,97 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
               {appUpdateConfig.releaseNotes && (
                 <div className="border-t border-slate-100 dark:border-slate-855 pt-2 mt-2">
                   <strong>Release Notes:</strong>
-                  <p className="mt-1 text-slate-605 whitespace-pre-wrap leading-relaxed">{appUpdateConfig.releaseNotes}</p>
+                  {renderChangelog(appUpdateConfig.releaseNotes)}
                 </div>
               )}
             </div>
           </div>
 
           {Array.isArray(appUpdateConfig.history) && appUpdateConfig.history.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="space-y-3.5">
               <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
                 Update & Rollback History Logs
               </span>
-              <div className="overflow-x-auto border border-slate-150 dark:border-slate-800 rounded-xl">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-500">
-                      <th className="p-3">Version</th>
-                      <th className="p-3">Uploaded By</th>
-                      <th className="p-3">Release Date</th>
-                      <th className="p-3">Notes</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                    {appUpdateConfig.history.map((h: any, idx: number) => {
-                      const isActive = h.version === appUpdateConfig.version;
-                      return (
-                        <tr key={idx} className={isActive ? "bg-purple-50/20 dark:bg-purple-955/10 font-semibold" : ""}>
-                          <td className="p-3 font-mono text-purple-600 dark:text-purple-400 font-bold">
+              <div className="space-y-3">
+                {appUpdateConfig.history.map((h: any, idx: number) => {
+                  const isActive = h.version === appUpdateConfig.version;
+                  return (
+                    <div 
+                      key={idx} 
+                      className={`p-4 rounded-xl border transition-all ${
+                        isActive 
+                          ? 'bg-purple-50/20 border-purple-200 dark:bg-purple-955/10 dark:border-purple-900/40 shadow-xs' 
+                          : 'bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-black text-purple-600 dark:text-purple-400">
                             v{h.version}
-                            {isActive && <span className="ml-1.5 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[8px] rounded-md font-bold uppercase tracking-wider">Active</span>}
-                          </td>
-                          <td className="p-3 text-slate-600 dark:text-slate-400">{h.uploadedBy}</td>
-                          <td className="p-3 text-slate-500">{new Date(h.updatedAt).toLocaleString()}</td>
-                          <td className="p-3 text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={h.releaseNotes}>{h.releaseNotes || '-'}</td>
-                          <td className="p-3 text-right space-x-2 shrink-0">
-                            {h.downloadUrl ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(h.downloadUrl);
-                                    alert("Download link copied to clipboard!");
-                                  }}
-                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded text-[10px] font-bold transition cursor-pointer"
-                                >
-                                  Copy Link
-                                </button>
-                                {!isActive && (
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      if (confirm(`Are you sure you want to rollback/activate version v${h.version}? All client apps running other versions will be prompted to update/revert to this version.`)) {
-                                        if (onSaveAppUpdateConfig) {
-                                          await onSaveAppUpdateConfig({
-                                            version: h.version,
-                                            releaseNotes: h.releaseNotes,
-                                            downloadUrl: h.downloadUrl,
-                                            updatedAt: new Date().toISOString(),
-                                            history: appUpdateConfig.history
-                                          });
-                                        }
-                                      }
-                                    }}
-                                    className="px-2 py-1 bg-amber-100 hover:bg-amber-200 dark:bg-amber-955/40 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded text-[10px] font-bold transition cursor-pointer"
-                                  >
-                                    Activate
-                                  </button>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">Unavailable</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </span>
+                          {isActive && (
+                            <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-[9px] rounded-md font-bold uppercase tracking-wider">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-400 font-medium">
+                          <span>Uploaded by: <strong className="text-slate-650 dark:text-slate-350">{h.uploadedBy || 'Admin'}</strong></span>
+                          <span>•</span>
+                          <span>{new Date(h.updatedAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Notes Section - Full notes layout that lists changes cleanly */}
+                      <div className="py-3 text-xs leading-relaxed text-slate-650 dark:text-slate-355">
+                        <strong className="block text-[10px] uppercase text-slate-400 font-bold mb-1">Changelog / Release Notes:</strong>
+                        {renderChangelog(h.releaseNotes)}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex justify-between items-center pt-2.5 border-t border-slate-100/60 dark:border-slate-800/60 text-xs">
+                        <span className="text-[10px] text-slate-400 italic">
+                          {h.oldVersion && h.oldVersion !== 'None' ? `Replaces: v${h.oldVersion}` : 'Initial Config'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {h.downloadUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(h.downloadUrl);
+                                alert("Download link copied to clipboard!");
+                              }}
+                              className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                            >
+                              Copy Link
+                            </button>
+                          )}
+                          {!isActive && h.downloadUrl && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to rollback/activate version v${h.version}? All client apps running other versions will be prompted to update/revert to this version.`)) {
+                                  if (onSaveAppUpdateConfig) {
+                                    await onSaveAppUpdateConfig({
+                                      version: h.version,
+                                      releaseNotes: h.releaseNotes,
+                                      downloadUrl: h.downloadUrl,
+                                      updatedAt: new Date().toISOString(),
+                                      history: appUpdateConfig.history
+                                    });
+                                  }
+                                }
+                              }}
+                              className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-955/20 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-450 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                            >
+                              Rollback & Activate
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

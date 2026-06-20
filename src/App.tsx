@@ -1446,7 +1446,7 @@ function AppContent() {
     <AppUpdateModal
       isOpen={
         typeof window !== 'undefined' &&
-        (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor) &&
+        (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || (import.meta.env.DEV && window.innerWidth < 768)) &&
         !!appUpdateConfig &&
         APP_VERSION !== appUpdateConfig.version &&
         dismissedVersion !== appUpdateConfig.version
