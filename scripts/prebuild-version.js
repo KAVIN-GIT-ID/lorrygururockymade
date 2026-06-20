@@ -35,13 +35,14 @@ function incrementVersion(ver) {
 }
 
 async function run() {
-  console.log('=== [Build-Time Version Controller] ===');
+  const isDev = process.argv.includes('--dev');
+  console.log(`=== [Build-Time Version Controller (${isDev ? 'Development' : 'Production'})] ===`);
   
   let currentLocalVersion = getLocalVersion();
-  let nextVersion = incrementVersion(currentLocalVersion);
+  let nextVersion = isDev ? currentLocalVersion : incrementVersion(currentLocalVersion);
 
   if (!endpoint || !projectId || !apiKey) {
-    console.warn('ℹ Appwrite environment variables not fully configured. Using incremented local version.');
+    console.warn(`ℹ Appwrite environment variables not fully configured. Using ${isDev ? 'current' : 'incremented'} local version.`);
     writeVersionFile(nextVersion);
     return;
   }
@@ -64,12 +65,12 @@ async function run() {
     
     if (appwriteVersion) {
       console.log(`✓ Fetched latest version from Appwrite: v${appwriteVersion}`);
-      nextVersion = incrementVersion(appwriteVersion);
+      nextVersion = isDev ? appwriteVersion : incrementVersion(appwriteVersion);
     } else {
-      console.log(`ℹ No version found in Appwrite cfg_app_version config. Incrementing local: v${currentLocalVersion} -> v${nextVersion}`);
+      console.log(`ℹ No version found in Appwrite cfg_app_version config. Resolving local: v${currentLocalVersion} -> v${nextVersion}`);
     }
   } catch (err) {
-    console.warn(`⚠️ Failed to fetch latest version from Appwrite (${err.message}). Incrementing local: v${currentLocalVersion} -> v${nextVersion}`);
+    console.warn(`⚠️ Failed to fetch latest version from Appwrite (${err.message}). Resolving local: v${currentLocalVersion} -> v${nextVersion}`);
   }
 
   writeVersionFile(nextVersion);

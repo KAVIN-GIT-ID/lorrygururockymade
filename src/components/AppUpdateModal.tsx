@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Download, Sparkles, X, ChevronRight, Info, ChevronLeft, Wrench, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 interface AppUpdateModalProps {
@@ -54,8 +54,42 @@ export default function AppUpdateModal({
   downloadUrl
 }: AppUpdateModalProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isProgrammaticScroll = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   if (!isOpen) return null;
+
+  const handleScroll = () => {
+    if (isProgrammaticScroll.current) return;
+    
+    if (scrollContainerRef.current) {
+      const { scrollLeft, clientWidth } = scrollContainerRef.current;
+      if (clientWidth > 0) {
+        const index = Math.round(scrollLeft / clientWidth);
+        if (index !== currentSlide && index >= 0) {
+          setCurrentSlide(index);
+        }
+      }
+    }
+  };
+
+  const scrollToSlide = (idx: number) => {
+    if (scrollContainerRef.current) {
+      isProgrammaticScroll.current = true;
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      
+      scrollContainerRef.current.scrollTo({
+        left: idx * scrollContainerRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setCurrentSlide(idx);
+
+      scrollTimeoutRef.current = setTimeout(() => {
+        isProgrammaticScroll.current = false;
+      }, 500);
+    }
+  };
 
   const handleDownload = () => {
     if (!downloadUrl) {
@@ -237,39 +271,47 @@ export default function AppUpdateModal({
           </button>
         </div>
 
-        {/* Carousel Screen */}
-        <div className="flex-1 flex flex-col gap-5 justify-between relative z-10 animate-fade-in" key={currentSlide}>
-          <div className="space-y-5">
-            {/* Title Section */}
-            <div className="text-center space-y-1">
-              <h2 className="text-xl font-black text-slate-850 dark:text-white flex items-center justify-center gap-2">
-                {activeSlide.icon}
-                <span>{activeSlide.title}</span>
-              </h2>
-              <p className="text-[11px] text-slate-450 dark:text-slate-550 font-semibold">{activeSlide.subtitle}</p>
-            </div>
-
-            {/* List Section: iOS Styled Row Layout */}
-            <div className="space-y-4 max-h-[250px] overflow-y-auto pr-1">
-              {activeSlide.items.map((item, idx) => (
-                <div key={idx} className="flex gap-3.5 items-start">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-850/50 border border-slate-100 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 font-bold text-xs shadow-xs mt-0.5">
-                    {idx + 1}
-                  </div>
-                  <div className="space-y-0.5">
-                    <h4 className="text-xs font-bold text-slate-850 dark:text-slate-200 leading-tight">
-                      {item.title}
-                    </h4>
-                    {item.description && (
-                      <p className="text-[11px] text-slate-450 dark:text-slate-400 leading-relaxed font-medium">
-                        {item.description}
-                      </p>
-                    )}
-                  </div>
+        {/* Carousel Screen - Scrollable container */}
+        <div 
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar relative z-10 w-full"
+        >
+          {slides.map((slide, slideIdx) => (
+            <div key={slideIdx} className="w-full shrink-0 snap-center px-1 flex flex-col gap-5 justify-between">
+              <div className="space-y-5">
+                {/* Title Section */}
+                <div className="text-center space-y-1">
+                  <h2 className="text-xl font-black text-slate-850 dark:text-white flex items-center justify-center gap-2">
+                    {slide.icon}
+                    <span>{slide.title}</span>
+                  </h2>
+                  <p className="text-[11px] text-slate-450 dark:text-slate-550 font-semibold">{slide.subtitle}</p>
                 </div>
-              ))}
+
+                {/* List Section: iOS Styled Row Layout */}
+                <div className="space-y-4 max-h-[250px] overflow-y-auto pr-1">
+                  {slide.items.map((item, idx) => (
+                    <div key={idx} className="flex gap-3.5 items-start">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-850/50 border border-slate-100 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 font-bold text-xs shadow-xs mt-0.5">
+                        {idx + 1}
+                      </div>
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-bold text-slate-850 dark:text-slate-200 leading-tight">
+                          {item.title}
+                        </h4>
+                        {item.description && (
+                          <p className="text-[11px] text-slate-450 dark:text-slate-400 leading-relaxed font-medium">
+                            {item.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
 
         {/* Dot Indicators */}
@@ -278,7 +320,7 @@ export default function AppUpdateModal({
             {slides.map((_, idx) => (
               <button
                 key={idx}
-                onClick={() => setCurrentSlide(idx)}
+                onClick={() => scrollToSlide(idx)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
                   currentSlide === idx 
                     ? 'w-4 bg-blue-600 dark:bg-blue-500' 
@@ -303,7 +345,7 @@ export default function AppUpdateModal({
         <div className="flex gap-3 items-center relative z-10">
           {currentSlide > 0 && (
             <button
-              onClick={() => setCurrentSlide(prev => Math.max(0, prev - 1))}
+              onClick={() => scrollToSlide(Math.max(0, currentSlide - 1))}
               className="h-11 px-4 border border-slate-250 dark:border-slate-800 text-slate-655 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-2xl flex items-center justify-center font-bold text-xs transition cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />

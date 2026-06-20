@@ -26,7 +26,10 @@ const MonthlyReport = lazy(() => import('./components/MonthlyReport'));
 const AuditLogView = lazy(() => import('./components/AuditLogView'));
 const TyreMaster = lazy(() => import('./components/TyreMaster'));
 const UserAccessControl = lazy(() => import('./components/UserAccessControl'));
-const BackendDashboard = lazy(() => import('./components/BackendDashboard'));
+const isMobileTarget = import.meta.env.VITE_BUILD_TARGET === 'mobile';
+const BackendDashboard = isMobileTarget
+  ? () => null
+  : lazy(() => import('./components/BackendDashboard'));
 const BillingHistory = lazy(() => import('./components/BillingHistory'));
 const VoiceAssistant = lazy(() => import('./components/VoiceAssistant'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -44,7 +47,9 @@ import VerificationRequiredScreen from './components/VerificationRequiredScreen'
 import ProfileModal from './components/ProfileModal';
 import MobileChangeWizardModal from './components/MobileChangeWizardModal';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
-import AppUpdateModal from './components/AppUpdateModal';
+const AppUpdateModal = !isMobileTarget
+  ? () => null
+  : lazy(() => import('./components/AppUpdateModal'));
 import MobileBottomTabBar from './components/MobileBottomTabBar';
 import MobileHomeTab from './components/MobileHomeTab';
 import MobileAccountTab from './components/MobileAccountTab';
@@ -247,6 +252,8 @@ function AppContent() {
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileActiveTab, setProfileActiveTab] = useState<'SETTINGS' | 'SUPPORT'>('SETTINGS');
+  const [emailVerificationSuccess, setEmailVerificationSuccess] = useState(false);
+  const [emailVerificationError, setEmailVerificationError] = useState<string | null>(null);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
   const {
@@ -497,13 +504,7 @@ function AppContent() {
 
         const user = await appwrite.getCurrentUser();
         if (user) {
-          const email = (user.email || '').toLowerCase().trim();
-          const updated = userRightsList.map(ur =>
-            ur.email.toLowerCase().trim() === email ? { ...ur, isEmailVerified: true } : ur
-          );
-          setUserRightsList(updated);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-          await pushPermissionsToCloud(updated);
+          // Reconcile session fetches the latest cloud configs/rights list and updates user verification status safely
           await reconcileSession(user);
         }
       } else {
@@ -517,8 +518,10 @@ function AppContent() {
           localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
         }
       }
+      setEmailVerificationSuccess(true);
     } catch (err: any) {
       console.error("Email verification failure:", err);
+      setEmailVerificationError(err.message || err);
       showNotification(`Email verification failed: ${err.message || err}`);
     } finally {
       window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
@@ -1443,20 +1446,22 @@ function AppContent() {
   }, [profileModalOpen, setup2FAOpen, disable2FAOpen, confirmModal, showPhoneUpdateModal]);
 
   const renderAppUpdateModal = () => (
-    <AppUpdateModal
-      isOpen={
-        typeof window !== 'undefined' &&
-        (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || (import.meta.env.DEV && window.innerWidth < 768)) &&
-        !!appUpdateConfig &&
-        APP_VERSION !== appUpdateConfig.version &&
-        dismissedVersion !== appUpdateConfig.version
-      }
-      onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
-      currentVersion={APP_VERSION}
-      latestVersion={appUpdateConfig?.version || ''}
-      releaseNotes={appUpdateConfig?.releaseNotes || ''}
-      downloadUrl={appUpdateConfig?.downloadUrl || ''}
-    />
+    <Suspense fallback={null}>
+      <AppUpdateModal
+        isOpen={
+          typeof window !== 'undefined' &&
+          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || (import.meta.env.DEV && window.innerWidth < 768)) &&
+          !!appUpdateConfig &&
+          APP_VERSION !== appUpdateConfig.version &&
+          dismissedVersion !== appUpdateConfig.version
+        }
+        onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
+        currentVersion={APP_VERSION}
+        latestVersion={appUpdateConfig?.version || ''}
+        releaseNotes={appUpdateConfig?.releaseNotes || ''}
+        downloadUrl={appUpdateConfig?.downloadUrl || ''}
+      />
+    </Suspense>
   );
 
   const isVersionNewer = (current: string, latest: string) => {
@@ -3360,6 +3365,75 @@ function AppContent() {
       "Clear Database Journals"
     );
   };
+
+  if (emailVerificationSuccess) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500/10 rounded-full border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10">
+            <CheckCircle className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight">Email Verified!</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Your email address has been successfully verified. Your account configuration and organization setup are complete.
+            </p>
+          </div>
+          <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-xl text-left text-xs space-y-2 text-slate-300">
+            <p className="font-semibold text-slate-200">What to do next:</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>Open the <strong>LorryGuru Mobile App</strong> on your phone.</li>
+              <li>Tap on <strong>Refresh Status</strong> to reload your dashboard.</li>
+              <li>If you closed the app, simply log in using your email and password.</li>
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmailVerificationSuccess(false);
+              navigate(currentUser ? '/console/dashboard' : '/login');
+            }}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/10 hover:shadow-blue-600/25 transition cursor-pointer"
+          >
+            Go to Console
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (emailVerificationError) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
+        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-rose-500/10 rounded-full border border-rose-500/30 text-rose-450">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight">Verification Failed</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              We encountered an issue while verifying your email address. The link might have expired or is invalid.
+            </p>
+            <p className="text-[11px] font-mono text-rose-400 bg-rose-950/20 border border-rose-500/20 p-2 rounded-lg mt-2">
+              {emailVerificationError}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmailVerificationError(null);
+              navigate('/login');
+            }}
+            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs transition cursor-pointer"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (resetPasswordState && resetPasswordState.active) {
     return (
