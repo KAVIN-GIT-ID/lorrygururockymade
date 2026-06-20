@@ -15,6 +15,7 @@ interface MobileAccountTabProps {
   setDisable2FAOpen: (open: boolean) => void;
   clientUnreadCount: number;
   showNotification: (msg: string) => void;
+  appVersion?: string;
 }
 
 export default function MobileAccountTab({
@@ -29,7 +30,8 @@ export default function MobileAccountTab({
   setSetup2FAOpen,
   setDisable2FAOpen,
   clientUnreadCount,
-  showNotification
+  showNotification,
+  appVersion
 }: MobileAccountTabProps) {
   const [copied, setCopied] = React.useState(false);
 
@@ -176,6 +178,14 @@ export default function MobileAccountTab({
           <span>Sign Out of LorryGuru</span>
         </button>
       </div>
+
+      {appVersion && (
+        <div className="text-center pt-2">
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold tracking-wide">
+            App Version v{appVersion}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

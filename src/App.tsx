@@ -47,9 +47,7 @@ import VerificationRequiredScreen from './components/VerificationRequiredScreen'
 import ProfileModal from './components/ProfileModal';
 import MobileChangeWizardModal from './components/MobileChangeWizardModal';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
-const AppUpdateModal = !isMobileTarget
-  ? () => null
-  : lazy(() => import('./components/AppUpdateModal'));
+const AppUpdateModal = lazy(() => import('./components/AppUpdateModal'));
 import MobileBottomTabBar from './components/MobileBottomTabBar';
 import MobileHomeTab from './components/MobileHomeTab';
 import MobileAccountTab from './components/MobileAccountTab';
@@ -1450,9 +1448,9 @@ function AppContent() {
       <AppUpdateModal
         isOpen={
           typeof window !== 'undefined' &&
-          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || (import.meta.env.DEV && window.innerWidth < 768)) &&
+          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || window.innerWidth < 768) &&
           !!appUpdateConfig &&
-          APP_VERSION !== appUpdateConfig.version &&
+          isVersionNewer(APP_VERSION, appUpdateConfig.version) &&
           dismissedVersion !== appUpdateConfig.version
         }
         onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
@@ -4010,6 +4008,7 @@ function AppContent() {
                 setDisable2FAOpen={setDisable2FAOpen}
                 clientUnreadCount={getClientUnreadTicketsCount()}
                 showNotification={showNotification}
+                appVersion={APP_VERSION}
               />
             )}
           </Suspense>
