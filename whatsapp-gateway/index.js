@@ -30,7 +30,8 @@ const SSL_CERT_PATH = process.env.SSL_CERT_PATH;
 let sock = null;
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+  const authFolder = 'auth_info_baileys';
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
   let version = [2, 3000, 1015901307]; // High version fallback to prevent 405
   try {
@@ -46,6 +47,8 @@ async function connectToWhatsApp() {
     version,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
+    keepAliveIntervalMs: 30000, // Keep-alive socket ping frame every 30 seconds
+    defaultQueryTimeoutMs: 60000, // Extend query timeout to 60 seconds to avoid timed-out booms
   });
 
   sock.ev.on('connection.update', (update) => {
@@ -60,12 +63,21 @@ async function connectToWhatsApp() {
     if (connection === 'close') {
       const error = lastDisconnect?.error;
       const statusCode = error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const shouldReconnect = !isLoggedOut;
+
       console.error(`WhatsApp connection closed. Status Code: ${statusCode || 'unknown'}. Error:`, error);
-      console.log(`Reconnecting in 5 seconds... (Should Reconnect: ${shouldReconnect})`);
-      
-      if (shouldReconnect) {
+
+      if (isLoggedOut) {
+        console.log('Session has been logged out or revoked. Deleting credentials folder and restarting for fresh pairing...');
+        try {
+          fs.rmSync(authFolder, { recursive: true, force: true });
+        } catch (rmErr) {
+          console.warn('Failed to clear auth folder:', rmErr);
+        }
+        setTimeout(connectToWhatsApp, 2000);
+      } else if (shouldReconnect) {
+        console.log('Reconnecting in 5 seconds...');
         setTimeout(connectToWhatsApp, 5000);
       }
     } else if (connection === 'open') {
@@ -96,7 +108,7 @@ app.post('/send-otp', async (req, res) => {
     const messageContent = req.body.message || `🔑 *FleetTrack Pro OTP Verification Code*\n\nYour security verification code is: *${code}*\n\nPlease enter this on your dashboard to verify your identity. Valid for 10 minutes.`;
 
     await sock.sendMessage(jid, { text: messageContent });
-    
+
     console.log(`[GateWay] Successfully sent WhatsApp message to ${phone}`);
     return res.status(200).json({ success: true, message: 'Message sent.' });
   } catch (err) {

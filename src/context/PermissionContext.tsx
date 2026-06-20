@@ -60,7 +60,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const loggedInEmail = (currentUser?.email || '').toLowerCase().trim();
+        const loggedInEmail = (currentUser?.email || forceEmail || '').toLowerCase().trim();
         const isNotLoggedIn = !currentUser;
         const prevRights = userRightsList;
 
@@ -72,6 +72,10 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
             return;
           }
 
+          if (isNotLoggedIn && loggedInEmail && !isSelf) {
+            return;
+          }
+
           // Change-detection: Only save if new or modified (unless forced)
           const isForced = forceEmail && ur.email.toLowerCase().trim() === forceEmail.toLowerCase().trim();
           const prevUr = prevRights.find(p => p.email.toLowerCase() === ur.email.toLowerCase());
@@ -79,8 +83,12 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
             return;
           }
 
-          const docId = appwrite.getEmailDocId(ur.email);
-          await appwrite.saveGlobalConfig(databaseId, docId, ur);
+          try {
+            const docId = appwrite.getEmailDocId(ur.email);
+            await appwrite.saveGlobalConfig(databaseId, docId, ur);
+          } catch (singleErr) {
+            console.warn(`Could not sync user permission for ${ur.email}:`, singleErr);
+          }
         });
 
         await Promise.all(savePromises);
