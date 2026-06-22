@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense } from '../types';
+import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense, mutateRecord, importLegacyCargoExpenses } from '../types';
 import { indianCities } from './indianCities';
 import {
   X, Calculator, Calendar, Landmark, Coins, Plus, Trash2, Edit2,
-  Fuel, Gauge, MapPin, BadgeCent, ListCollapse, HelpCircle
+  Fuel, Gauge, MapPin, BadgeCent, ListCollapse, HelpCircle, AlertCircle
 } from 'lucide-react';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface TripFormProps {
   isOpen: boolean;
@@ -19,220 +20,10 @@ interface TripFormProps {
   canViewDrivers?: boolean;
   orgProfile?: OrganizationProfile;
   trips?: TripEntry[];
+  onSaveTrips?: (newTrips: TripEntry[]) => void;
+  confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
+  currentUserId?: string;
 }
-
-export const importLegacyCargoExpenses = (s: SubTrip, orgProfile?: OrganizationProfile): CargoExpense[] => {
-  const list: CargoExpense[] = [];
-  const genId = (prefix: string) => prefix + '-' + Math.random().toString(36).substring(2, 7);
-
-  // 1. Loading
-  if (s.loadingExpense && Number(s.loadingExpense) > 0) {
-    const amt = Number(s.loadingExpense);
-    const isPaidByDriver = s.loadingPaidByDriver !== undefined ? s.loadingPaidByDriver : true;
-    const deductedFrom = s.loadingDeductedFrom || 'DriverDirect';
-    if (s.loadingBearsOrg !== undefined || s.loadingBearsDriver !== undefined) {
-      const orgAmt = Number(s.loadingBearsOrg) || 0;
-      const drvAmt = Number(s.loadingBearsDriver) || 0;
-      if (orgAmt > 0) {
-        list.push({
-          id: genId('load-org'),
-          expenseType: 'Loading',
-          amount: orgAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Org'
-        });
-      }
-      if (drvAmt > 0) {
-        list.push({
-          id: genId('load-drv'),
-          expenseType: 'Loading',
-          amount: drvAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Driver'
-        });
-      }
-    } else {
-      const bears = s.loadingBears || 'Org';
-      list.push({
-        id: genId('load'),
-        expenseType: 'Loading',
-        amount: amt,
-        paidByDriver: isPaidByDriver,
-        deductedFrom,
-        bears: bears as 'Org' | 'Driver' | 'Office'
-      });
-    }
-  }
-
-  // 2. Unloading
-  if (s.unloadingExpense && Number(s.unloadingExpense) > 0) {
-    const amt = Number(s.unloadingExpense);
-    const isPaidByDriver = s.unloadingPaidByDriver !== undefined ? s.unloadingPaidByDriver : true;
-    const deductedFrom = s.unloadingDeductedFrom || 'DriverDirect';
-    if (s.unloadingBearsOrg !== undefined || s.unloadingBearsDriver !== undefined) {
-      const orgAmt = Number(s.unloadingBearsOrg) || 0;
-      const drvAmt = Number(s.unloadingBearsDriver) || 0;
-      if (orgAmt > 0) {
-        list.push({
-          id: genId('unload-org'),
-          expenseType: 'Unloading',
-          amount: orgAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Org'
-        });
-      }
-      if (drvAmt > 0) {
-        list.push({
-          id: genId('unload-drv'),
-          expenseType: 'Unloading',
-          amount: drvAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Driver'
-        });
-      }
-    } else {
-      const bears = s.unloadingBears || 'Org';
-      list.push({
-        id: genId('unload'),
-        expenseType: 'Unloading',
-        amount: amt,
-        paidByDriver: isPaidByDriver,
-        deductedFrom,
-        bears: bears as 'Org' | 'Driver' | 'Office'
-      });
-    }
-  }
-
-  // 3. Brokerage
-  if (s.brokerageExpense && Number(s.brokerageExpense) > 0) {
-    const amt = Number(s.brokerageExpense);
-    const isPaidByDriver = s.brokeragePaidByDriver !== undefined ? s.brokeragePaidByDriver : true;
-    const deductedFrom = s.brokerageDeductedFrom || 'DriverDirect';
-    const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-    if (s.brokerageBearsOrg !== undefined || s.brokerageBearsDriver !== undefined) {
-      const orgAmt = Number(s.brokerageBearsOrg) || 0;
-      const drvAmt = Number(s.brokerageBearsDriver) || 0;
-      if (orgAmt > 0) {
-        list.push({
-          id: genId('broke-org'),
-          expenseType: 'Brokerage',
-          amount: orgAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Org'
-        });
-      }
-      if (drvAmt > 0) {
-        list.push({
-          id: genId('broke-drv'),
-          expenseType: 'Brokerage',
-          amount: drvAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Driver'
-        });
-      }
-    } else {
-      const bears = s.brokerageBears || defaultBears;
-      list.push({
-        id: genId('broke'),
-        expenseType: 'Brokerage',
-        amount: amt,
-        paidByDriver: isPaidByDriver,
-        deductedFrom,
-        bears: bears as 'Org' | 'Driver' | 'Office'
-      });
-    }
-  }
-
-  // 4. Crossing
-  if (s.crossingExpense && Number(s.crossingExpense) > 0) {
-    const amt = Number(s.crossingExpense);
-    const isPaidByDriver = s.crossingPaidByDriver !== undefined ? s.crossingPaidByDriver : true;
-    const deductedFrom = s.crossingDeductedFrom || 'DriverDirect';
-    if (s.crossingBearsOrg !== undefined || s.crossingBearsDriver !== undefined) {
-      const orgAmt = Number(s.crossingBearsOrg) || 0;
-      const drvAmt = Number(s.crossingBearsDriver) || 0;
-      if (orgAmt > 0) {
-        list.push({
-          id: genId('cross-org'),
-          expenseType: 'Crossing',
-          amount: orgAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Org'
-        });
-      }
-      if (drvAmt > 0) {
-        list.push({
-          id: genId('cross-drv'),
-          expenseType: 'Crossing',
-          amount: drvAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Driver'
-        });
-      }
-    } else {
-      const bears = s.crossingBears || 'Org';
-      list.push({
-        id: genId('cross'),
-        expenseType: 'Crossing',
-        amount: amt,
-        paidByDriver: isPaidByDriver,
-        deductedFrom,
-        bears: bears as 'Org' | 'Driver' | 'Office'
-      });
-    }
-  }
-
-  // 5. RMC
-  if (s.rmcExpense && Number(s.rmcExpense) > 0) {
-    const amt = Number(s.rmcExpense);
-    const isPaidByDriver = s.rmcPaidByDriver !== undefined ? s.rmcPaidByDriver : true;
-    const deductedFrom = s.rmcDeductedFrom || 'DriverDirect';
-    if (s.rmcBearsOrg !== undefined || s.rmcBearsDriver !== undefined) {
-      const orgAmt = Number(s.rmcBearsOrg) || 0;
-      const drvAmt = Number(s.rmcBearsDriver) || 0;
-      if (orgAmt > 0) {
-        list.push({
-          id: genId('rmc-org'),
-          expenseType: 'RMC',
-          amount: orgAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Org'
-        });
-      }
-      if (drvAmt > 0) {
-        list.push({
-          id: genId('rmc-drv'),
-          expenseType: 'RMC',
-          amount: drvAmt,
-          paidByDriver: isPaidByDriver,
-          deductedFrom,
-          bears: 'Driver'
-        });
-      }
-    } else {
-      const bears = s.rmcBears || 'Org';
-      list.push({
-        id: genId('rmc'),
-        expenseType: 'RMC',
-        amount: amt,
-        paidByDriver: isPaidByDriver,
-        deductedFrom,
-        bears: bears as 'Org' | 'Driver' | 'Office'
-      });
-    }
-  }
-
-  return list;
-};
 
 export default function TripForm({
   isOpen,
@@ -246,7 +37,10 @@ export default function TripForm({
   editingEntry,
   canViewDrivers = true,
   orgProfile,
-  trips
+  trips,
+  onSaveTrips,
+  confirmAction,
+  currentUserId
 }: TripFormProps) {
   // Trip group keying
   const [tripNoOption, setTripNoOption] = useState<'AUTO' | 'EXISTING'>('AUTO');
@@ -352,6 +146,25 @@ export default function TripForm({
   const [newAdvFromAccount, setNewAdvFromAccount] = useState('');
   const [newAdvNotes, setNewAdvNotes] = useState('');
   const [newAdvReceivedByDriverDirectly, setNewAdvReceivedByDriverDirectly] = useState(false);
+
+  // Quick carry forward / transfer states
+  const [showQuickFwdPanel, setShowQuickFwdPanel] = useState(false);
+  const [selectedFwdTripId, setSelectedFwdTripId] = useState('');
+  const [selectedFwdMode, setSelectedFwdMode] = useState<'trip' | 'account'>('trip');
+  const [selectedFwdAccountId, setSelectedFwdAccountId] = useState('');
+  const [selectedFwdDate, setSelectedFwdDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [selectedFwdAmount, setSelectedFwdAmount] = useState<number | ''>('');
+
+
+  // Reset forward options when isOpen or editingEntry changes
+  useEffect(() => {
+    setShowQuickFwdPanel(false);
+    setSelectedFwdTripId('');
+    setSelectedFwdMode('trip');
+    setSelectedFwdAccountId('');
+    setSelectedFwdDate(new Date().toISOString().substring(0, 10));
+    setSelectedFwdAmount('');
+  }, [isOpen, editingEntry]);
 
   // Auto-fill active lists
   const todayStr = new Date().toISOString().substring(0, 10);
@@ -593,145 +406,32 @@ export default function TripForm({
       status,
       notes,
       rtoExpense,
+      rtoPaidByDriver,
       dieselLiters,
       dieselRate,
       dieselAmount,
       addBlueExpense,
+      addBluePaidByDriver,
       fastagExpense,
-      otherExpense
+      fastagPaidByDriver,
+      otherExpense,
+      otherPaidByDriver,
+      advances
     };
     return getTripMetrics(tempTrip);
   };
 
   const metrics = draftTripMetrics();
 
-  // Driver spends and balance calculation (Requirement 4)
-  // Driver spends and balance calculation (Requirement 4)
-  const calculateDriverMetrics = () => {
-    // 1. Fuels paid by driver
-    const fuelsDriverSpend = (fuels || []).reduce((sum, f) => {
-      if (f.paymentMode === 'driver' || f.paymentMode === 'Driver') {
-        return sum + (Number(f.amount) || 0);
-      }
-      return sum;
-    }, 0);
+  const { driverBalance, totalDriverSpend, totalIssuedToDriver } = metrics;
 
-    // 2. Common trip-level expenses paid by driver
-    let tripLevelDriverSpend = 0;
-    if (rtoPaidByDriver && rtoExpense) {
-      tripLevelDriverSpend += Number(rtoExpense) || 0;
+  // Auto-fill selectedFwdAmount when panel opens or driverBalance changes
+  useEffect(() => {
+    if (showQuickFwdPanel) {
+      setSelectedFwdAmount(Math.abs(driverBalance));
     }
-    if (addBluePaidByDriver && addBlueExpense) {
-      tripLevelDriverSpend += Number(addBlueExpense) || 0;
-    }
-    if (fastagPaidByDriver && fastagExpense) {
-      tripLevelDriverSpend += Number(fastagExpense) || 0;
-    }
-    if (otherPaidByDriver && otherExpense) {
-      tripLevelDriverSpend += Number(otherExpense) || 0;
-    }
+  }, [showQuickFwdPanel, driverBalance]);
 
-    // 3. SubTrip specific cargo level loading/unloading, brokerage, crossing & driver wages
-    let subTripsDriverSpend = 0;
-    let driverRecovery = 0;
-
-    (subTrips || []).forEach((st) => {
-      if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-        for (const exp of st.cargoExpenses) {
-          const amount = Number(exp.amount) || 0;
-          const isPaidByDriver = !!exp.paidByDriver;
-
-          if (exp.bears === 'Org' || exp.bears === 'Office') {
-            if (isPaidByDriver) {
-              subTripsDriverSpend += amount;
-            }
-          } else if (exp.bears === 'Driver') {
-            if (!isPaidByDriver) {
-              driverRecovery += amount;
-            }
-          }
-        }
-      } else {
-        // Legacy fallback
-        // 1. Loading
-        const loadAmt = Number(st.loadingExpense) || 0;
-        const loadBearsOrg = st.loadingBearsOrg !== undefined ? Number(st.loadingBearsOrg) : (st.loadingBears === 'Org' ? loadAmt : 0);
-        const loadBearsDriver = st.loadingBearsDriver !== undefined ? Number(st.loadingBearsDriver) : (st.loadingBears === 'Driver' ? loadAmt : 0);
-        if (st.loadingPaidByDriver) {
-          subTripsDriverSpend += loadBearsOrg;
-        } else {
-          driverRecovery += loadBearsDriver;
-        }
-
-        // 2. Unloading
-        const unloadAmt = Number(st.unloadingExpense) || 0;
-        const unloadBearsOrg = st.unloadingBearsOrg !== undefined ? Number(st.unloadingBearsOrg) : (st.unloadingBears === 'Org' ? unloadAmt : 0);
-        const unloadBearsDriver = st.unloadingBearsDriver !== undefined ? Number(st.unloadingBearsDriver) : (st.unloadingBears === 'Driver' ? unloadAmt : 0);
-        if (st.unloadingPaidByDriver) {
-          subTripsDriverSpend += unloadBearsOrg;
-        } else {
-          driverRecovery += unloadBearsDriver;
-        }
-
-        // 3. Brokerage
-        const brokerageAmt = Number(st.brokerageExpense) || 0;
-        const defaultBears = orgProfile?.brokeragePolicy === 'OrgBears' ? 'Org' : 'Driver';
-        const brokerageBearsOrg = st.brokerageBearsOrg !== undefined ? Number(st.brokerageBearsOrg) : ((st.brokerageBears || defaultBears) === 'Org' ? brokerageAmt : 0);
-        const brokerageBearsDriver = st.brokerageBearsDriver !== undefined ? Number(st.brokerageBearsDriver) : ((st.brokerageBears || defaultBears) === 'Driver' ? brokerageAmt : 0);
-        if (st.brokeragePaidByDriver) {
-          subTripsDriverSpend += brokerageBearsOrg;
-        } else {
-          driverRecovery += brokerageBearsDriver;
-        }
-
-        // 4. Crossing
-        const crossingAmt = Number(st.crossingExpense) || 0;
-        const crossingBearsOrg = st.crossingBearsOrg !== undefined ? Number(st.crossingBearsOrg) : (st.crossingBears === 'Org' ? crossingAmt : 0);
-        const crossingBearsDriver = st.crossingBearsDriver !== undefined ? Number(st.crossingBearsDriver) : (st.crossingBears === 'Driver' ? crossingAmt : 0);
-        if (st.crossingPaidByDriver) {
-          subTripsDriverSpend += crossingBearsOrg;
-        } else {
-          driverRecovery += crossingBearsDriver;
-        }
-
-        // 5. RMC
-        const rmcAmt = Number(st.rmcExpense) || 0;
-        const rmcBearsOrg = st.rmcBearsOrg !== undefined ? Number(st.rmcBearsOrg) : (st.rmcBears === 'Org' ? rmcAmt : 0);
-        const rmcBearsDriver = st.rmcBearsDriver !== undefined ? Number(st.rmcBearsDriver) : (st.rmcBears === 'Driver' ? rmcAmt : 0);
-        if (st.rmcPaidByDriver) {
-          subTripsDriverSpend += rmcBearsOrg;
-        } else {
-          driverRecovery += rmcBearsDriver;
-        }
-      }
-
-      // Driver wages (always credited to driver)
-      if (st.driverWages) {
-        subTripsDriverSpend += Number(st.driverWages) || 0;
-      }
-    });
-
-    const totalDriverSpend = fuelsDriverSpend + tripLevelDriverSpend + subTripsDriverSpend;
-
-    // Driver Advances (Category 4)
-    const category4CategoryAdvances = (advances || []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
-
-    // Category 3 paid to driver advance
-    const category3DriverAdvancePayments = (payments || [])
-      .filter(p => p.receivedBy === 'paid_to_driver_advance')
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
-    // Total received by driver
-    const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
-
-    return {
-      driverBalance: totalDriverSpend - (totalIssuedToDriver + driverRecovery),
-      totalDriverSpend,
-      totalIssuedToDriver
-    };
-  };
-
-  const { driverBalance, totalDriverSpend, totalIssuedToDriver } = calculateDriverMetrics();
 
   // Handle drafting payments
   const handleAddPayment = (targetSubTripId?: string) => {
@@ -817,7 +517,9 @@ export default function TripForm({
     setStRouteTo(st.routeTo || '');
     setStIncome(st.income || 0);
 
-    const importedExpenses = st.cargoExpenses || importLegacyCargoExpenses(st, orgProfile);
+    const importedExpenses = (st.cargoExpenses && st.cargoExpenses.length > 0)
+      ? st.cargoExpenses
+      : importLegacyCargoExpenses(st, orgProfile);
     setStCargoExpenses(importedExpenses);
     setNewCargoExpType('Loading');
     setNewCargoExpAmount('');
@@ -1396,40 +1098,17 @@ export default function TripForm({
             {subTrips.length > 0 ? (() => {
               const calculatedSubTrips = subTrips.map(st => {
                 const wagesAmt = st.driverWages || 0;
+                const expenses = (st.cargoExpenses && st.cargoExpenses.length > 0)
+                  ? st.cargoExpenses
+                  : importLegacyCargoExpenses(st, orgProfile);
 
-                const segmentDeductions = (() => {
-                  if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-                    return st.cargoExpenses
-                      .filter(exp => exp.deductedFrom === 'OrgRental')
-                      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                  }
-                  let legacyDeductions = 0;
-                  const loadAmt = Number(st.loadingExpense) || 0;
-                  if (st.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
+                const segmentDeductions = expenses
+                  .filter(exp => exp.deductedFrom === 'OrgRental')
+                  .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
-                  const unloadAmt = Number(st.unloadingExpense) || 0;
-                  if (st.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
-
-                  const brokerageAmt = Number(st.brokerageExpense) || 0;
-                  if (st.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
-
-                  const crossingAmt = Number(st.crossingExpense) || 0;
-                  if (st.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
-
-                  const rmcAmt = Number(st.rmcExpense) || 0;
-                  if (st.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
-
-                  return legacyDeductions;
-                })();
-
-                const segmentOfficeBears = (() => {
-                  if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-                    return st.cargoExpenses
-                      .filter(exp => exp.bears === 'Office')
-                      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                  }
-                  return 0;
-                })();
+                const segmentOfficeBears = expenses
+                  .filter(exp => exp.bears === 'Office')
+                  .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
                 const segmentPayments = (payments || [])
                   .filter(p => p.subTripId === st.id)
@@ -1437,23 +1116,9 @@ export default function TripForm({
 
                 const segmentReceivable = st.income - segmentDeductions + segmentOfficeBears - segmentPayments;
 
-                const legacyDriverSpend = (() => {
-                  let sum = 0;
-                  if (st.loadingPaidByDriver) sum += Number(st.loadingExpense) || 0;
-                  if (st.unloadingPaidByDriver) sum += Number(st.unloadingExpense) || 0;
-                  if (st.brokeragePaidByDriver) sum += Number(st.brokerageExpense) || 0;
-                  if (st.crossingPaidByDriver) sum += Number(st.crossingExpense) || 0;
-                  if (st.rmcPaidByDriver) sum += Number(st.rmcExpense) || 0;
-                  return sum;
-                })();
+                const driverSpend = expenses.filter(e => e.paidByDriver).reduce((sum, e) => sum + e.amount, 0);
 
-                const driverSpend = st.cargoExpenses && st.cargoExpenses.length > 0
-                  ? st.cargoExpenses.filter(e => e.paidByDriver).reduce((sum, e) => sum + e.amount, 0)
-                  : legacyDriverSpend;
-
-                const brokerage = st.cargoExpenses && st.cargoExpenses.length > 0
-                  ? st.cargoExpenses.filter(e => e.expenseType === 'Brokerage' && !e.paidByDriver).reduce((sum, e) => sum + e.amount, 0)
-                  : (st.brokeragePaidByDriver ? 0 : (st.brokerageExpense || 0));
+                const brokerage = expenses.filter(e => e.expenseType === 'Brokerage' && !e.paidByDriver).reduce((sum, e) => sum + e.amount, 0);
 
                 return {
                   st,
@@ -2382,7 +2047,7 @@ export default function TripForm({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-100 font-semibold text-slate-700">
-                      {fuels.map(f => {
+                      {[...fuels].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(f => {
                         const acctName = f.paymentMode === 'driver'
                           ? 'Paid by Driver (from Advance)'
                           : (accounts.find(a => a.id === f.paymentMode)?.accountName ||
@@ -2390,7 +2055,13 @@ export default function TripForm({
                             'Cash/General');
                         return (
                           <tr key={f.id} className="hover:bg-amber-50/20">
-                            <td className="p-2 pl-3 font-mono text-[10px]">{f.date}</td>
+                            <td className="p-2 pl-3 font-mono text-[10px]">
+                              {(() => {
+                                if (!f.date) return '—';
+                                const parts = f.date.split('-');
+                                return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : f.date;
+                              })()}
+                            </td>
                             <td className="p-2 font-mono">{f.liters} L</td>
                             <td className="p-2 font-mono">₹{f.rate}</td>
                             <td className="p-2 font-mono text-amber-900">₹{f.amount.toLocaleString()}</td>
@@ -2610,6 +2281,8 @@ export default function TripForm({
                   <span>&bull;</span>
                   <span>Expenses Outflow: <strong className="text-red-300 font-mono">₹{metrics.totalExpense.toLocaleString()}</strong></span>
                   <span>&bull;</span>
+                  <span>Driver Wages: <strong className="text-amber-200 font-mono">₹{metrics.driverWages.toLocaleString()}</strong></span>
+                  <span>&bull;</span>
                   <span>Advances Received: <strong className="text-emerald-400 font-mono">₹{metrics.paymentsReceived.toLocaleString()}</strong></span>
                 </div>
                 <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-3.5">
@@ -2621,15 +2294,24 @@ export default function TripForm({
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <span className="text-[10px] text-purple-305 text-slate-300 uppercase tracking-wider block font-medium flex items-center gap-1 justify-end">
+              <div className="text-right flex flex-col items-end gap-1">
+                <span className="text-[10px] text-slate-300 uppercase tracking-wider block font-medium flex items-center gap-1 justify-end">
                   Driver Balance
                   <span className={`h-1.5 w-1.5 rounded-full inline-block ${driverBalance >= 0 ? "bg-purple-400" : "bg-rose-500"}`} />
                 </span>
                 <span className={`text-[15px] font-black font-mono block leading-none mt-1 ${driverBalance >= 0 ? "text-purple-300" : "text-amber-300"}`} title={driverBalance >= 0 ? "Payable to Driver" : "Due from Driver"}>
                   ₹{driverBalance.toLocaleString("en-IN")}
-                  <span className="text-[9px] font-sans font-normal block mt-0.5">{driverBalance >= 0 ? "Payable" : "Due from Drv"}</span>
                 </span>
+                <span className="text-[9px] font-sans font-normal block">{driverBalance >= 0 ? "Payable" : "Due from Drv"}</span>
+                {driverBalance !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickFwdPanel(!showQuickFwdPanel)}
+                    className="text-[9px] font-extrabold uppercase bg-slate-800 text-purple-300 hover:bg-slate-700 hover:text-white px-2 py-1 rounded border border-slate-700 transition cursor-pointer mt-1"
+                  >
+                    {showQuickFwdPanel ? "Close Transfer" : "Quick Transfer"}
+                  </button>
+                )}
               </div>
               <div className="w-[1.5px] bg-slate-700 h-10 select-none"></div>
               <div className="text-right">
@@ -2647,6 +2329,293 @@ export default function TripForm({
               </div>
             </div>
           </div>
+
+          {showQuickFwdPanel && driverBalance !== 0 && (() => {
+            const allTrips = Array.isArray(trips) ? trips : [];
+            const finalTripNo = editingEntry ? tripNo : (tripNoOption === 'AUTO' ? tripNo : selectedExistingTripNo);
+            const eligibleFwdTrips = allTrips.filter(
+              t => (!editingEntry || t.id !== editingEntry.id) && t.status !== 'Settled'
+            ).sort((a, b) => {
+              const aSame = a.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
+              const bSame = b.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
+              if (aSame && !bSame) return -1;
+              if (!aSame && bSame) return 1;
+              return a.tripNo.localeCompare(b.tripNo);
+            });
+
+            return (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3.5 text-xs font-sans text-slate-800">
+                <div className="flex border-b border-slate-200 pb-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFwdMode('trip')}
+                    className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                      selectedFwdMode === 'trip'
+                        ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Move to Another Trip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFwdMode('account')}
+                    className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                      selectedFwdMode === 'account'
+                        ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Settle with Company Account
+                  </button>
+                </div>
+
+                {selectedFwdMode === 'trip' ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-amber-805 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                        {driverBalance < 0 ? 'Carry Forward Driver Deficit' : 'Carry Forward Driver Surplus'}
+                      </span>
+                      <span className="text-slate-600 font-sans block mt-0.5">
+                        Move this {driverBalance < 0 ? 'negative' : 'positive'} balance of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> to another active trip.
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div className="flex flex-col gap-0.5 font-sans">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                        <input
+                          type="date"
+                          value={selectedFwdDate}
+                          onChange={(e) => setSelectedFwdDate(e.target.value)}
+                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-0.5 sm:col-span-2">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Target Trip</span>
+                        <select
+                          value={selectedFwdTripId}
+                          onChange={(e) => setSelectedFwdTripId(e.target.value)}
+                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
+                        >
+                          <option value="">-- Select Next Trip --</option>
+                          {eligibleFwdTrips.map(t => {
+                            const isSameDrv = t.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
+                            return (
+                              <option key={t.id} value={t.id}>
+                                {t.tripNo} - {t.driverName || 'No Driver'} ({t.truckNo}){isSameDrv ? ' (Same Driver)' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-0.5 font-sans">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Move Amount (₹)</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          value={selectedFwdAmount}
+                          onChange={(e) => setSelectedFwdAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                          placeholder="₹0.00"
+                          className="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedFwdTripId) {
+                            alert("Please select a target trip first.");
+                            return;
+                          }
+                          const destTrip = eligibleFwdTrips.find(t => t.id === selectedFwdTripId);
+                          if (!destTrip) return;
+
+                          const amtToMove = Number(selectedFwdAmount) || 0;
+                          if (amtToMove <= 0) {
+                            alert("Please enter a valid amount to move greater than 0.");
+                            return;
+                          }
+
+                          const confirmMsg = driverBalance < 0
+                            ? `Are you sure you want to carry forward the driver deficit of ₹${amtToMove.toLocaleString('en-IN')} from this trip to ${destTrip.tripNo}?\n\nThis will add a negative advance on this trip to reduce its driver balance, and add a positive advance on ${destTrip.tripNo}.`
+                            : `Are you sure you want to carry forward the driver surplus of ₹${amtToMove.toLocaleString('en-IN')} from this trip to ${destTrip.tripNo}?\n\nThis will add a positive advance on this trip to reduce its driver balance, and add a negative advance on ${destTrip.tripNo}.`;
+
+                          const performFwd = () => {
+                            const fwdAdvanceSource: TripAdvance = {
+                              id: 'fwd_out_' + Date.now(),
+                              amount: driverBalance < 0 ? -amtToMove : amtToMove,
+                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              fromAccountId: 'Direct Driver',
+                              notes: driverBalance < 0
+                                ? `Negative balance carried forward to ${destTrip.tripNo}`
+                                : `Excess amount/surplus carried forward to ${destTrip.tripNo}`,
+                              receivedByDriverDirectly: true
+                            };
+
+                            const fwdAdvanceDest: TripAdvance = {
+                              id: 'fwd_in_' + Date.now(),
+                              amount: driverBalance < 0 ? amtToMove : -amtToMove,
+                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              fromAccountId: 'Direct Driver',
+                              notes: driverBalance < 0
+                                ? `Negative balance carried forward from ${finalTripNo}`
+                                : `Excess amount/surplus carried forward from ${finalTripNo}`,
+                              receivedByDriverDirectly: true
+                            };
+
+                            // Add source side locally to current form state
+                            setAdvances([...advances, fwdAdvanceSource]);
+
+                            // Add dest side globally in the trips list
+                            if (onSaveTrips && trips) {
+                              const updatedDest = {
+                                ...destTrip,
+                                advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                              };
+                              const updatedTrips = trips.map(t => t.id === updatedDest.id ? updatedDest : t);
+                              onSaveTrips(updatedTrips);
+                            }
+
+                            // Keep the panel open if we didn't move the full balance
+                            const remaining = Math.max(0, Math.abs(driverBalance) - amtToMove);
+                            if (remaining === 0) {
+                              setShowQuickFwdPanel(false);
+                            }
+                            setSelectedFwdTripId('');
+                            alert(`Successfully moved ₹${amtToMove.toLocaleString('en-IN')} to ${destTrip.tripNo}. Please save this trip form to apply changes.`);
+                          };
+
+                          if (confirmAction) {
+                            confirmAction(confirmMsg, performFwd, "Carry Forward Balance");
+                          } else if (confirm(confirmMsg)) {
+                            performFwd();
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
+                      >
+                        Move Funds
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-emerald-805 text-emerald-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                        {driverBalance < 0 ? 'Settle Deficit to Company Account' : 'Pay Driver Surplus from Company Account'}
+                      </span>
+                      <span className="text-slate-600 font-sans block mt-0.5">
+                        {driverBalance < 0 ? (
+                          <span>Receive driver returned funds of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> into a company account.</span>
+                        ) : (
+                          <span>Pay driver out-of-pocket surplus of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> from a company account.</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div className="flex flex-col gap-0.5 font-sans">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                        <input
+                          type="date"
+                          value={selectedFwdDate}
+                          onChange={(e) => setSelectedFwdDate(e.target.value)}
+                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-0.5 sm:col-span-2">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
+                        <select
+                          value={selectedFwdAccountId}
+                          onChange={(e) => setSelectedFwdAccountId(e.target.value)}
+                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
+                        >
+                          <option value="">-- Select Company Account --</option>
+                          <option value="Cash">Cash</option>
+                          {accounts.filter(a => a.status === 'Active').map(a => (
+                            <option key={a.id} value={a.id}>
+                              {a.accountName} ({a.type})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-0.5 font-sans">
+                        <span className="text-[8px] text-slate-400 font-bold uppercase">Settle Amount (₹)</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          value={selectedFwdAmount}
+                          onChange={(e) => setSelectedFwdAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                          placeholder="₹0.00"
+                          className="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedFwdAccountId) {
+                            alert("Please select a target company account first.");
+                            return;
+                          }
+                          const amtToSettle = Number(selectedFwdAmount) || 0;
+                          if (amtToSettle <= 0) {
+                            alert("Please enter a valid settle amount greater than 0.");
+                            return;
+                          }
+                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
+                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
+
+                          const confirmMsg = driverBalance < 0
+                            ? `Are you sure you want to move the driver deficit of ₹${amtToSettle.toLocaleString('en-IN')} from this trip to company account "${accountName}"?\n\nThis will record a negative advance on this trip to reduce the driver's balance.`
+                            : `Are you sure you want to pay the driver surplus of ₹${amtToSettle.toLocaleString('en-IN')} from company account "${accountName}" for this trip?\n\nThis will record a positive advance on this trip to reduce the driver's balance.`;
+
+                          const performAccountSettle = () => {
+                            const settleAdvance: TripAdvance = {
+                              id: 'fwd_settle_' + Date.now(),
+                              amount: driverBalance < 0 ? -amtToSettle : amtToSettle,
+                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              fromAccountId: selectedFwdAccountId,
+                              notes: driverBalance < 0
+                                ? `Negative balance moved/returned to company account: ${accountName}`
+                                : `Positive balance paid to driver from company account: ${accountName}`,
+                              receivedByDriverDirectly: false
+                            };
+
+                            // Add locally to advances list in the current form
+                            setAdvances([...advances, settleAdvance]);
+                            
+                            // If we didn't settle the full balance, keep the fwd panel open
+                            const remaining = Math.max(0, Math.abs(driverBalance) - amtToSettle);
+                            if (remaining === 0) {
+                              setShowQuickFwdPanel(false);
+                            }
+                            setSelectedFwdAccountId('');
+                            alert(`Successfully settled ₹${amtToSettle.toLocaleString('en-IN')} with account: ${accountName}. Please save this trip form to apply changes.`);
+                          };
+
+                          if (confirmAction) {
+                            confirmAction(confirmMsg, performAccountSettle, driverBalance < 0 ? "Settle Deficit" : "Pay Driver");
+                          } else if (confirm(confirmMsg)) {
+                            performAccountSettle();
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
+                      >
+                        Confirm Settle
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* GENERAL TRANSPORT REMARKS */}
           <div className="font-sans">

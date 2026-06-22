@@ -2119,6 +2119,8 @@ function AppContent() {
           ? adv.notes
             .replace('Negative balance carried forward from ', '')
             .replace('Negative balance carried forward to ', '')
+            .replace('Excess amount/surplus carried forward from ', '')
+            .replace('Excess amount/surplus carried forward to ', '')
             .trim()
           : '';
 
@@ -2130,9 +2132,14 @@ function AppContent() {
           return false;
         }
 
+        const isSurplus = adv.notes?.includes('Excess amount/surplus');
         const matchingNotes = isDest
-          ? `Negative balance carried forward to ${t.tripNo}`
-          : `Negative balance carried forward from ${t.tripNo}`;
+          ? (isSurplus
+              ? `Excess amount/surplus carried forward to ${t.tripNo}`
+              : `Negative balance carried forward to ${t.tripNo}`)
+          : (isSurplus
+              ? `Excess amount/surplus carried forward from ${t.tripNo}`
+              : `Negative balance carried forward from ${t.tripNo}`);
 
         const hasMatching = (targetTrip.advances || []).some(x => {
           const isMatchingFwd = isDest ? x.id.startsWith('fwd_out_') : x.id.startsWith('fwd_in_');
@@ -3877,6 +3884,8 @@ function AppContent() {
                       orgProfile={currentOrgProfile}
                       autoOpenAdd={autoOpenFormTab === 'DRIVERS'}
                       onAutoOpenCleared={() => setAutoOpenFormTab(null)}
+                      onSaveTrips={saveTrips}
+                      confirmAction={confirmAction}
                     />
                   )}
                   {registrySubTab === 'EXPENSES' && (
@@ -4091,6 +4100,8 @@ function AppContent() {
             canViewDrivers={currentUserRights.canViewDrivers}
             orgProfile={currentOrgProfile}
             trips={orgTrips}
+            onSaveTrips={saveTrips}
+            confirmAction={confirmAction}
           />
         </Suspense>
 
@@ -4288,6 +4299,8 @@ function AppContent() {
                 canDeleteTrips={currentUserRights.canDeleteTrips}
                 organizationId={currentUserOrgId}
                 onSaveTrips={saveTrips}
+                auditLogs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
+                currentUserRights={currentUserRights}
               />
             )}
 
@@ -4361,6 +4374,8 @@ function AppContent() {
                 canDeleteDrivers={currentUserRights.canDeleteDrivers}
                 organizationId={currentUserOrgId}
                 orgProfile={currentOrgProfile}
+                onSaveTrips={saveTrips}
+                confirmAction={confirmAction}
               />
             )}
 
@@ -4519,6 +4534,8 @@ function AppContent() {
           canViewDrivers={currentUserRights.canViewDrivers}
           orgProfile={currentOrgProfile}
           trips={orgTrips}
+          onSaveTrips={saveTrips}
+          confirmAction={confirmAction}
         />
       </Suspense>
 

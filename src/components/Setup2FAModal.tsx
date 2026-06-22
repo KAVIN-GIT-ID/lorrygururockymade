@@ -10,7 +10,7 @@ interface Setup2FAModalProps {
   onClose: () => void;
   setup2FASecret: string;
   showNotification: (msg: string) => void;
-  reconcileSession: (user: any) => Promise<any>;
+  reconcileSession: (user: any, freshRightsList?: any[]) => Promise<any>;
 }
 
 export default function Setup2FAModal({

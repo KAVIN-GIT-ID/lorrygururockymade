@@ -497,6 +497,9 @@ class AppwriteService {
         };
       });
     }
+    if (trip.deletedAt) {
+      trip.status = 'Deleted';
+    }
     return trip;
   }
 
@@ -537,6 +540,31 @@ class AppwriteService {
         // Fallback to flat property mapping
       }
     }
+
+    // Normalize JSON array fields to ensure they are parsed as actual arrays
+    const jsonFields = ['loans', 'payments', 'advances', 'fuels', 'movementHistory', 'cargoExpenses'];
+    jsonFields.forEach(key => {
+      if (record[key] !== undefined) {
+        if (typeof record[key] === 'string') {
+          try {
+            record[key] = JSON.parse(record[key] as string);
+          } catch {
+            record[key] = [];
+          }
+        }
+        // Double-check if it was double-stringified
+        if (typeof record[key] === 'string') {
+          try {
+            record[key] = JSON.parse(record[key] as string);
+          } catch {
+            record[key] = [];
+          }
+        }
+        if (!Array.isArray(record[key])) {
+          record[key] = [];
+        }
+      }
+    });
 
     if (!record.status) {
       record.status = 'Pending';
@@ -1072,14 +1100,15 @@ class AppwriteService {
       }
       if (filters.status) {
         let statusQueryVal = filters.status;
-        if (Array.isArray(statusQueryVal)) {
-          if (statusQueryVal.includes('Settled')) {
-            statusQueryVal = [...statusQueryVal, 'Paid', 'Pald'];
-          }
-        } else if (statusQueryVal === 'Settled') {
-          statusQueryVal = ['Settled', 'Paid', 'Pald'];
+        const statusArray = Array.isArray(statusQueryVal) ? statusQueryVal : [statusQueryVal];
+        if (statusArray.includes('Deleted')) {
+          throw new Error('Attribute/Index schema query mismatch (Force fallback for Deleted status)');
         }
-        queries.push(Query.equal('status', statusQueryVal));
+        let finalStatuses = [...statusArray];
+        if (finalStatuses.includes('Settled')) {
+          finalStatuses = [...finalStatuses, 'Paid', 'Pald'];
+        }
+        queries.push(Query.equal('status', finalStatuses));
       }
       if (filters.search) {
         queries.push(Query.search('tripNo', filters.search));
@@ -1177,9 +1206,6 @@ class AppwriteService {
             } catch (e) {
               console.warn("Failed to parse data for fallback queryTrips:", doc.$id, e);
             }
-          }
-          if (item.status === 'Pald' || item.status === 'Paid') {
-            item.status = 'Settled';
           }
           return this.normalizeTrip(item);
         });

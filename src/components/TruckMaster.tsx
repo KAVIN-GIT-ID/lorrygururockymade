@@ -2136,7 +2136,7 @@ export default function TruckMaster({
         const truck = trucks.find(t => t.id === viewingTruckId);
         if (!truck) return null;
 
-        const truckTrips = trips.filter(t => t.truckNo === truck.truckNo);
+        const truckTrips = trips.filter(t => t.truckNo === truck.truckNo && t.status !== 'Deleted' && !t.deletedAt);
         const truckExpenses = expenses.filter(e => e.truckNo === truck.truckNo);
         
         // Sum up trip performance

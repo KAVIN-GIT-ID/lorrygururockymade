@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance } from '../types';
+import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, importLegacyCargoExpenses, AuditLog, UserRights } from '../types';
 import {
   Search, Edit2, Trash2, Calendar, Filter, FileSpreadsheet,
   Eye, ChevronRight, ChevronDown, X, AlertCircle, Fuel,
   Gauge, TrendingUp, DollarSign, User, MapPin, ListCollapse, ArrowRightLeft,
   ArrowUp, ArrowDown, ArrowUpDown, Printer, FileText, Download, Copy, Check,
-  MoreVertical, Plus, Settings
+  MoreVertical, Plus, Settings, History
 } from 'lucide-react';
 
 
@@ -27,6 +27,8 @@ interface TripListProps {
   canDeleteTrips?: boolean;
   organizationId?: string;
   onSaveTrips?: (newTrips: TripEntry[]) => void;
+  auditLogs?: AuditLog[];
+  currentUserRights?: UserRights;
 }
 
 export default function TripList({
@@ -41,7 +43,9 @@ export default function TripList({
   canEditTrips = true,
   canDeleteTrips = true,
   organizationId,
-  onSaveTrips
+  onSaveTrips,
+  auditLogs = [],
+  currentUserRights
 }: TripListProps) {
   // Mouse hover scroll redirection for horizontal overflow
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -222,7 +226,9 @@ export default function TripList({
             ...doc,
             id: doc.id || doc.$id
           }));
-          const validTrips = mapped.filter(t => t.tripNo && t.tripNo.trim() !== '');
+          const validTrips = mapped
+            .filter(t => t.tripNo && t.tripNo.trim() !== '')
+            .filter(t => selectedStatuses.length === 0 ? true : selectedStatuses.includes(t.status));
           setDisplayedTrips(validTrips);
           setTotalCount(validTrips.length);
         } catch (err) {
@@ -254,7 +260,7 @@ export default function TripList({
 
   // Master Details modal state for viewing full list of 21+ columns cleanly
   const [viewingEntry, setViewingEntry] = useState<TripEntry | null>(null);
-  const [activeTab, setActiveTab] = useState<'loads' | 'profit' | 'driver' | 'actions'>('loads');
+  const [activeTab, setActiveTab] = useState<'loads' | 'profit' | 'driver' | 'actions' | 'audit'>('loads');
 
   // Selected next trip ID for forwarding deficit/surplus
   const [selectedFwdTripId, setSelectedFwdTripId] = useState<string>('');
@@ -311,6 +317,9 @@ export default function TripList({
     const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
     return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
   })).reduce((acc, t) => {
+    if (t.status === 'Deleted' || t.deletedAt) {
+      return acc;
+    }
     const m = getTripMetrics(t);
     return {
       income: acc.income + m.income,
@@ -441,6 +450,8 @@ export default function TripList({
         return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-blue-200 bg-blue-50 text-blue-700">Completed</span>;
       case 'Settled':
         return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">Settled</span>;
+      case 'Deleted':
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full border border-rose-200 bg-rose-50 text-rose-700">Deleted</span>;
       default:
         return null;
     }
@@ -455,7 +466,7 @@ export default function TripList({
   };
 
   const getStatusDropdownLabel = () => {
-    if (selectedStatuses.length === 4) return 'All Statuses';
+    if (selectedStatuses.length === 5) return 'All Statuses';
     if (selectedStatuses.length === 0) return '- Choose Status -';
     return selectedStatuses.join(', ');
   };
@@ -553,19 +564,19 @@ export default function TripList({
                 <label className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-705 hover:bg-slate-55 bg-white hover:bg-slate-50 cursor-pointer select-none border-b border-slate-100 mb-1 pb-1.5">
                   <input
                     type="checkbox"
-                    checked={selectedStatuses.length === 4}
+                    checked={selectedStatuses.length === 5}
                     onChange={() => {
-                      if (selectedStatuses.length === 4) {
+                      if (selectedStatuses.length === 5) {
                         setSelectedStatuses([]);
                       } else {
-                        setSelectedStatuses(['Pending', 'In Progress', 'Completed', 'Settled']);
+                        setSelectedStatuses(['Pending', 'In Progress', 'Completed', 'Settled', 'Deleted']);
                       }
                     }}
                     className="rounded border-slate-350 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                   />
                   <span>All Status</span>
                 </label>
-                {(['Pending', 'In Progress', 'Completed', 'Settled'] as const).map((status) => {
+                {(['Pending', 'In Progress', 'Completed', 'Settled', 'Deleted'] as const).map((status) => {
                   const isChecked = selectedStatuses.includes(status);
                   return (
                     <label
@@ -813,7 +824,7 @@ export default function TripList({
                             {/* MODIFY SPEC ROW */}
                             <button
                               title="Modify Cargo Entry specs"
-                              disabled={!canEditTrips}
+                              disabled={!canEditTrips || trip.status === 'Deleted'}
                               onClick={() => onEditEntry(trip)}
                               className="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center h-8"
                             >
@@ -822,7 +833,7 @@ export default function TripList({
                             {/* DELETE ENTRY */}
                             <button
                               title="Wipe Cargo Entry record"
-                              disabled={!canDeleteTrips}
+                              disabled={!canDeleteTrips || trip.status === 'Deleted'}
                               onClick={() => {
                                 const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
                                 if (confirmAction) {
@@ -1035,7 +1046,7 @@ export default function TripList({
                     </button>
                     <button
                       type="button"
-                      disabled={!canEditTrips}
+                      disabled={!canEditTrips || trip.status === 'Deleted'}
                       onClick={() => {
                         onEditEntry(trip);
                         setActiveSpeedDialId(null);
@@ -1047,7 +1058,7 @@ export default function TripList({
                     </button>
                     <button
                       type="button"
-                      disabled={!canDeleteTrips}
+                      disabled={!canDeleteTrips || trip.status === 'Deleted'}
                       onClick={() => {
                         const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
                         const onDeleteAction = () => {
@@ -1184,7 +1195,7 @@ export default function TripList({
                   >
                     <FileText className="w-3.5 h-3.5" /> Driver Report PDF
                   </button>
-                  {canEditTrips && (
+                  {canEditTrips && viewingEntry.status !== 'Deleted' && (
                     <button
                       onClick={() => {
                         onEditEntry(viewingEntry);
@@ -1195,7 +1206,7 @@ export default function TripList({
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
                   )}
-                  {canDeleteTrips && (
+                  {canDeleteTrips && viewingEntry.status !== 'Deleted' && (
                     <button
                       onClick={() => {
                         const msg = `Caution! Deleting Master Trip ${viewingEntry.tripNo} will permanently delete all ${viewingEntry.subTrips?.length || 0} sub-trip segments and advanced payments receipt sheets. Continue?`;
@@ -1209,7 +1220,7 @@ export default function TripList({
                           setViewingEntry(null);
                         }
                       }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-705 font-extrabold text-xs rounded-lg transition cursor-pointer w-full sm:w-auto text-center"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
@@ -1392,7 +1403,7 @@ export default function TripList({
                   {m.driverBalance !== 0 && onSaveTrips && (() => {
                     const isDeficit = m.driverBalance < 0;
                     const balanceAmt = Math.abs(m.driverBalance);
-                    const activeMode = isDeficit ? selectedFwdMode : 'account';
+                    const activeMode = selectedFwdMode;
 
                     const eligibleFwdTrips = trips.filter(
                       t => t.id !== viewingEntry.id &&
@@ -1411,39 +1422,39 @@ export default function TripList({
 
                     return (
                       <div className="bg-amber-50/50 border-t border-slate-200/85 p-4 flex flex-col gap-3.5 text-xs font-sans">
-                        {/* Tab Headers for Deficit Mode */}
-                        {isDeficit && (
-                          <div className="flex border-b border-amber-200/40 pb-2 gap-2 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFwdMode('trip')}
-                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'trip'
-                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                  : 'text-slate-500 hover:text-slate-800'
-                                }`}
-                            >
-                              Move to Another Trip
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFwdMode('account')}
-                              className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'account'
-                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                  : 'text-slate-500 hover:text-slate-800'
-                                }`}
-                            >
-                              Settle with Company Account
-                            </button>
-                          </div>
-                        )}
+                        {/* Tab Headers for Deficit/Surplus Mode */}
+                        <div className="flex border-b border-amber-200/40 pb-2 gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFwdMode('trip')}
+                            className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'trip'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                          >
+                            Move to Another Trip
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFwdMode('account')}
+                            className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${activeMode === 'account'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                          >
+                            Settle with Company Account
+                          </button>
+                        </div>
 
                         {activeMode === 'trip' && (() => {
                           if (eligibleFwdTrips.length === 0) {
                             return (
                               <div className="text-slate-600">
-                                <span className="text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">Carry Forward Driver Deficit</span>
+                                <span className="text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                                  {isDeficit ? 'Carry Forward Driver Deficit' : 'Carry Forward Driver Surplus'}
+                                </span>
                                 <span className="block mt-0.5">
-                                  No other active/in-progress trips are currently registered in FleetTrack Pro. Create another active trip first to carry forward this deficit.
+                                  No other active/in-progress trips are currently registered in FleetTrack Pro. Create another active trip first to carry forward this {isDeficit ? 'deficit' : 'surplus'}.
                                 </span>
                               </div>
                             );
@@ -1461,9 +1472,11 @@ export default function TripList({
 
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-amber-855 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">Carry Forward Driver Deficit</span>
+                                  <span className="text-amber-855 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                                    {isDeficit ? 'Carry Forward Driver Deficit' : 'Carry Forward Driver Surplus'}
+                                  </span>
                                   <span className="text-slate-600 font-sans block mt-0.5">
-                                    Move this negative balance of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> to another active trip.
+                                    Move this {isDeficit ? 'negative' : 'positive'} balance of <strong className="text-slate-800 font-mono">₹{balanceAmt.toLocaleString('en-IN')}</strong> to another active trip.
                                   </span>
                                 </div>
                                 <div className="flex flex-col sm:flex-row sm:items-end w-full sm:w-auto gap-3 shrink-0">
@@ -1503,24 +1516,30 @@ export default function TripList({
                                       const destTrip = trips.find(t => t.id === selectedFwdTripId);
                                       if (!destTrip) return;
 
-                                      const confirmMsg = `Are you sure you want to carry forward the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to ${destTrip.tripNo}?\n\nThis will offset the negative balance on ${viewingEntry.tripNo} and add it as a new advance on ${destTrip.tripNo}.`;
+                                      const confirmMsg = isDeficit
+                                        ? `Are you sure you want to carry forward the driver deficit of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to ${destTrip.tripNo}?\n\nThis will offset the negative balance on ${viewingEntry.tripNo} and add it as a new advance on ${destTrip.tripNo}.`
+                                        : `Are you sure you want to carry forward the driver surplus of ₹${balanceAmt.toLocaleString('en-IN')} from ${viewingEntry.tripNo} to ${destTrip.tripNo}?\n\nThis will offset the positive balance on ${viewingEntry.tripNo} and transfer it as a credit/negative advance on ${destTrip.tripNo}.`;
 
                                       const performFwd = () => {
                                         const fwdAdvanceSource: TripAdvance = {
                                           id: 'fwd_out_' + Date.now(),
-                                          amount: -balanceAmt,
+                                          amount: isDeficit ? -balanceAmt : balanceAmt,
                                           date: selectedFwdDate || new Date().toISOString().substring(0, 10),
                                           fromAccountId: 'Direct Driver',
-                                          notes: `Negative balance carried forward to ${destTrip.tripNo}`,
+                                          notes: isDeficit
+                                            ? `Negative balance carried forward to ${destTrip.tripNo}`
+                                            : `Excess amount/surplus carried forward to ${destTrip.tripNo}`,
                                           receivedByDriverDirectly: true
                                         };
 
                                         const fwdAdvanceDest: TripAdvance = {
                                           id: 'fwd_in_' + Date.now(),
-                                          amount: balanceAmt,
+                                          amount: isDeficit ? balanceAmt : -balanceAmt,
                                           date: selectedFwdDate || new Date().toISOString().substring(0, 10),
                                           fromAccountId: 'Direct Driver',
-                                          notes: `Negative balance carried forward from ${viewingEntry.tripNo}`,
+                                          notes: isDeficit
+                                            ? `Negative balance carried forward from ${viewingEntry.tripNo}`
+                                            : `Excess amount/surplus carried forward from ${viewingEntry.tripNo}`,
                                           receivedByDriverDirectly: true
                                         };
 
@@ -1683,39 +1702,17 @@ export default function TripList({
                       <p className="p-4 text-center text-slate-400 italic">No sub-trip segments logged.</p>
                     ) : (
                       [...viewingEntry.subTrips].sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || '')).map((s, idx) => {
-                        const segmentDeductions = (() => {
-                          if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-                            return s.cargoExpenses
-                              .filter(exp => exp.deductedFrom === 'OrgRental')
-                              .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                          }
-                          let legacyDeductions = 0;
-                          const loadAmt = Number(s.loadingExpense) || 0;
-                          if (s.loadingDeductedFrom === 'OrgRental') legacyDeductions += loadAmt;
+                        const expenses = (s.cargoExpenses && s.cargoExpenses.length > 0)
+                          ? s.cargoExpenses
+                          : importLegacyCargoExpenses(s);
 
-                          const unloadAmt = Number(s.unloadingExpense) || 0;
-                          if (s.unloadingDeductedFrom === 'OrgRental') legacyDeductions += unloadAmt;
+                        const segmentDeductions = expenses
+                          .filter(exp => exp.deductedFrom === 'OrgRental')
+                          .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
-                          const brokerageAmt = Number(s.brokerageExpense) || 0;
-                          if (s.brokerageDeductedFrom === 'OrgRental') legacyDeductions += brokerageAmt;
-
-                          const crossingAmt = Number(s.crossingExpense) || 0;
-                          if (s.crossingDeductedFrom === 'OrgRental') legacyDeductions += crossingAmt;
-
-                          const rmcAmt = Number(s.rmcExpense) || 0;
-                          if (s.rmcDeductedFrom === 'OrgRental') legacyDeductions += rmcAmt;
-
-                          return legacyDeductions;
-                        })();
-
-                        const segmentOfficeBears = (() => {
-                          if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-                            return s.cargoExpenses
-                              .filter(exp => exp.bears === 'Office')
-                              .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-                          }
-                          return 0;
-                        })();
+                        const segmentOfficeBears = expenses
+                          .filter(exp => exp.bears === 'Office')
+                          .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
                         const segmentPayments = (viewingEntry.payments || [])
                           .filter(p => p.subTripId === s.id)
@@ -1992,6 +1989,101 @@ export default function TripList({
                     <p className="leading-relaxed">{viewingEntry.notes}</p>
                   </div>
                 )}
+
+                {/* Audit Trail Log View (Only for Admins) */}
+                {currentUserRights?.isAdmin && (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-3xs">
+                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] text-blue-655 uppercase tracking-wider font-extrabold flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5" />
+                        Trip Audit Trail Logs
+                      </span>
+                      <span className="text-[9px] bg-blue-50 text-blue-600 border border-blue-100 font-mono font-extrabold px-2 py-0.5 rounded">
+                        Admin Access Only
+                      </span>
+                    </div>
+                    <div className="p-4 space-y-4 max-h-72 overflow-y-auto">
+                      {(() => {
+                        const tripLogs = (auditLogs || [])
+                          .filter(log => log.category === 'Trip' && log.reference === viewingEntry.tripNo)
+                          .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+                        if (tripLogs.length === 0) {
+                          return (
+                            <div className="text-center py-6 text-slate-450 italic text-xs">
+                              No audit trail logs recorded for this trip.
+                            </div>
+                          );
+                        }
+
+                        const getActionBadgeLocal = (action: string) => {
+                          switch (action) {
+                            case 'Created':
+                              return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">Created</span>;
+                            case 'Edited':
+                              return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">Edited</span>;
+                            case 'Deleted':
+                              return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200">Deleted</span>;
+                            default:
+                              return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-150 text-slate-650 border border-slate-200">{action}</span>;
+                          }
+                        };
+
+                        return (
+                          <div className="relative border-l border-slate-200 pl-4 ml-2 space-y-4 py-1 text-left">
+                            {tripLogs.map((log, idx) => (
+                              <div key={log.id || idx} className="relative">
+                                {/* Timeline Dot */}
+                                <span className="absolute -left-[21px] top-1 flex items-center justify-center w-3 h-3 rounded-full bg-slate-100 border border-slate-350">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                </span>
+                                <div className="space-y-1 text-xs">
+                                  <div className="flex justify-between items-center gap-2">
+                                    <div className="flex items-center gap-2">
+                                      {getActionBadgeLocal(log.action)}
+                                      <span className="font-semibold text-slate-700">{log.user}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-405 font-mono">{log.timestamp}</span>
+                                  </div>
+                                  <div className="bg-slate-50 border border-slate-150/70 p-2.5 rounded-lg text-slate-600 leading-normal">
+                                    {log.details && (log.details.includes('➔') || log.details.includes('|')) ? (
+                                      <div className="flex flex-col gap-1.5">
+                                        {log.details.split(' | ').map((change, cidx) => {
+                                          const arrowIdx = change.indexOf('➔');
+                                          if (arrowIdx !== -1) {
+                                            const colonIdx = change.indexOf(':');
+                                            if (colonIdx !== -1 && colonIdx < arrowIdx) {
+                                              const field = change.substring(0, colonIdx);
+                                              const values = change.substring(colonIdx + 1).trim();
+                                              const valuesSplit = values.split('➔');
+                                              const oldVal = valuesSplit[0]?.trim().replace(/^"|"$/g, '') || '';
+                                              const newVal = valuesSplit[1]?.trim().replace(/^"|"$/g, '') || '';
+                                              return (
+                                                <div key={cidx} className="flex flex-wrap items-center gap-1.5 text-[11px] leading-none">
+                                                  <span className="font-bold text-slate-650 bg-slate-200/60 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">{field}</span>
+                                                  <span className="text-slate-400 line-through truncate max-w-[100px] inline-block font-mono bg-slate-100 px-1 rounded text-[10px]" title={oldVal}>{oldVal}</span>
+                                                  <span className="text-slate-400 font-bold">&rarr;</span>
+                                                  <span className="text-blue-750 font-black truncate max-w-[130px] inline-block font-mono bg-blue-50 px-1 rounded text-[10px]" title={newVal}>{newVal}</span>
+                                                </div>
+                                              );
+                                            }
+                                          }
+                                          return <div key={cidx} className="text-slate-650 text-[11px] leading-tight font-medium">&bull; {change}</div>;
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <span>{log.details}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-right">
@@ -2032,13 +2124,14 @@ export default function TripList({
 
                   {/* Tab Selector */}
                   <div className="flex border-b border-slate-200/50 mt-1.5 gap-2 text-xs font-semibold overflow-x-auto scrollbar-none py-1">
-                    {(['loads', 'profit', 'driver', 'actions'] as const).map((tab) => {
+                    {((currentUserRights?.isAdmin ? ['loads', 'profit', 'driver', 'actions', 'audit'] : ['loads', 'profit', 'driver', 'actions']) as const).map((tab) => {
                       const isActive = activeTab === tab;
                       const label = {
                         loads: 'Journey & Loads',
                         profit: 'Profit & Costs',
                         driver: 'Driver Ledger',
-                        actions: 'More Actions'
+                        actions: 'More Actions',
+                        audit: 'Audit Trail'
                       }[tab];
                       return (
                         <button
@@ -2327,7 +2420,7 @@ export default function TripList({
                       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs space-y-3">
                         <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-sans">Administration Options</h5>
                         <div className="space-y-2">
-                          {canEditTrips && (
+                          {canEditTrips && viewingEntry.status !== 'Deleted' && (
                             <button
                               onClick={() => {
                                 onEditEntry(viewingEntry);
@@ -2338,7 +2431,7 @@ export default function TripList({
                               <Edit2 className="w-3.5 h-3.5" /> Modify Journey Records
                             </button>
                           )}
-                          {canDeleteTrips && (
+                          {canDeleteTrips && viewingEntry.status !== 'Deleted' && (
                             <button
                               onClick={() => {
                                 const msg = `Caution! Deleting Master Trip ${viewingEntry.tripNo} will permanently delete all sub-trip segments and payments. Continue?`;
@@ -2352,12 +2445,102 @@ export default function TripList({
                                   setViewingEntry(null);
                                 }
                               }}
-                              className="w-full py-2.5 border border-rose-200 rounded-xl bg-rose-50 hover:bg-rose-105 text-rose-705 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                              className="w-full py-2.5 border border-rose-200 rounded-xl bg-rose-50 hover:bg-rose-105 text-rose-755 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" /> Wipe Trip Database Object
                             </button>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'audit' && currentUserRights?.isAdmin && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs space-y-4 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+                        <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-2">Trip Audit History ({
+                          (auditLogs || []).filter(log => log.category === 'Trip' && log.reference === viewingEntry.tripNo).length
+                        })</h5>
+                        
+                        {(() => {
+                          const tripLogs = (auditLogs || [])
+                            .filter(log => log.category === 'Trip' && log.reference === viewingEntry.tripNo)
+                            .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+                          if (tripLogs.length === 0) {
+                            return (
+                              <div className="text-center py-6 text-slate-405 italic text-xs">
+                                No audit trail logs recorded for this trip.
+                              </div>
+                            );
+                          }
+
+                          const getActionBadgeLocal = (action: string) => {
+                            switch (action) {
+                              case 'Created':
+                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">Created</span>;
+                              case 'Edited':
+                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">Edited</span>;
+                              case 'Deleted':
+                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200">Deleted</span>;
+                              default:
+                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-150 text-slate-655 border border-slate-200">{action}</span>;
+                            }
+                          };
+
+                          return (
+                            <div className="relative border-l border-slate-200 pl-4 ml-2 space-y-4 py-1 text-left">
+                              {tripLogs.map((log, idx) => (
+                                <div key={log.id || idx} className="relative">
+                                  {/* Timeline Dot */}
+                                  <span className="absolute -left-[21px] top-1 flex items-center justify-center w-3 h-3 rounded-full bg-slate-100 border border-slate-350">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                  </span>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="flex justify-between items-center gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {getActionBadgeLocal(log.action)}
+                                        <span className="font-semibold text-slate-700 truncate max-w-[120px]">{log.user}</span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 font-mono shrink-0">{log.timestamp}</span>
+                                    </div>
+                                    <div className="bg-slate-50 border border-slate-150/70 p-2 rounded-lg text-slate-600 leading-normal">
+                                      {log.details && (log.details.includes('➔') || log.details.includes('|')) ? (
+                                        <div className="flex flex-col gap-1.5">
+                                          {log.details.split(' | ').map((change, cidx) => {
+                                            const arrowIdx = change.indexOf('➔');
+                                            if (arrowIdx !== -1) {
+                                              const colonIdx = change.indexOf(':');
+                                              if (colonIdx !== -1 && colonIdx < arrowIdx) {
+                                                const field = change.substring(0, colonIdx);
+                                                const values = change.substring(colonIdx + 1).trim();
+                                                const valuesSplit = values.split('➔');
+                                                const oldVal = valuesSplit[0]?.trim().replace(/^"|"$/g, '') || '';
+                                                const newVal = valuesSplit[1]?.trim().replace(/^"|"$/g, '') || '';
+                                                return (
+                                                  <div key={cidx} className="flex flex-wrap items-center gap-1.5 text-[10px] leading-none">
+                                                    <span className="font-bold text-slate-655 bg-slate-200/60 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">{field}</span>
+                                                    <span className="text-slate-400 line-through truncate max-w-[70px] inline-block font-mono bg-slate-100 px-1 rounded text-[9px]" title={oldVal}>{oldVal}</span>
+                                                    <span className="text-slate-400 font-bold">&rarr;</span>
+                                                    <span className="text-blue-755 font-black truncate max-w-[90px] inline-block font-mono bg-blue-50 px-1 rounded text-[9px]" title={newVal}>{newVal}</span>
+                                                  </div>
+                                                );
+                                              }
+                                            }
+                                            return <div key={cidx} className="text-slate-655 text-[10px] leading-tight font-medium">&bull; {change}</div>;
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px]">{log.details}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2377,6 +2560,12 @@ export default function TripList({
           </div>
         );
       })()}
+      <ReportPreviewModal
+        isOpen={!!previewHtml}
+        onClose={() => setPreviewHtml(null)}
+        htmlContent={previewHtml || ''}
+        title={previewTitle}
+      />
     </div>
   );
 }

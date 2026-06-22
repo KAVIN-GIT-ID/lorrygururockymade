@@ -1,4 +1,4 @@
-import { TripEntry, Account, getTripMetrics } from '../types';
+import { TripEntry, Account, getTripMetrics, importLegacyCargoExpenses } from '../types';
 
 export function generateTripPDF(trip: TripEntry, accounts: Account[]) {
   const m = getTripMetrics(trip);
@@ -25,32 +25,17 @@ export function generateTripPDF(trip: TripEntry, accounts: Account[]) {
 
   // Compile sub-trips rows
   const subTripsHtml = [...(trip.subTrips || [])].sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || '')).map((s, idx) => {
-    // 1. Calculate segment deductions
-    const segmentDeductions = (() => {
-      if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-        return s.cargoExpenses
-          .filter(exp => exp.deductedFrom === 'OrgRental')
-          .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-      }
-      
-      let sum = 0;
-      if (s.loadingDeductedFrom === 'OrgRental') sum += Number(s.loadingExpense) || 0;
-      if (s.unloadingDeductedFrom === 'OrgRental') sum += Number(s.unloadingExpense) || 0;
-      if (s.brokerageDeductedFrom === 'OrgRental') sum += Number(s.brokerageExpense) || 0;
-      if (s.crossingDeductedFrom === 'OrgRental') sum += Number(s.crossingExpense) || 0;
-      if (s.rmcDeductedFrom === 'OrgRental') sum += Number(s.rmcExpense) || 0;
-      return sum;
-    })();
+    const expenses = (s.cargoExpenses && s.cargoExpenses.length > 0)
+      ? s.cargoExpenses
+      : importLegacyCargoExpenses(s);
 
-    // 2. Calculate segment office bears
-    const segmentOfficeBears = (() => {
-      if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-        return s.cargoExpenses
-          .filter(exp => exp.bears === 'Office')
-          .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-      }
-      return 0;
-    })();
+    const segmentDeductions = expenses
+      .filter(exp => exp.deductedFrom === 'OrgRental')
+      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+
+    const segmentOfficeBears = expenses
+      .filter(exp => exp.bears === 'Office')
+      .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
     // 3. Calculate segment payments
     const segmentPayments = (trip.payments || [])
@@ -573,8 +558,11 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
   const cargoExpensesPaidByDriverHtml = [...(trip.subTrips || [])]
     .sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || ''))
     .flatMap(s => {
-    if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-      return s.cargoExpenses
+      const expenses = (s.cargoExpenses && s.cargoExpenses.length > 0)
+        ? s.cargoExpenses
+        : importLegacyCargoExpenses(s);
+
+      return expenses
         .filter(exp => exp.paidByDriver && (exp.bears === 'Org' || exp.bears === 'Office'))
         .map(exp => `
           <tr>
@@ -583,56 +571,7 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
             <td style="text-align: right;">${formatCurrency(exp.amount)}</td>
           </tr>
         `);
-    }
-    // Legacy fallback
-    const legacyExp: string[] = [];
-    if (s.loadingPaidByDriver && s.loadingExpense && (s.loadingBears || 'Org') === 'Org') {
-      legacyExp.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Loading (Paid by Driver)</td>
-          <td style="text-align: right;">${formatCurrency(s.loadingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (s.unloadingPaidByDriver && s.unloadingExpense && (s.unloadingBears || 'Org') === 'Org') {
-      legacyExp.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Unloading (Paid by Driver)</td>
-          <td style="text-align: right;">${formatCurrency(s.unloadingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (s.brokeragePaidByDriver && s.brokerageExpense && s.brokerageBears === 'Org') {
-      legacyExp.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Brokerage (Paid by Driver)</td>
-          <td style="text-align: right;">${formatCurrency(s.brokerageExpense)}</td>
-        </tr>
-      `);
-    }
-    if (s.crossingPaidByDriver && s.crossingExpense && (s.crossingBears || 'Org') === 'Org') {
-      legacyExp.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Crossing (Paid by Driver)</td>
-          <td style="text-align: right;">${formatCurrency(s.crossingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (s.rmcPaidByDriver && s.rmcExpense && (s.rmcBears || 'Org') === 'Org') {
-      legacyExp.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo RMC (Paid by Driver)</td>
-          <td style="text-align: right;">${formatCurrency(s.rmcExpense)}</td>
-        </tr>
-      `);
-    }
-    return legacyExp;
-  }).join('');
+    }).join('');
 
   const creditsHtml = [wagesHtml, fuelsPaidByDriverHtml, tripLevelExpensesPaidHtml, cargoExpensesPaidByDriverHtml].filter(Boolean).join('');
 
@@ -666,8 +605,11 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
   const recoveriesHtml = [...(trip.subTrips || [])]
     .sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || ''))
     .flatMap(s => {
-    if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-      return s.cargoExpenses
+      const expenses = (s.cargoExpenses && s.cargoExpenses.length > 0)
+        ? s.cargoExpenses
+        : importLegacyCargoExpenses(s);
+
+      return expenses
         .filter(exp => exp.bears === 'Driver' && !exp.paidByDriver)
         .map(exp => `
           <tr>
@@ -676,116 +618,13 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
             <td style="text-align: right;">${formatCurrency(exp.amount)}</td>
           </tr>
         `);
-    }
-    // Legacy fallback
-    const legacyRec: string[] = [];
-    if (!s.loadingPaidByDriver && s.loadingExpense && s.loadingBears === 'Driver') {
-      legacyRec.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Loading (Driver Borne, Paid by Org)</td>
-          <td style="text-align: right;">${formatCurrency(s.loadingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (!s.unloadingPaidByDriver && s.unloadingExpense && s.unloadingBears === 'Driver') {
-      legacyRec.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Unloading (Driver Borne, Paid by Org)</td>
-          <td style="text-align: right;">${formatCurrency(s.unloadingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (!s.brokeragePaidByDriver && s.brokerageExpense && (s.brokerageBears || 'Driver') === 'Driver') {
-      legacyRec.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Brokerage (Driver Borne, Paid by Org)</td>
-          <td style="text-align: right;">${formatCurrency(s.brokerageExpense)}</td>
-        </tr>
-      `);
-    }
-    if (!s.crossingPaidByDriver && s.crossingExpense && s.crossingBears === 'Driver') {
-      legacyRec.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo Crossing (Driver Borne, Paid by Org)</td>
-          <td style="text-align: right;">${formatCurrency(s.crossingExpense)}</td>
-        </tr>
-      `);
-    }
-    if (!s.rmcPaidByDriver && s.rmcExpense && s.rmcBears === 'Driver') {
-      legacyRec.push(`
-        <tr>
-          <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-          <td>Cargo RMC (Driver Borne, Paid by Org)</td>
-          <td style="text-align: right;">${formatCurrency(s.rmcExpense)}</td>
-        </tr>
-      `);
-    }
-    return legacyRec;
-  }).join('');
+    }).join('');
 
-  // Calculate totals
-  // Fuels paid by driver
-  const fuelsDriverSpend = (trip.fuels || []).reduce((sum, f) => {
-    if (f.paymentMode === 'driver' || f.paymentMode === 'Driver') {
-      return sum + (Number(f.amount) || 0);
-    }
-    return sum;
-  }, 0);
+  // Use unified metrics from getTripMetrics
+  const totalDriverSpend = m.totalDriverSpend + m.driverWages;
+  const totalIssuedToDriver = m.totalIssuedToDriver;
+  const driverRecoveryVal = m.driverRecovery;
 
-  // Common trip-level expenses paid by driver
-  let tripLevelDriverSpend = 0;
-  if (trip.rtoPaidByDriver && trip.rtoExpense) tripLevelDriverSpend += trip.rtoExpense;
-  if (trip.addBluePaidByDriver && trip.addBlueExpense) tripLevelDriverSpend += trip.addBlueExpense;
-  if (trip.fastagPaidByDriver && trip.fastagExpense) tripLevelDriverSpend += trip.fastagExpense;
-  if (trip.otherPaidByDriver && trip.otherExpense) tripLevelDriverSpend += trip.otherExpense;
-
-  // Driver paid cargo direct
-  let driverPaidDirectCargo = 0;
-  for (const s of trip.subTrips || []) {
-    if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-      for (const exp of s.cargoExpenses) {
-        if (exp.paidByDriver && (exp.bears === 'Org' || exp.bears === 'Office')) {
-          driverPaidDirectCargo += Number(exp.amount) || 0;
-        }
-      }
-    } else {
-      if (s.loadingPaidByDriver && s.loadingExpense && (s.loadingBears || 'Org') === 'Org') driverPaidDirectCargo += Number(s.loadingExpense) || 0;
-      if (s.unloadingPaidByDriver && s.unloadingExpense && (s.unloadingBears || 'Org') === 'Org') driverPaidDirectCargo += Number(s.unloadingExpense) || 0;
-      if (s.brokeragePaidByDriver && s.brokerageExpense && s.brokerageBears === 'Org') driverPaidDirectCargo += Number(s.brokerageExpense) || 0;
-      if (s.crossingPaidByDriver && s.crossingExpense && (s.crossingBears || 'Org') === 'Org') driverPaidDirectCargo += Number(s.crossingExpense) || 0;
-      if (s.rmcPaidByDriver && s.rmcExpense && (s.rmcBears || 'Org') === 'Org') driverPaidDirectCargo += Number(s.rmcExpense) || 0;
-    }
-  }
-
-  const driverWagesVal = (trip.subTrips || []).reduce((sum, s) => sum + (Number(s.driverWages) || 0), 0);
-  const totalDriverSpend = fuelsDriverSpend + tripLevelDriverSpend + driverPaidDirectCargo + driverWagesVal;
-
-  const category4CategoryAdvances = (trip.advances || []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
-  const category3DriverAdvancePayments = (trip.payments || [])
-    .filter(p => p.receivedBy === 'paid_to_driver_advance')
-    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const totalIssuedToDriver = category4CategoryAdvances + category3DriverAdvancePayments;
-
-  let driverRecoveryVal = 0;
-  for (const s of trip.subTrips || []) {
-    if (s.cargoExpenses && s.cargoExpenses.length > 0) {
-      for (const exp of s.cargoExpenses) {
-        if (exp.bears === 'Driver' && !exp.paidByDriver) {
-          driverRecoveryVal += Number(exp.amount) || 0;
-        }
-      }
-    } else {
-      if (!s.loadingPaidByDriver && s.loadingExpense && s.loadingBears === 'Driver') driverRecoveryVal += Number(s.loadingExpense) || 0;
-      if (!s.unloadingPaidByDriver && s.unloadingExpense && s.unloadingBears === 'Driver') driverRecoveryVal += Number(s.unloadingExpense) || 0;
-      if (!s.brokeragePaidByDriver && s.brokerageExpense && (s.brokerageBears || 'Driver') === 'Driver') driverRecoveryVal += Number(s.brokerageExpense) || 0;
-      if (!s.crossingPaidByDriver && s.crossingExpense && s.crossingBears === 'Driver') driverRecoveryVal += Number(s.crossingExpense) || 0;
-      if (!s.rmcPaidByDriver && s.rmcExpense && s.rmcBears === 'Driver') driverRecoveryVal += Number(s.rmcExpense) || 0;
-    }
-  }
 
   const htmlContent = `
     <!DOCTYPE html>

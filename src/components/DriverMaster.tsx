@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile } from '../types';
-import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X, MoreVertical, Settings } from 'lucide-react';
+import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile, getTripMetrics, TripAdvance } from '../types';
+import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X, MoreVertical, Settings, AlertCircle, ArrowRightLeft } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import CountryCodePhoneInput from './CountryCodePhoneInput';
 
@@ -19,6 +19,8 @@ interface DriverMasterProps {
   orgProfile?: OrganizationProfile;
   autoOpenAdd?: boolean;
   onAutoOpenCleared?: () => void;
+  onSaveTrips?: (newTrips: TripEntry[]) => void;
+  confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
 }
 
 export default function DriverMaster({
@@ -36,6 +38,8 @@ export default function DriverMaster({
   orgProfile,
   autoOpenAdd,
   onAutoOpenCleared,
+  onSaveTrips,
+  confirmAction,
 }: DriverMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -51,6 +55,22 @@ export default function DriverMaster({
     }
   }, [autoOpenAdd]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
+
+  // Carry Forward / Quick Settle States
+  const [selectedFwdSourceTripId, setSelectedFwdSourceTripId] = useState<string>('');
+  const [selectedFwdTripId, setSelectedFwdTripId] = useState<string>('');
+  const [selectedFwdMode, setSelectedFwdMode] = useState<'trip' | 'account'>('trip');
+  const [selectedFwdAccountId, setSelectedFwdAccountId] = useState<string>('');
+  const [selectedFwdDate, setSelectedFwdDate] = useState<string>(new Date().toISOString().substring(0, 10));
+
+  // Reset forward options when selectedDriverId changes
+  useEffect(() => {
+    setSelectedFwdSourceTripId('');
+    setSelectedFwdTripId('');
+    setSelectedFwdAccountId('');
+    setSelectedFwdMode('trip');
+    setSelectedFwdDate(new Date().toISOString().substring(0, 10));
+  }, [selectedDriverId]);
 
   // Form States
   const [driverName, setDriverName] = useState('');
@@ -593,7 +613,7 @@ export default function DriverMaster({
           }
 
           // Gather trips for selected driver
-          const drvTrips = trips.filter(t => t.driverName.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim());
+          const drvTrips = trips.filter(t => t.driverName.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim() && t.status !== 'Deleted' && !t.deletedAt);
           
           // Gather ALL advances for selected driver on those trips (Category 4)
           const category4Advances = drvTrips.flatMap(t => 
@@ -1028,6 +1048,301 @@ export default function DriverMaster({
                   </div>
                 </div>
               </div>
+
+              {/* Quick Transfer & Settle Trip Balance Panel */}
+              {onSaveTrips && drvTrips.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4.5 shadow-3xs font-sans text-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-2.5 gap-2">
+                    <div>
+                      <h4 className="font-extrabold uppercase text-[10px] tracking-wider text-slate-700 flex items-center gap-1.5">
+                        <ArrowRightLeft className="w-3.5 h-3.5 text-blue-650" />
+                        Quick Balance Transfer & Settlement
+                      </h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Quickly carry forward or settle outstanding balances for this driver's individual journeys.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Source Trip Dropdown */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">1. Select Source Trip</label>
+                      <select
+                        value={selectedFwdSourceTripId}
+                        onChange={(e) => {
+                          setSelectedFwdSourceTripId(e.target.value);
+                          setSelectedFwdTripId('');
+                          setSelectedFwdAccountId('');
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium cursor-pointer"
+                      >
+                        <option value="">-- Select Source Journey --</option>
+                        {drvTrips.map(t => {
+                          const m = getTripMetrics(t);
+                          if (m.driverBalance === 0) return null;
+                          const isDef = m.driverBalance < 0;
+                          return (
+                            <option key={t.id} value={t.id}>
+                              {t.tripNo} ({isDef ? 'Due from Drv' : 'Payable'}: ₹{Math.abs(m.driverBalance).toLocaleString('en-IN')})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    {selectedFwdSourceTripId && (() => {
+                      const srcTrip = trips.find(t => t.id === selectedFwdSourceTripId);
+                      if (!srcTrip) return null;
+                      const srcMetrics = getTripMetrics(srcTrip);
+                      const isDef = srcMetrics.driverBalance < 0;
+                      const balAmt = Math.abs(srcMetrics.driverBalance);
+
+                      const eligibleFwdTrips = trips.filter(
+                        t => t.id !== srcTrip.id && t.status !== 'Settled'
+                      ).sort((a, b) => {
+                        const aSame = a.driverName?.toLowerCase().trim() === srcTrip.driverName?.toLowerCase().trim();
+                        const bSame = b.driverName?.toLowerCase().trim() === srcTrip.driverName?.toLowerCase().trim();
+                        if (aSame && !bSame) return -1;
+                        if (!aSame && bSame) return 1;
+                        return a.tripNo.localeCompare(b.tripNo);
+                      });
+
+                      const hasSameDriverActiveTrip = eligibleFwdTrips.some(
+                        t => t.driverName?.toLowerCase().trim() === srcTrip.driverName?.toLowerCase().trim()
+                      );
+
+                      return (
+                        <>
+                          {/* Settle Action / Mode Tabs */}
+                          <div className="flex flex-col gap-1 sm:col-span-1">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">2. Action Mode</label>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFwdMode('trip')}
+                                className={`flex-1 py-1.5 font-bold rounded-lg transition-all text-center border cursor-pointer ${
+                                  selectedFwdMode === 'trip'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800'
+                                }`}
+                              >
+                                Move to Trip
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFwdMode('account')}
+                                className={`flex-1 py-1.5 font-bold rounded-lg transition-all text-center border cursor-pointer ${
+                                  selectedFwdMode === 'account'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800'
+                                }`}
+                              >
+                                Settle Account
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Tx Date */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">3. Date & Details</label>
+                            <input
+                              type="date"
+                              value={selectedFwdDate}
+                              onChange={(e) => setSelectedFwdDate(e.target.value)}
+                              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                            />
+                          </div>
+
+                          {/* Target Selection & Action Button */}
+                          <div className="flex flex-col gap-1 sm:col-span-2 md:col-span-4 border-t border-dashed border-slate-200 pt-3">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-3 bg-amber-50/45 p-3 rounded-lg border border-amber-100">
+                              {selectedFwdMode === 'trip' ? (
+                                <div className="flex-1 space-y-2">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="font-bold text-slate-700">
+                                      {isDef ? 'Carry Forward Deficit' : 'Carry Forward Surplus'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Transfer ₹{balAmt.toLocaleString('en-IN')} {isDef ? 'negative' : 'positive'} balance from <strong className="text-slate-700 font-mono">{srcTrip.tripNo}</strong> to another trip.
+                                    </span>
+                                  </div>
+
+                                  {!hasSameDriverActiveTrip && (
+                                    <div className="bg-amber-100/50 text-amber-900 px-2 py-1.5 rounded-md font-medium text-[10px] flex items-center gap-1.5">
+                                      <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                      <span>No active trip under the same driver ({srcTrip.driverName}).</span>
+                                    </div>
+                                  )}
+
+                                  <div className="max-w-md">
+                                    <select
+                                      value={selectedFwdTripId}
+                                      onChange={(e) => setSelectedFwdTripId(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                                    >
+                                      <option value="">-- Choose Target Journey --</option>
+                                      {eligibleFwdTrips.map(t => {
+                                        const isSameDrv = t.driverName?.toLowerCase().trim() === srcTrip.driverName?.toLowerCase().trim();
+                                        return (
+                                          <option key={t.id} value={t.id}>
+                                            {t.tripNo} - {t.driverName} ({t.truckNo}){isSameDrv ? ' (Same Driver)' : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex-1 space-y-2">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="font-bold text-slate-700">
+                                      {isDef ? 'Settle Deficit with Account' : 'Pay Surplus from Account'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      Record a settling advance of ₹{balAmt.toLocaleString('en-IN')} to balance <strong className="text-slate-700 font-mono">{srcTrip.tripNo}</strong>.
+                                    </span>
+                                  </div>
+
+                                  <div className="max-w-md">
+                                    <select
+                                      value={selectedFwdAccountId}
+                                      onChange={(e) => setSelectedFwdAccountId(e.target.value)}
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                                    >
+                                      <option value="">-- Choose Company Account --</option>
+                                      <option value="Cash">Cash</option>
+                                      {accounts.filter(a => a.status === 'Active').map(a => (
+                                        <option key={a.id} value={a.id}>
+                                          {a.accountName} ({a.type})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (selectedFwdMode === 'trip') {
+                                    if (!selectedFwdTripId) {
+                                      alert("Please select a target trip first.");
+                                      return;
+                                    }
+                                    const destTrip = trips.find(t => t.id === selectedFwdTripId);
+                                    if (!destTrip) return;
+
+                                    const confirmMsg = isDef
+                                      ? `Are you sure you want to carry forward the driver deficit of ₹${balAmt.toLocaleString('en-IN')} from ${srcTrip.tripNo} to ${destTrip.tripNo}?`
+                                      : `Are you sure you want to carry forward the driver surplus of ₹${balAmt.toLocaleString('en-IN')} from ${srcTrip.tripNo} to ${destTrip.tripNo}?`;
+
+                                    const executeFwd = () => {
+                                      const fwdAdvanceSource: TripAdvance = {
+                                        id: 'fwd_out_' + Date.now(),
+                                        amount: isDef ? -balAmt : balAmt,
+                                        date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                        fromAccountId: 'Direct Driver',
+                                        notes: isDef
+                                          ? `Negative balance carried forward to ${destTrip.tripNo}`
+                                          : `Excess amount/surplus carried forward to ${destTrip.tripNo}`,
+                                        receivedByDriverDirectly: true
+                                      };
+
+                                      const fwdAdvanceDest: TripAdvance = {
+                                        id: 'fwd_in_' + Date.now(),
+                                        amount: isDef ? balAmt : -balAmt,
+                                        date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                        fromAccountId: 'Direct Driver',
+                                        notes: isDef
+                                          ? `Negative balance carried forward from ${srcTrip.tripNo}`
+                                          : `Excess amount/surplus carried forward from ${srcTrip.tripNo}`,
+                                        receivedByDriverDirectly: true
+                                      };
+
+                                      const updatedSource = {
+                                        ...srcTrip,
+                                        advances: [...(srcTrip.advances || []), fwdAdvanceSource]
+                                      };
+
+                                      const updatedDest = {
+                                        ...destTrip,
+                                        advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                                      };
+
+                                      const updatedTrips = trips.map(t => {
+                                        if (t.id === updatedSource.id) return updatedSource;
+                                        if (t.id === updatedDest.id) return updatedDest;
+                                        return t;
+                                      });
+
+                                      onSaveTrips(updatedTrips);
+                                      setSelectedFwdSourceTripId('');
+                                      alert(`Successfully moved ₹${balAmt.toLocaleString('en-IN')} to ${destTrip.tripNo}.`);
+                                    };
+
+                                    if (confirmAction) {
+                                      confirmAction(confirmMsg, executeFwd, "Carry Forward Balance");
+                                    } else if (confirm(confirmMsg)) {
+                                      executeFwd();
+                                    }
+
+                                  } else {
+                                    if (!selectedFwdAccountId) {
+                                      alert("Please select a target company account first.");
+                                      return;
+                                    }
+                                    const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
+                                    const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
+
+                                    const confirmMsg = isDef
+                                      ? `Are you sure you want to move the driver deficit of ₹${balAmt.toLocaleString('en-IN')} from ${srcTrip.tripNo} to company account "${accountName}"?`
+                                      : `Are you sure you want to pay the driver surplus of ₹${balAmt.toLocaleString('en-IN')} from company account "${accountName}" for ${srcTrip.tripNo}?`;
+
+                                    const executeSettle = () => {
+                                      const settleAdvance: TripAdvance = {
+                                        id: 'fwd_settle_' + Date.now(),
+                                        amount: isDef ? -balAmt : balAmt,
+                                        date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                                        fromAccountId: selectedFwdAccountId,
+                                        notes: isDef
+                                          ? `Negative balance moved/returned to company account: ${accountName}`
+                                          : `Positive balance paid to driver from company account: ${accountName}`,
+                                        receivedByDriverDirectly: false
+                                      };
+
+                                      const updatedSource = {
+                                        ...srcTrip,
+                                        advances: [...(srcTrip.advances || []), settleAdvance]
+                                      };
+
+                                      const updatedTrips = trips.map(t => {
+                                        if (t.id === updatedSource.id) return updatedSource;
+                                        return t;
+                                      });
+
+                                      onSaveTrips(updatedTrips);
+                                      setSelectedFwdSourceTripId('');
+                                      alert(`Successfully settled ₹${balAmt.toLocaleString('en-IN')} with account: ${accountName}.`);
+                                    };
+
+                                    if (confirmAction) {
+                                      confirmAction(confirmMsg, executeSettle, isDef ? "Settle Deficit" : "Pay Driver");
+                                    } else if (confirm(confirmMsg)) {
+                                      executeSettle();
+                                    }
+                                  }
+                                }}
+                                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-lg transition text-xs shrink-0 cursor-pointer text-center font-sans"
+                              >
+                                {selectedFwdMode === 'trip' ? 'Confirm Transfer' : 'Confirm Settle'}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Transactions list */}
               <div className="space-y-2">

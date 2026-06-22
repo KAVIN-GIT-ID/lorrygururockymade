@@ -39,13 +39,29 @@ export function useTrips({
   });
 
   const saveTrips = (newTrips: TripEntry[]) => {
+    // Sync to Appwrite if configured
+    if (isAppwriteConfigured()) {
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      newTrips.forEach(async (newT) => {
+        const oldT = trips.find(t => t.id === newT.id);
+        // Only save if it's a new trip or the trip has changed
+        if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
+          try {
+            await appwrite.saveFleetDocument(databaseId, 'trips', newT.id, orgId, newT);
+          } catch (err) {
+            console.error(`Failed to save trip ${newT.tripNo} to Appwrite in saveTrips:`, err);
+          }
+        }
+      });
+    }
+
     setTrips(newTrips);
     localStorage.setItem('ttt_trips', JSON.stringify(newTrips));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
   const orgTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
-    .filter(t => !t.deletedAt);
+    .map(t => t.deletedAt ? { ...t, status: 'Deleted' as any } : t);
 
   const postTripEntry = async (entryInput: Omit<TripEntry, 'id'>, editingTrip: TripEntry | null) => {
     const tripId = editingTrip ? editingTrip.id : 't_id_' + Date.now();
@@ -107,6 +123,8 @@ export function useTrips({
           ? deletedAdv.notes
               .replace('Negative balance carried forward from ', '')
               .replace('Negative balance carried forward to ', '')
+              .replace('Excess amount/surplus carried forward from ', '')
+              .replace('Excess amount/surplus carried forward to ', '')
               .trim()
           : '';
 
@@ -116,9 +134,14 @@ export function useTrips({
               const cleanedAdvances = (t.advances || []).filter(adv => {
                 const isDest = deletedAdv.id.startsWith('fwd_in_');
                 const isMatchingFwd = isDest ? adv.id.startsWith('fwd_out_') : adv.id.startsWith('fwd_in_');
+                const isSurplus = deletedAdv.notes?.includes('Excess amount/surplus');
                 const matchingNotes = isDest
-                  ? `Negative balance carried forward to ${editingTrip.tripNo}`
-                  : `Negative balance carried forward from ${editingTrip.tripNo}`;
+                  ? (isSurplus
+                      ? `Excess amount/surplus carried forward to ${editingTrip.tripNo}`
+                      : `Negative balance carried forward to ${editingTrip.tripNo}`)
+                  : (isSurplus
+                      ? `Excess amount/surplus carried forward from ${editingTrip.tripNo}`
+                      : `Negative balance carried forward from ${editingTrip.tripNo}`);
                 return !(isMatchingFwd && adv.notes === matchingNotes);
               });
               modifiedTripIds.push(t.id);

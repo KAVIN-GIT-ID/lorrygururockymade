@@ -24,8 +24,8 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ 
-  trips, 
-  allTrips = trips,
+  trips: rawTrips, 
+  allTrips: rawAllTrips = rawTrips,
   trucks, 
   offices, 
   accounts, 
@@ -39,6 +39,8 @@ export default function Dashboard({
   onAddExpense,
   onUpdateTruck
 }: DashboardProps) {
+  const trips = rawTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
+  const allTrips = rawAllTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
   const months = [
     { value: '01', label: 'January' },
     { value: '02', label: 'February' },

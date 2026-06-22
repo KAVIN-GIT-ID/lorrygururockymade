@@ -9,7 +9,7 @@ interface Disable2FAModalProps {
   isOpen: boolean;
   onClose: () => void;
   showNotification: (msg: string) => void;
-  reconcileSession: (user: any) => Promise<any>;
+  reconcileSession: (user: any, freshRightsList?: any[]) => Promise<any>;
 }
 
 export default function Disable2FAModal({
