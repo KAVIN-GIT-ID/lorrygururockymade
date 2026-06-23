@@ -86,6 +86,8 @@ export default function TyreMaster({
   const [createExpense, setCreateExpense] = useState(true);
   const [mountDirectly, setMountDirectly] = useState(false);
   const [initialOdoKM, setInitialOdoKM] = useState('');
+  const [truckSearchQuery, setTruckSearchQuery] = useState('');
+  const [isTruckDropdownOpen, setIsTruckDropdownOpen] = useState(false);
 
   // Status Filter
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -96,6 +98,8 @@ export default function TyreMaster({
   const [selectedTruckId, setSelectedTruckId] = useState('');
   const [mountingKM, setMountingKM] = useState('');
   const [mountingDate, setMountingDate] = useState('2026-05-23');
+  const [mountTruckSearchQuery, setMountTruckSearchQuery] = useState('');
+  const [isMountTruckDropdownOpen, setIsMountTruckDropdownOpen] = useState(false);
 
   const [removingTyreId, setRemovingTyreId] = useState<string | null>(null);
   const [removalKM, setRemovalKM] = useState('');
@@ -591,45 +595,75 @@ export default function TyreMaster({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label htmlFor="associatedTruckNo" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Allocate Expense to</label>
-                  <select
-                    id="associatedTruckNo"
-                    value={associatedTruckNo}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setAssociatedTruckNo(val);
-                      if (!val) {
-                        setMountDirectly(false);
-                      }
-                    }}
-                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">YARD / STOCK (General Warehouse)</option>
-                    {trucks.map(tk => {
-                      const todayStr = new Date().toISOString().substring(0, 10);
-                      const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
-                      const isAdminDisabled = tk.status === 'Admin Disabled';
-                      const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
-                      const isBlocked = isExpired || isAdminDisabled || isNotApproved;
+              <div className="relative">
+                <label className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Allocate Expense to</label>
+                <button
+                  type="button"
+                  onClick={() => setIsTruckDropdownOpen(!isTruckDropdownOpen)}
+                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs text-left focus:outline-none focus:border-blue-500 flex justify-between items-center cursor-pointer font-semibold"
+                >
+                  <span>{associatedTruckNo ? `Vehicle: ${associatedTruckNo}` : 'YARD / STOCK (General Warehouse)'}</span>
+                  <span className="text-slate-400">▼</span>
+                </button>
+                {isTruckDropdownOpen && (
+                  <div className="absolute z-20 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Type to search truck..."
+                      value={truckSearchQuery}
+                      onChange={(e) => setTruckSearchQuery(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-805 dark:text-white rounded-md px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                      autoFocus
+                    />
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-105 dark:divide-slate-750">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssociatedTruckNo('');
+                          setMountDirectly(false);
+                          setIsTruckDropdownOpen(false);
+                          setTruckSearchQuery('');
+                        }}
+                        className="w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold block cursor-pointer"
+                      >
+                        YARD / STOCK (General Warehouse)
+                      </button>
+                      {trucks
+                        .filter(tk => tk.truckNo.toLowerCase().includes(truckSearchQuery.toLowerCase()))
+                        .map(tk => {
+                          const todayStr = new Date().toISOString().substring(0, 10);
+                          const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
+                          const isAdminDisabled = tk.status === 'Admin Disabled';
+                          const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
+                          const isBlocked = isExpired || isAdminDisabled || isNotApproved;
 
-                      let labelSuffix = '';
-                      if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
-                      else if (isNotApproved) labelSuffix = ' (Not Approved)';
-                      else if (isExpired) labelSuffix = ' (Expired)';
+                          let labelSuffix = '';
+                          if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
+                          else if (isNotApproved) labelSuffix = ' (Not Approved)';
+                          else if (isExpired) labelSuffix = ' (Expired)';
 
-                      return (
-                        <option 
-                          key={tk.id} 
-                          value={tk.truckNo}
-                          disabled={isBlocked}
-                        >
-                          Vehicle: {tk.truckNo}{labelSuffix}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+                          return (
+                            <button
+                              key={tk.id}
+                              type="button"
+                              disabled={isBlocked}
+                              onClick={() => {
+                                setAssociatedTruckNo(tk.truckNo);
+                                setIsTruckDropdownOpen(false);
+                                setTruckSearchQuery('');
+                              }}
+                              className={`w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 block font-mono cursor-pointer ${
+                                isBlocked ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-700 dark:text-slate-300 font-bold'
+                              }`}
+                            >
+                              Vehicle: {tk.truckNo}{labelSuffix}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
                 <div>
                   <label htmlFor="paymentMode" className="block text-[10px] font-bold text-slate-655 uppercase mb-1">Paid From Ledger Account</label>
@@ -1107,48 +1141,71 @@ export default function TyreMaster({
                   <span className="font-mono font-bold text-slate-850 block mt-0.5">{tyre.tyreNo} ({tyre.manufacturer})</span>
                 </div>
 
-                <div>
-                  <label htmlFor="mountSelectedTruckId" className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Select Active Truck <span className="text-red-500">*</span></label>
-                  <select
-                    id="mountSelectedTruckId"
-                    required
-                    value={selectedTruckId}
-                    onChange={(e) => {
-                      const selId = e.target.value;
-                      setSelectedTruckId(selId);
-                      const t = trucks.find(tr => tr.id === selId);
-                      if (t && t.currentKM) {
-                        setMountingKM(t.currentKM.toString());
-                      } else {
-                        setMountingKM('');
-                      }
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white text-slate-800 font-semibold"
+                <div className="relative">
+                  <label className="block text-[10px] uppercase font-bold text-slate-550 mb-1">Select Active Truck <span className="text-red-500">*</span></label>
+                  <button
+                    type="button"
+                    onClick={() => setIsMountTruckDropdownOpen(!isMountTruckDropdownOpen)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white text-slate-800 text-left font-bold flex justify-between items-center cursor-pointer text-xs"
                   >
-                    <option value="">-- Choose Truck --</option>
-                    {trucks.map(t => {
-                      const todayStr = new Date().toISOString().substring(0, 10);
-                      const isExpired = t.registrationExpiryDate ? t.registrationExpiryDate < todayStr : false;
-                      const isAdminDisabled = t.status === 'Admin Disabled' || t.status === 'Inactive';
-                      const isNotApproved = t.isApproved === false || t.requestStatus === 'Rejected';
-                      const isBlocked = isExpired || isAdminDisabled || isNotApproved;
+                    <span>
+                      {selectedTruckId 
+                        ? trucks.find(t => t.id === selectedTruckId)?.truckNo || '-- Choose Truck --'
+                        : '-- Choose Truck --'}
+                    </span>
+                    <span className="text-slate-400">▼</span>
+                  </button>
+                  {isMountTruckDropdownOpen && (
+                    <div className="absolute z-20 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Type to search truck..."
+                        value={mountTruckSearchQuery}
+                        onChange={(e) => setMountTruckSearchQuery(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-805 dark:text-white rounded-md px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                        autoFocus
+                      />
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-105 dark:divide-slate-750">
+                        {trucks
+                          .filter(tk => tk.truckNo.toLowerCase().includes(mountTruckSearchQuery.toLowerCase()))
+                          .map(t => {
+                            const todayStr = new Date().toISOString().substring(0, 10);
+                            const isExpired = t.registrationExpiryDate ? t.registrationExpiryDate < todayStr : false;
+                            const isAdminDisabled = t.status === 'Admin Disabled' || t.status === 'Inactive';
+                            const isNotApproved = t.isApproved === false || t.requestStatus === 'Rejected';
+                            const isBlocked = isExpired || isAdminDisabled || isNotApproved;
 
-                      let labelSuffix = '';
-                      if (isAdminDisabled) labelSuffix = ' (Disabled/Inactive)';
-                      else if (isNotApproved) labelSuffix = ' (Not Approved)';
-                      else if (isExpired) labelSuffix = ' (Expired)';
+                            let labelSuffix = '';
+                            if (isAdminDisabled) labelSuffix = ' (Disabled/Inactive)';
+                            else if (isNotApproved) labelSuffix = ' (Not Approved)';
+                            else if (isExpired) labelSuffix = ' (Expired)';
 
-                      return (
-                        <option 
-                          key={t.id} 
-                          value={t.id}
-                          disabled={isBlocked}
-                        >
-                          {t.truckNo} ({t.ownerName || 'Self'}){labelSuffix}
-                        </option>
-                      );
-                    })}
-                  </select>
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                disabled={isBlocked}
+                                onClick={() => {
+                                  setSelectedTruckId(t.id);
+                                  setIsMountTruckDropdownOpen(false);
+                                  setMountTruckSearchQuery('');
+                                  if (t.currentKM) {
+                                    setMountingKM(t.currentKM.toString());
+                                  } else {
+                                    setMountingKM('');
+                                  }
+                                }}
+                                className={`w-full text-left px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 block font-mono cursor-pointer ${
+                                  isBlocked ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed font-medium' : 'text-slate-700 dark:text-slate-300 font-extrabold'
+                                }`}
+                              >
+                                {t.truckNo} ({t.ownerName || 'Self'}){labelSuffix}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

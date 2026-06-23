@@ -134,7 +134,10 @@ export default function TripList({
         );
 
         const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-        const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
+        const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
+        const matchesStatus = isDeleted
+          ? selectedStatuses.includes('Deleted')
+          : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
 
         const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
         const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
@@ -228,7 +231,15 @@ export default function TripList({
           }));
           const validTrips = mapped
             .filter(t => t.tripNo && t.tripNo.trim() !== '')
-            .filter(t => selectedStatuses.length === 0 ? true : selectedStatuses.includes(t.status));
+            .filter(t => {
+              const isDeleted = !!t.deletedAt || t.status === 'Deleted';
+              if (isDeleted) {
+                return selectedStatuses.includes('Deleted');
+              }
+              if (selectedStatuses.length === 0) return true;
+              const normalizedStatus = (t.status === 'Paid' || t.status === 'Pald') ? 'Settled' : t.status;
+              return selectedStatuses.includes(normalizedStatus);
+            });
           setDisplayedTrips(validTrips);
           setTotalCount(validTrips.length);
         } catch (err) {
@@ -312,7 +323,10 @@ export default function TripList({
       (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
     );
     const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-    const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
+    const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
+    const matchesStatus = isDeleted
+      ? selectedStatuses.includes('Deleted')
+      : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
     const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
     const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
     return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -350,7 +364,10 @@ export default function TripList({
         (trip.notes && trip.notes.toLowerCase().includes(search.toLowerCase()))
       );
       const matchesTruck = !selectedTruck ? true : trip.truckNo === selectedTruck;
-      const matchesStatus = selectedStatuses.length === 0 ? true : selectedStatuses.includes(trip.status);
+      const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
+      const matchesStatus = isDeleted
+        ? selectedStatuses.includes('Deleted')
+        : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
       const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
       const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
       return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -1486,7 +1503,7 @@ export default function TripList({
                                       type="date"
                                       value={selectedFwdDate}
                                       onChange={(e) => setSelectedFwdDate(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-28"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-28 w-full sm:w-28"
                                     />
                                   </div>
                                   <div className="flex flex-col gap-0.5 w-full sm:w-auto">
@@ -1647,7 +1664,7 @@ export default function TripList({
                                       type="date"
                                       value={selectedFwdDate}
                                       onChange={(e) => setSelectedFwdDate(e.target.value)}
-                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full sm:w-28"
+                                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-28 w-full sm:w-28"
                                     />
                                   </div>
                                   <div className="flex flex-col gap-0.5 w-full sm:w-auto">

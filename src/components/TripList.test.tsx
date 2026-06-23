@@ -544,7 +544,10 @@ describe('TripList Component Tests', () => {
     const tripARow = screen.getAllByText('TRIP-A')[0];
     fireEvent.click(tripARow);
 
-    // Since the driver balance is positive, Settle/Pay view is shown automatically without tabs.
+    // Select "Settle with Company Account" tab
+    const settleTabBtn = screen.getByText('Settle with Company Account');
+    fireEvent.click(settleTabBtn);
+
     // Select company account and click Move Funds
     const select = screen.getByDisplayValue('-- Select Company Account --');
     fireEvent.change(select, { target: { value: 'acc-bank' } });
