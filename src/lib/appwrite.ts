@@ -1439,10 +1439,73 @@ class AppwriteService {
 
       const response = await this.databases.listDocuments(dbId, 'tyres', queries);
       return {
-        documents: response.documents || [],
+        documents: response.documents.map(doc => this.reconstructRecord(doc)) || [],
         total: response.total || 0
       };
     } catch (err: any) {
+      const errMsg = (err.message || '').toLowerCase();
+      const isSchemaError = err.code === 400 ||
+        errMsg.includes('attribute') ||
+        errMsg.includes('schema') ||
+        errMsg.includes('not found') ||
+        errMsg.includes('index');
+
+      if (isSchemaError) {
+        console.warn("Appwrite queryTyres failed due to schema/attribute mismatch. Falling back to client-side filtering...");
+        const allDocs = await this.listFleetDocuments(dbId, 'tyres', orgId);
+
+        let parsedList = allDocs.map(doc => {
+          let item = { ...doc };
+          if (doc.data) {
+            try {
+              const parsed = JSON.parse(doc.data);
+              item = { ...item, ...parsed };
+            } catch (e) {
+              console.warn("Failed to parse data for fallback queryTyres:", doc.$id, e);
+            }
+          }
+          return item;
+        });
+
+        if (filters.status) {
+          parsedList = parsedList.filter(t => t.status === filters.status);
+        }
+        if (filters.search) {
+          const s = filters.search.toLowerCase();
+          parsedList = parsedList.filter(t => (t.tyreNo || '').toLowerCase().includes(s));
+        }
+
+        const total = parsedList.length;
+        const startIndex = (page - 1) * limit;
+        const paginatedList = parsedList.slice(startIndex, startIndex + limit);
+
+        const documents = paginatedList.map(item => {
+          const { id, $id, $collectionId, $databaseId, $createdAt, $updatedAt, $permissions, ...rest } = item;
+          return {
+            $id: id || $id,
+            $collectionId,
+            $databaseId,
+            $createdAt,
+            $updatedAt,
+            $permissions,
+            organizationId: item.organizationId,
+            tyreNo: item.tyreNo || '',
+            manufacturer: item.manufacturer || '',
+            status: item.status || 'Available',
+            currentTruckNo: item.currentTruckNo || '',
+            purchaseDate: item.purchaseDate || '',
+            movementHistory: item.movementHistory || [],
+            data: item.data || JSON.stringify(rest),
+            ...rest
+          };
+        });
+
+        return {
+          documents,
+          total
+        };
+      }
+
       console.error("queryTyres failure:", err);
       throw err;
     }

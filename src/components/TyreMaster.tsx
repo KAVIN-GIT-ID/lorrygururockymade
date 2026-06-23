@@ -18,7 +18,8 @@ import {
   TrendingUp, 
   UserCheck, 
   Activity,
-  Tag, X, MoreVertical 
+  Tag, X, MoreVertical,
+  Edit2
 } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 interface TyreMasterProps {
@@ -77,6 +78,7 @@ export default function TyreMaster({
   const [size, setSize] = useState('10.00R20');
   const [purchaseDate, setPurchaseDate] = useState('2026-05-23');
   const [purchaseAmount, setPurchaseAmount] = useState('');
+  const [editingTyreId, setEditingTyreId] = useState<string | null>(null);
 
   // Auto expense ledger states
   const [associatedTruckNo, setAssociatedTruckNo] = useState('');
@@ -162,25 +164,7 @@ export default function TyreMaster({
             pageSize
           );
 
-          const mapped = (res.documents || []).map(doc => {
-            try {
-              if (doc.data) {
-                const parsed = JSON.parse(doc.data);
-                return { id: doc.$id, ...parsed };
-              }
-            } catch (e) {
-              console.warn("Failed to parse doc.data for tyre:", doc.$id, e);
-            }
-            return {
-              id: doc.$id,
-              tyreNo: doc.tyreNo || '',
-              manufacturer: doc.manufacturer || '',
-              status: doc.status || 'Available',
-              currentTruckNo: doc.currentTruckNo || '',
-              purchaseDate: doc.purchaseDate || '',
-              movementHistory: []
-            };
-          });
+          const mapped = (res.documents || []).map(doc => appwrite.reconstructRecord(doc));
           setDisplayedTyres(mapped);
           setTotalCount(res.total || 0);
         } catch (err) {
@@ -196,7 +180,7 @@ export default function TyreMaster({
 
       return () => clearTimeout(delayDebounce);
     }
-  }, [searchQuery, statusFilter, currentPage, pageSize, online, organizationId]);
+  }, [tyres, searchQuery, statusFilter, currentPage, pageSize, online, organizationId]);
 
   const resetAddForm = () => {
     setTyreNo('');
@@ -209,11 +193,29 @@ export default function TyreMaster({
     setCreateExpense(true);
     setMountDirectly(false);
     setInitialOdoKM('');
+    setEditingTyreId(null);
   };
 
   const handleCreateTyre = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tyreNo.trim() || !manufacturer) return;
+
+    if (editingTyreId) {
+      const orig = tyres.find(t => t.id === editingTyreId);
+      if (orig) {
+        onUpdateTyre({
+          ...orig,
+          tyreNo: tyreNo.trim().toUpperCase(),
+          manufacturer,
+          size,
+          purchaseDate: purchaseDate || undefined,
+          purchaseAmount: purchaseAmount ? Number(purchaseAmount) : undefined
+        });
+      }
+      resetAddForm();
+      setShowAddForm(false);
+      return;
+    }
 
     const todayStr = new Date().toISOString().substring(0, 10);
     const selectedTruck = trucks.find(t => t.truckNo === associatedTruckNo);
@@ -253,6 +255,16 @@ export default function TyreMaster({
 
     resetAddForm();
     setShowAddForm(false);
+  };
+
+  const startEdit = (tyre: Tyre) => {
+    setEditingTyreId(tyre.id);
+    setTyreNo(tyre.tyreNo);
+    setManufacturer(tyre.manufacturer);
+    setSize(tyre.size || '10.00R20');
+    setPurchaseDate(tyre.purchaseDate || '2026-05-23');
+    setPurchaseAmount(tyre.purchaseAmount ? tyre.purchaseAmount.toString() : '');
+    setShowAddForm(true);
   };
 
   const startMounting = (tyre: Tyre) => {
@@ -298,7 +310,7 @@ export default function TyreMaster({
       currentTruckNo: truck.truckNo,
       installationDate: mountingDate,
       installationKM: parsedKM,
-      movementHistory: [newLog, ...tyre.movementHistory]
+      movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
     onUpdateTyre(updatedTyre);
@@ -337,8 +349,8 @@ export default function TyreMaster({
       currentTruckNo: undefined,
       installationDate: undefined,
       installationKM: undefined,
-      accumulatedKM: tyre.accumulatedKM + runMileage,
-      movementHistory: [newLog, ...tyre.movementHistory]
+      accumulatedKM: (tyre.accumulatedKM || 0) + runMileage,
+      movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
     onUpdateTyre(updatedTyre);
@@ -368,7 +380,7 @@ export default function TyreMaster({
       status: 'Sold',
       saleDate,
       saleAmount: Number(saleAmount),
-      movementHistory: [newLog, ...tyre.movementHistory]
+      movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
     onUpdateTyre(updatedTyre);
@@ -395,7 +407,7 @@ export default function TyreMaster({
     const updatedTyre: Tyre = {
       ...tyre,
       status: 'Scrapped',
-      movementHistory: [newLog, ...tyre.movementHistory]
+      movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
     onUpdateTyre(updatedTyre);
@@ -485,7 +497,7 @@ export default function TyreMaster({
               <div className="flex items-center gap-2">
                 <Compass className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-sm font-bold text-slate-805 dark:text-white tracking-wide">
-                  Register New Purchase Specification
+                  {editingTyreId ? 'Edit Purchase Specification' : 'Register New Purchase Specification'}
                 </h3>
               </div>
               <button 
@@ -568,7 +580,8 @@ export default function TyreMaster({
             </div>
 
             {/* Supplementary integration section for Auto Ledger */}
-            <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
+            {!editingTyreId && (
+              <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <Tag className="w-3.5 h-3.5 text-blue-600" />
@@ -692,6 +705,7 @@ export default function TyreMaster({
                 </div>
               )}
             </div>
+          )}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 pt-4 col-span-full">
               <button
@@ -705,7 +719,7 @@ export default function TyreMaster({
                 type="submit"
                 className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer"
               >
-                Add Tyre record
+                {editingTyreId ? 'Save Changes' : 'Add Tyre record'}
               </button>
             </div>
           </form>
@@ -721,7 +735,7 @@ export default function TyreMaster({
         ) : (
           displayedTyres.map(tyre => {
             const activeRunKM = calculateActiveKM(tyre);
-            const overallKM = tyre.accumulatedKM + activeRunKM;
+            const overallKM = (tyre.accumulatedKM || 0) + activeRunKM;
             const relatedTruck = trucks.find(tk => tk.truckNo === tyre.currentTruckNo);
 
             return (
@@ -843,10 +857,18 @@ export default function TyreMaster({
                     title="View movement ledger"
                   >
                     <History className="w-3.5 h-3.5" />
-                    <span>Logs ({tyre.movementHistory.length})</span>
+                    <span>Logs ({(tyre.movementHistory || []).length})</span>
                   </button>
 
                   <div className="flex items-center gap-1">
+                    {canEditTyres && (
+                      <button
+                        onClick={() => startEdit(tyre)}
+                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded text-[10px] font-bold cursor-pointer transition"
+                      >
+                        Edit
+                      </button>
+                    )}
                     {canEditTyres && tyre.status === 'Available' && (
                       <>
                         <button
@@ -880,7 +902,7 @@ export default function TyreMaster({
                     )}
 
                     {/* Delete option only if available & no extensive movement logs for clean protection */}
-                    {canDeleteTyres && tyre.status === 'Available' && tyre.movementHistory.length <= 1 && (
+                    {canDeleteTyres && tyre.status === 'Available' && (tyre.movementHistory || []).length <= 1 && (
                       <button
                         onClick={() => {
                           const msg = `Are you sure you want to delete Tyre record ${tyre.tyreNo}?`;
@@ -913,10 +935,24 @@ export default function TyreMaster({
                         setActiveSpeedDialId(null);
                       }}
                       className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition cursor-pointer"
-                      title={`Logs (${tyre.movementHistory.length})`}
+                      title={`Logs (${(tyre.movementHistory || []).length})`}
                     >
                       <History className="w-3.5 h-3.5" />
                     </button>
+
+                    {canEditTyres && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          startEdit(tyre);
+                          setActiveSpeedDialId(null);
+                        }}
+                        className="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-350 hover:bg-slate-50 transition cursor-pointer"
+                        title="Edit Spec"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
 
                     {canEditTyres && tyre.status === 'Available' && (
                       <>
@@ -970,7 +1006,7 @@ export default function TyreMaster({
                       </button>
                     )}
 
-                    {canDeleteTyres && tyre.status === 'Available' && tyre.movementHistory.length <= 1 && (
+                    {canDeleteTyres && tyre.status === 'Available' && (tyre.movementHistory || []).length <= 1 && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1392,11 +1428,11 @@ export default function TyreMaster({
               </div>
 
               <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
-                {tyre.movementHistory.length === 0 ? (
+                {(!tyre.movementHistory || tyre.movementHistory.length === 0) ? (
                   <p className="text-center text-xs text-slate-400 py-6 italic">No movements recorded. Newly purchased item.</p>
                 ) : (
                   <div className="relative border-l-2 border-slate-150 pl-4 ml-2.5 space-y-4 text-xs">
-                    {tyre.movementHistory.map((log, idx) => (
+                    {(tyre.movementHistory || []).map((log, idx) => (
                       <div key={log.id || idx} className="relative">
                         
                         {/* Circle bullet identifier */}
@@ -1435,7 +1471,7 @@ export default function TyreMaster({
               </div>
 
               <div className="pt-3 border-t border-slate-150 flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                <span>Odometer wear life: <b>{tyre.accumulatedKM.toLocaleString()} KM</b></span>
+                <span>Odometer wear life: <b>{(tyre.accumulatedKM || 0).toLocaleString()} KM</b></span>
                 <button
                   onClick={() => setViewHistoryTyreId(null)}
                   className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded font-bold font-sans cursor-pointer"
