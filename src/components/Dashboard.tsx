@@ -1,6 +1,6 @@
 import React from 'react';
-import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile, ExpenseEntry } from '../types';
-import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield, Building2, X } from 'lucide-react';
+import { TripEntry, Truck, Office, Account, getTripMetrics, UserRights, OrganizationProfile, ExpenseEntry, importLegacyCargoExpenses } from '../types';
+import { Landmark, TrendingUp, AlertCircle, ShieldAlert, BadgeCent, CheckCircle2, Navigation, DollarSign, Calendar, Wrench, Shield, Building2, X, Share2, Check } from 'lucide-react';
 import { getOutstandingAge, formatToDisplayDate, calculateDaysLeft } from '../lib/dateUtils';
 import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './TruckMaster';
 import PayEmiModal from './PayEmiModal';
@@ -21,6 +21,7 @@ interface DashboardProps {
   expenses?: ExpenseEntry[];
   onAddExpense?: (expense: Omit<ExpenseEntry, 'id'>) => void;
   onUpdateTruck?: (truck: Truck) => Promise<void>;
+  onSaveTrips?: (newTrips: TripEntry[]) => void;
 }
 
 export default function Dashboard({ 
@@ -37,7 +38,8 @@ export default function Dashboard({
   orgProfile,
   expenses = [],
   onAddExpense,
-  onUpdateTruck
+  onUpdateTruck,
+  onSaveTrips
 }: DashboardProps) {
   const trips = rawTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
   const allTrips = rawAllTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
@@ -65,6 +67,56 @@ export default function Dashboard({
   const [hoverPosition, setHoverPosition] = React.useState({ x: 0, y: 0 });
   const closeTimeoutRef = React.useRef<any>(null);
 
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+  const handleCopyText = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const getTruckShareText = (truckNo: string, det: any) => {
+    const activeSegs = det.detailsList.filter((seg: any) => seg.balance > 0);
+    let text = `Outstanding Details for Truck: ${truckNo}\n`;
+    text += `Loading Office(s): ${det.officeList || 'N/A'}\n`;
+    text += `Billed Income: ₹${det.totalIncome.toLocaleString()}\n`;
+    text += `Total Paid / Advance: ₹${det.totalPaid.toLocaleString()}\n`;
+    text += `Net Outstanding: ₹${det.totalBalance.toLocaleString()}\n\n`;
+    
+    if (activeSegs.length > 0) {
+      text += `Pending Segment Details:\n`;
+      activeSegs.forEach((seg: any) => {
+        text += `- Office: ${seg.office}\n`;
+        text += `  Date: ${seg.date}\n`;
+        text += `  Consignment Value: ₹${seg.income.toLocaleString()}\n`;
+        text += `  Received: ₹${seg.advance.toLocaleString()}\n`;
+        text += `  Outstanding: ₹${seg.balance.toLocaleString()}\n`;
+      });
+    }
+    return text;
+  };
+
+  const getOfficeShareText = (officeName: string, det: any) => {
+    const activeSegs = det.detailsList.filter((seg: any) => seg.balance > 0);
+    let text = `Outstanding Details for Office: ${officeName}\n`;
+    text += `Active Truck(s): ${det.truckList || 'N/A'}\n`;
+    text += `Billed Income: ₹${det.totalIncome.toLocaleString()}\n`;
+    text += `Total Paid / Advance: ₹${det.totalPaid.toLocaleString()}\n`;
+    text += `Net Outstanding: ₹${det.totalBalance.toLocaleString()}\n\n`;
+    
+    if (activeSegs.length > 0) {
+      text += `Pending Journeys:\n`;
+      activeSegs.forEach((seg: any) => {
+        text += `- Truck: ${seg.truckNo}\n`;
+        text += `  Date: ${seg.date}\n`;
+        text += `  Consignment Value: ₹${seg.income.toLocaleString()}\n`;
+        text += `  Received: ₹${seg.advance.toLocaleString()}\n`;
+        text += `  Outstanding: ₹${seg.balance.toLocaleString()}\n`;
+      });
+    }
+    return text;
+  };
+
   // Pay EMI state
   const [payEmiTarget, setPayEmiTarget] = React.useState<{
     truckNo: string;
@@ -81,6 +133,20 @@ export default function Dashboard({
     taxType: 'Insurance' | 'Quarterly Tax' | 'National Permit Tax' | '5 Year Permit';
     currentExpiryDate: string;
   } | null>(null);
+
+  // Quick Pay Modal State
+  const [quickPayTarget, setQuickPayTarget] = React.useState<{
+    tripId: string;
+    subTripId: string;
+    officeName: string;
+    route: string;
+    balance: number;
+    truckNo?: string;
+  } | null>(null);
+  const [payDate, setPayDate] = React.useState(new Date().toISOString().substring(0, 10));
+  const [payAccount, setPayAccount] = React.useState('');
+  const [payAmount, setPayAmount] = React.useState<number | ''>('');
+  const [payNotes, setPayNotes] = React.useState('');
 
   React.useEffect(() => {
     return () => {
@@ -217,38 +283,27 @@ export default function Dashboard({
         let segDeductions = 0;
         let segOfficeBears = 0;
 
-        if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-          st.cargoExpenses.forEach(exp => {
-            const amt = Number(exp.amount) || 0;
-            if (exp.deductedFrom === 'OrgRental') {
-              segDeductions += amt;
-            }
-            if (exp.bears === 'Office') {
-              segOfficeBears += amt;
-            }
-          });
-        } else {
-          // Legacy fallbacks for segment
-          const loadAmt = Number(st.loadingExpense) || 0;
-          const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
-          if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
-
-          const unloadAmt = Number(st.unloadingExpense) || 0;
-          const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
-          if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
-
-          const brokerageAmt = Number(st.brokerageExpense) || 0;
-          const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
-          if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
-
-          const crossingAmt = Number(st.crossingExpense) || 0;
-          const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
-          if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
-
-          const rmcAmt = Number(st.rmcExpense) || 0;
-          const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
-          if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+        let expenses = st.cargoExpenses;
+        if (typeof expenses === 'string') {
+          try {
+            expenses = JSON.parse(expenses);
+          } catch {
+            expenses = [];
+          }
         }
+        if (!expenses || expenses.length === 0) {
+          expenses = importLegacyCargoExpenses(st, orgProfile);
+        }
+
+        expenses.forEach(exp => {
+          const amt = Number(exp.amount) || 0;
+          if (exp.deductedFrom === 'OrgRental') {
+            segDeductions += amt;
+          }
+          if (exp.bears === 'Office') {
+            segOfficeBears += amt;
+          }
+        });
 
         const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
         const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
@@ -287,7 +342,7 @@ export default function Dashboard({
     let totalPaid = 0;
     let totalBalance = 0;
     const officesUsed = new Set<string>();
-    const detailsList: { office: string; income: number; advance: number; balance: number; date: string }[] = [];
+    const detailsList: any[] = [];
 
     truckTrips.forEach(t => {
       const m = getTripMetrics(t);
@@ -300,49 +355,42 @@ export default function Dashboard({
           let segDeductions = 0;
           let segOfficeBears = 0;
 
-          if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-            st.cargoExpenses.forEach(exp => {
-              const amt = Number(exp.amount) || 0;
-              if (exp.deductedFrom === 'OrgRental') {
-                segDeductions += amt;
-              }
-              if (exp.bears === 'Office') {
-                segOfficeBears += amt;
-              }
-            });
-          } else {
-            // Legacy fallbacks for segment
-            const loadAmt = Number(st.loadingExpense) || 0;
-            const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
-            if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
-
-            const unloadAmt = Number(st.unloadingExpense) || 0;
-            const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
-            if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
-
-            const brokerageAmt = Number(st.brokerageExpense) || 0;
-            const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
-            if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
-
-            const crossingAmt = Number(st.crossingExpense) || 0;
-            const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
-            if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
-
-            const rmcAmt = Number(st.rmcExpense) || 0;
-            const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
-            if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+          let expenses = st.cargoExpenses;
+          if (typeof expenses === 'string') {
+            try {
+              expenses = JSON.parse(expenses);
+            } catch {
+              expenses = [];
+            }
           }
+          if (!expenses || expenses.length === 0) {
+            expenses = importLegacyCargoExpenses(st, orgProfile);
+          }
+
+          expenses.forEach(exp => {
+            const amt = Number(exp.amount) || 0;
+            if (exp.deductedFrom === 'OrgRental') {
+              segDeductions += amt;
+            }
+            if (exp.bears === 'Office') {
+              segOfficeBears += amt;
+            }
+          });
 
           // Calculate segment-specific payments if possible (subTripId matches)
           const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
           const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
 
           detailsList.push({
+            tripId: t.id,
+            subTripId: st.id,
             office: st.officeName || 'Indirect/General',
             income: st.income,
             advance: segPayments,
             balance: segBalance,
-            date: st.loadingDate || t.startDate || '—'
+            date: st.loadingDate || t.startDate || '—',
+            routeFrom: st.routeFrom,
+            routeTo: st.routeTo
           });
         });
 
@@ -380,7 +428,7 @@ export default function Dashboard({
     let totalPaid = 0;
     let totalBalance = 0;
     const trucksUsed = new Set<string>();
-    const detailsList: { truckNo: string; income: number; advance: number; balance: number; date: string }[] = [];
+    const detailsList: any[] = [];
 
     allTrips.forEach(t => {
       const m = getTripMetrics(t);
@@ -395,38 +443,27 @@ export default function Dashboard({
             let segDeductions = 0;
             let segOfficeBears = 0;
 
-            if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-              st.cargoExpenses.forEach(exp => {
-                const amt = Number(exp.amount) || 0;
-                if (exp.deductedFrom === 'OrgRental') {
-                  segDeductions += amt;
-                }
-                if (exp.bears === 'Office') {
-                  segOfficeBears += amt;
-                }
-              });
-            } else {
-              // Legacy fallbacks
-              const loadAmt = Number(st.loadingExpense) || 0;
-              const loadDeductedFrom = st.loadingDeductedFrom || 'DriverDirect';
-              if (loadDeductedFrom === 'OrgRental') segDeductions += loadAmt;
-
-              const unloadAmt = Number(st.unloadingExpense) || 0;
-              const unloadDeductedFrom = st.unloadingDeductedFrom || 'DriverDirect';
-              if (unloadDeductedFrom === 'OrgRental') segDeductions += unloadAmt;
-
-              const brokerageAmt = Number(st.brokerageExpense) || 0;
-              const brokerageDeductedFrom = st.brokerageDeductedFrom || 'DriverDirect';
-              if (brokerageDeductedFrom === 'OrgRental') segDeductions += brokerageAmt;
-
-              const crossingAmt = Number(st.crossingExpense) || 0;
-              const crossingDeductedFrom = st.crossingDeductedFrom || 'DriverDirect';
-              if (crossingDeductedFrom === 'OrgRental') segDeductions += crossingAmt;
-
-              const rmcAmt = Number(st.rmcExpense) || 0;
-              const rmcDeductedFrom = st.rmcDeductedFrom || 'DriverDirect';
-              if (rmcDeductedFrom === 'OrgRental') segDeductions += rmcAmt;
+            let expenses = st.cargoExpenses;
+            if (typeof expenses === 'string') {
+              try {
+                expenses = JSON.parse(expenses);
+              } catch {
+                expenses = [];
+              }
             }
+            if (!expenses || expenses.length === 0) {
+              expenses = importLegacyCargoExpenses(st, orgProfile);
+            }
+
+            expenses.forEach(exp => {
+              const amt = Number(exp.amount) || 0;
+              if (exp.deductedFrom === 'OrgRental') {
+                segDeductions += amt;
+              }
+              if (exp.bears === 'Office') {
+                segOfficeBears += amt;
+              }
+            });
 
             const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
             const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
@@ -457,11 +494,15 @@ export default function Dashboard({
 
             if (finalBalance > 0) {
               detailsList.push({
+                tripId: t.id,
+                subTripId: item.st.id,
                 truckNo: t.truckNo,
                 income: item.st.income,
                 advance: finalAdvance,
                 balance: finalBalance,
-                date: item.st.loadingDate || t.startDate || '—'
+                date: item.st.loadingDate || t.startDate || '—',
+                routeFrom: item.st.routeFrom,
+                routeTo: item.st.routeTo
               });
             }
           });
@@ -1202,7 +1243,17 @@ export default function Dashboard({
                   <X className="w-4 h-4" />
                 </button>
                 <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center pr-6">
-                  <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(getTruckShareText(hoveredTruck!, det), `truck-mob-${hoveredTruck}`)}
+                      title="Copy Outstanding Details"
+                      className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                    >
+                      {copiedId === `truck-mob-${hoveredTruck}` ? <Check className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> : <Share2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                   <span className="text-[9px] text-slate-400 font-bold uppercase">Balance Drilldown</span>
                 </div>
 
@@ -1227,11 +1278,11 @@ export default function Dashboard({
                   </div>
                 </div>
 
-                {det.detailsList.length > 0 && (
+                {det.detailsList.filter(seg => seg.balance > 0).length > 0 && (
                   <div className="border-t border-slate-800 pt-2">
                     <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Segment Ledger Logs</span>
                     <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
-                      {det.detailsList.map((seg, sIdx) => (
+                      {det.detailsList.filter(seg => seg.balance > 0).map((seg, sIdx) => (
                         <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
                           <div className="flex justify-between font-bold text-slate-350">
                             <span className="truncate text-white font-semibold">{seg.office}</span>
@@ -1263,7 +1314,17 @@ export default function Dashboard({
             onMouseLeave={handleMouseLeaveRowOrTooltip}
           >
             <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center">
-              <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono">{hoveredTruck}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(getTruckShareText(hoveredTruck!, det), `truck-desk-${hoveredTruck}`)}
+                  title="Copy Outstanding Details"
+                  className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                >
+                  {copiedId === `truck-desk-${hoveredTruck}` ? <Check className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> : <Share2 className="w-3.5 h-3.5" />}
+                </button>
+              </div>
               <span className="text-[9px] text-slate-400 font-bold uppercase">Balance Drilldown</span>
             </div>
 
@@ -1288,20 +1349,49 @@ export default function Dashboard({
               </div>
             </div>
 
-            {det.detailsList.length > 0 && (
+            {det.detailsList.filter((seg: any) => seg.balance > 0).length > 0 && (
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Segment Ledger Logs</span>
                 <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
-                  {det.detailsList.map((seg, sIdx) => (
+                  {det.detailsList.filter((seg: any) => seg.balance > 0).map((seg: any, sIdx: number) => (
                     <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
-                      <div className="flex justify-between font-bold text-slate-350">
+                      <div className="flex justify-between font-bold text-slate-350 items-center">
                         <span className="truncate text-white font-semibold">{seg.office}</span>
                         <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
                       </div>
-                      <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">
-                        <span>Inc: ₹{seg.income}</span>
-                        <span>Adv: ₹{seg.advance}</span>
-                        <span className="text-rose-400 font-bold">Bal: ₹{seg.balance}</span>
+                      <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5 items-center">
+                        <div>
+                          <span>Inc: ₹{seg.income.toLocaleString()}</span>
+                          <span className="mx-1">|</span>
+                          <span>Adv: ₹{seg.advance.toLocaleString()}</span>
+                          <span className="mx-1">|</span>
+                          <span className="text-rose-400 font-bold">Bal: ₹{seg.balance.toLocaleString()}</span>
+                        </div>
+                        {seg.balance > 0 && onSaveTrips && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPayDate(new Date().toISOString().substring(0, 10));
+                              setPayAccount(accounts[0]?.id || '');
+                              setPayAmount(seg.balance);
+                              setPayNotes(`Quick Pay: ${seg.office}`);
+                              setQuickPayTarget({
+                                tripId: seg.tripId,
+                                subTripId: seg.subTripId,
+                                officeName: seg.office,
+                                route: `${seg.routeFrom || 'Origin'} ➔ ${seg.routeTo || 'Destination'}`,
+                                balance: seg.balance,
+                                truckNo: hoveredTruck || undefined
+                              });
+                              setHoveredTruck(null);
+                              setHoveredOffice(null);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-0.5 rounded cursor-pointer transition text-[8px] shrink-0"
+                          >
+                            Pay
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1330,7 +1420,17 @@ export default function Dashboard({
                   <X className="w-4 h-4" />
                 </button>
                 <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center pr-6">
-                  <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate max-w-[200px]">{hoveredOffice}</span>
+                  <div className="flex items-center gap-1.5 max-w-[200px]">
+                    <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate">{hoveredOffice}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(getOfficeShareText(hoveredOffice!, det), `office-mob-${hoveredOffice}`)}
+                      title="Copy Outstanding Details"
+                      className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+                    >
+                      {copiedId === `office-mob-${hoveredOffice}` ? <Check className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> : <Share2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                   <span className="text-[9px] text-slate-400 font-bold uppercase">Office Drilldown</span>
                 </div>
 
@@ -1355,11 +1455,11 @@ export default function Dashboard({
                   </div>
                 </div>
 
-                {det.detailsList.length > 0 && (
+                {det.detailsList.filter(seg => seg.balance > 0).length > 0 && (
                   <div className="border-t border-slate-800 pt-2">
                     <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Truck Segment Logs</span>
                     <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
-                      {det.detailsList.map((seg, sIdx) => (
+                      {det.detailsList.filter(seg => seg.balance > 0).map((seg, sIdx) => (
                         <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
                           <div className="flex justify-between font-bold text-slate-350">
                             <span className="truncate text-white font-semibold">{seg.truckNo}</span>
@@ -1391,7 +1491,17 @@ export default function Dashboard({
             onMouseLeave={handleMouseLeaveRowOrTooltip}
           >
             <div className="border-b border-slate-705 pb-1.5 mb-2 flex justify-between items-center">
-              <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate max-w-[200px]">{hoveredOffice}</span>
+              <div className="flex items-center gap-1.5 max-w-[200px]">
+                <span className="font-extrabold text-[12px] text-amber-400 tracking-wider font-mono truncate">{hoveredOffice}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(getOfficeShareText(hoveredOffice!, det), `office-desk-${hoveredOffice}`)}
+                  title="Copy Outstanding Details"
+                  className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+                >
+                  {copiedId === `office-desk-${hoveredOffice}` ? <Check className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> : <Share2 className="w-3.5 h-3.5" />}
+                </button>
+              </div>
               <span className="text-[9px] text-slate-400 font-bold uppercase">Office Drilldown</span>
             </div>
 
@@ -1416,20 +1526,49 @@ export default function Dashboard({
               </div>
             </div>
 
-            {det.detailsList.length > 0 && (
+            {det.detailsList.filter((seg: any) => seg.balance > 0).length > 0 && (
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 font-extrabold text-[8px] uppercase tracking-wider block mb-1">Truck Segment Logs</span>
                 <div className="space-y-1 max-h-[120px] overflow-y-auto pr-0.5 modern-scrollbar">
-                  {det.detailsList.map((seg, sIdx) => (
+                  {det.detailsList.filter((seg: any) => seg.balance > 0).map((seg: any, sIdx: number) => (
                     <div key={sIdx} className="bg-slate-800/50 rounded p-1.5 border border-slate-800 flex flex-col gap-0.5 text-[9px]">
-                      <div className="flex justify-between font-bold text-slate-350">
+                      <div className="flex justify-between font-bold text-slate-350 items-center">
                         <span className="truncate text-white font-semibold">{seg.truckNo}</span>
                         <span className="font-mono text-slate-405 text-[8px]">{seg.date}</span>
                       </div>
-                      <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5">
-                        <span>Inc: ₹{seg.income}</span>
-                        <span>Adv: ₹{seg.advance}</span>
-                        <span className="text-rose-400 font-bold">Bal: ₹{seg.balance}</span>
+                      <div className="flex justify-between font-mono text-[8px] text-slate-400 pt-0.5 items-center">
+                        <div>
+                          <span>Inc: ₹{seg.income.toLocaleString()}</span>
+                          <span className="mx-1">|</span>
+                          <span>Adv: ₹{seg.advance.toLocaleString()}</span>
+                          <span className="mx-1">|</span>
+                          <span className="text-rose-400 font-bold">Bal: ₹{seg.balance.toLocaleString()}</span>
+                        </div>
+                        {seg.balance > 0 && onSaveTrips && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPayDate(new Date().toISOString().substring(0, 10));
+                              setPayAccount(accounts[0]?.id || '');
+                              setPayAmount(seg.balance);
+                              setPayNotes(`Quick Pay: ${hoveredOffice}`);
+                              setQuickPayTarget({
+                                tripId: seg.tripId,
+                                subTripId: seg.subTripId,
+                                officeName: hoveredOffice || 'Office',
+                                route: `${seg.routeFrom || 'Origin'} ➔ ${seg.routeTo || 'Destination'}`,
+                                balance: seg.balance,
+                                truckNo: seg.truckNo
+                              });
+                              setHoveredTruck(null);
+                              setHoveredOffice(null);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-0.5 rounded cursor-pointer transition text-[8px] shrink-0"
+                          >
+                            Pay
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1440,6 +1579,146 @@ export default function Dashboard({
         );
       })()}
 
+      {/* QUICK ADD PAYMENT RECEIPT MODAL */}
+      {quickPayTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 no-print animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-2xl max-w-md w-full animate-scale-up font-sans">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider font-sans flex items-center gap-1.5">
+                  Register Payment Receipt
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                  Quick recording for segment: <strong className="text-blue-600">{quickPayTarget.route}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickPayTarget(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-650 bg-slate-50 p-3 rounded-xl border border-slate-150">
+              <div>
+                <span className="text-[9px] text-slate-400 uppercase font-bold block">Office Branch</span>
+                <span className="text-slate-850 font-bold truncate block">{quickPayTarget.officeName}</span>
+              </div>
+              {quickPayTarget.truckNo && (
+                <div>
+                  <span className="text-[9px] text-slate-400 uppercase font-bold block">Truck No</span>
+                  <span className="text-slate-850 font-mono font-bold tracking-wider block">{quickPayTarget.truckNo}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Receipt Date</label>
+                <input
+                  type="date"
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-250 text-slate-850 rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Ledger Account</label>
+                <select
+                  value={payAccount}
+                  onChange={(e) => setPayAccount(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-250 text-slate-850 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 focus:bg-white font-bold"
+                >
+                  <option value="">-- Choose Account --</option>
+                  <option value="paid_to_driver_advance">Paid to Driver Advance</option>
+                  <option value="Cash">Cash</option>
+                  {accounts.map(ac => (
+                    <option key={ac.id} value={ac.id}>{ac.accountName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                  placeholder="₹0.00"
+                  className="w-full bg-slate-50 border border-slate-250 text-slate-850 rounded-lg px-3 py-2 font-mono font-bold text-right focus:outline-none focus:border-blue-500 focus:bg-white text-base text-emerald-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Notes / Cargo Ref</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bank online transfer"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-250 text-slate-805 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setQuickPayTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!onSaveTrips || !allTrips) return;
+                  const amt = Number(payAmount) || 0;
+                  if (amt <= 0) {
+                    alert("Please enter a valid amount greater than 0.");
+                    return;
+                  }
+                  if (!payAccount) {
+                    alert("Please choose a valid financial account.");
+                    return;
+                  }
+
+                  const newPayment = {
+                    id: 'stmt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                    amount: amt,
+                    date: payDate || new Date().toISOString().substring(0, 10),
+                    receivedBy: payAccount,
+                    notes: payNotes.trim() || undefined,
+                    subTripId: quickPayTarget.subTripId
+                  };
+
+                  const updatedTrips = allTrips.map(t => {
+                    if (t.id === quickPayTarget.tripId) {
+                      return {
+                        ...t,
+                        payments: [...(t.payments || []), newPayment]
+                      };
+                    }
+                    return t;
+                  });
+
+                  onSaveTrips(updatedTrips);
+                  alert(`Payment of ₹${amt.toLocaleString('en-IN')} successfully registered.`);
+                  setQuickPayTarget(null);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-lg transition shadow-3xs cursor-pointer"
+              >
+                Register Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -521,7 +521,7 @@ class AppwriteService {
       
       if (key === 'loans' || key === 'payments' || key === 'advances' || key === 'fuels' || key === 'movementHistory' || key === 'cargoExpenses') {
         try {
-          record[key] = val ? JSON.parse(val as string) : [];
+          record[key] = val ? (typeof val === 'string' ? JSON.parse(val) : val) : [];
         } catch {
           record[key] = [];
         }
@@ -613,7 +613,7 @@ class AppwriteService {
 
         const subTripsByTripId: Record<string, any[]> = {};
         for (const subDoc of subDocs) {
-          const subTripRecord = this.reconstructRecord(subDoc);
+          const subTripRecord = subDoc;
           const tripId = subDoc.tripId;
           if (tripId) {
             if (!subTripsByTripId[tripId]) {

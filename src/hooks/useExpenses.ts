@@ -44,6 +44,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'expenses', newExp.id, orgId, newExp);
+        newExp.syncState = 'synced';
       } catch (err) {
         console.error("Failed to save expense to Appwrite. Action aborted:", err);
         alert("Error: Failed to register expense in server database. Please check your connection or permissions.");
@@ -69,6 +70,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'expenses', merged.id, orgId, merged);
+        merged.syncState = 'synced';
       } catch (err) {
         console.error("Failed to update expense in Appwrite. Action aborted:", err);
         alert("Error: Failed to update expense in server database. Please check your connection or permissions.");
@@ -97,6 +99,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'expenses', id, orgId, updatedExpense);
+        updatedExpense.syncState = 'synced';
       } catch (err) {
         console.error("Failed to delete expense from Appwrite. Action aborted:", err);
         alert("Error: Failed to delete expense from server database. Please check your connection or permissions.");

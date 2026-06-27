@@ -43,11 +43,22 @@ export function useTrips({
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       newTrips.forEach(async (newT) => {
+        if (newT.syncState === 'synced') return;
         const oldT = trips.find(t => t.id === newT.id);
         // Only save if it's a new trip or the trip has changed
         if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
           try {
             await appwrite.saveFleetDocument(databaseId, 'trips', newT.id, orgId, newT);
+            setTrips(currentTrips => {
+              const updated = currentTrips.map(t => {
+                if (t.id === newT.id) {
+                  return { ...t, syncState: 'synced' as const };
+                }
+                return t;
+              });
+              localStorage.setItem('ttt_trips', JSON.stringify(updated));
+              return updated;
+            });
           } catch (err) {
             console.error(`Failed to save trip ${newT.tripNo} to Appwrite in saveTrips:`, err);
           }
@@ -156,11 +167,13 @@ export function useTrips({
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
+          updated.syncState = 'synced';
           
           for (const mId of modifiedTripIds) {
             const mTrip = next.find(x => x.id === mId);
             if (mTrip) {
               await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+              mTrip.syncState = 'synced';
             }
           }
         } catch (err) {
@@ -196,6 +209,7 @@ export function useTrips({
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
+          newEntry.syncState = 'synced';
         } catch (err) {
           console.error("Failed to create trip in Appwrite:", err);
           alert("Error: Failed to register new trip in server database. Please check your connection or permissions.");
@@ -244,11 +258,13 @@ export function useTrips({
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'trips', id, orgId, updatedTrip);
+        updatedTrip.syncState = 'synced';
         
         for (const mId of modifiedTripIds) {
           const mTrip = next.find(x => x.id === mId);
           if (mTrip) {
             await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
+            mTrip.syncState = 'synced';
           }
         }
       } catch (err) {

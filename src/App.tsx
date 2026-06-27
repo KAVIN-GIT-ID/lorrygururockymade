@@ -51,6 +51,7 @@ const AppUpdateModal = lazy(() => import('./components/AppUpdateModal'));
 import MobileBottomTabBar from './components/MobileBottomTabBar';
 import MobileHomeTab from './components/MobileHomeTab';
 import MobileAccountTab from './components/MobileAccountTab';
+import MobileOutstandingView from './components/MobileOutstandingView';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import versionData from './version.json';
 const APP_VERSION = versionData.version;
@@ -1336,11 +1337,19 @@ function AppContent() {
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    
+    // Bypass swipe gestures on reports and outstanding subtabs to prevent scroll conflict
+    if (registrySubTab === 'REPORTS' || registrySubTab === 'OUTSTANDING') {
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+      return;
+    }
+
     const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
     const diffY = e.changedTouches[0].clientY - touchStartYRef.current;
     
     if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
-      const tabs = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
+      const tabs = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
       const currentIdx = tabs.indexOf(registrySubTab);
       if (diffX < 0) {
         if (currentIdx < tabs.length - 1) {
@@ -3641,7 +3650,7 @@ function AppContent() {
     }
   };
 
-  const tabsList = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
+  const tabsList = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
   const currentTabIdx = tabsList.indexOf(registrySubTab);
   const isSlideRight = currentTabIdx > prevTabIdxRef.current;
   prevTabIdxRef.current = currentTabIdx;
@@ -3811,6 +3820,8 @@ function AppContent() {
                     { id: 'TRUCKS', label: 'Trucks' },
                     { id: 'DRIVERS', label: 'Drivers' },
                     { id: 'EXPENSES', label: 'Expenses' },
+                    { id: 'OUTSTANDING', label: 'Outstanding' },
+                    { id: 'REPORTS', label: 'Reports' },
                     { id: 'TYRES', label: 'Tyres' },
                     { id: 'OFFICES', label: 'Offices' },
                     { id: 'ACCOUNTS', label: 'Accounts' },
@@ -3903,6 +3914,7 @@ function AppContent() {
                       organizationId={currentUserOrgId}
                       autoOpenAdd={autoOpenFormTab === 'EXPENSES'}
                       onAutoOpenCleared={() => setAutoOpenFormTab(null)}
+                      orgProfile={currentOrgProfile}
                     />
                   )}
                   {registrySubTab === 'TYRES' && (
@@ -3944,6 +3956,28 @@ function AppContent() {
                       canViewAccounts={currentUserRights.canViewAccounts}
                       canEditAccounts={currentUserRights.canEditAccounts}
                       canDeleteAccounts={currentUserRights.canDeleteAccounts}
+                    />
+                  )}
+                  {registrySubTab === 'OUTSTANDING' && (
+                    <MobileOutstandingView
+                      trips={orgTrips}
+                      trucks={approvedOrgTrucks}
+                      offices={orgOffices}
+                      accounts={orgAccounts}
+                      orgProfile={currentOrgProfile}
+                      expenses={orgExpenses}
+                      onSaveTrips={saveTrips}
+                    />
+                  )}
+                  {registrySubTab === 'REPORTS' && (
+                    <MonthlyReport
+                      trips={dashboardTrips}
+                      trucks={approvedOrgTrucks}
+                      expenses={dashboardExpenses}
+                      selectedMonth={activeMonth}
+                      selectedYear={activeYear}
+                      setSelectedMonth={setActiveMonth}
+                      setSelectedYear={setActiveYear}
                     />
                   )}
                   {registrySubTab === 'AUDIT' && (
@@ -4282,6 +4316,7 @@ function AppContent() {
                 expenses={orgExpenses}
                 onAddExpense={addExpense}
                 onUpdateTruck={updateTruck}
+                onSaveTrips={saveTrips}
               />
             )}
 
@@ -4392,6 +4427,7 @@ function AppContent() {
                 canEditExpenses={currentUserRights.canEditExpenses}
                 canDeleteExpenses={currentUserRights.canDeleteExpenses}
                 organizationId={currentUserOrgId}
+                orgProfile={currentOrgProfile}
               />
             )}
 

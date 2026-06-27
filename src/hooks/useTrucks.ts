@@ -61,22 +61,21 @@ export function useTrucks({
       registrationExpiryDate: expiryStr
     }, currentUserId);
 
-    // Optimistic update
-    saveTrucks([...trucks, n]);
-    logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
-    showNotification(`Truck ${n.truckNo} added successfully.`);
-
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'trucks', n.id, orgId, n);
+        n.syncState = 'synced';
       } catch (err) {
-        console.error("Failed to save truck to Appwrite. Rolling back:", err);
-        // Rollback state
-        saveTrucks(trucks);
+        console.error("Failed to save truck to Appwrite. Action aborted:", err);
         alert("Error: Failed to register truck in server database. Connection offline or permissions missing.");
+        return;
       }
     }
+
+    saveTrucks([...trucks, n]);
+    logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
+    showNotification(`Truck ${n.truckNo} added successfully.`);
   };
 
   const updateTruck = async (updated: Truck) => {
@@ -85,20 +84,11 @@ export function useTrucks({
       ? mutateRecord(oldTruck, updated, currentUserId)
       : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
     
-    // Optimistic update
-    const next = trucks.map(t => t.id === updated.id ? merged : t);
-    saveTrucks(next);
- 
-    const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
-    if (diff) {
-      logAction('Edited', 'Truck', merged.truckNo, diff);
-    }
-    showNotification(`Truck ${merged.truckNo} database specifications updated.`);
-
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'trucks', merged.id, orgId, merged);
+        merged.syncState = 'synced';
  
         if (oldTruck) {
           if (oldTruck.rcFileId && oldTruck.rcFileId !== merged.rcFileId) {
@@ -113,14 +103,20 @@ export function useTrucks({
           }
         }
       } catch (err) {
-        console.error("Failed to update truck in Appwrite. Rolling back:", err);
-        if (oldTruck) {
-          const rollback = trucks.map(t => t.id === updated.id ? oldTruck : t);
-          saveTrucks(rollback);
-        }
+        console.error("Failed to update truck in Appwrite. Action aborted:", err);
         alert("Error: Failed to update truck in server database. Connection offline or permissions missing.");
+        return;
       }
     }
+
+    const next = trucks.map(t => t.id === updated.id ? merged : t);
+    saveTrucks(next);
+ 
+    const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
+    if (diff) {
+      logAction('Edited', 'Truck', merged.truckNo, diff);
+    }
+    showNotification(`Truck ${merged.truckNo} database specifications updated.`);
   };
 
   const deleteTruck = async (id: string) => {

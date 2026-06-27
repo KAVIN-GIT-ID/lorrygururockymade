@@ -303,15 +303,29 @@ export default function MobileHomeTab({
           <button
             onClick={() => {
               setActiveTab('REGISTRY');
-              onNavigateToSubTab('EXPENSES');
+              onNavigateToSubTab('OUTSTANDING');
             }}
             className="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
           >
             <div className="w-9 h-9 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl flex items-center justify-center border border-cyan-500/15 mb-2 group-hover:scale-105 transition-transform">
               <FileText className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Reports</span>
-            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Journals</span>
+            <span className="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Outstanding</span>
+            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Reporting</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('REGISTRY');
+              onNavigateToSubTab('REPORTS');
+            }}
+            className="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
+          >
+            <div className="w-9 h-9 bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/15 mb-2 group-hover:scale-105 transition-transform">
+              <FileText className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Monthly</span>
+            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Reports</span>
           </button>
 
           <button

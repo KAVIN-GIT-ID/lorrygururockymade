@@ -731,6 +731,8 @@ export interface OrganizationProfile {
   qTaxWarningDays?: number;
   greenTaxWarningDays?: number;
   subscriptionWarningDays?: number;
+  customExpenseTypes?: string[];
+  shopNames?: string[];
 }
 
 // ─── Service Done Types ────────────────────────────────────────────────────────

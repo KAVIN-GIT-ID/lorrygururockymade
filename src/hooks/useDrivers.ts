@@ -46,6 +46,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', d.id, orgId, d);
+        d.syncState = 'synced';
       } catch (err) {
         console.error("Failed to save driver to Appwrite. Action aborted:", err);
         alert("Error: Failed to register driver in server database. Please check your connection or permissions.");
@@ -68,6 +69,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', merged.id, orgId, merged);
+        merged.syncState = 'synced';
       } catch (err) {
         console.error("Failed to update driver in Appwrite. Action aborted:", err);
         alert("Error: Failed to update driver in server database. Please check your connection or permissions.");
@@ -105,6 +107,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         await appwrite.saveFleetDocument(databaseId, 'drivers', id, orgId, updatedDriver);
+        updatedDriver.syncState = 'synced';
       } catch (err) {
         console.error("Failed to delete driver from Appwrite. Action aborted:", err);
         alert("Error: Failed to delete driver from server database. Please check your connection or permissions.");

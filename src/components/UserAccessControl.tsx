@@ -116,6 +116,63 @@ export default function UserAccessControl({
     showNotification("Organization defaults updated successfully!");
   };
 
+  const [newExpenseType, setNewExpenseType] = useState('');
+  const [newShopName, setNewShopName] = useState('');
+
+  const handleAddExpenseType = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgProfile || !onUpdateOrgProfile || !newExpenseType.trim()) return;
+    const currentTypes = orgProfile.customExpenseTypes || [];
+    const val = newExpenseType.trim();
+    if (currentTypes.includes(val)) {
+      showNotification("Expense type already exists!");
+      return;
+    }
+    onUpdateOrgProfile({
+      ...orgProfile,
+      customExpenseTypes: [...currentTypes, val]
+    });
+    setNewExpenseType('');
+    showNotification("Expense type added successfully!");
+  };
+
+  const handleDeleteExpenseType = (typeToDelete: string) => {
+    if (!orgProfile || !onUpdateOrgProfile) return;
+    const currentTypes = orgProfile.customExpenseTypes || [];
+    onUpdateOrgProfile({
+      ...orgProfile,
+      customExpenseTypes: currentTypes.filter(t => t !== typeToDelete)
+    });
+    showNotification("Expense type deleted successfully!");
+  };
+
+  const handleAddShopName = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgProfile || !onUpdateOrgProfile || !newShopName.trim()) return;
+    const currentShops = orgProfile.shopNames || [];
+    const val = newShopName.trim();
+    if (currentShops.includes(val)) {
+      showNotification("Shop name already exists!");
+      return;
+    }
+    onUpdateOrgProfile({
+      ...orgProfile,
+      shopNames: [...currentShops, val]
+    });
+    setNewShopName('');
+    showNotification("Shop name added successfully!");
+  };
+
+  const handleDeleteShopName = (shopToDelete: string) => {
+    if (!orgProfile || !onUpdateOrgProfile) return;
+    const currentShops = orgProfile.shopNames || [];
+    onUpdateOrgProfile({
+      ...orgProfile,
+      shopNames: currentShops.filter(s => s !== shopToDelete)
+    });
+    showNotification("Shop name deleted successfully!");
+  };
+
   const [fuelCardName, setFuelCardName] = useState('');
   const [fuelCardNo, setFuelCardNo] = useState('');
   const [fuelCardStatus, setFuelCardStatus] = useState<'Active' | 'Inactive'>('Active');
@@ -739,6 +796,119 @@ export default function UserAccessControl({
                 ))}
               </div>
             )}
+            {/* CUSTOM EXPENSE TYPES & SHOP NAMES SECTION */}
+            <div className="border-t border-slate-200 pt-4 mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Dynamic Expense Types */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-blue-650 animate-pulse" />
+                    <h3 className="text-xs font-bold text-blue-655 uppercase tracking-wider">
+                      Custom Expense Types
+                    </h3>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddExpenseType} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Water Wash, RTO Fine"
+                    value={newExpenseType}
+                    onChange={(e) => setNewExpenseType(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    Add Type
+                  </button>
+                </form>
+
+                {(!orgProfile.customExpenseTypes || orgProfile.customExpenseTypes.length === 0) ? (
+                  <p className="text-[11px] text-slate-400 italic py-1">No custom expense types configured. Standard defaults will be used.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {orgProfile.customExpenseTypes.map((type) => (
+                      <span
+                        key={type}
+                        className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-blue-750 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1"
+                      >
+                        {type}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete custom expense type "${type}"?`)) {
+                              handleDeleteExpenseType(type);
+                            }
+                          }}
+                          className="text-slate-405 hover:text-rose-600 transition"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Shop Names */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-650" />
+                    <h3 className="text-xs font-bold text-blue-655 uppercase tracking-wider">
+                      Authorized Shop/Supplier Names
+                    </h3>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddShopName} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Royal Auto, Premier Tyres"
+                    value={newShopName}
+                    onChange={(e) => setNewShopName(e.target.value)}
+                    className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    Add Shop
+                  </button>
+                </form>
+
+                {(!orgProfile.shopNames || orgProfile.shopNames.length === 0) ? (
+                  <p className="text-[11px] text-slate-400 italic py-1">No custom shop names configured. Users can type any name.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {orgProfile.shopNames.map((shop) => (
+                      <span
+                        key={shop}
+                        className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-250 rounded-lg px-2.5 py-1"
+                      >
+                        {shop}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete shop name "${shop}"?`)) {
+                              handleDeleteShopName(shop);
+                            }
+                          }}
+                          className="text-slate-405 hover:text-rose-600 transition"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}

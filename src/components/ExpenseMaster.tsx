@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ExpenseEntry, Truck, Account, Driver } from '../types';
+import { ExpenseEntry, Truck, Account, Driver, OrganizationProfile } from '../types';
 import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings } from 'lucide-react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import SearchableSelect from './SearchableSelect';
 
 interface ExpenseMasterProps {
   expenses: ExpenseEntry[];
@@ -17,6 +18,7 @@ interface ExpenseMasterProps {
   organizationId?: string;
   autoOpenAdd?: boolean;
   onAutoOpenCleared?: () => void;
+  orgProfile?: OrganizationProfile;
 }
 
 export default function ExpenseMaster({
@@ -33,6 +35,7 @@ export default function ExpenseMaster({
   organizationId,
   autoOpenAdd,
   onAutoOpenCleared,
+  orgProfile,
 }: ExpenseMasterProps) {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -58,6 +61,62 @@ export default function ExpenseMaster({
   const [status, setStatus] = useState<ExpenseEntry['status']>('Settled');
   const [accountType, setAccountType] = useState<'Account' | 'Driver'>('Account');
   const [selectedDriverName, setSelectedDriverName] = useState('');
+
+  const standardTypes = [
+    'Temporary',
+    'Scheduled',
+    'Maintenance',
+    'Breakdown',
+    'Spare Parts',
+    'Workshop Service',
+    'Driver Advance',
+    'Tolls & Mamuls',
+    'Lubricants & Oils'
+  ];
+
+  const allExpenseTypes = Array.from(new Set([
+    ...standardTypes,
+    ...(orgProfile?.customExpenseTypes || [])
+  ]));
+
+  const existingShops = Array.from(new Set(expenses.map(e => e.shopName).filter(Boolean)));
+  const allShops = Array.from(new Set([
+    ...(orgProfile?.shopNames || []),
+    ...existingShops
+  ]));
+
+  const truckOptions = trucks.map(tk => {
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
+    const isAdminDisabled = tk.status === 'Admin Disabled';
+    const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
+    const isBlocked = isExpired || isAdminDisabled || isNotApproved;
+    const isSelected = isEditing && (() => {
+      const orig = expenses.find(e => e.id === isEditing);
+      return orig && orig.truckNo === tk.truckNo;
+    })();
+
+    let labelSuffix = '';
+    if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
+    else if (isNotApproved) labelSuffix = ' (Not Approved)';
+    else if (isExpired) labelSuffix = ' (Expired)';
+
+    return {
+      value: tk.truckNo,
+      label: `${tk.truckNo}${tk.make || tk.model ? ` [${[tk.make, tk.model].filter(Boolean).join(' / ')}]` : ''}${labelSuffix}`,
+      disabled: isBlocked && !isSelected
+    };
+  });
+
+  const expenseTypeOptions = allExpenseTypes.map(t => ({
+    value: t,
+    label: t
+  }));
+
+  const shopOptions = allShops.map(s => ({
+    value: s,
+    label: s
+  }));
 
   // Filter/Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -325,7 +384,7 @@ export default function ExpenseMaster({
       {/* EXPENSE REGISTRATION FORM */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="expense-form-backdrop">
-          <form id="expense-registration-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto text-left my-auto">
+          <form id="expense-registration-form" onSubmit={handleSubmit} className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto md:overflow-visible text-left my-auto">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-450" />
@@ -350,78 +409,41 @@ export default function ExpenseMaster({
               {/* Truck No */}
               <div>
                 <label htmlFor="expense-input-truck" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Truck ID No <span className="text-rose-500">*</span></label>
-                <select
+                <SearchableSelect
                   id="expense-input-truck"
                   value={truckNo}
-                  onChange={(e) => setTruckNo(e.target.value)}
+                  onChange={(val) => setTruckNo(val)}
+                  options={truckOptions}
+                  placeholder="Search / choose Truck..."
                   required
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
-                >
-                  <option value="">-- Choose Truck --</option>
-                  {trucks.map(tk => {
-                    const todayStr = new Date().toISOString().substring(0, 10);
-                    const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
-                    const isAdminDisabled = tk.status === 'Admin Disabled';
-                    const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
-                    const isBlocked = isExpired || isAdminDisabled || isNotApproved;
-                    const isSelected = isEditing && (() => {
-                      const orig = expenses.find(e => e.id === isEditing);
-                      return orig && orig.truckNo === tk.truckNo;
-                    })();
-
-                    let labelSuffix = '';
-                    if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
-                    else if (isNotApproved) labelSuffix = ' (Not Approved)';
-                    else if (isExpired) labelSuffix = ' (Expired)';
-
-                    return (
-                      <option 
-                        key={tk.id} 
-                        value={tk.truckNo}
-                        disabled={isBlocked && !isSelected}
-                      >
-                        {tk.truckNo}
-                        {tk.make || tk.model ? ` [${[tk.make, tk.model].filter(Boolean).join(' / ')}]` : ''}
-                        {labelSuffix}
-                      </option>
-                    );
-                  })}
-                </select>
+                />
               </div>
 
               {/* Expense Type */}
               <div>
                 <label htmlFor="expense-input-type" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Type <span className="text-rose-500">*</span></label>
-                <select
+                <SearchableSelect
                   id="expense-input-type"
                   value={expenseType}
-                  onChange={(e) => setExpenseType(e.target.value)}
+                  onChange={(val) => setExpenseType(val)}
+                  options={expenseTypeOptions}
+                  placeholder="Search / choose Expense Type..."
                   required
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
-                >
-                  <option value="Temporary">Temporary</option>
-                  <option value="Scheduled">Scheduled</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Breakdown">Breakdown</option>
-                  <option value="Spare Parts">Spare Parts</option>
-                  <option value="Workshop Service">Workshop Service</option>
-                  <option value="Driver Advance">Driver Advance</option>
-                  <option value="Tolls & Mamuls">Tolls & Mamuls</option>
-                  <option value="Lubricants & Oils">Lubricants & Oils</option>
-                </select>
+                  allowCustomVal
+                />
               </div>
 
               {/* Shop / Supplier Name */}
               <div>
                 <label htmlFor="expense-input-shop" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name <span className="text-rose-500">*</span></label>
-                <input
+                <SearchableSelect
                   id="expense-input-shop"
-                  type="text"
-                  placeholder="e.g. TVS Auto, MRF Tyres"
                   value={shopName}
-                  onChange={(e) => setShopName(e.target.value)}
+                  onChange={(val) => setShopName(val)}
+                  options={shopOptions}
+                  placeholder="Search / enter Shop..."
                   required
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                  allowCustomVal
                 />
               </div>
 
@@ -583,14 +605,10 @@ export default function ExpenseMaster({
             className="w-full bg-white border border-slate-205 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
           >
             <option value="">By Expense Type (All)</option>
-            <option value="Temporary">Temporary</option>
-            <option value="Scheduled">Scheduled</option>
-            <option value="Maintenance">Maintenance</option>
-            <option value="Spare Parts">Spare Parts</option>
-            <option value="Workshop Service">Workshop Service</option>
-            <option value="Driver Advance">Driver Advance</option>
-            <option value="Tolls & Mamuls">Tolls & Mamuls</option>
-            {uniqueExpenseTypes.map(t => (
+            {Array.from(new Set([
+              ...allExpenseTypes,
+              ...uniqueExpenseTypes
+            ])).map(t => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>

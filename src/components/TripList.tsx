@@ -137,7 +137,7 @@ export default function TripList({
         const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
         const matchesStatus = isDeleted
           ? selectedStatuses.includes('Deleted')
-          : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
+          : (selectedStatuses.length === 0 ? true : selectedStatuses.includes(((trip.status as string) === 'Paid' || (trip.status as string) === 'Pald') ? 'Settled' : trip.status));
 
         const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
         const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
@@ -326,7 +326,7 @@ export default function TripList({
     const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
     const matchesStatus = isDeleted
       ? selectedStatuses.includes('Deleted')
-      : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
+      : (selectedStatuses.length === 0 ? true : selectedStatuses.includes(((trip.status as string) === 'Paid' || (trip.status as string) === 'Pald') ? 'Settled' : trip.status));
     const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
     const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
     return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -367,7 +367,7 @@ export default function TripList({
       const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
       const matchesStatus = isDeleted
         ? selectedStatuses.includes('Deleted')
-        : (selectedStatuses.length === 0 ? true : selectedStatuses.includes((trip.status === 'Paid' || trip.status === 'Pald') ? 'Settled' : trip.status));
+        : (selectedStatuses.length === 0 ? true : selectedStatuses.includes(((trip.status as string) === 'Paid' || (trip.status as string) === 'Pald') ? 'Settled' : trip.status));
       const matchesStartDate = !startDate ? true : trip.startDate >= startDate;
       const matchesEndDate = !endDate ? true : trip.endDate <= endDate;
       return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
@@ -2141,7 +2141,7 @@ export default function TripList({
 
                   {/* Tab Selector */}
                   <div className="flex border-b border-slate-200/50 mt-1.5 gap-2 text-xs font-semibold overflow-x-auto scrollbar-none py-1">
-                    {((currentUserRights?.isAdmin ? ['loads', 'profit', 'driver', 'actions', 'audit'] : ['loads', 'profit', 'driver', 'actions']) as const).map((tab) => {
+                    {(currentUserRights?.isAdmin ? (['loads', 'profit', 'driver', 'actions', 'audit'] as const) : (['loads', 'profit', 'driver', 'actions'] as const)).map((tab) => {
                       const isActive = activeTab === tab;
                       const label = {
                         loads: 'Journey & Loads',
