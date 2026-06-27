@@ -30,3 +30,4 @@ src/version.json
 
 # Temporary agent scratch scripts
 scratch_*
+/appwrite-backup-function
