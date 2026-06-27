@@ -17,7 +17,6 @@ import {
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
 import { appwrite, isAppwriteConfigured, getAppOrigin } from '../lib/appwrite';
-import { localChangelog } from '../local_changelog';
 import {
   Building2,
   Truck as TruckIcon,
@@ -2690,7 +2689,7 @@ const getNextVersion = (ver?: string) => {
 
 function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: AppUpdateFormProps) {
   const [version, setVersion] = useState(() => getNextVersion(appUpdateConfig?.version));
-  const [releaseNotes, setReleaseNotes] = useState(() => localChangelog.join('\n'));
+  const [releaseNotes, setReleaseNotes] = useState(() => appUpdateConfig?.releaseNotes || '');
   const [downloadUrl, setDownloadUrl] = useState('');
   const [apkFile, setApkFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -2698,7 +2697,7 @@ function AppUpdateForm({ appUpdateConfig, onSaveAppUpdateConfig, currentUser }: 
   useEffect(() => {
     if (appUpdateConfig?.version) {
       setVersion(getNextVersion(appUpdateConfig.version));
-      setReleaseNotes(localChangelog.join('\n'));
+      setReleaseNotes(appUpdateConfig.releaseNotes || '');
       setDownloadUrl('');
       setApkFile(null);
     }
