@@ -523,6 +523,43 @@ export default function MobileOutstandingView({
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (blob) {
+        const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
+        if (isCapacitor) {
+          try {
+            const { Filesystem, Directory } = await import('@capacitor/filesystem');
+            const { Share } = await import('@capacitor/share');
+
+            // Convert blob to base64 for writing to file system
+            const reader = new FileReader();
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              reader.onloadend = () => {
+                const base64String = reader.result as string;
+                // Strip the data URL prefix (e.g. "data:image/png;base64,")
+                const base64Raw = base64String.split(',')[1] || base64String;
+                resolve(base64Raw);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+
+            const fileName = `outstanding_${name.replace(/\s+/g, '_')}.png`;
+            const writeResult = await Filesystem.writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: Directory.Cache
+            });
+
+            await Share.share({
+              title: `${name} Outstanding`,
+              text: `Outstanding statement receipt for ${name} generated via LorryGuru.`,
+              url: writeResult.uri
+            });
+            return;
+          } catch (capErr) {
+            console.error('Capacitor native sharing failed, falling back:', capErr);
+          }
+        }
+
         const file = new File([blob], `outstanding_${name.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
