@@ -2,7 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+const isDev = process.argv.includes('--dev');
+
+if (!isDev && fs.existsSync('.env.production')) {
+  dotenv.config({ path: '.env.production' });
+} else {
+  dotenv.config();
+}
 
 const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
 const projectId = process.env.VITE_APPWRITE_PROJECT_ID;

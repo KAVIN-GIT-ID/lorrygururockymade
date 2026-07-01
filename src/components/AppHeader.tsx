@@ -133,7 +133,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   logAction
 }) => {
   return (
-    <header className="h-auto md:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-0 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
+    <header className="min-h-16 h-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-2 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
       <div className="flex items-center gap-4 self-stretch sm:self-auto">
         <h1 className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">
           {activeTab === 'DASHBOARD' && 'Operations Dashboard'}

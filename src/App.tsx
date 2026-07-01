@@ -1256,7 +1256,26 @@ function AppContent() {
     }
   });
 
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('ttt_dismissed_version');
+    } catch {
+      return null;
+    }
+  });
+
+  const handleDismissVersion = (ver: string | null) => {
+    setDismissedVersion(ver);
+    try {
+      if (ver) {
+        localStorage.setItem('ttt_dismissed_version', ver);
+      } else {
+        localStorage.removeItem('ttt_dismissed_version');
+      }
+    } catch (e) {
+      console.warn("Failed to save dismissed version:", e);
+    }
+  };
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -1459,11 +1478,12 @@ function AppContent() {
         isOpen={
           typeof window !== 'undefined' &&
           (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || window.innerWidth < 768) &&
+          !import.meta.env.DEV &&
           !!appUpdateConfig &&
           isVersionNewer(APP_VERSION, appUpdateConfig.version) &&
           dismissedVersion !== appUpdateConfig.version
         }
-        onClose={() => setDismissedVersion(appUpdateConfig?.version || null)}
+        onClose={() => handleDismissVersion(appUpdateConfig?.version || null)}
         currentVersion={APP_VERSION}
         latestVersion={appUpdateConfig?.version || ''}
         releaseNotes={appUpdateConfig?.releaseNotes || ''}

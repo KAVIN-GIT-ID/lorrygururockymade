@@ -627,31 +627,33 @@ export default function TruckMaster({
     } else {
       const newTruckId = 'tr_' + Date.now();
       
-      // Save temp payment details in localStorage
-      localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
-      localStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
+      if (limitReached) {
+        // Save temp payment details in localStorage
+        localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
+        localStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
 
-      // Save truck as rejected (unsubscribed/inactive) in list first
-      if (onAddTruckRequest) {
-        onAddTruckRequest({
-          ...truckPayload,
-          id: newTruckId,
-          requestStatus: 'Rejected' as const
-        } as any);
-      }
+        // Save truck as rejected (unsubscribed/inactive) in list first
+        if (onAddTruckRequest) {
+          onAddTruckRequest({
+            ...truckPayload,
+            id: newTruckId,
+            requestStatus: 'Rejected' as const
+          } as any);
+        }
 
-      // Launch PhonePe Checkout Modal
-      if (onProcessTruckPayment) {
-        setPhonePePayload(truckPayload);
-        setPhonePeTruckNo(truckPayload.truckNo);
-        setPhonePeEditingId(newTruckId);
-        setShowPhonePeModal(true);
-        setIsSubmitting(false);
-        return;
-      }
+        // Launch PhonePe Checkout Modal
+        if (onProcessTruckPayment) {
+          setPhonePePayload(truckPayload);
+          setPhonePeTruckNo(truckPayload.truckNo);
+          setPhonePeEditingId(newTruckId);
+          setShowPhonePeModal(true);
+          setIsSubmitting(false);
+          return;
+        }
 
-      if (limitReached && onAddTruckRequest) {
-        onAddTruckRequest(truckPayload);
+        if (onAddTruckRequest) {
+          onAddTruckRequest(truckPayload);
+        }
       } else {
         onAddTruck(truckPayload);
       }
