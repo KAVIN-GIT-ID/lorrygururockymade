@@ -484,7 +484,16 @@ export default function TruckMaster({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!truckNo.trim()) return;
+    const formattedInputNo = formatTruckNumber(truckNo).toUpperCase().trim();
+    const isDuplicate = trucks.some(t => 
+      t.id !== isEditing && 
+      t.truckNo.toUpperCase().trim() === formattedInputNo &&
+      t.isApproved !== false
+    );
+    if (isDuplicate) {
+      alert("Truck Number already registered in active datasheets.");
+      return;
+    }
 
     setIsSubmitting(true);
     let uploadedRcId = rcFileId;
@@ -1815,7 +1824,7 @@ export default function TruckMaster({
             onClick={() => setStatusFilter('Admin Disabled')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 border cursor-pointer ${
               statusFilter === 'Admin Disabled'
-                ? 'bg-red-650 text-white border-red-650 shadow-sm'
+                ? 'bg-red-600 text-white border-red-600 shadow-sm'
                 : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'
             }`}
           >
@@ -2610,6 +2619,7 @@ export default function TruckMaster({
           defaultCustomerName={currentUserName}
           defaultCustomerPhone={currentUserPhone}
           initialTxnId={initialTxnId}
+          organizationId={organizationId}
           onSuccess={async (paymentDetails) => {
             if (onProcessTruckPayment) {
               await onProcessTruckPayment(phonePePayload, paymentDetails, phonePeEditingId);

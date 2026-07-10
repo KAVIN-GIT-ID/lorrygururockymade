@@ -440,6 +440,64 @@ export default function BackendDashboard({
   const [isAddingNewRecord, setIsAddingNewRecord] = useState<boolean>(false);
   const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
+  // WhatsApp OTP Testing States
+  const [testPhone, setTestPhone] = useState('');
+  const [testOtpStatus, setTestOtpStatus] = useState<string | null>(null);
+  const [isSendingTestOtp, setIsSendingTestOtp] = useState(false);
+
+  const handleSendTestOtp = async () => {
+    if (!testPhone) {
+      alert("Please enter a phone number");
+      return;
+    }
+    setIsSendingTestOtp(true);
+    setTestOtpStatus("Sending...");
+    try {
+      const mockCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const cleanPhone = testPhone.replace(/[^0-9]/g, '');
+      
+      let gatewayHost = window.location.hostname;
+      let gatewayProtocol = window.location.protocol;
+      let useSubpath = false;
+
+      const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
+      if (appwriteEndpoint.includes('//')) {
+        gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
+        gatewayProtocol = appwriteEndpoint.split('//')[0];
+        useSubpath = true;
+      }
+
+      const gatewayUrl = useSubpath
+        ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/send-otp`
+        : `${gatewayProtocol}//${gatewayHost}:8000/send-otp`;
+
+      console.info(`[WhatsAppOTP-Test] Dispatching test code: ${mockCode} to ${cleanPhone} via ${gatewayUrl}`);
+
+      const response = await fetch(gatewayUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          apiKey: 'ft_92hf83hdkw9812hskd',
+          phone: cleanPhone,
+          code: mockCode
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        setTestOtpStatus(`Success! Test OTP code ${mockCode} sent successfully.`);
+      } else {
+        setTestOtpStatus(`Error: ${data.error || 'Failed to dispatch WhatsApp OTP.'}`);
+      }
+    } catch (err: any) {
+      setTestOtpStatus(`Network Error: ${err.message || err}`);
+    } finally {
+      setIsSendingTestOtp(false);
+    }
+  };
+
   // Support Tickets States
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
@@ -2489,21 +2547,71 @@ export default function BackendDashboard({
 
       {/* TAB CONTENT: APP UPDATES */}
       {activeSubTab === 'UPDATES' && isSuperAdmin && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm text-left max-w-2xl mx-auto space-y-6">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Publish Application Update
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Upload a new APK version and release notes. Logged-in mobile clients will receive update alerts in real-time.
-            </p>
+        <div className="space-y-6 max-w-2xl mx-auto">
+          {/* Card 1: WhatsApp OTP Tester */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm text-left space-y-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                Test WhatsApp OTP Gateway
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Verify that headless WhatsApp connection is active and can successfully send verification codes.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="tel"
+                placeholder="Phone Number (e.g. +919876543210)"
+                value={testPhone}
+                onChange={(e) => setTestPhone(e.target.value)}
+                className="flex-1 bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 focus:bg-white dark:focus:bg-slate-900 transition-colors font-semibold"
+              />
+              <button
+                type="button"
+                onClick={handleSendTestOtp}
+                disabled={isSendingTestOtp || !testPhone}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-750 text-white rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm disabled:cursor-not-allowed"
+              >
+                {isSendingTestOtp ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                Send Test OTP
+              </button>
+            </div>
+
+            {testOtpStatus && (
+              <div className={`p-3 rounded-lg text-xs font-medium border ${
+                testOtpStatus.startsWith('Success')
+                  ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-450 border-emerald-200/30'
+                  : testOtpStatus.startsWith('Sending')
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200/40'
+                  : 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-450 border-rose-200/30'
+              }`}>
+                {testOtpStatus}
+              </div>
+            )}
           </div>
 
-          <AppUpdateForm
-            appUpdateConfig={appUpdateConfig}
-            onSaveAppUpdateConfig={onSaveAppUpdateConfig}
-            currentUser={currentUser}
-          />
+          {/* Card 2: App Updates */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm text-left space-y-6">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                Publish Application Update
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Upload a new APK version and release notes. Logged-in mobile clients will receive update alerts in real-time.
+              </p>
+            </div>
+
+            <AppUpdateForm
+              appUpdateConfig={appUpdateConfig}
+              onSaveAppUpdateConfig={onSaveAppUpdateConfig}
+              currentUser={currentUser}
+            />
+          </div>
         </div>
       )}
 

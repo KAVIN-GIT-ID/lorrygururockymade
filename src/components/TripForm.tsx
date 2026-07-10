@@ -992,11 +992,16 @@ export default function TripForm({
                   className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-semibold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-sans"
                 >
                   <option value="">-- Choose Driver --</option>
-                  {drivers.map(d => (
-                    <option key={d.id} value={d.driverName}>
-                      {d.driverName} {canViewDrivers && d.phone ? `(${d.phone})` : ''}
-                    </option>
-                  ))}
+                  {drivers.map(d => {
+                    const isInactive = d.status === 'Inactive';
+                    const isSelected = d.driverName === driverName;
+                    if (isInactive && !isSelected) return null;
+                    return (
+                      <option key={d.id} value={d.driverName}>
+                        {d.driverName} {canViewDrivers && d.phone ? `(${d.phone})` : ''}{isInactive ? ' (Inactive)' : ''}
+                      </option>
+                    );
+                  })}
                   {driverName && !drivers.some(d => d.driverName === driverName) && (
                     <option value={driverName}>{driverName} (Manual Override)</option>
                   )}

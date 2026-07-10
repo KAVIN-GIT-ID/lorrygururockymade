@@ -698,6 +698,7 @@ function AppContent() {
     setWhatsappOtpPhone(phone);
     sessionStorage.setItem('whatsapp_otp_code', otp);
     sessionStorage.setItem('whatsapp_otp_phone', phone);
+    return otp;
   };
 
   const handlePhoneUpdateSubmit = async (e: React.FormEvent) => {
@@ -2791,6 +2792,7 @@ function AppContent() {
     if (!currentOrgProfile) return;
 
     let trucksUpdated = false;
+    const approvedTrucksToSave: Truck[] = [];
     const updatedTrucks = trucks.map(truck => {
       if (truck.organizationId === currentUserOrgId && truck.isApproved === false) {
         const approvedReq = (currentOrgProfile.truckRequests || []).find(
@@ -2798,21 +2800,36 @@ function AppContent() {
         );
         if (approvedReq) {
           trucksUpdated = true;
-          return { ...truck, isApproved: true, status: 'Active' as const };
+          const updatedT = { ...truck, isApproved: true, status: 'Active' as const };
+          approvedTrucksToSave.push(updatedT);
+          return updatedT;
         }
       }
       return truck;
     });
 
     if (trucksUpdated) {
-      setTrucks(updatedTrucks);
-      localStorage.setItem('ttt_trucks', JSON.stringify(updatedTrucks));
-      showNotification(`A pending truck request has been approved by the backend team!`);
-      logAction('Created', 'Truck', 'ApprovalSync', `Truck activated automatically via backend activation approval.`);
-
-      touchLastModified();
+      const saveToBackendAndLocal = async () => {
+        if (isAppwriteConfigured()) {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          try {
+            for (const t of approvedTrucksToSave) {
+              await appwrite.saveFleetDocument(databaseId, 'trucks', t.id, currentUserOrgId, t);
+            }
+          } catch (err) {
+            console.error("Failed to sync approved truck to Appwrite before local update:", err);
+          }
+        }
+        setTrucks(updatedTrucks);
+        localStorage.setItem('ttt_trucks', JSON.stringify(updatedTrucks));
+        showNotification(`A pending truck request has been approved by the backend team!`);
+        logAction('Created', 'Truck', 'ApprovalSync', `Truck activated automatically via backend activation approval.`);
+        touchLastModified();
+      };
+      saveToBackendAndLocal();
     }
   }, [organizationProfiles, currentUserOrgId, trucks, initialPullDone]);
+
 
   // Real-time synchronization and polling fallback for Super Admin
   useEffect(() => {
@@ -4648,17 +4665,27 @@ function AppContent() {
             oldPass || undefined
           );
         }}
-        onChangeMobileClick={() => {
+        onChangeMobileClick={async () => {
           setMobileWizardStep(1);
           setMobileWizardOpen(true);
-          setMobileWizardTimer(0);
+          setMobileWizardTimer(120);
           setMobileWizardCode('');
           setMobileWizardNewPhone('');
           setMobileWizardPassword('');
           setMobileWizardError(null);
-          const otp = Math.floor(100000 + Math.random() * 900000).toString();
-          setMobileWizardGeneratedOtp(otp);
-          alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+          try {
+            if (currentUserRights.phone) {
+              const otp = await sendWhatsAppOTP(currentUserRights.phone);
+              setMobileWizardGeneratedOtp(otp);
+              showNotification("Verification OTP code has been sent via WhatsApp!");
+            } else {
+              const otp = Math.floor(100000 + Math.random() * 900000).toString();
+              setMobileWizardGeneratedOtp(otp);
+              alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+            }
+          } catch (err: any) {
+            setMobileWizardError(err.message || 'Failed to send WhatsApp OTP.');
+          }
         }}
         onEnable2FAClick={() => {
           const secret = generateSecret();
@@ -4708,6 +4735,7 @@ function AppContent() {
         setMobileWizardGeneratedOtp={setMobileWizardGeneratedOtp}
         mobileWizardTimer={mobileWizardTimer}
         setMobileWizardTimer={setMobileWizardTimer}
+        sendWhatsAppOTP={sendWhatsAppOTP}
       />
 
       {/* ENABLE 2FA WIZARD MODAL */}

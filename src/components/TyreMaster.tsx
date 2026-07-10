@@ -169,8 +169,33 @@ export default function TyreMaster({
           );
 
           const mapped = (res.documents || []).map(doc => appwrite.reconstructRecord(doc));
-          setDisplayedTyres(mapped);
-          setTotalCount(res.total || 0);
+          
+          // Get locally filtered tyres
+          const localFiltered = tyres.filter(tyre => {
+            const matchesStatus = statusFilter ? tyre.status === statusFilter : true;
+            const matchesSearch = searchQuery 
+              ? tyre.tyreNo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                tyre.manufacturer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery.toLowerCase()))
+              : true;
+            return matchesStatus && matchesSearch;
+          });
+
+          if (mapped.length === 0 && localFiltered.length > 0) {
+            setDisplayedTyres(localFiltered.slice((currentPage - 1) * pageSize, (currentPage - 1) * pageSize + pageSize));
+            setTotalCount(localFiltered.length);
+          } else {
+            // Find local tyres not yet present in the server response
+            const missingLocal = localFiltered.filter(lt => !mapped.some(mt => mt.id === lt.id || mt.tyreNo === lt.tyreNo));
+            if (missingLocal.length > 0) {
+              const combined = [...mapped, ...missingLocal];
+              setDisplayedTyres(combined.slice(0, pageSize));
+              setTotalCount((res.total || 0) + missingLocal.length);
+            } else {
+              setDisplayedTyres(mapped);
+              setTotalCount(res.total || 0);
+            }
+          }
         } catch (err) {
           console.error("Failed to query tyres from Appwrite:", err);
         } finally {

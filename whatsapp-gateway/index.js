@@ -5,8 +5,56 @@ import pino from 'pino';
 import dotenv from 'dotenv';
 import https from 'https';
 import fs from 'fs';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
+
+const smtpHost = process.env.SMTP_HOST || process.env._APP_SMTP_HOST;
+const smtpPort = parseInt(process.env.SMTP_PORT || process.env._APP_SMTP_PORT || '465');
+const smtpUser = process.env.SMTP_USER || process.env._APP_SMTP_USERNAME;
+const smtpPass = process.env.SMTP_PASS || process.env._APP_SMTP_PASSWORD;
+const alertEmailRecipient = 'prasath.sakthi@gmail.com';
+
+let lastAlertSentTime = 0;
+const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+async function sendEmailAlert(subject, text) {
+  const now = Date.now();
+  if (now - lastAlertSentTime < ALERT_COOLDOWN_MS) {
+    console.log('[Alerts] Alert rate limit active. Skipping email dispatch.');
+    return;
+  }
+  
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.warn('[Alerts] SMTP environment variables are not configured. Skipping email dispatch.');
+    return;
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"WhatsApp Gateway Alert" <${smtpUser}>`,
+      to: alertEmailRecipient,
+      subject,
+      text
+    });
+
+    lastAlertSentTime = now;
+    console.log(`[Alerts] Alert email sent successfully to ${alertEmailRecipient}`);
+  } catch (err) {
+    console.error('[Alerts] Failed to send alert email:', err);
+  }
+}
+
 
 const app = express();
 app.use(express.json());
@@ -67,6 +115,13 @@ async function connectToWhatsApp() {
       const shouldReconnect = !isLoggedOut;
 
       console.error(`WhatsApp connection closed. Status Code: ${statusCode || 'unknown'}. Error:`, error);
+
+      // Trigger email alert
+      const errorMessage = error ? (error.message || JSON.stringify(error)) : 'Unknown socket closure';
+      sendEmailAlert(
+        `🚨 ALERT: WhatsApp OTP Gateway Disconnected`,
+        `The headless WhatsApp OTP gateway connection has closed.\n\nDetails:\n- Status Code: ${statusCode || 'unknown'}\n- Error: ${errorMessage}\n- Logout: ${isLoggedOut}\n- Will Reconnect: ${shouldReconnect}\n\nTimestamp: ${new Date().toString()}`
+      );
 
       if (isLoggedOut) {
         console.log('Session has been logged out or revoked. Deleting credentials folder and restarting for fresh pairing...');

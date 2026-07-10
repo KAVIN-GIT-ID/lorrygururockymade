@@ -28,6 +28,7 @@ interface MobileChangeWizardModalProps {
   setMobileWizardGeneratedOtp: (otp: string) => void;
   mobileWizardTimer: number;
   setMobileWizardTimer: (sec: number) => void;
+  sendWhatsAppOTP?: (phone: string) => Promise<string>;
 }
 
 export const MobileChangeWizardModal: React.FC<MobileChangeWizardModalProps> = ({
@@ -54,7 +55,8 @@ export const MobileChangeWizardModal: React.FC<MobileChangeWizardModalProps> = (
   mobileWizardGeneratedOtp,
   setMobileWizardGeneratedOtp,
   mobileWizardTimer,
-  setMobileWizardTimer
+  setMobileWizardTimer,
+  sendWhatsAppOTP
 }) => {
   if (!isOpen) return null;
 
@@ -113,12 +115,22 @@ export const MobileChangeWizardModal: React.FC<MobileChangeWizardModalProps> = (
               <button
                 type="button"
                 disabled={mobileWizardTimer > 0}
-                onClick={() => {
-                  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                  setMobileWizardGeneratedOtp(otp);
+                onClick={async () => {
                   setMobileWizardTimer(120);
                   setMobileWizardError(null);
-                  alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+                  try {
+                    if (sendWhatsAppOTP && currentUserRights.phone) {
+                      const otp = await sendWhatsAppOTP(currentUserRights.phone);
+                      setMobileWizardGeneratedOtp(otp);
+                      showNotification("Verification OTP code has been sent via WhatsApp!");
+                    } else {
+                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                      setMobileWizardGeneratedOtp(otp);
+                      alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+                    }
+                  } catch (err: any) {
+                    setMobileWizardError(err.message || 'Failed to send WhatsApp OTP.');
+                  }
                 }}
                 className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -182,18 +194,28 @@ export const MobileChangeWizardModal: React.FC<MobileChangeWizardModalProps> = (
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const e164Regex = /^\+[1-9]\d{6,14}$/;
                   if (!e164Regex.test(mobileWizardNewPhone.trim())) {
                     setMobileWizardError('Mobile number must be in E.164 format (e.g. +919876543210).');
                     return;
                   }
-                  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                  setMobileWizardGeneratedOtp(otp);
                   setMobileWizardTimer(120);
                   setMobileWizardError(null);
-                  alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
-                  setMobileWizardStep(3);
+                  try {
+                    if (sendWhatsAppOTP) {
+                      const otp = await sendWhatsAppOTP(mobileWizardNewPhone.trim());
+                      setMobileWizardGeneratedOtp(otp);
+                      showNotification("Verification OTP code has been sent via WhatsApp!");
+                    } else {
+                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                      setMobileWizardGeneratedOtp(otp);
+                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
+                    }
+                    setMobileWizardStep(3);
+                  } catch (err: any) {
+                    setMobileWizardError(err.message || 'Failed to send WhatsApp OTP.');
+                  }
                 }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
               >
@@ -241,12 +263,22 @@ export const MobileChangeWizardModal: React.FC<MobileChangeWizardModalProps> = (
               <button
                 type="button"
                 disabled={mobileWizardTimer > 0}
-                onClick={() => {
-                  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                  setMobileWizardGeneratedOtp(otp);
+                onClick={async () => {
                   setMobileWizardTimer(120);
                   setMobileWizardError(null);
-                  alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
+                  try {
+                    if (sendWhatsAppOTP) {
+                      const otp = await sendWhatsAppOTP(mobileWizardNewPhone.trim());
+                      setMobileWizardGeneratedOtp(otp);
+                      showNotification("Verification OTP code has been sent via WhatsApp!");
+                    } else {
+                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                      setMobileWizardGeneratedOtp(otp);
+                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
+                    }
+                  } catch (err: any) {
+                    setMobileWizardError(err.message || 'Failed to send WhatsApp OTP.');
+                  }
                 }}
                 className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

@@ -9,6 +9,7 @@ interface PhonePePaymentModalProps {
   defaultCustomerEmail?: string;
   defaultCustomerPhone?: string;
   initialTxnId?: string;
+  organizationId?: string;
   onSuccess: (paymentDetails: {
     transactionId: string;
     amount: number;
@@ -38,6 +39,7 @@ export default function PhonePePaymentModal({
   defaultCustomerEmail = '',
   defaultCustomerPhone = '',
   initialTxnId,
+  organizationId = 'org_default',
   onSuccess
 }: PhonePePaymentModalProps) {
   const [step, setStep] = useState<'plan' | 'billing' | 'gateway' | 'processing' | 'success' | 'verifying' | 'failed'>(
@@ -91,7 +93,7 @@ export default function PhonePePaymentModal({
 
           const queryParams = new URLSearchParams({
             truckNo,
-            organizationId: localStorage.getItem('ttt_current_org_id') || 'org_default',
+            organizationId: organizationId || 'org_default',
             duration,
             customerName: customerName || defaultCustomerName || '',
             customerEmail: customerEmail || defaultCustomerEmail || '',
@@ -234,7 +236,7 @@ export default function PhonePePaymentModal({
           customerName,
           customerEmail,
           customerPhone,
-          organizationId: localStorage.getItem('ttt_current_org_id') || 'org_default'
+          organizationId: organizationId || 'org_default'
         })
       });
 
