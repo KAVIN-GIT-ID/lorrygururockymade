@@ -1832,6 +1832,9 @@ export default function TripForm({
                           <option value="">-- Choose Account --</option>
                           <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                           <option value="Cash">Cash</option>
+                          {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newPayReceivedBy).map(c => (
+                            <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                          ))}
                           {activeAccounts.map(ac => (
                             <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                           ))}
@@ -1975,6 +1978,9 @@ export default function TripForm({
                 >
                   <option value="">-- Choose Account --</option>
                   <option value="Cash">Cash</option>
+                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newAdvFromAccount).map(c => (
+                    <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                  ))}
                   {activeAccounts.map(ac => (
                     <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                   ))}

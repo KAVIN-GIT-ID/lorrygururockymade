@@ -239,6 +239,8 @@ export default function Dashboard({
   // Let's obtain the Account Name mapping for easy readability
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
+    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
     return accounts.find(a => a.id === id)?.accountName || id || 'N/A';
   };
 
@@ -1635,6 +1637,9 @@ export default function Dashboard({
                   <option value="">-- Choose Account --</option>
                   <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                   <option value="Cash">Cash</option>
+                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === payAccount).map(c => (
+                    <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                  ))}
                   {accounts.map(ac => (
                     <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                   ))}

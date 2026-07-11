@@ -29,6 +29,7 @@ interface TripListProps {
   onSaveTrips?: (newTrips: TripEntry[]) => void;
   auditLogs?: AuditLog[];
   currentUserRights?: UserRights;
+  orgProfile?: OrganizationProfile;
 }
 
 export default function TripList({
@@ -45,7 +46,8 @@ export default function TripList({
   organizationId,
   onSaveTrips,
   auditLogs = [],
-  currentUserRights
+  currentUserRights,
+  orgProfile
 }: TripListProps) {
   // Mouse hover scroll redirection for horizontal overflow
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -437,6 +439,8 @@ export default function TripList({
 
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
+    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
     return accounts.find(a => a.id === id)?.accountName || id || 'Unmapped';
   };
 
@@ -730,7 +734,7 @@ export default function TripList({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const html = generateTripPDF(trip, accounts);
+                              const html = generateTripPDF(trip, accounts, orgProfile);
                               setPreviewHtml(html);
                               setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                             }}
@@ -751,7 +755,7 @@ export default function TripList({
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  generateDriverReportPDF(trip, accounts);
+                                  generateDriverReportPDF(trip, accounts, orgProfile);
                                 }}
                                 className="text-slate-400 hover:text-blue-600 transition ml-1 cursor-pointer flex items-center"
                                 title="Download Driver Report"
@@ -925,7 +929,7 @@ export default function TripList({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const html = generateTripPDF(trip, accounts);
+                          const html = generateTripPDF(trip, accounts, orgProfile);
                           setPreviewHtml(html);
                           setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                         }}
@@ -951,7 +955,7 @@ export default function TripList({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const html = generateDriverReportPDF(trip, accounts);
+                            const html = generateDriverReportPDF(trip, accounts, orgProfile);
                             setPreviewHtml(html);
                             setPreviewTitle(`Driver Settlement - ${trip.tripNo}`);
                           }}
@@ -1194,7 +1198,7 @@ export default function TripList({
                 <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
                   <button
                     onClick={() => {
-                      const html = generateTripPDF(viewingEntry, accounts);
+                      const html = generateTripPDF(viewingEntry, accounts, orgProfile);
                       setPreviewHtml(html);
                       setPreviewTitle(`Trip Report - ${viewingEntry.tripNo}`);
                     }}
@@ -1204,7 +1208,7 @@ export default function TripList({
                   </button>
                   <button
                     onClick={() => {
-                      const html = generateDriverReportPDF(viewingEntry, accounts);
+                      const html = generateDriverReportPDF(viewingEntry, accounts, orgProfile);
                       setPreviewHtml(html);
                       setPreviewTitle(`Driver Settlement - ${viewingEntry.tripNo}`);
                     }}
@@ -2410,7 +2414,7 @@ export default function TripList({
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <button
                             onClick={() => {
-                              const html = generateTripPDF(viewingEntry, accounts);
+                              const html = generateTripPDF(viewingEntry, accounts, orgProfile);
                               setPreviewHtml(html);
                               setPreviewTitle(`Trip Report - ${viewingEntry.tripNo}`);
                             }}
@@ -2421,7 +2425,7 @@ export default function TripList({
                           </button>
                           <button
                             onClick={() => {
-                              const html = generateDriverReportPDF(viewingEntry, accounts);
+                              const html = generateDriverReportPDF(viewingEntry, accounts, orgProfile);
                               setPreviewHtml(html);
                               setPreviewTitle(`Driver Settlement - ${viewingEntry.tripNo}`);
                             }}

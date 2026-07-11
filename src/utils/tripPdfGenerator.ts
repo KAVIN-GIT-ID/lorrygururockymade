@@ -1,10 +1,12 @@
-import { TripEntry, Account, getTripMetrics, importLegacyCargoExpenses } from '../types';
+import { TripEntry, Account, getTripMetrics, importLegacyCargoExpenses, OrganizationProfile } from '../types';
 
-export function generateTripPDF(trip: TripEntry, accounts: Account[]) {
+export function generateTripPDF(trip: TripEntry, accounts: Account[], orgProfile?: OrganizationProfile) {
   const m = getTripMetrics(trip);
 
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
+    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
     return accounts.find(a => a.id === id)?.accountName || id || 'Unmapped';
   };
 
@@ -491,11 +493,13 @@ export function generateTripPDF(trip: TripEntry, accounts: Account[]) {
   return htmlContent;
 }
 
-export function generateDriverReportPDF(trip: TripEntry, accounts: Account[]) {
+export function generateDriverReportPDF(trip: TripEntry, accounts: Account[], orgProfile?: OrganizationProfile) {
   const m = getTripMetrics(trip);
 
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
+    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
     return accounts.find(a => a.id === id)?.accountName || id || 'Unmapped';
   };
 

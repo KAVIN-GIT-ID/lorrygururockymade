@@ -3845,6 +3845,7 @@ function AppContent() {
                   canDeleteTrips={currentUserRights.canDeleteTrips}
                   organizationId={currentUserOrgId}
                   onSaveTrips={saveTrips}
+                  orgProfile={currentOrgProfile}
                 />
               </div>
             )}
@@ -4373,6 +4374,7 @@ function AppContent() {
                 onSaveTrips={saveTrips}
                 auditLogs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
                 currentUserRights={currentUserRights}
+                orgProfile={currentOrgProfile}
               />
             )}
 

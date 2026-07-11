@@ -946,6 +946,9 @@ export default function MobileOutstandingView({
                   <option value="">-- Choose Account --</option>
                   <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                   <option value="Cash">Cash</option>
+                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter((c: any) => c.status === 'Active' || c.id === payAccount).map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                  ))}
                   {accounts.map(ac => (
                     <option key={ac.id} value={ac.id}>{ac.accountName}</option>
                   ))}
