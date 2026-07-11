@@ -1780,10 +1780,16 @@ export default function TripForm({
                           <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
                             {subTripPayments.map((p) => {
                               const acc = activeAccounts.find(a => a.id === p.receivedBy);
+                              const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === p.receivedBy);
+                              const accountDisplay = p.receivedBy === 'paid_to_driver_advance'
+                                ? 'Paid to Driver Advance'
+                                : fuelCard
+                                  ? `${fuelCard.cardName} (Fuel Card)`
+                                  : (acc?.accountName || p.receivedBy);
                               return (
                                 <tr key={p.id} className="hover:bg-slate-50/85 transition-colors">
                                   <td className="p-2.5 pl-4 font-mono text-[10px]">{p.date}</td>
-                                  <td className="p-2.5 text-blue-650 font-bold">{p.receivedBy === 'paid_to_driver_advance' ? 'Paid to Driver Advance' : (acc?.accountName || p.receivedBy)}</td>
+                                  <td className="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
                                   <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{p.amount.toLocaleString()}</td>
                                   <td className="p-2.5 pl-4 text-slate-500 font-semibold">{p.notes || '—'}</td>
                                   <td className="p-2.5 text-center pr-4">
@@ -1917,11 +1923,13 @@ export default function TripForm({
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {advances.map((adv, advIdx) => {
                       const acc = activeAccounts.find(a => a.id === adv.fromAccountId);
+                      const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === adv.fromAccountId);
+                      const accountDisplay = fuelCard ? `${fuelCard.cardName} (Fuel Card)` : (acc?.accountName || adv.fromAccountId);
                       return (
                         <tr key={adv.id} className="hover:bg-slate-50 text-slate-705 font-medium">
                           <td className="p-2.5 pl-4 text-slate-400 font-bold">#{advIdx + 1}</td>
                           <td className="p-2.5 font-mono text-slate-500">{adv.date}</td>
-                          <td className="p-2.5 text-blue-650 font-bold">{acc?.accountName || adv.fromAccountId}</td>
+                          <td className="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
                           <td className="p-2.5 text-right font-mono font-bold">₹{adv.amount.toLocaleString()}</td>
                           <td className="p-2.5 pl-6">
                             {adv.receivedByDriverDirectly ? (
@@ -2485,7 +2493,9 @@ export default function TripForm({
                             if (onSaveTrips && trips) {
                               const updatedDest = {
                                 ...destTrip,
-                                advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                                advances: [...(destTrip.advances || []), fwdAdvanceDest],
+                                syncState: 'pending' as const,
+                                updatedAt: new Date().toISOString()
                               };
                               const updatedTrips = trips.map(t => t.id === updatedDest.id ? updatedDest : t);
                               onSaveTrips(updatedTrips);

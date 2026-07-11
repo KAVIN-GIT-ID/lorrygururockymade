@@ -1566,12 +1566,16 @@ export default function TripList({
 
                                         const updatedSource = {
                                           ...viewingEntry,
-                                          advances: [...(viewingEntry.advances || []), fwdAdvanceSource]
+                                          advances: [...(viewingEntry.advances || []), fwdAdvanceSource],
+                                          syncState: 'pending' as const,
+                                          updatedAt: new Date().toISOString()
                                         };
 
                                         const updatedDest = {
                                           ...destTrip,
-                                          advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                                          advances: [...(destTrip.advances || []), fwdAdvanceDest],
+                                          syncState: 'pending' as const,
+                                          updatedAt: new Date().toISOString()
                                         };
 
                                         const updatedTrips = trips.map(t => {

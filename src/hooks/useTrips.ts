@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
 import { getTripDiff } from '../utils/diffUtils';
@@ -37,6 +37,11 @@ export function useTrips({
       return [];
     }
   });
+
+  const tripsRef = useRef<TripEntry[]>(trips);
+  useEffect(() => {
+    tripsRef.current = trips;
+  }, [trips]);
 
   const saveTrips = (newTrips: TripEntry[]) => {
     // Sync to Appwrite if configured
@@ -126,7 +131,7 @@ export function useTrips({
       });
 
       const modifiedTripIds: string[] = [];
-      let next = trips.map(t => t.id === editingTrip.id ? updated : t);
+      let next = tripsRef.current.map(t => t.id === editingTrip.id ? updated : t);
 
       deletedFwdAdvances.forEach(deletedAdv => {
         const isDest = deletedAdv.id.startsWith('fwd_in_');
@@ -193,7 +198,9 @@ export function useTrips({
       showNotification(`Trip ${updated.tripNo} changes successfully committed.`);
     } else {
       // Create path
-      const isDup = orgTrips.some(t => t.tripNo.toUpperCase().trim() === finalEntryInput.tripNo.toUpperCase().trim());
+      const isDup = tripsRef.current
+        .filter(t => orgId === 'org_backend' || t.organizationId === orgId)
+        .some(t => t.tripNo.toUpperCase().trim() === finalEntryInput.tripNo.toUpperCase().trim());
       if (isDup) {
         alert("Trip Number is already in use by another active ledger.");
         return;
@@ -217,7 +224,7 @@ export function useTrips({
         }
       }
 
-      const nextTrips = [...trips, newEntry];
+      const nextTrips = [...tripsRef.current, newEntry];
       saveTrips(nextTrips);
       await loadDashboardData(activeMonth, activeYear);
 
@@ -227,14 +234,14 @@ export function useTrips({
   };
 
   const deleteTripEntry = async (id: string) => {
-    const tEntry = trips.find(t => t.id === id);
+    const tEntry = tripsRef.current.find(t => t.id === id);
     if (!tEntry) return;
 
     const deletedTripNo = tEntry.tripNo;
     const modifiedTripIds: string[] = [];
 
     const updatedTrip = mutateRecord(tEntry, { deletedAt: new Date().toISOString() }, currentUserId);
-    let next = trips.map(t => t.id === id ? updatedTrip : t);
+    let next = tripsRef.current.map(t => t.id === id ? updatedTrip : t);
 
     // Clean up carried-forward advances on other trips that refer to the deleted trip
     next = next.map(t => {

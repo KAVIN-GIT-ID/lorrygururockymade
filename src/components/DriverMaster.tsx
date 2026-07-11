@@ -1260,12 +1260,16 @@ export default function DriverMaster({
 
                                       const updatedSource = {
                                         ...srcTrip,
-                                        advances: [...(srcTrip.advances || []), fwdAdvanceSource]
+                                        advances: [...(srcTrip.advances || []), fwdAdvanceSource],
+                                        syncState: 'pending' as const,
+                                        updatedAt: new Date().toISOString()
                                       };
 
                                       const updatedDest = {
                                         ...destTrip,
-                                        advances: [...(destTrip.advances || []), fwdAdvanceDest]
+                                        advances: [...(destTrip.advances || []), fwdAdvanceDest],
+                                        syncState: 'pending' as const,
+                                        updatedAt: new Date().toISOString()
                                       };
 
                                       const updatedTrips = trips.map(t => {
