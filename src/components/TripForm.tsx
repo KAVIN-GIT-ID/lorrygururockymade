@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+
 import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense, mutateRecord, importLegacyCargoExpenses } from '../types';
 import { indianCities } from './indianCities';
 import {
   X, Calculator, Calendar, Landmark, Coins, Plus, Trash2, Edit2,
   Fuel, Gauge, MapPin, BadgeCent, ListCollapse, HelpCircle, AlertCircle
-} from 'lucide-react';
+} from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface TripFormProps {
@@ -43,128 +44,128 @@ export default function TripForm({
   currentUserId
 }: TripFormProps) {
   // Trip group keying
-  const [tripNoOption, setTripNoOption] = useState<'AUTO' | 'EXISTING'>('AUTO');
+  const [tripNoOption, setTripNoOption] = createSignal<'AUTO' | 'EXISTING'>('AUTO');
 
   // Master Trip Form states
-  const [tripNo, setTripNo] = useState('');
-  const [selectedExistingTripNo, setSelectedExistingTripNo] = useState('');
-  const [truckNo, setTruckNo] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [driverName, setDriverName] = useState('');
-  const [startingKM, setStartingKM] = useState<number>(0);
-  const [endingKM, setEndingKM] = useState<number>(0);
-  const [status, setStatus] = useState<TripStatus>('Pending');
-  const [notes, setNotes] = useState('');
+  const [tripNo, setTripNo] = createSignal('');
+  const [selectedExistingTripNo, setSelectedExistingTripNo] = createSignal('');
+  const [truckNo, setTruckNo] = createSignal('');
+  const [startDate, setStartDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [endDate, setEndDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [driverName, setDriverName] = createSignal('');
+  const [startingKM, setStartingKM] = createSignal<number>(0);
+  const [endingKM, setEndingKM] = createSignal<number>(0);
+  const [status, setStatus] = createSignal<TripStatus>('Pending');
+  const [notes, setNotes] = createSignal('');
 
   // Master Trip Common Expenses
-  const [rtoExpense, setRtoExpense] = useState<number>(0);
-  const [dieselLiters, setDieselLiters] = useState<number>(0);
-  const [dieselRate, setDieselRate] = useState<number>(0);
-  const [dieselAmount, setDieselAmount] = useState<number>(0);
-  const [addBlueExpense, setAddBlueExpense] = useState<number>(0);
-  const [fastagExpense, setFastagExpense] = useState<number>(0);
-  const [otherExpense, setOtherExpense] = useState<number>(0);
+  const [rtoExpense, setRtoExpense] = createSignal<number>(0);
+  const [dieselLiters, setDieselLiters] = createSignal<number>(0);
+  const [dieselRate, setDieselRate] = createSignal<number>(0);
+  const [dieselAmount, setDieselAmount] = createSignal<number>(0);
+  const [addBlueExpense, setAddBlueExpense] = createSignal<number>(0);
+  const [fastagExpense, setFastagExpense] = createSignal<number>(0);
+  const [otherExpense, setOtherExpense] = createSignal<number>(0);
 
   // Paid by driver flags
-  const [rtoPaidByDriver, setRtoPaidByDriver] = useState<boolean>(false);
-  const [addBluePaidByDriver, setAddBluePaidByDriver] = useState<boolean>(false);
-  const [fastagPaidByDriver, setFastagPaidByDriver] = useState<boolean>(false);
-  const [otherPaidByDriver, setOtherPaidByDriver] = useState<boolean>(false);
+  const [rtoPaidByDriver, setRtoPaidByDriver] = createSignal<boolean>(false);
+  const [addBluePaidByDriver, setAddBluePaidByDriver] = createSignal<boolean>(false);
+  const [fastagPaidByDriver, setFastagPaidByDriver] = createSignal<boolean>(false);
+  const [otherPaidByDriver, setOtherPaidByDriver] = createSignal<boolean>(false);
 
   // Child lists
-  const [subTrips, setSubTrips] = useState<SubTrip[]>([]);
-  const [payments, setPayments] = useState<TripPayment[]>([]);
-  const [fuels, setFuels] = useState<FuelEntry[]>([]);
-  const [advances, setAdvances] = useState<TripAdvance[]>([]);
+  const [subTrips, setSubTrips] = createSignal<SubTrip[]>([]);
+  const [payments, setPayments] = createSignal<TripPayment[]>([]);
+  const [fuels, setFuels] = createSignal<FuelEntry[]>([]);
+  const [advances, setAdvances] = createSignal<TripAdvance[]>([]);
 
   // Refs to focus dates upon submission
-  const paymentDateInputRef = useRef<HTMLInputElement>(null);
-  const advanceDateInputRef = useRef<HTMLInputElement>(null);
-  const fuelDateInputRef = useRef<HTMLInputElement>(null);
+  let paymentDateInputRef: HTMLInputElement | undefined;
+  let advanceDateInputRef: HTMLInputElement | undefined;
+  let fuelDateInputRef: HTMLInputElement | undefined;
 
   // Draft states for dynamic fuel entry
-  const [newFuelDate, setNewFuelDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [newFuelLiters, setNewFuelLiters] = useState<number | ''>('');
-  const [newFuelRate, setNewFuelRate] = useState<number | ''>('');
-  const [newFuelAmount, setNewFuelAmount] = useState<number | ''>('');
-  const [newFuelShop, setNewFuelShop] = useState('');
-  const [newFuelPaymentMode, setNewFuelPaymentMode] = useState('');
+  const [newFuelDate, setNewFuelDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [newFuelLiters, setNewFuelLiters] = createSignal<number | ''>('');
+  const [newFuelRate, setNewFuelRate] = createSignal<number | ''>('');
+  const [newFuelAmount, setNewFuelAmount] = createSignal<number | ''>('');
+  const [newFuelShop, setNewFuelShop] = createSignal('');
+  const [newFuelPaymentMode, setNewFuelPaymentMode] = createSignal('');
 
   // Draft states for Sub-Trip Segment builder
-  const [showSubTripForm, setShowSubTripForm] = useState(false);
-  const [editingSubTripId, setEditingSubTripId] = useState<string | null>(null);
+  const [showSubTripForm, setShowSubTripForm] = createSignal(false);
+  const [editingSubTripId, setEditingSubTripId] = createSignal<string | null>(null);
 
-  const [stLoadingDate, setStLoadingDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [stOfficeName, setStOfficeName] = useState('');
-  const [stRouteFrom, setStRouteFrom] = useState('');
-  const [stRouteTo, setStRouteTo] = useState('');
-  const [stIncome, setStIncome] = useState<number>(0);
-  const [stCargoExpenses, setStCargoExpenses] = useState<CargoExpense[]>([]);
-  const [newCargoExpType, setNewCargoExpType] = useState<'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC'>('Loading');
-  const [newCargoExpAmount, setNewCargoExpAmount] = useState<number | ''>('');
-  const [newCargoExpDeductedFrom, setNewCargoExpDeductedFrom] = useState<'OrgRental' | 'DriverDirect' | 'OrgPaid'>('DriverDirect');
-  const [newCargoExpBears, setNewCargoExpBears] = useState<'Org' | 'Driver' | 'Office'>('Org');
+  const [stLoadingDate, setStLoadingDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [stOfficeName, setStOfficeName] = createSignal('');
+  const [stRouteFrom, setStRouteFrom] = createSignal('');
+  const [stRouteTo, setStRouteTo] = createSignal('');
+  const [stIncome, setStIncome] = createSignal<number>(0);
+  const [stCargoExpenses, setStCargoExpenses] = createSignal<CargoExpense[]>([]);
+  const [newCargoExpType, setNewCargoExpType] = createSignal<'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC'>('Loading');
+  const [newCargoExpAmount, setNewCargoExpAmount] = createSignal<number | ''>('');
+  const [newCargoExpDeductedFrom, setNewCargoExpDeductedFrom] = createSignal<'OrgRental' | 'DriverDirect' | 'OrgPaid'>('DriverDirect');
+  const [newCargoExpBears, setNewCargoExpBears] = createSignal<'Org' | 'Driver' | 'Office'>('Org');
 
-  const [stDriverWages, setStDriverWages] = useState<number>(0);
-  const [stStartingKM, setStStartingKM] = useState<number>(0);
-  const [stEndingKM, setStEndingKM] = useState<number>(0);
-  const [stNotes, setStNotes] = useState('');
-  const [stWagePct, setStWagePct] = useState<string>('');
+  const [stDriverWages, setStDriverWages] = createSignal<number>(0);
+  const [stStartingKM, setStStartingKM] = createSignal<number>(0);
+  const [stEndingKM, setStEndingKM] = createSignal<number>(0);
+  const [stNotes, setStNotes] = createSignal('');
+  const [stWagePct, setStWagePct] = createSignal<string>('');
 
-  const [stNoOfTons, setStNoOfTons] = useState<number>(0);
-  const [stMaterial, setStMaterial] = useState<string>('');
-  const [stRatePerTon, setStRatePerTon] = useState<number>(0);
-  const [originalSubTripSnapshot, setOriginalSubTripSnapshot] = useState<any>(null);
+  const [stNoOfTons, setStNoOfTons] = createSignal<number>(0);
+  const [stMaterial, setStMaterial] = createSignal<string>('');
+  const [stRatePerTon, setStRatePerTon] = createSignal<number>(0);
+  const [originalSubTripSnapshot, setOriginalSubTripSnapshot] = createSignal<any>(null);
 
   // Draft states for payment ledger receipts list
-  const [newPayAmount, setNewPayAmount] = useState<number | ''>('');
-  const [newPayDate, setNewPayDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [newPayReceivedBy, setNewPayReceivedBy] = useState('');
-  const [newPayNotes, setNewPayNotes] = useState('');
-  const [newPaySubTripId, setNewPaySubTripId] = useState<string>('general');
-  const [activePaymentSubTripId, setActivePaymentSubTripId] = useState<string | null>(null);
+  const [newPayAmount, setNewPayAmount] = createSignal<number | ''>('');
+  const [newPayDate, setNewPayDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [newPayReceivedBy, setNewPayReceivedBy] = createSignal('');
+  const [newPayNotes, setNewPayNotes] = createSignal('');
+  const [newPaySubTripId, setNewPaySubTripId] = createSignal<string>('general');
+  const [activePaymentSubTripId, setActivePaymentSubTripId] = createSignal<string | null>(null);
 
   // Live sub-trip receivable balance calculations for the sub-trip drawer
-  const liveSegmentDeductions = stCargoExpenses
+  const liveSegmentDeductions = stCargoExpenses()
     .filter(exp => exp.deductedFrom === 'OrgRental')
     .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
-  const liveSegmentOfficeBears = stCargoExpenses
+  const liveSegmentOfficeBears = stCargoExpenses()
     .filter(exp => exp.bears === 'Office')
     .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
-  const liveSegmentPayments = editingSubTripId
-    ? (payments || []).filter(p => p.subTripId === editingSubTripId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  const liveSegmentPayments = editingSubTripId()
+    ? (payments() || []).filter(p => p.subTripId === editingSubTripId()).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
     : 0;
 
-  const liveSegmentReceivable = (stIncome || 0) - liveSegmentDeductions + liveSegmentOfficeBears - liveSegmentPayments;
+  const liveSegmentReceivable = (stIncome() || 0) - liveSegmentDeductions + liveSegmentOfficeBears - liveSegmentPayments;
 
-  // Draft states for advances list
-  const [newAdvAmount, setNewAdvAmount] = useState<number | ''>('');
-  const [newAdvDate, setNewAdvDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [newAdvFromAccount, setNewAdvFromAccount] = useState('');
-  const [newAdvNotes, setNewAdvNotes] = useState('');
-  const [newAdvReceivedByDriverDirectly, setNewAdvReceivedByDriverDirectly] = useState(false);
+  // Draft states for advances() list
+  const [newAdvAmount, setNewAdvAmount] = createSignal<number | ''>('');
+  const [newAdvDate, setNewAdvDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [newAdvFromAccount, setNewAdvFromAccount] = createSignal('');
+  const [newAdvNotes, setNewAdvNotes] = createSignal('');
+  const [newAdvReceivedByDriverDirectly, setNewAdvReceivedByDriverDirectly] = createSignal(false);
 
   // Quick carry forward / transfer states
-  const [showQuickFwdPanel, setShowQuickFwdPanel] = useState(false);
-  const [selectedFwdTripId, setSelectedFwdTripId] = useState('');
-  const [selectedFwdMode, setSelectedFwdMode] = useState<'trip' | 'account'>('trip');
-  const [selectedFwdAccountId, setSelectedFwdAccountId] = useState('');
-  const [selectedFwdDate, setSelectedFwdDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [selectedFwdAmount, setSelectedFwdAmount] = useState<number | ''>('');
+  const [showQuickFwdPanel, setShowQuickFwdPanel] = createSignal(false);
+  const [selectedFwdTripId, setSelectedFwdTripId] = createSignal('');
+  const [selectedFwdMode, setSelectedFwdMode] = createSignal<'trip' | 'account'>('trip');
+  const [selectedFwdAccountId, setSelectedFwdAccountId] = createSignal('');
+  const [selectedFwdDate, setSelectedFwdDate] = createSignal(new Date().toISOString().substring(0, 10));
+  const [selectedFwdAmount, setSelectedFwdAmount] = createSignal<number | ''>('');
 
 
   // Reset forward options when isOpen or editingEntry changes
-  useEffect(() => {
+  createEffect(() => {
     setShowQuickFwdPanel(false);
     setSelectedFwdTripId('');
     setSelectedFwdMode('trip');
     setSelectedFwdAccountId('');
     setSelectedFwdDate(new Date().toISOString().substring(0, 10));
     setSelectedFwdAmount('');
-  }, [isOpen, editingEntry]);
+  });
 
   // Auto-fill active lists
   const todayStr = new Date().toISOString().substring(0, 10);
@@ -195,7 +196,7 @@ export default function TripForm({
   };
 
   // Year prefix sequence for Auto trip identifiers
-  useEffect(() => {
+  createEffect(() => {
     if (!editingEntry && isOpen) {
       const currentYear = new Date().getFullYear();
       let lastSeq = 0;
@@ -213,10 +214,10 @@ export default function TripForm({
       setTripNo(generated);
       setSelectedExistingTripNo(existingTripNos[0] || '');
     }
-  }, [isOpen, editingEntry, existingTripNos]);
+  });
 
   // Fill default values or edit details
-  useEffect(() => {
+  createEffect(() => {
     if (editingEntry && isOpen) {
       setTripNoOption('AUTO');
       setTripNo(editingEntry.tripNo);
@@ -301,64 +302,64 @@ export default function TripForm({
       setShowSubTripForm(false);
       setEditingSubTripId(null);
     }
-  }, [editingEntry, isOpen]);
+  });
   // NOTE: trucks/drivers/offices/accounts are intentionally NOT in the dep array.
   // Dropdown options are read directly from props (live) so they always show the
   // latest data without needing to be in deps. Including them caused the form to
   // reset mid-fill whenever a realtime update arrived for master records.
 
-  // Sync payments ledger default account on loading
-  useEffect(() => {
-    if (!newPayReceivedBy && activeAccounts.length > 0) {
+  // Sync payments() ledger default account on loading
+  createEffect(() => {
+    if (!newPayReceivedBy() && activeAccounts.length > 0) {
       setNewPayReceivedBy(activeAccounts[0].id);
     }
-    if (!newAdvFromAccount && activeAccounts.length > 0) {
+    if (!newAdvFromAccount() && activeAccounts.length > 0) {
       setNewAdvFromAccount(activeAccounts[0].id);
     }
-  }, [activeAccounts, newPayReceivedBy, newAdvFromAccount]);
+  });
 
   // Auto-calculate diesel amount dynamically
-  useEffect(() => {
-    setDieselAmount(Math.max(0, Number(dieselLiters) * Number(dieselRate)));
-  }, [dieselLiters, dieselRate]);
+  createEffect(() => {
+    setDieselAmount(Math.max(0, Number(dieselLiters()) * Number(dieselRate())));
+  });
 
   const handleLitersChange = (val: number | '') => {
     setNewFuelLiters(val);
-    if (val !== '' && val > 0) {
-      if (newFuelRate !== '' && newFuelRate > 0) {
-        setNewFuelAmount(Math.round(val * newFuelRate));
-      } else if (newFuelAmount !== '' && newFuelAmount > 0) {
-        setNewFuelRate(Number((newFuelAmount / val).toFixed(2)));
+    if (val !== '' && Number(val) > 0) {
+      if (newFuelRate() !== '' && Number(newFuelRate()) > 0) {
+        setNewFuelAmount(Math.round(Number(val) * Number(newFuelRate())));
+      } else if (newFuelAmount() !== '' && Number(newFuelAmount()) > 0) {
+        setNewFuelRate(Number((Number(newFuelAmount()) / Number(val)).toFixed(2)));
       }
     }
   };
 
   const handleRateChange = (val: number | '') => {
     setNewFuelRate(val);
-    if (val !== '' && val > 0) {
-      if (newFuelLiters !== '' && newFuelLiters > 0) {
-        setNewFuelAmount(Math.round(newFuelLiters * val));
-      } else if (newFuelAmount !== '' && newFuelAmount > 0) {
-        setNewFuelLiters(Number((newFuelAmount / val).toFixed(2)));
+    if (val !== '' && Number(val) > 0) {
+      if (newFuelLiters() !== '' && Number(newFuelLiters()) > 0) {
+        setNewFuelAmount(Math.round(Number(newFuelLiters()) * Number(val)));
+      } else if (newFuelAmount() !== '' && Number(newFuelAmount()) > 0) {
+        setNewFuelLiters(Number((Number(newFuelAmount()) / Number(val)).toFixed(2)));
       }
     }
   };
 
   const handleAmountChange = (val: number | '') => {
     setNewFuelAmount(val);
-    if (val !== '' && val > 0) {
-      if (newFuelLiters !== '' && newFuelLiters > 0) {
-        setNewFuelRate(Number((val / newFuelLiters).toFixed(2)));
-      } else if (newFuelRate !== '' && newFuelRate > 0) {
-        setNewFuelLiters(Number((val / newFuelRate).toFixed(2)));
+    if (val !== '' && Number(val) > 0) {
+      if (newFuelLiters() !== '' && Number(newFuelLiters()) > 0) {
+        setNewFuelRate(Number((Number(val) / Number(newFuelLiters())).toFixed(2)));
+      } else if (newFuelRate() !== '' && Number(newFuelRate()) > 0) {
+        setNewFuelLiters(Number((Number(val) / Number(newFuelRate())).toFixed(2)));
       }
     }
   };
 
   const handleAddFuel = () => {
-    const lts = Number(newFuelLiters) || 0;
-    const rt = Number(newFuelRate) || 0;
-    const amt = Number(newFuelAmount) || 0;
+    const lts = Number(newFuelLiters()) || 0;
+    const rt = Number(newFuelRate()) || 0;
+    const amt = Number(newFuelAmount()) || 0;
 
     if (amt <= 0) {
       alert("Please enter a valid Fuel Amount.");
@@ -367,25 +368,25 @@ export default function TripForm({
 
     const f: FuelEntry = {
       id: 'fuel-' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-      date: newFuelDate,
+      date: newFuelDate(),
       liters: lts,
       rate: rt,
       amount: amt,
-      shopName: newFuelShop.trim() || undefined,
-      paymentMode: newFuelPaymentMode || undefined
+      shopName: newFuelShop().trim() || undefined,
+      paymentMode: newFuelPaymentMode() || undefined
     };
-    setFuels([...fuels, f]);
+    setFuels([...fuels(), f]);
 
     // Reset inputs
     setNewFuelLiters('');
     setNewFuelRate('');
     setNewFuelAmount('');
     setNewFuelShop('');
-    setTimeout(() => fuelDateInputRef.current?.focus(), 0);
+    setTimeout(() => fuelDateInputRef?.focus(), 0);
   };
 
   const handleRemoveFuel = (fId: string) => {
-    setFuels(fuels.filter(f => f.id !== fId));
+    setFuels(fuels().filter(f => f.id !== fId));
   };
 
   // Compute live aggregates of drafted values
@@ -393,30 +394,30 @@ export default function TripForm({
     // Generate temporary TripEntry mapping for metrics math
     const tempTrip: TripEntry = {
       id: 'temp',
-      tripNo: tripNoOption === 'AUTO' ? tripNo : selectedExistingTripNo,
-      truckNo,
-      startDate,
-      endDate,
-      driverName,
-      startingKM,
-      endingKM,
-      subTrips,
-      payments,
-      fuels, // N fuels support
-      status,
-      notes,
-      rtoExpense,
-      rtoPaidByDriver,
-      dieselLiters,
-      dieselRate,
-      dieselAmount,
-      addBlueExpense,
-      addBluePaidByDriver,
-      fastagExpense,
-      fastagPaidByDriver,
-      otherExpense,
-      otherPaidByDriver,
-      advances
+      tripNo: tripNoOption() === 'AUTO' ? tripNo() : selectedExistingTripNo(),
+      truckNo: truckNo(),
+      startDate: startDate(),
+      endDate: endDate(),
+      driverName: driverName(),
+      startingKM: startingKM(),
+      endingKM: endingKM(),
+      subTrips: subTrips(),
+      payments: payments(),
+      fuels: fuels(), // N fuels() support
+      status: status(),
+      notes: notes(),
+      rtoExpense: rtoExpense(),
+      rtoPaidByDriver: rtoPaidByDriver(),
+      dieselLiters: dieselLiters(),
+      dieselRate: dieselRate(),
+      dieselAmount: dieselAmount(),
+      addBlueExpense: addBlueExpense(),
+      addBluePaidByDriver: addBluePaidByDriver(),
+      fastagExpense: fastagExpense(),
+      fastagPaidByDriver: fastagPaidByDriver(),
+      otherExpense: otherExpense(),
+      otherPaidByDriver: otherPaidByDriver(),
+      advances: advances()
     };
     return getTripMetrics(tempTrip);
   };
@@ -425,22 +426,22 @@ export default function TripForm({
 
   const { driverBalance, totalDriverSpend, totalIssuedToDriver } = metrics;
 
-  // Auto-fill selectedFwdAmount when panel opens or driverBalance changes
-  useEffect(() => {
-    if (showQuickFwdPanel) {
+  // Auto-fill selectedFwdAmount() when panel opens or driverBalance changes
+  createEffect(() => {
+    if (showQuickFwdPanel()) {
       setSelectedFwdAmount(Math.abs(driverBalance));
     }
-  }, [showQuickFwdPanel, driverBalance]);
+  });
 
 
-  // Handle drafting payments
+  // Handle drafting payments()
   const handleAddPayment = (targetSubTripId?: string) => {
-    const amt = Number(newPayAmount) || 0;
+    const amt = Number(newPayAmount()) || 0;
     if (amt <= 0) {
       alert("Please enter a valid amount greater than 0.");
       return;
     }
-    if (!newPayReceivedBy) {
+    if (!newPayReceivedBy()) {
       alert("Please choose a valid financial account.");
       return;
     }
@@ -448,17 +449,17 @@ export default function TripForm({
     const item: TripPayment = {
       id: 'stmt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
       amount: amt,
-      date: newPayDate || new Date().toISOString().substring(0, 10),
-      receivedBy: newPayReceivedBy,
-      notes: newPayNotes.trim() || undefined,
-      subTripId: targetSubTripId || (newPaySubTripId !== 'general' ? newPaySubTripId : undefined)
+      date: newPayDate() || new Date().toISOString().substring(0, 10),
+      receivedBy: newPayReceivedBy(),
+      notes: newPayNotes().trim() || undefined,
+      subTripId: targetSubTripId || (newPaySubTripId() !== 'general' ? newPaySubTripId() : undefined)
     };
 
     setPayments(prev => [...prev, item]);
     setNewPayAmount('');
     setNewPayNotes('');
     setNewPaySubTripId('general');
-    setTimeout(() => paymentDateInputRef.current?.focus(), 0);
+    setTimeout(() => paymentDateInputRef?.focus(), 0);
   };
 
   const handleRemovePayment = (id: string) => {
@@ -468,7 +469,7 @@ export default function TripForm({
   // Sub-Trip operations
   const handleOpenNewSubTrip = () => {
     setEditingSubTripId(null);
-    setStLoadingDate(startDate || new Date().toISOString().substring(0, 10));
+    setStLoadingDate(startDate() || new Date().toISOString().substring(0, 10));
     setStOfficeName(activeOffices[0]?.officeName || '');
     setStRouteFrom('');
     setStRouteTo('');
@@ -485,20 +486,20 @@ export default function TripForm({
 
     setStDriverWages(0);
     // Align segment mileage to main odometer reads to reduce user friction
-    setStStartingKM(startingKM || 0);
-    setStEndingKM(endingKM || 0);
+    setStStartingKM(startingKM() || 0);
+    setStEndingKM(endingKM() || 0);
     setStNotes('');
     setStWagePct('');
 
     const snapshot = {
-      loadingDate: startDate || new Date().toISOString().substring(0, 10),
+      loadingDate: startDate() || new Date().toISOString().substring(0, 10),
       officeName: activeOffices[0]?.officeName || '',
       routeFrom: '',
       routeTo: '',
       income: 0,
       driverWages: 0,
-      startingKM: startingKM || 0,
-      endingKM: endingKM || 0,
+      startingKM: startingKM() || 0,
+      endingKM: endingKM() || 0,
       notes: '',
       noOfTons: 0,
       material: '',
@@ -511,7 +512,7 @@ export default function TripForm({
 
   const handleOpenEditSubTrip = (st: SubTrip) => {
     setEditingSubTripId(st.id);
-    setStLoadingDate(st.loadingDate || startDate);
+    setStLoadingDate(st.loadingDate || startDate());
     setStOfficeName(st.officeName || activeOffices[0]?.officeName || '');
     setStRouteFrom(st.routeFrom || '');
     setStRouteTo(st.routeTo || '');
@@ -539,7 +540,7 @@ export default function TripForm({
     setStWagePct(calculatedPct);
 
     const snapshot = {
-      loadingDate: st.loadingDate || startDate,
+      loadingDate: st.loadingDate || startDate(),
       officeName: st.officeName || activeOffices[0]?.officeName || '',
       routeFrom: st.routeFrom || '',
       routeTo: st.routeTo || '',
@@ -559,21 +560,21 @@ export default function TripForm({
 
   const checkIfSubTripHasChanges = () => {
     const currentSnapshot = {
-      loadingDate: stLoadingDate,
-      officeName: stOfficeName,
-      routeFrom: stRouteFrom,
-      routeTo: stRouteTo,
-      income: Number(stIncome) || 0,
-      driverWages: Number(stDriverWages) || 0,
-      startingKM: Number(stStartingKM) || 0,
-      endingKM: Number(stEndingKM) || 0,
-      notes: stNotes,
-      noOfTons: Number(stNoOfTons) || 0,
-      material: stMaterial,
-      ratePerTon: Number(stRatePerTon) || 0,
-      cargoExpenses: stCargoExpenses
+      loadingDate: stLoadingDate(),
+      officeName: stOfficeName(),
+      routeFrom: stRouteFrom(),
+      routeTo: stRouteTo(),
+      income: Number(stIncome()) || 0,
+      driverWages: Number(stDriverWages()) || 0,
+      startingKM: Number(stStartingKM()) || 0,
+      endingKM: Number(stEndingKM()) || 0,
+      notes: stNotes(),
+      noOfTons: Number(stNoOfTons()) || 0,
+      material: stMaterial(),
+      ratePerTon: Number(stRatePerTon()) || 0,
+      cargoExpenses: stCargoExpenses()
     };
-    return originalSubTripSnapshot && JSON.stringify(originalSubTripSnapshot) !== JSON.stringify(currentSnapshot);
+    return originalSubTripSnapshot() && JSON.stringify(originalSubTripSnapshot()) !== JSON.stringify(currentSnapshot);
   };
 
   const handleCancelSubTripSegment = () => {
@@ -581,10 +582,10 @@ export default function TripForm({
     setEditingSubTripId(null);
   };
 
-  useEffect(() => {
+  createEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showSubTripForm) {
+        if (showSubTripForm()) {
           handleCancelSubTripSegment();
         }
       }
@@ -593,29 +594,29 @@ export default function TripForm({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showSubTripForm]);
+  });
 
-  const handleSaveSubTripSegmentConfirm = (e: React.FormEvent) => {
+  const handleSaveSubTripSegmentConfirm = (e: Event) => {
     e.preventDefault();
     handleSaveSubTripSegment(e);
   };
 
-  const handleSaveSubTripSegment = (e: React.FormEvent) => {
+  const handleSaveSubTripSegment = (e: Event) => {
     e.preventDefault();
-    if (!stOfficeName) {
+    if (!stOfficeName()) {
       alert("Office selection is required.");
       return;
     }
-    if (!stRouteFrom || !stRouteTo) {
+    if (!stRouteFrom() || !stRouteTo()) {
       alert("Route Origin and Destination are required.");
       return;
     }
 
-    const originalSubTrip = editingSubTripId ? subTrips.find(item => item.id === editingSubTripId) : null;
+    const originalSubTrip = editingSubTripId() ? subTrips().find(item => item.id === editingSubTripId()) : null;
 
     // Compile category totals for legacy views compatibility
     const compileCategory = (type: 'Loading' | 'Unloading' | 'Brokerage' | 'Crossing' | 'RMC') => {
-      const filtered = stCargoExpenses.filter(e => e.expenseType === type);
+      const filtered = stCargoExpenses().filter(e => e.expenseType === type);
       const amount = filtered.reduce((sum, e) => sum + e.amount, 0);
       const paidByDriver = filtered.some(e => e.paidByDriver);
       let deductedFrom: 'OrgRental' | 'DriverDirect' | 'OrgPaid' = 'DriverDirect';
@@ -648,18 +649,18 @@ export default function TripForm({
 
     const segmentObj: SubTrip = {
       ...(originalSubTrip || {}),
-      id: editingSubTripId || 'sub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-      loadingDate: stLoadingDate,
-      officeName: stOfficeName,
-      routeFrom: stRouteFrom.trim(),
-      routeTo: stRouteTo.trim(),
-      income: Number(stIncome) || 0,
-      driverWages: Number(stDriverWages) || 0,
-      startingKM: Number(stStartingKM) || 0,
-      endingKM: Number(stEndingKM) || 0,
-      notes: stNotes.trim() || undefined,
+      id: editingSubTripId() || 'sub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+      loadingDate: stLoadingDate(),
+      officeName: stOfficeName(),
+      routeFrom: stRouteFrom().trim(),
+      routeTo: stRouteTo().trim(),
+      income: Number(stIncome()) || 0,
+      driverWages: Number(stDriverWages()) || 0,
+      startingKM: Number(stStartingKM()) || 0,
+      endingKM: Number(stEndingKM()) || 0,
+      notes: stNotes().trim() || undefined,
 
-      cargoExpenses: stCargoExpenses,
+      cargoExpenses: stCargoExpenses(),
 
       // Legacy fallback fields
       loadingExpense: loadData.amount,
@@ -697,19 +698,19 @@ export default function TripForm({
       rmcBearsOrg: rmcData.bearsOrg,
       rmcBearsDriver: rmcData.bearsDriver,
 
-      noOfTons: Number(stNoOfTons) || undefined,
-      material: stMaterial.trim() || undefined,
-      ratePerTon: Number(stRatePerTon) || undefined
+      noOfTons: Number(stNoOfTons()) || undefined,
+      material: stMaterial().trim() || undefined,
+      ratePerTon: Number(stRatePerTon()) || undefined
     };
 
-    if (editingSubTripId) {
-      setSubTrips(prev => prev.map(item => item.id === editingSubTripId ? segmentObj : item));
+    if (editingSubTripId()) {
+      setSubTrips(prev => prev.map(item => item.id === editingSubTripId() ? segmentObj : item));
     } else {
       setSubTrips(prev => [...prev, segmentObj]);
-      if (segmentObj.endingKM > endingKM) {
+      if (segmentObj.endingKM > endingKM()) {
         setEndingKM(segmentObj.endingKM);
       }
-      if (startingKM === 0 && segmentObj.startingKM > 0) {
+      if (startingKM() === 0 && segmentObj.startingKM > 0) {
         setStartingKM(segmentObj.startingKM);
       }
     }
@@ -719,18 +720,18 @@ export default function TripForm({
   };
 
   const handleAddCargoExpense = () => {
-    const amt = Number(newCargoExpAmount) || 0;
+    const amt = Number(newCargoExpAmount()) || 0;
     if (amt <= 0) {
       alert("Please enter a valid amount greater than 0.");
       return;
     }
     const item: CargoExpense = {
       id: 'exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-      expenseType: newCargoExpType,
+      expenseType: newCargoExpType(),
       amount: amt,
-      paidByDriver: newCargoExpDeductedFrom === 'DriverDirect',
-      deductedFrom: newCargoExpDeductedFrom,
-      bears: newCargoExpBears
+      paidByDriver: newCargoExpDeductedFrom() === 'DriverDirect',
+      deductedFrom: newCargoExpDeductedFrom(),
+      bears: newCargoExpBears()
     };
     setStCargoExpenses(prev => [...prev, item]);
     setNewCargoExpAmount('');
@@ -746,18 +747,18 @@ export default function TripForm({
   };
 
   const handleAddAdvance = () => {
-    if (!newAdvAmount || Number(newAdvAmount) <= 0 || !newAdvFromAccount) {
+    if (!newAdvAmount() || Number(newAdvAmount()) <= 0 || !newAdvFromAccount()) {
       alert("Please enter a valid amount and select a From Account for the driver advance.");
       return;
     }
 
     const nAdv: TripAdvance = {
       id: 'adv-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      amount: Number(newAdvAmount),
-      date: newAdvDate,
-      fromAccountId: newAdvFromAccount,
-      notes: newAdvNotes.trim() || undefined,
-      receivedByDriverDirectly: newAdvReceivedByDriverDirectly
+      amount: Number(newAdvAmount()),
+      date: newAdvDate(),
+      fromAccountId: newAdvFromAccount(),
+      notes: newAdvNotes().trim() || undefined,
+      receivedByDriverDirectly: newAdvReceivedByDriverDirectly()
     };
 
     setAdvances(prev => [...prev, nAdv]);
@@ -766,7 +767,7 @@ export default function TripForm({
     setNewAdvAmount('');
     setNewAdvNotes('');
     setNewAdvReceivedByDriverDirectly(false);
-    setTimeout(() => advanceDateInputRef.current?.focus(), 0);
+    setTimeout(() => advanceDateInputRef?.focus(), 0);
   };
 
   const handleRemoveAdvance = (id: string) => {
@@ -774,20 +775,20 @@ export default function TripForm({
   };
 
   // Submit complete master ledger report
-  const handleSubmitMasterForm = (e: React.FormEvent) => {
+  const handleSubmitMasterForm = (e: Event) => {
     e.preventDefault();
 
     const finalTripNo = editingEntry
-      ? tripNo
-      : (tripNoOption === 'AUTO' ? tripNo : selectedExistingTripNo);
+      ? tripNo()
+      : (tripNoOption() === 'AUTO' ? tripNo() : selectedExistingTripNo());
 
-    if (!finalTripNo || !truckNo || !driverName) {
+    if (!finalTripNo || !truckNo() || !driverName()) {
       alert("Trip Number, operational Truck and Operator Driver Name are required.");
       return;
     }
 
-    const selectedTruck = trucks.find(t => t.truckNo === truckNo);
-    const isUnchangedEdit = editingEntry && truckNo === editingEntry.truckNo;
+    const selectedTruck = trucks.find(t => t.truckNo === truckNo());
+    const isUnchangedEdit = editingEntry && truckNo() === editingEntry.truckNo;
     if (selectedTruck && !isUnchangedEdit) {
       const isExpired = selectedTruck.registrationExpiryDate ? selectedTruck.registrationExpiryDate < todayStr : false;
       const isAdminDisabled = selectedTruck.status === 'Admin Disabled';
@@ -796,12 +797,12 @@ export default function TripForm({
         let reason = "expired";
         if (isAdminDisabled) reason = "admin disabled";
         else if (isNotApproved) reason = "not approved";
-        alert(`Cannot create/update trip: Selected truck ${truckNo} is ${reason}.`);
+        alert(`Cannot create/update trip: Selected truck ${truckNo()} is ${reason}.`);
         return;
       }
     }
 
-    if (subTrips.length === 0) {
+    if (subTrips().length === 0) {
       alert("Fleet compliance requires registering at least 1 Cargo sub-trip segment for this trip journey.");
       return;
     }
@@ -809,29 +810,29 @@ export default function TripForm({
     // Pass validated state upstream
     onSubmit({
       tripNo: finalTripNo,
-      truckNo,
-      startDate,
-      endDate,
-      driverName: driverName.trim(),
-      startingKM: Number(startingKM) || 0,
-      endingKM: Number(endingKM) || 0,
-      payments,
-      advances,
-      subTrips,
-      fuels, // N fuels list
-      status,
-      notes: notes.trim() || undefined,
-      rtoExpense: Number(rtoExpense) || 0,
-      rtoPaidByDriver,
-      dieselLiters: fuels.length > 0 ? fuels.reduce((sum, f) => sum + Number(f.liters), 0) : Number(dieselLiters) || 0,
-      dieselAmount: fuels.length > 0 ? fuels.reduce((sum, f) => sum + Number(f.amount), 0) : Number(dieselAmount) || 0,
-      dieselRate: fuels.length > 0 ? (fuels.reduce((sum, f) => sum + Number(f.amount), 0) / (fuels.reduce((sum, f) => sum + Number(f.liters), 0) || 1)) : Number(dieselRate) || 0,
-      addBlueExpense: Number(addBlueExpense) || 0,
-      addBluePaidByDriver,
-      fastagExpense: Number(fastagExpense) || 0,
-      fastagPaidByDriver,
-      otherExpense: Number(otherExpense) || 0,
-      otherPaidByDriver
+      truckNo: truckNo(),
+      startDate: startDate(),
+      endDate: endDate(),
+      driverName: driverName().trim(),
+      startingKM: Number(startingKM()) || 0,
+      endingKM: Number(endingKM()) || 0,
+      payments: payments(),
+      advances: advances(),
+      subTrips: subTrips(),
+      fuels: fuels(), // N fuels() list
+      status: status(),
+      notes: notes().trim() || undefined,
+      rtoExpense: Number(rtoExpense()) || 0,
+      rtoPaidByDriver: rtoPaidByDriver(),
+      dieselLiters: fuels().length > 0 ? fuels().reduce((sum, f) => sum + Number(f.liters), 0) : Number(dieselLiters()) || 0,
+      dieselAmount: fuels().length > 0 ? fuels().reduce((sum, f) => sum + Number(f.amount), 0) : Number(dieselAmount()) || 0,
+      dieselRate: fuels().length > 0 ? (fuels().reduce((sum, f) => sum + Number(f.amount), 0) / (fuels().reduce((sum, f) => sum + Number(f.liters), 0) || 1)) : Number(dieselRate()) || 0,
+      addBlueExpense: Number(addBlueExpense()) || 0,
+      addBluePaidByDriver: addBluePaidByDriver(),
+      fastagExpense: Number(fastagExpense()) || 0,
+      fastagPaidByDriver: fastagPaidByDriver(),
+      otherExpense: Number(otherExpense()) || 0,
+      otherPaidByDriver: otherPaidByDriver()
     });
 
     onClose();
@@ -841,44 +842,44 @@ export default function TripForm({
 
   return (
     <div
-      className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
+      class="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
     >
       <div
-        className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
+        class="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
       >
 
         {/* HEADER SPEC CHIPS */}
-        <div className="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+        <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
           <div>
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Coins className="w-5 h-5 text-blue-600" />
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Coins class="w-5 h-5 text-blue-600" />
               {editingEntry ? `Modify Fleet Trip Journal: ${editingEntry.tripNo}` : 'Initiate Unified Fleet Journey'}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">Define master trip timelines, driver logs, multi-cargo sub-trips and financial settlement receipts.</p>
+            <p class="text-xs text-slate-500 mt-0.5">Define master trip timelines, driver logs, multi-cargo sub-trips and financial settlement receipts.</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-655 bg-slate-200/50 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+            class="p-1.5 text-slate-400 hover:text-slate-655 bg-slate-200/50 hover:bg-slate-200 rounded-lg transition cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X class="w-4 h-4" />
           </button>
         </div>
 
         {/* MODAL MAIN CONTENTS CONTAINER WITH DUAL GRID SCROLL */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
 
           {/* DYNAMIC AUTO GENERATOR PREFERENCES */}
           {!editingEntry && (
-            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider font-sans">Trip Series Configuration</span>
-                <span className="text-[11px] text-slate-550 block">Unify consecutive freight loads under a single overarching sequence.</span>
+            <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div class="space-y-0.5">
+                <span class="text-xs font-bold text-slate-800 block uppercase tracking-wider font-sans">Trip Series Configuration</span>
+                <span class="text-[11px] text-slate-550 block">Unify consecutive freight loads under a single overarching sequence.</span>
               </div>
-              <div className="flex bg-slate-205 bg-slate-200 rounded-lg p-1 gap-1 h-9 min-w-[320px]">
+              <div class="flex bg-slate-205 bg-slate-200 rounded-lg p-1 gap-1 h-9 min-w-[320px]">
                 <button
                   type="button"
                   onClick={() => setTripNoOption('AUTO')}
-                  className={`flex-1 rounded text-xs font-bold transition duration-200 cursor-pointer ${tripNoOption === 'AUTO'
+                  class={`flex-1 rounded text-xs font-bold transition duration-200 cursor-pointer ${tripNoOption() === 'AUTO'
                     ? 'bg-white text-slate-900 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -889,7 +890,7 @@ export default function TripForm({
                   type="button"
                   disabled={existingTripNos.length === 0}
                   onClick={() => setTripNoOption('EXISTING')}
-                  className={`flex-1 rounded text-xs font-bold transition duration-200 disabled:opacity-40 cursor-pointer ${tripNoOption === 'EXISTING'
+                  class={`flex-1 rounded text-xs font-bold transition duration-200 disabled:opacity-40 cursor-pointer ${tripNoOption() === 'EXISTING'
                     ? 'bg-white text-slate-900 shadow-3xs'
                     : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -901,39 +902,39 @@ export default function TripForm({
           )}
 
           {/* MASTER DETAILS EXPANSION SECTION */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block border-b border-slate-150 pb-2">
+          <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest block border-b border-slate-150 pb-2">
               Category 1: Master Journey Specifications
             </span>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* TRIP CODE */}
               <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Trip Code ID <span className="text-red-500">*</span></label>
+                <label class="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Trip Code ID <span class="text-red-500">*</span></label>
                 {editingEntry ? (
                   <input
                     type="text"
                     disabled
-                    value={tripNo}
-                    className="w-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-bold tracking-wider rounded-lg px-3 py-2 text-xs"
+                    value={tripNo()}
+                    class="w-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-bold tracking-wider rounded-lg px-3 py-2 text-xs"
                   />
-                ) : tripNoOption === 'AUTO' ? (
+                ) : tripNoOption() === 'AUTO' ? (
                   <input
                     type="text"
                     required
                     disabled
-                    value={tripNo}
-                    className="w-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-bold tracking-wider rounded-lg px-3 py-2 text-xs cursor-not-allowed"
+                    value={tripNo()}
+                    class="w-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-bold tracking-wider rounded-lg px-3 py-2 text-xs cursor-not-allowed"
                   />
                 ) : (
                   <select
-                    value={selectedExistingTripNo}
+                    value={selectedExistingTripNo()}
                     onChange={(e) => setSelectedExistingTripNo(e.target.value)}
                     required
-                    className="w-full bg-slate-50 border border-slate-200 text-blue-700 font-mono font-bold tracking-wider rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
+                    class="w-full bg-slate-50 border border-slate-200 text-blue-700 font-mono font-bold tracking-wider rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
                     {existingTripNos.map(no => (
-                      <option key={no} value={no}>{no}</option>
+                      <option  value={no}>{no}</option>
                     ))}
                   </select>
                 )}
@@ -941,10 +942,10 @@ export default function TripForm({
 
               {/* TRUCK SELECT */}
               <div>
-                <label htmlFor="select-truckNo" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Target Truck <span className="text-red-500">*</span></label>
+                <label for="select-truckNo()" class="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Target Truck <span class="text-red-500">*</span></label>
                 <select
-                  id="select-truckNo"
-                  value={truckNo}
+                  id="select-truckNo()"
+                  value={truckNo()}
                   onChange={(e) => {
                     const val = e.target.value;
                     setTruckNo(val);
@@ -953,7 +954,7 @@ export default function TripForm({
                     }
                   }}
                   required
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
+                  class="w-full bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
                 >
                   <option value="">-- Choose Truck --</option>
                   {activeTrucks.map(truck => {
@@ -970,7 +971,7 @@ export default function TripForm({
 
                     return (
                       <option
-                        key={truck.id}
+                        
                         value={truck.truckNo}
                         disabled={isBlocked && !isSelected}
                       >
@@ -983,38 +984,38 @@ export default function TripForm({
 
               {/* DRIVER NAME */}
               <div>
-                <label htmlFor="select-driverName" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5 font-sans font-sans">Driver Operator <span className="text-red-500">*</span></label>
+                <label for="select-driverName()" class="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5 font-sans font-sans">Driver Operator <span class="text-red-500">*</span></label>
                 <select
-                  id="select-driverName"
-                  value={driverName}
+                  id="select-driverName()"
+                  value={driverName()}
                   onChange={(e) => setDriverName(e.target.value)}
                   required
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-semibold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-sans"
+                  class="w-full bg-slate-50 border border-slate-200 text-slate-800 font-semibold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-sans"
                 >
                   <option value="">-- Choose Driver --</option>
                   {drivers.map(d => {
                     const isInactive = d.status === 'Inactive';
-                    const isSelected = d.driverName === driverName;
+                    const isSelected = d.driverName === driverName();
                     if (isInactive && !isSelected) return null;
                     return (
-                      <option key={d.id} value={d.driverName}>
+                      <option  value={d.driverName}>
                         {d.driverName} {canViewDrivers && d.phone ? `(${d.phone})` : ''}{isInactive ? ' (Inactive)' : ''}
                       </option>
                     );
                   })}
-                  {driverName && !drivers.some(d => d.driverName === driverName) && (
-                    <option value={driverName}>{driverName} (Manual Override)</option>
+                  {driverName() && !drivers.some(d => d.driverName === driverName()) && (
+                    <option value={driverName()}>{driverName()} (Manual Override)</option>
                   )}
                 </select>
               </div>
 
               {/* STATUS INDICATOR */}
               <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Journey Operational Status</label>
+                <label class="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Journey Operational Status</label>
                 <select
-                  value={status}
+                  value={status()}
                   onChange={(e) => setStatus(e.target.value as TripStatus)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                  class="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
                 >
                   <option value="Pending">Pending (Not Initiated)</option>
                   <option value="In Progress">In Progress (On Wheels)</option>
@@ -1025,83 +1026,83 @@ export default function TripForm({
             </div>
 
             {/* ODOMETER AND TIMEFRAME SPECS */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Journey Start Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                <label class="block text-[10px] text-slate-500 font-bold uppercase mb-1">Journey Start Date</label>
+                <div class="relative">
+                  <Calendar class="absolute left-2 top-2.5 w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="date"
                     required
-                    value={startDate}
+                    value={startDate()}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg pl-7 pr-1.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                    class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg pl-7 pr-1.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Journey End Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                <label class="block text-[10px] text-slate-500 font-bold uppercase mb-1">Journey End Date</label>
+                <div class="relative">
+                  <Calendar class="absolute left-2 top-2.5 w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="date"
                     required
-                    value={endDate}
+                    value={endDate()}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg pl-7 pr-1.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                    class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg pl-7 pr-1.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="input-startingKM" className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Starting Odometer (KM)</label>
+                <label for="input-startingKM()" class="block text-[10px] text-slate-550 font-bold uppercase mb-1">Starting Odometer (KM)</label>
                 <input
-                  id="input-startingKM"
+                  id="input-startingKM()"
                   type="number"
                   min="0"
                   required
-                  value={startingKM || ''}
+                  value={startingKM() || ''}
                   onChange={(e) => setStartingKM(Math.max(0, parseInt(e.target.value) || 0))}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none text-right font-mono"
+                  class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none text-right font-mono"
                 />
               </div>
 
               <div>
-                <label htmlFor="input-endingKM" className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Ending Odometer (KM)</label>
+                <label for="input-endingKM()" class="block text-[10px] text-slate-550 font-bold uppercase mb-1">Ending Odometer (KM)</label>
                 <input
-                  id="input-endingKM"
+                  id="input-endingKM()"
                   type="number"
                   min="0"
                   required
-                  value={endingKM || ''}
+                  value={endingKM() || ''}
                   onChange={(e) => setEndingKM(Math.max(0, parseInt(e.target.value) || 0))}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none text-right font-mono"
+                  class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none text-right font-mono"
                 />
               </div>
             </div>
           </div>
 
           {/* DYNAMIC CHILD SUB-TRIPS CONSTRUCTOR SECTOR */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-150 pb-2.5">
-              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block">
+          <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-150 pb-2.5">
+              <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest block">
                 Category 2: Cargo Sub-Trip Segments & Expenditures
               </span>
               <button
                 type="button"
                 onClick={handleOpenNewSubTrip}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-3.5 py-2 rounded-lg cursor-pointer transition shadow-2xs h-9"
+                class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-3.5 py-2 rounded-lg cursor-pointer transition shadow-2xs h-9"
               >
-                <Plus className="w-4 h-4" /> Add Cargo Segment
+                <Plus class="w-4 h-4" /> Add Cargo Segment
               </button>
             </div>
 
             {/* Dynamic drafting sub-trips list visual list table */}
-            {subTrips.length > 0 ? (() => {
-              const calculatedSubTrips = subTrips.map(st => {
+            {subTrips().length > 0 ? (() => {
+              const calculatedSubTrips = subTrips().map(st => {
                 const wagesAmt = st.driverWages || 0;
                 const expenses = (st.cargoExpenses && st.cargoExpenses.length > 0)
                   ? st.cargoExpenses
@@ -1115,7 +1116,7 @@ export default function TripForm({
                   .filter(exp => exp.bears === 'Office')
                   .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
-                const segmentPayments = (payments || [])
+                const segmentPayments = (payments() || [])
                   .filter(p => p.subTripId === st.id)
                   .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
@@ -1149,36 +1150,36 @@ export default function TripForm({
               );
 
               return (
-                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs font-sans">
-                  <table className="w-full min-w-[800px] text-xs text-left">
-                    <thead className="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs font-sans">
+                  <table class="w-full min-w-[800px] text-xs text-left">
+                    <thead class="bg-slate-50 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                       <tr>
-                        <th className="p-3 pl-4"># Seg</th>
-                        <th className="p-3">Load Date</th>
-                        <th className="p-3">Office Name</th>
-                        <th className="p-3">Route Path</th>
-                        <th className="p-3 text-right">Income (₹)</th>
-                        <th className="p-3 text-right">Payments (₹)</th>
-                        <th className="p-3 text-right">Receivable (₹)</th>
-                        <th className="p-3 text-right">Wages (₹)</th>
-                        <th className="p-3 text-right">Driver Spend (₹)</th>
-                        <th className="p-3 text-right">Brokerage (₹)</th>
-                        <th className="p-3 text-center">Edit / Delete</th>
+                        <th class="p-3 pl-4"># Seg</th>
+                        <th class="p-3">Load Date</th>
+                        <th class="p-3">Office Name</th>
+                        <th class="p-3">Route Path</th>
+                        <th class="p-3 text-right">Income (₹)</th>
+                        <th class="p-3 text-right">Payments (₹)</th>
+                        <th class="p-3 text-right">Receivable (₹)</th>
+                        <th class="p-3 text-right">Wages (₹)</th>
+                        <th class="p-3 text-right">Driver Spend (₹)</th>
+                        <th class="p-3 text-right">Brokerage (₹)</th>
+                        <th class="p-3 text-center">Edit / Delete</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
+                    <tbody class="divide-y divide-slate-100 font-medium">
                       {calculatedSubTrips.map((item, sidx) => {
                         const { st, wagesAmt, segmentPayments, segmentReceivable, driverSpend, brokerage } = item;
                         return (
-                          <tr key={st.id} className="hover:bg-slate-50/70 transition">
-                            <td className="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
-                            <td className="p-3 font-mono text-slate-650">{st.loadingDate}</td>
-                            <td className="p-3 text-blue-650 font-bold">{st.officeName}</td>
-                            <td className="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
-                            <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
-                            <td className="p-3 text-right font-semibold font-mono text-indigo-700">
-                              <div className="flex flex-col items-end">
-                                <span className="font-bold text-slate-850">₹{segmentPayments.toLocaleString()}</span>
+                          <tr  class="hover:bg-slate-50/70 transition">
+                            <td class="p-3 pl-4 font-bold text-slate-400">#{sidx + 1}</td>
+                            <td class="p-3 font-mono text-slate-650">{st.loadingDate}</td>
+                            <td class="p-3 text-blue-650 font-bold">{st.officeName}</td>
+                            <td class="p-3 text-slate-800 font-semibold">{st.routeFrom} ➔ {st.routeTo}</td>
+                            <td class="p-3 text-right font-bold text-emerald-850 font-mono">₹{st.income.toLocaleString()}</td>
+                            <td class="p-3 text-right font-semibold font-mono text-indigo-700">
+                              <div class="flex flex-col items-end">
+                                <span class="font-bold text-slate-850">₹{segmentPayments.toLocaleString()}</span>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1187,36 +1188,36 @@ export default function TripForm({
                                     setNewPayAmount('');
                                     setNewPayNotes('');
                                   }}
-                                  className="text-[10px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer mt-0.5"
+                                  class="text-[10px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer mt-0.5"
                                 >
                                   Pay/View
                                 </button>
                               </div>
                             </td>
-                            <td className={`p-3 text-right font-bold font-mono ${segmentReceivable > 0 ? 'text-blue-700' :
+                            <td class={`p-3 text-right font-bold font-mono ${segmentReceivable > 0 ? 'text-blue-700' :
                               segmentReceivable === 0 ? 'text-slate-400 font-normal' :
                                 'text-amber-700'
                               }`}>
                               ₹{segmentReceivable.toLocaleString()}
                             </td>
-                            <td className="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
-                            <td className="p-3 text-right font-medium text-slate-700 font-mono">₹{driverSpend.toLocaleString()}</td>
-                            <td className="p-3 text-right font-medium text-purple-700 font-mono">₹{brokerage.toLocaleString()}</td>
-                            <td className="p-3 text-center align-middle">
-                              <div className="flex items-center justify-center gap-3">
+                            <td class="p-3 text-right font-medium text-amber-700 font-mono">₹{wagesAmt.toLocaleString()}</td>
+                            <td class="p-3 text-right font-medium text-slate-700 font-mono">₹{driverSpend.toLocaleString()}</td>
+                            <td class="p-3 text-right font-medium text-purple-700 font-mono">₹{brokerage.toLocaleString()}</td>
+                            <td class="p-3 text-center align-middle">
+                              <div class="flex items-center justify-center gap-3">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditSubTrip(st)}
-                                  className="text-blue-600 hover:text-blue-800 font-bold text-[11px] flex items-center gap-0.5"
+                                  class="text-blue-600 hover:text-blue-800 font-bold text-[11px] flex items-center gap-0.5"
                                 >
-                                  <Edit2 className="w-3 h-3" /> Edit
+                                  <Edit2 class="w-3 h-3" /> Edit
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteSubTripSegment(st.id)}
-                                  className="text-rose-600 hover:text-rose-800 font-bold text-[11px] flex items-center gap-0.5"
+                                  class="text-rose-600 hover:text-rose-800 font-bold text-[11px] flex items-center gap-0.5"
                                 >
-                                  <Trash2 className="w-3 h-3" /> Delete
+                                  <Trash2 class="w-3 h-3" /> Delete
                                 </button>
                               </div>
                             </td>
@@ -1225,55 +1226,55 @@ export default function TripForm({
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
-                        <td colSpan={4} className="p-3 pl-4 text-right uppercase tracking-wider text-[10px] text-slate-500 font-bold">Total</td>
-                        <td className="p-3 text-right font-bold text-emerald-850 font-mono">₹{totals.income.toLocaleString()}</td>
-                        <td className="p-3 text-right font-bold text-slate-800 font-mono">₹{totals.payments.toLocaleString()}</td>
-                        <td className={`p-3 text-right font-bold font-mono ${totals.receivable > 0 ? 'text-blue-700' :
+                      <tr class="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-700">
+                        <td colSpan={4} class="p-3 pl-4 text-right uppercase tracking-wider text-[10px] text-slate-500 font-bold">Total</td>
+                        <td class="p-3 text-right font-bold text-emerald-850 font-mono">₹{totals.income.toLocaleString()}</td>
+                        <td class="p-3 text-right font-bold text-slate-800 font-mono">₹{totals.payments.toLocaleString()}</td>
+                        <td class={`p-3 text-right font-bold font-mono ${totals.receivable > 0 ? 'text-blue-700' :
                           totals.receivable === 0 ? 'text-slate-400 font-normal' :
                             'text-amber-700'
                           }`}>
                           ₹{totals.receivable.toLocaleString()}
                         </td>
-                        <td className="p-3 text-right font-bold text-amber-700 font-mono">₹{totals.wages.toLocaleString()}</td>
-                        <td className="p-3 text-right font-bold text-slate-700 font-mono">₹{totals.driverSpend.toLocaleString()}</td>
-                        <td className="p-3 text-right font-bold text-purple-700 font-mono">₹{totals.brokerage.toLocaleString()}</td>
-                        <td className="p-3 text-center"></td>
+                        <td class="p-3 text-right font-bold text-amber-700 font-mono">₹{totals.wages.toLocaleString()}</td>
+                        <td class="p-3 text-right font-bold text-slate-700 font-mono">₹{totals.driverSpend.toLocaleString()}</td>
+                        <td class="p-3 text-right font-bold text-purple-700 font-mono">₹{totals.brokerage.toLocaleString()}</td>
+                        <td class="p-3 text-center"></td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               );
             })() : (
-              <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-350 p-4">
-                <p className="text-xs text-slate-500 italic font-medium">No cargo sub-trip load segments drafted yet.</p>
-                <p className="text-[10px] text-slate-400 mt-1">Fleet regulations require at least one cargo shipment segment to compute fuel efficiency, per KM cost, and profit margins.</p>
+              <div class="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-350 p-4">
+                <p class="text-xs text-slate-500 italic font-medium">No cargo sub-trip load segments drafted yet.</p>
+                <p class="text-[10px] text-slate-400 mt-1">Fleet regulations require at least one cargo shipment segment to compute fuel efficiency, per KM cost, and profit margins.</p>
                 <button
                   type="button"
                   onClick={handleOpenNewSubTrip}
-                  className="mt-3.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-[11px] py-1.5 px-3 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1 bg-neutral-100"
+                  class="mt-3.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-[11px] py-1.5 px-3 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1 bg-neutral-100"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Append First Document Segment
+                  <Plus class="w-3.5 h-3.5" /> Append First Document Segment
                 </button>
               </div>
             )}
 
-            {showSubTripForm && (
+            {showSubTripForm() && (
               <div
                 onClick={handleCancelSubTripSegment}
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print"
+                class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print"
               >
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-white rounded-2xl border border-slate-205 p-6 space-y-4 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans"
+                  class="bg-white rounded-2xl border border-slate-205 p-6 space-y-4 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans"
                 >
-                  <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
-                        <ListCollapse className="w-4 h-4 text-blue-650" />
-                        {editingSubTripId ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
+                  <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
+                        <ListCollapse class="w-4 h-4 text-blue-650" />
+                        {editingSubTripId() ? 'Edit Sub-Trip Cargo Segment parameters' : 'Construct New Sub-Trip Cargo Segment'}
                       </span>
-                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border font-mono ${liveSegmentReceivable > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      <span class={`text-[10px] font-bold px-2.5 py-1 rounded-lg border font-mono ${liveSegmentReceivable > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' :
                         liveSegmentReceivable === 0 ? 'bg-slate-50 text-slate-600 border-slate-200' :
                           'bg-amber-50 text-amber-700 border-amber-200'
                         }`}>
@@ -1284,168 +1285,168 @@ export default function TripForm({
                       type="button"
                       title="Close"
                       onClick={handleCancelSubTripSegment}
-                      className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
+                      class="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
                     >
-                      <X className="w-4 h-4" />
+                      <X class="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                     {/* SEG DATES */}
                     <div>
-                      <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Cargo Loading Date</label>
+                      <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1">Cargo Loading Date</label>
                       <input
                         type="date"
                         required
-                        value={stLoadingDate}
+                        value={stLoadingDate()}
                         onChange={(e) => setStLoadingDate(e.target.value)}
-                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
+                        class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
                       />
                     </div>
 
                     {/* LOADING OFFICE PLACE */}
                     <div>
-                      <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">Loading Office <span className="text-red-500">*</span></label>
+                      <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1">Loading Office <span class="text-red-500">*</span></label>
                       <select
-                        value={stOfficeName}
+                        value={stOfficeName()}
                         onChange={(e) => setStOfficeName(e.target.value)}
-                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
+                        class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
                       >
                         <option value="">-- Choose Office --</option>
                         {activeOffices.map(o => (
-                          <option key={o.id} value={o.officeName}>{o.officeName}</option>
+                          <option  value={o.officeName}>{o.officeName}</option>
                         ))}
                       </select>
                     </div>
 
                     {/* ROUTE ORIGIN */}
                     <div>
-                      <label htmlFor="input-stRouteFrom" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Origin <span className="text-red-500">*</span></label>
+                      <label for="input-stRouteFrom()" class="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Origin <span class="text-red-500">*</span></label>
                       <input
-                        id="input-stRouteFrom"
+                        id="input-stRouteFrom()"
                         type="text"
                         list="indian_cities_list"
                         placeholder="e.g. Bangalore"
-                        value={stRouteFrom}
+                        value={stRouteFrom()}
                         onChange={(e) => setStRouteFrom(e.target.value)}
-                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                        class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
                       />
                     </div>
 
                     {/* ROUTE END DESTINATION */}
                     <div>
-                      <label htmlFor="input-stRouteTo" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Destination <span className="text-red-500">*</span></label>
+                      <label for="input-stRouteTo()" class="block text-[10px] text-slate-555 font-bold uppercase mb-1">Route Destination <span class="text-red-500">*</span></label>
                       <input
-                        id="input-stRouteTo"
+                        id="input-stRouteTo()"
                         type="text"
                         list="indian_cities_list"
                         placeholder="e.g. Mumbai Port"
-                        value={stRouteTo}
+                        value={stRouteTo()}
                         onChange={(e) => setStRouteTo(e.target.value)}
-                        className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+                        class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium"
                       />
                     </div>
 
                     {/* INDIAN CITIES DATALIST */}
                     <datalist id="indian_cities_list">
                       {indianCities.map(city => (
-                        <option key={city} value={city} />
+                        <option  value={city} />
                       ))}
                     </datalist>
                   </div>
 
                   {/* CARGO SPECS: MATERIAL, NO OF TONS, RATE PER TON */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 mt-2">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 mt-2">
                     <div>
-                      <label htmlFor="input_st_material" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Material Description</label>
+                      <label for="input_st_material" class="block text-[10px] text-slate-555 font-bold uppercase mb-1">Material Description</label>
                       <input
                         id="input_st_material"
                         type="text"
                         placeholder="e.g. Steel Pipe, Cement, Coal"
-                        value={stMaterial}
+                        value={stMaterial()}
                         onChange={(e) => setStMaterial(e.target.value)}
-                        className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 font-sans"
+                        class="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 font-sans"
                       />
                     </div>
                     <div>
-                      <label htmlFor="input_st_noOfTons" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">No of Tons</label>
+                      <label for="input_st_noOfTons" class="block text-[10px] text-slate-555 font-bold uppercase mb-1">No of Tons</label>
                       <input
                         id="input_st_noOfTons"
                         type="number"
                         min="0"
                         step="any"
                         placeholder="0.00"
-                        value={stNoOfTons || ''}
+                        value={stNoOfTons() || ''}
                         onChange={(e) => {
                           const tons = parseFloat(e.target.value) || 0;
                           setStNoOfTons(tons);
-                          const calculatedIncome = tons * (stRatePerTon || 0);
+                          const calculatedIncome = tons * (stRatePerTon() || 0);
                           if (calculatedIncome > 0) {
                             setStIncome(calculatedIncome);
-                            if (stWagePct) {
-                              const pct = parseFloat(stWagePct);
+                            if (stWagePct()) {
+                              const pct = parseFloat(stWagePct());
                               if (!isNaN(pct) && pct > 0) {
                                 setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
                               }
                             }
                           }
                         }}
-                        className="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
+                        class="w-full bg-white border border-slate-250 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
                       />
                     </div>
                     <div>
-                      <label htmlFor="input_st_ratePerTon" className="block text-[10px] text-slate-555 font-bold uppercase mb-1">Rate per Ton</label>
+                      <label for="input_st_ratePerTon" class="block text-[10px] text-slate-555 font-bold uppercase mb-1">Rate per Ton</label>
                       <input
                         id="input_st_ratePerTon"
                         type="number"
                         min="0"
                         step="any"
                         placeholder="0.00"
-                        value={stRatePerTon || ''}
+                        value={stRatePerTon() || ''}
                         onChange={(e) => {
                           const rate = parseFloat(e.target.value) || 0;
                           setStRatePerTon(rate);
-                          const calculatedIncome = (stNoOfTons || 0) * rate;
+                          const calculatedIncome = (stNoOfTons() || 0) * rate;
                           if (calculatedIncome > 0) {
                             setStIncome(calculatedIncome);
-                            if (stWagePct) {
-                              const pct = parseFloat(stWagePct);
+                            if (stWagePct()) {
+                              const pct = parseFloat(stWagePct());
                               if (!isNaN(pct) && pct > 0) {
                                 setStDriverWages(Math.round(calculatedIncome * (pct / 100)));
                               }
                             }
                           }
                         }}
-                        className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
+                        class="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-semibold focus:outline-none focus:border-blue-500"
                       />
                     </div>
                   </div>
 
                   {/* CARGO REVENUE & DRIVER WAGES */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
                     {/* SEG FREIGHT INCOME */}
                     <div>
-                      <label htmlFor="input_st_income" className="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Billed Freight Income <span className="text-red-500">*</span></label>
+                      <label for="input_st_income" class="block text-[10px] text-slate-555 font-bold uppercase mb-1 font-sans">₹ Billed Freight Income <span class="text-red-500">*</span></label>
                       <input
                         id="input_st_income"
                         type="number"
                         min="0"
-                        value={stIncome || ''}
+                        value={stIncome() || ''}
                         onChange={(e) => {
                           const newIncome = parseFloat(e.target.value) || 0;
                           setStIncome(newIncome);
-                          if (stWagePct) {
-                            const pct = parseFloat(stWagePct);
+                          if (stWagePct()) {
+                            const pct = parseFloat(stWagePct());
                             if (!isNaN(pct) && pct > 0) {
                               setStDriverWages(Math.round(newIncome * (pct / 100)));
                             }
                           }
                         }}
                         placeholder="0"
-                        className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
+                        class="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono font-bold text-emerald-855"
                       />
-                      <span className="text-[10px] text-slate-500 block mt-1">
-                        Est. Net Receivable: <strong className={
+                      <span class="text-[10px] text-slate-500 block mt-1">
+                        Est. Net Receivable: <strong class={
                           liveSegmentReceivable > 0 ? 'text-blue-700 font-bold' :
                             liveSegmentReceivable === 0 ? 'text-slate-500 font-semibold' :
                               'text-amber-700 font-bold'
@@ -1455,94 +1456,94 @@ export default function TripForm({
 
                     {/* WAGES */}
                     <div>
-                      <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Driver Wages / Allowance</label>
-                      <div className="flex gap-1.5">
+                      <label class="block text-[10px] text-slate-450 font-bold uppercase mb-1">Driver Wages / Allowance</label>
+                      <div class="flex gap-1.5">
                         <select
                           id="select_st_wage_percentage"
-                          value={stWagePct}
+                          value={stWagePct()}
                           onChange={(e) => {
                             const val = e.target.value;
                             setStWagePct(val);
                             const numVal = Number(val);
                             if (numVal > 0) {
-                              const calculatedWages = Math.round(Number(stIncome) * (numVal / 100));
+                              const calculatedWages = Math.round(Number(stIncome()) * (numVal / 100));
                               setStDriverWages(calculatedWages);
                             }
                           }}
-                          className="bg-slate-50 border border-slate-250 text-slate-700 rounded-lg px-1 text-[10px] focus:outline-none"
+                          class="bg-slate-50 border border-slate-250 text-slate-700 rounded-lg px-1 text-[10px] focus:outline-none"
                           style={{ width: '75px' }}
                         >
                           <option value="">% Calc</option>
                           {Array.from({ length: 20 }, (_, idx) => idx + 1).map(p => (
-                            <option key={p} value={p.toString()}>{p}%</option>
+                            <option  value={p.toString()}>{p}%</option>
                           ))}
                         </select>
                         <input
                           id="input_st_driverwages"
                           type="number"
                           min="0"
-                          value={stDriverWages || ''}
+                          value={stDriverWages() || ''}
                           onChange={(e) => {
                             setStDriverWages(parseFloat(e.target.value) || 0);
                             setStWagePct(''); // Break linkage if manually typed
                           }}
                           placeholder="0"
-                          className="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
+                          class="w-full bg-white border border-slate-250 text-slate-80 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono text-slate-705"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* DYNAMIC LEG EXPENSES (CARGO LIST) */}
-                  <div className="pt-4 border-t border-slate-100 space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Leg Expenses (Dynamic Cargo List)</span>
-                      <span className="text-[10px] font-semibold text-slate-505 bg-slate-100 px-2 py-0.5 rounded">
-                        Total Added: {stCargoExpenses.length}
+                  <div class="pt-4 border-t border-slate-100 space-y-4">
+                    <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                      <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Leg Expenses (Dynamic Cargo List)</span>
+                      <span class="text-[10px] font-semibold text-slate-505 bg-slate-100 px-2 py-0.5 rounded">
+                        Total Added: {stCargoExpenses().length}
                       </span>
                     </div>
 
                     {/* 1. List of currently added cargo expenses */}
-                    <div className="border border-slate-205 rounded-xl overflow-hidden shadow-3xs bg-white text-xs">
-                      {stCargoExpenses.length === 0 ? (
-                        <div className="p-6 text-center text-slate-500 font-medium">
+                    <div class="border border-slate-205 rounded-xl overflow-hidden shadow-3xs bg-white text-xs">
+                      {stCargoExpenses().length === 0 ? (
+                        <div class="p-6 text-center text-slate-500 font-medium">
                           No cargo expenses added to this segment yet. Use the form below to add them one-by-one.
                         </div>
                       ) : (
-                        <table className="w-full text-left border-collapse">
+                        <table class="w-full text-left border-collapse">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-                              <th className="p-2.5 pl-4">Type</th>
-                              <th className="p-2.5 text-right">Amount</th>
-                              <th className="p-2.5">Paid By / Deduct</th>
-                              <th className="p-2.5">Who Bears?</th>
-                              <th className="p-2.5 text-center pr-4">Action</th>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                              <th class="p-2.5 pl-4">Type</th>
+                              <th class="p-2.5 text-right">Amount</th>
+                              <th class="p-2.5">Paid By / Deduct</th>
+                              <th class="p-2.5">Who Bears?</th>
+                              <th class="p-2.5 text-center pr-4">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                            {stCargoExpenses.map((exp) => (
-                              <tr key={exp.id} className="hover:bg-slate-50/85 transition-colors">
-                                <td className="p-2.5 pl-4 font-bold text-slate-800">{exp.expenseType}</td>
-                                <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{exp.amount.toLocaleString()}</td>
-                                <td className="p-2.5 text-slate-600 font-semibold">
+                          <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
+                            {stCargoExpenses().map((exp) => (
+                              <tr  class="hover:bg-slate-50/85 transition-colors">
+                                <td class="p-2.5 pl-4 font-bold text-slate-800">{exp.expenseType}</td>
+                                <td class="p-2.5 text-right font-mono font-bold text-slate-900">₹{exp.amount.toLocaleString()}</td>
+                                <td class="p-2.5 text-slate-600 font-semibold">
                                   {exp.deductedFrom === 'OrgRental' ? 'Org Rental (Office Paid)' : exp.deductedFrom === 'OrgPaid' ? 'Org Paid (Direct/Bank)' : 'Driver Paid (Advance)'}
                                 </td>
-                                <td className="p-2.5">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${exp.bears === 'Org' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                                <td class="p-2.5">
+                                  <span class={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${exp.bears === 'Org' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
                                     exp.bears === 'Driver' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
                                       'bg-purple-50 text-purple-700 border border-purple-100'
                                     }`}>
                                     {exp.bears === 'Org' ? 'Organization' : exp.bears === 'Driver' ? 'Driver' : 'Office'}
                                   </span>
                                 </td>
-                                <td className="p-2.5 text-center pr-4">
+                                <td class="p-2.5 text-center pr-4">
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveCargoExpense(exp.id)}
-                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
+                                    class="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
                                     title="Delete Expense"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Trash2 class="w-3.5 h-3.5" />
                                   </button>
                                 </td>
                               </tr>
@@ -1553,17 +1554,17 @@ export default function TripForm({
                     </div>
 
                     {/* 2. Controls to add a new cargo expense */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">Add Leg Expense</span>
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                      <span class="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">Add Leg Expense</span>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                         {/* Expense Type */}
                         <div>
-                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Expense Type</label>
+                          <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Expense Type</label>
                           <select
-                            value={newCargoExpType}
+                            value={newCargoExpType()}
                             onChange={(e) => setNewCargoExpType(e.target.value as any)}
-                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                            class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
                           >
                             <option value="Loading">Loading</option>
                             <option value="Unloading">Unloading</option>
@@ -1575,24 +1576,24 @@ export default function TripForm({
 
                         {/* Amount */}
                         <div>
-                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
+                          <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
                           <input
                             type="number"
                             min="0"
-                            value={newCargoExpAmount}
+                            value={newCargoExpAmount()}
                             onChange={(e) => setNewCargoExpAmount(e.target.value === '' ? '' : Number(e.target.value))}
                             placeholder="e.g. 1500"
-                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-right focus:outline-none focus:border-blue-500"
+                            class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-right focus:outline-none focus:border-blue-500"
                           />
                         </div>
 
                         {/* Paid By */}
                         <div>
-                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Paid By / Deduct</label>
+                          <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Paid By / Deduct</label>
                           <select
-                            value={newCargoExpDeductedFrom}
+                            value={newCargoExpDeductedFrom()}
                             onChange={(e) => setNewCargoExpDeductedFrom(e.target.value as any)}
-                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                            class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
                           >
                             <option value="DriverDirect">Driver Paid (Advance)</option>
                             <option value="OrgRental">Org Rental (Office Paid)</option>
@@ -1602,11 +1603,11 @@ export default function TripForm({
 
                         {/* Who Bears */}
                         <div>
-                          <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Who Bears?</label>
+                          <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Who Bears?</label>
                           <select
-                            value={newCargoExpBears}
+                            value={newCargoExpBears()}
                             onChange={(e) => setNewCargoExpBears(e.target.value as any)}
-                            className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                            class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
                           >
                             <option value="Org">Organization</option>
                             <option value="Driver">Driver</option>
@@ -1615,69 +1616,69 @@ export default function TripForm({
                         </div>
                       </div>
 
-                      <div className="flex justify-end pt-1">
+                      <div class="flex justify-end pt-1">
                         <button
                           type="button"
                           onClick={handleAddCargoExpense}
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-4 py-1.5 rounded-lg cursor-pointer transition shadow-3xs flex items-center gap-1 border border-blue-550"
+                          class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-4 py-1.5 rounded-lg cursor-pointer transition shadow-3xs flex items-center gap-1 border border-blue-550"
                         >
-                          <Plus className="w-3.5 h-3.5" /> Add Leg Expense
+                          <Plus class="w-3.5 h-3.5" /> Add Leg Expense
                         </button>
                       </div>
                     </div>
                   </div>
 
                   {/* SEG ODOMETER KM SPEC */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 bg-slate-100 rounded-lg p-3.5 border border-slate-150">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 bg-slate-100 rounded-lg p-3.5 border border-slate-150">
                     <div>
-                      <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Starting KM</label>
+                      <label class="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Starting KM</label>
                       <input
                         type="number"
                         min="0"
-                        value={stStartingKM || ''}
+                        value={stStartingKM() || ''}
                         onChange={(e) => setStStartingKM(parseInt(e.target.value) || 0)}
                         placeholder="Odo start"
-                        className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
+                        class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Ending KM</label>
+                      <label class="block text-[10px] text-slate-500 font-bold uppercase mb-1">Segment Ending KM</label>
                       <input
                         type="number"
                         min="0"
-                        value={stEndingKM || ''}
+                        value={stEndingKM() || ''}
                         onChange={(e) => setStEndingKM(parseInt(e.target.value) || 0)}
                         placeholder="Odo end"
-                        className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
+                        class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-right"
                       />
                     </div>
                   </div>
 
                   {/* SEG NOTES */}
                   <div>
-                    <label className="block text-[10px] text-slate-450 font-bold uppercase mb-1">Segment remarks / Consignment detail</label>
+                    <label class="block text-[10px] text-slate-450 font-bold uppercase mb-1">Segment remarks / Consignment detail</label>
                     <input
                       type="text"
                       placeholder="e.g. Iron rods loaded at Bangalore yard. Clear highway transit."
-                      value={stNotes}
+                      value={stNotes()}
                       onChange={(e) => setStNotes(e.target.value)}
-                      className="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-3 py-2 text-xs"
+                      class="w-full bg-white border border-slate-250 text-slate-850 rounded-lg px-3 py-2 text-xs"
                     />
                   </div>
 
                   {/* ACTION SEGMENT POSTS */}
-                  <div className="flex justify-end gap-2.5 border-t border-slate-200 pt-3.5">
+                  <div class="flex justify-end gap-2.5 border-t border-slate-200 pt-3.5">
                     <button
                       type="button"
                       onClick={handleCancelSubTripSegment}
-                      className="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer transition"
+                      class="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg cursor-pointer transition"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={handleSaveSubTripSegmentConfirm}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2 rounded-lg cursor-pointer transition shadow-2xs border border-emerald-550"
+                      class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2 rounded-lg cursor-pointer transition shadow-2xs border border-emerald-550"
                     >
                       Save
                     </button>
@@ -1687,11 +1688,11 @@ export default function TripForm({
             )}
           </div>
 
-          {activePaymentSubTripId && (() => {
-            const st = subTrips.find(item => item.id === activePaymentSubTripId);
+          {activePaymentSubTripId() && (() => {
+            const st = subTrips().find(item => item.id === activePaymentSubTripId());
             if (!st) return null;
-            const sidx = subTrips.indexOf(st);
-            const subTripPayments = payments.filter(p => p.subTripId === activePaymentSubTripId);
+            const sidx = subTrips().indexOf(st);
+            const subTripPayments = payments().filter(p => p.subTripId === activePaymentSubTripId());
 
             const activeSegmentDeductions = st.cargoExpenses
               ? st.cargoExpenses.filter(e => e.deductedFrom === 'OrgRental').reduce((sum, e) => sum + e.amount, 0)
@@ -1707,20 +1708,20 @@ export default function TripForm({
             return (
               <div
                 onClick={() => setActivePaymentSubTripId(null)}
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print"
+                class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto no-print"
               >
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-white rounded-2xl border border-slate-205 p-6 space-y-5 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans"
+                  class="bg-white rounded-2xl border border-slate-205 p-6 space-y-5 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto animate-scale-up font-sans"
                 >
                   {/* Header */}
-                  <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
-                        <Coins className="w-4 h-4 text-blue-650" />
+                  <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider font-sans">
+                        <Coins class="w-4 h-4 text-blue-650" />
                         Manage Payments - Leg #{sidx + 1}
                       </span>
-                      <span className="text-[10px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded">
+                      <span class="text-[10px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded">
                         {st.routeFrom} ➔ {st.routeTo} ({st.officeName})
                       </span>
                     </div>
@@ -1728,56 +1729,56 @@ export default function TripForm({
                       type="button"
                       title="Close"
                       onClick={() => setActivePaymentSubTripId(null)}
-                      className="text-slate-400 hover:text-slate-605 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
+                      class="text-slate-400 hover:text-slate-605 p-1 rounded-full hover:bg-slate-200 transition cursor-pointer"
                     >
-                      <X className="w-4 h-4" />
+                      <X class="w-4 h-4" />
                     </button>
                   </div>
 
                   {/* Sub-Trip Finances Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-center">
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Freight Income</span>
-                      <span className="text-sm font-black font-mono text-slate-800 block mt-0.5">₹{st.income.toLocaleString()}</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-center">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                      <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Freight Income</span>
+                      <span class="text-sm font-black font-mono text-slate-800 block mt-0.5">₹{st.income.toLocaleString()}</span>
                     </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Deductions</span>
-                      <span className="text-sm font-black font-mono text-red-650 block mt-0.5">₹{activeSegmentDeductions.toLocaleString()}</span>
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                      <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Deductions</span>
+                      <span class="text-sm font-black font-mono text-red-650 block mt-0.5">₹{activeSegmentDeductions.toLocaleString()}</span>
                     </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Total Paid</span>
-                      <span className="text-sm font-black font-mono text-indigo-750 block mt-0.5">₹{activeSegmentPaid.toLocaleString()}</span>
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                      <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Total Paid</span>
+                      <span class="text-sm font-black font-mono text-indigo-750 block mt-0.5">₹{activeSegmentPaid.toLocaleString()}</span>
                     </div>
-                    <div className={`border rounded-xl p-3 ${activeSegmentReceivable > 0 ? 'bg-blue-50 border-blue-200 text-blue-800' :
+                    <div class={`border rounded-xl p-3 ${activeSegmentReceivable > 0 ? 'bg-blue-50 border-blue-200 text-blue-800' :
                       activeSegmentReceivable === 0 ? 'bg-slate-50 border-slate-200 text-slate-700' :
                         'bg-amber-50 border-amber-200 text-amber-800'
                       }`}>
-                      <span className="text-[9px] font-bold uppercase tracking-wider block opacity-70">Receivable Balance</span>
-                      <span className="text-sm font-black font-mono block mt-0.5">₹{activeSegmentReceivable.toLocaleString()}</span>
+                      <span class="text-[9px] font-bold uppercase tracking-wider block opacity-70">Receivable Balance</span>
+                      <span class="text-sm font-black font-mono block mt-0.5">₹{activeSegmentReceivable.toLocaleString()}</span>
                     </div>
                   </div>
 
                   {/* Payments List Table */}
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Registered Payments</span>
+                  <div class="space-y-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Registered Payments</span>
 
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-3xs bg-white text-xs">
+                    <div class="border border-slate-200 rounded-xl overflow-hidden shadow-3xs bg-white text-xs">
                       {subTripPayments.length === 0 ? (
-                        <div className="p-6 text-center text-slate-500 font-medium">
+                        <div class="p-6 text-center text-slate-500 font-medium">
                           No payment receipts logged for this segment yet.
                         </div>
                       ) : (
-                        <table className="w-full text-left border-collapse">
+                        <table class="w-full text-left border-collapse">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-                              <th className="p-2.5 pl-4">Date</th>
-                              <th className="p-2.5">Account</th>
-                              <th className="p-2.5 text-right font-semibold">Amount (₹)</th>
-                              <th className="p-2.5 pl-4">Notes</th>
-                              <th className="p-2.5 text-center pr-4">Action</th>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                              <th class="p-2.5 pl-4">Date</th>
+                              <th class="p-2.5">Account</th>
+                              <th class="p-2.5 text-right font-semibold">Amount (₹)</th>
+                              <th class="p-2.5 pl-4">Notes</th>
+                              <th class="p-2.5 text-center pr-4">Action</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
+                          <tbody class="divide-y divide-slate-100 font-medium text-slate-750">
                             {subTripPayments.map((p) => {
                               const acc = activeAccounts.find(a => a.id === p.receivedBy);
                               const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === p.receivedBy);
@@ -1787,19 +1788,19 @@ export default function TripForm({
                                   ? `${fuelCard.cardName} (Fuel Card)`
                                   : (acc?.accountName || p.receivedBy);
                               return (
-                                <tr key={p.id} className="hover:bg-slate-50/85 transition-colors">
-                                  <td className="p-2.5 pl-4 font-mono text-[10px]">{p.date}</td>
-                                  <td className="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
-                                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">₹{p.amount.toLocaleString()}</td>
-                                  <td className="p-2.5 pl-4 text-slate-500 font-semibold">{p.notes || '—'}</td>
-                                  <td className="p-2.5 text-center pr-4">
+                                <tr  class="hover:bg-slate-50/85 transition-colors">
+                                  <td class="p-2.5 pl-4 font-mono text-[10px]">{p.date}</td>
+                                  <td class="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
+                                  <td class="p-2.5 text-right font-mono font-bold text-slate-900">₹{p.amount.toLocaleString()}</td>
+                                  <td class="p-2.5 pl-4 text-slate-500 font-semibold">{p.notes || '—'}</td>
+                                  <td class="p-2.5 text-center pr-4">
                                     <button
                                       type="button"
                                       onClick={() => handleRemovePayment(p.id)}
-                                      className="text-red-550 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
+                                      class="text-red-550 hover:text-red-700 p-1 rounded hover:bg-red-50 transition cursor-pointer"
                                       title="Discard Payment"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <Trash2 class="w-3.5 h-3.5" />
                                     </button>
                                   </td>
                                 </tr>
@@ -1812,85 +1813,85 @@ export default function TripForm({
                   </div>
 
                   {/* Quick Add Payment Form Widget */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">Register New Payment Receipt</span>
+                  <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <span class="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">Register New Payment Receipt</span>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                       {/* Date */}
                       <div>
-                        <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Receipt Date</label>
+                        <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Receipt Date</label>
                         <input
                           type="date"
-                          value={newPayDate}
+                          value={newPayDate()}
                           onChange={(e) => setNewPayDate(e.target.value)}
-                          className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
+                          class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono"
                         />
                       </div>
 
                       {/* Account */}
                       <div>
-                        <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Ledger Account</label>
+                        <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Ledger Account</label>
                         <select
-                          value={newPayReceivedBy}
+                          value={newPayReceivedBy()}
                           onChange={(e) => setNewPayReceivedBy(e.target.value)}
-                          className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                          class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
                         >
                           <option value="">-- Choose Account --</option>
                           <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                           <option value="Cash">Cash</option>
-                          {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newPayReceivedBy).map(c => (
-                            <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                          {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newPayReceivedBy()).map(c => (
+                            <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                           ))}
                           {activeAccounts.map(ac => (
-                            <option key={ac.id} value={ac.id}>{ac.accountName}</option>
+                            <option  value={ac.id}>{ac.accountName}</option>
                           ))}
                         </select>
                       </div>
 
                       {/* Amount */}
                       <div>
-                        <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
+                        <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Amount (₹)</label>
                         <input
                           type="number"
                           min="1"
                           step="any"
-                          value={newPayAmount}
+                          value={newPayAmount()}
                           onChange={(e) => setNewPayAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                           placeholder="₹0.00"
-                          className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-right focus:outline-none focus:border-blue-500"
+                          class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-right focus:outline-none focus:border-blue-500"
                         />
                       </div>
 
                       {/* Notes */}
                       <div>
-                        <label className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Notes / Cargo Ref</label>
+                        <label class="block text-[8px] text-slate-500 font-bold uppercase mb-1">Notes / Cargo Ref</label>
                         <input
                           type="text"
                           placeholder="e.g. Bank online transfer"
-                          value={newPayNotes}
+                          value={newPayNotes()}
                           onChange={(e) => setNewPayNotes(e.target.value)}
-                          className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                          class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                         />
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-1">
+                    <div class="flex justify-end pt-1">
                       <button
                         type="button"
-                        onClick={() => handleAddPayment(activePaymentSubTripId)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-4 py-1.5 rounded-lg cursor-pointer transition shadow-3xs flex items-center gap-1 border border-blue-550"
+                        onClick={() => handleAddPayment(activePaymentSubTripId())}
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] px-4 py-1.5 rounded-lg cursor-pointer transition shadow-3xs flex items-center gap-1 border border-blue-550"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Register Payment
+                        <Plus class="w-3.5 h-3.5" /> Register Payment
                       </button>
                     </div>
                   </div>
 
                   {/* Footer controls */}
-                  <div className="flex justify-end pt-2 border-t border-slate-200">
+                  <div class="flex justify-end pt-2 border-t border-slate-200">
                     <button
                       type="button"
                       onClick={() => setActivePaymentSubTripId(null)}
-                      className="px-4 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer transition"
+                      class="px-4 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer transition"
                     >
                       Close
                     </button>
@@ -1901,53 +1902,53 @@ export default function TripForm({
           })()}
 
           {/* DRIVER TRIP ADVANCES LEDGER MODULE (Requirement 1 & 4) */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block border-b border-slate-150 pb-2">
-              Category 3: Driver advances for entire trip (Cash/Direct Bank issued to Driver)
+          <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block border-b border-slate-150 pb-2">
+              Category 3: Driver advances() for entire trip (Cash/Direct Bank issued to Driver)
             </span>
 
-            {advances && advances.length > 0 ? (
-              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs text-xs font-sans">
-                <table className="w-full min-w-[800px] text-left">
-                  <thead className="bg-slate-50 text-[10px] text-slate-550 uppercase font-bold tracking-wider">
+            {advances() && advances().length > 0 ? (
+              <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-3xs text-xs font-sans">
+                <table class="w-full min-w-[800px] text-left">
+                  <thead class="bg-slate-50 text-[10px] text-slate-550 uppercase font-bold tracking-wider">
                     <tr>
-                      <th className="p-2.5 pl-4">#</th>
-                      <th className="p-2.5">Date Given</th>
-                      <th className="p-2.5">From Account</th>
-                      <th className="p-2.5 text-right font-semibold">Amount (₹)</th>
-                      <th className="p-2.5 pl-6">Receiving Status / Type</th>
-                      <th className="p-2.5 pl-6">Purpose / Memo</th>
-                      <th className="p-2.5 text-right pr-4">Discard</th>
+                      <th class="p-2.5 pl-4">#</th>
+                      <th class="p-2.5">Date Given</th>
+                      <th class="p-2.5">From Account</th>
+                      <th class="p-2.5 text-right font-semibold">Amount (₹)</th>
+                      <th class="p-2.5 pl-6">Receiving Status / Type</th>
+                      <th class="p-2.5 pl-6">Purpose / Memo</th>
+                      <th class="p-2.5 text-right pr-4">Discard</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {advances.map((adv, advIdx) => {
+                  <tbody class="divide-y divide-slate-100 font-medium">
+                    {advances().map((adv, advIdx) => {
                       const acc = activeAccounts.find(a => a.id === adv.fromAccountId);
                       const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === adv.fromAccountId);
                       const accountDisplay = fuelCard ? `${fuelCard.cardName} (Fuel Card)` : (acc?.accountName || adv.fromAccountId);
                       return (
-                        <tr key={adv.id} className="hover:bg-slate-50 text-slate-705 font-medium">
-                          <td className="p-2.5 pl-4 text-slate-400 font-bold">#{advIdx + 1}</td>
-                          <td className="p-2.5 font-mono text-slate-500">{adv.date}</td>
-                          <td className="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
-                          <td className="p-2.5 text-right font-mono font-bold">₹{adv.amount.toLocaleString()}</td>
-                          <td className="p-2.5 pl-6">
+                        <tr  class="hover:bg-slate-50 text-slate-705 font-medium">
+                          <td class="p-2.5 pl-4 text-slate-400 font-bold">#{advIdx + 1}</td>
+                          <td class="p-2.5 font-mono text-slate-500">{adv.date}</td>
+                          <td class="p-2.5 text-blue-650 font-bold">{accountDisplay}</td>
+                          <td class="p-2.5 text-right font-mono font-bold">₹{adv.amount.toLocaleString()}</td>
+                          <td class="p-2.5 pl-6">
                             {adv.receivedByDriverDirectly ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold font-sans">
+                              <span class="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold font-sans">
                                 Received Directly by Driver (Party Payment)
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 text-[10px] px-2 py-0.5 rounded-full font-bold font-sans">
+                              <span class="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 text-[10px] px-2 py-0.5 rounded-full font-bold font-sans">
                                 Issued from Office
                               </span>
                             )}
                           </td>
-                          <td className="p-2.5 pl-6 text-slate-500 font-semibold">{adv.notes || <span className="text-slate-300">&mdash;</span>}</td>
-                          <td className="p-2.5 text-right pr-4">
+                          <td class="p-2.5 pl-6 text-slate-500 font-semibold">{adv.notes || <span class="text-slate-300">&mdash;</span>}</td>
+                          <td class="p-2.5 text-right pr-4">
                             <button
                               type="button"
                               onClick={() => handleRemoveAdvance(adv.id)}
-                              className="text-rose-600 hover:text-rose-800 hover:underline font-bold text-[11px]"
+                              class="text-rose-600 hover:text-rose-800 hover:underline font-bold text-[11px]"
                             >
                               Discard
                             </button>
@@ -1959,71 +1960,71 @@ export default function TripForm({
                 </table>
               </div>
             ) : (
-              <p className="p-5 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-350">
-                No driver advances recorded for this trip yet. Use the issuer widget below to log trip operational advances.
+              <p class="p-5 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-350">
+                No driver advances() recorded for this trip yet. Use the issuer widget below to log trip operational advances().
               </p>
             )}
 
             {/* Advance Registrator Form */}
-            <div className="bg-slate-50 rounded-xl border border-slate-200 border-dashed p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end shadow-3xs font-sans">
+            <div class="bg-slate-50 rounded-xl border border-slate-200 border-dashed p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end shadow-3xs font-sans">
               <div>
-                <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Advance Date</label>
+                <label class="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Advance Date</label>
                 <input
                   ref={advanceDateInputRef}
                   type="date"
-                  value={newAdvDate}
+                  value={newAdvDate()}
                   onChange={(e) => setNewAdvDate(e.target.value)}
-                  className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-mono"
+                  class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">From Account / Source</label>
+                <label class="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">From Account / Source</label>
                 <select
-                  value={newAdvFromAccount}
+                  value={newAdvFromAccount()}
                   onChange={(e) => setNewAdvFromAccount(e.target.value)}
-                  className="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
+                  class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
                 >
                   <option value="">-- Choose Account --</option>
                   <option value="Cash">Cash</option>
-                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newAdvFromAccount).map(c => (
-                    <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newAdvFromAccount()).map(c => (
+                    <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                   ))}
                   {activeAccounts.map(ac => (
-                    <option key={ac.id} value={ac.id}>{ac.accountName}</option>
+                    <option  value={ac.id}>{ac.accountName}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Advance Amount (₹)</label>
+                <label class="block text-[9px] text-slate-550 font-extrabold uppercase mb-1">Advance Amount (₹)</label>
                 <input
                   type="number"
                   min="1"
                   step="any"
-                  value={newAdvAmount}
+                  value={newAdvAmount()}
                   onChange={(e) => setNewAdvAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                   placeholder="₹0.00"
-                  className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2 py-1.5 text-xs text-right font-mono font-bold"
+                  class="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2 py-1.5 text-xs text-right font-mono font-bold"
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] text-slate-555 font-extrabold uppercase mb-1">Advance Notes / Memo</label>
+                <label class="block text-[9px] text-slate-555 font-extrabold uppercase mb-1">Advance Notes / Memo</label>
                 <input
                   type="text"
                   placeholder="e.g. For food/toll/misc"
-                  value={newAdvNotes}
+                  value={newAdvNotes()}
                   onChange={(e) => setNewAdvNotes(e.target.value)}
-                  className="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs"
+                  class="w-full bg-white border border-slate-250 text-slate-855 rounded-lg px-2.5 py-1.5 text-xs"
                 />
               </div>
 
-              <div className="flex flex-col gap-2 pb-1.5 pt-1.5">
+              <div class="flex flex-col gap-2 pb-1.5 pt-1.5">
                 <button
                   type="button"
                   onClick={handleAddAdvance}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shrink-0 cursor-pointer shadow-3xs h-8 w-full block"
+                  class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shrink-0 cursor-pointer shadow-3xs h-8 w-full block"
                 >
                   + Issue Advance
                 </button>
@@ -2032,65 +2033,65 @@ export default function TripForm({
           </div>
 
           {/* OVERLAND COMMON TRIP EXPENDITURES BLOCK */}
-          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-4 shadow-3xs border-blue-200 mt-4 font-sans text-xs">
-            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-widest block border-b border-blue-105 pb-1.5 flex items-center gap-1.5 font-sans">
-              <Fuel className="w-3.5 h-3.5 text-blue-600" />
+          <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-4 shadow-3xs border-blue-200 mt-4 font-sans text-xs">
+            <span class="text-[10px] font-bold text-blue-700 uppercase tracking-widest block border-b border-blue-105 pb-1.5 flex items-center gap-1.5 font-sans">
+              <Fuel class="w-3.5 h-3.5 text-blue-600" />
               Trip Overland Common Expenses (Diesel Fuel, RTO Permits, AdBlue, Fastag Tolls, Misc)
             </span>
 
             {/* Dynamic Fuels Block */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-4">
-              <div className="flex justify-between items-center border-b border-amber-250 pb-2">
-                <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1 font-sans">
-                  <Fuel className="w-3.5 h-3.5 text-amber-600" />
-                  Diesel Fuel Logs ({fuels.length} entries)
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-4">
+              <div class="flex justify-between items-center border-b border-amber-250 pb-2">
+                <span class="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1 font-sans">
+                  <Fuel class="w-3.5 h-3.5 text-amber-600" />
+                  Diesel Fuel Logs ({fuels().length} entries)
                 </span>
-                <span className="text-[10px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full font-mono">
-                  Total: ₹{fuels.reduce((sum, f) => sum + f.amount, 0).toLocaleString()} (Liters: {fuels.reduce((sum, f) => sum + f.liters, 0).toLocaleString()})
+                <span class="text-[10px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full font-mono">
+                  Total: ₹{fuels().reduce((sum, f) => sum + f.amount, 0).toLocaleString()} (Liters: {fuels().reduce((sum, f) => sum + f.liters, 0).toLocaleString()})
                 </span>
               </div>
 
               {/* Fuels list summary table */}
-              {fuels.length > 0 && (
-                <div className="overflow-x-auto border border-amber-200 rounded-lg bg-white">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-amber-100/50 text-[9px] font-extrabold text-amber-850 uppercase">
+              {fuels().length > 0 && (
+                <div class="overflow-x-auto border border-amber-200 rounded-lg bg-white">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-amber-100/50 text-[9px] font-extrabold text-amber-850 uppercase">
                       <tr>
-                        <th className="p-2 pl-3">Date</th>
-                        <th className="p-2">Liters</th>
-                        <th className="p-2">Rate/Lit</th>
-                        <th className="p-2 font-mono">Amount</th>
-                        <th className="p-2">Fuel Station/Shop</th>
-                        <th className="p-2">Account</th>
-                        <th className="p-2 text-right pr-3">Action</th>
+                        <th class="p-2 pl-3">Date</th>
+                        <th class="p-2">Liters</th>
+                        <th class="p-2">Rate/Lit</th>
+                        <th class="p-2 font-mono">Amount</th>
+                        <th class="p-2">Fuel Station/Shop</th>
+                        <th class="p-2">Account</th>
+                        <th class="p-2 text-right pr-3">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-amber-100 font-semibold text-slate-700">
-                      {[...fuels].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(f => {
+                    <tbody class="divide-y divide-amber-100 font-semibold text-slate-700">
+                      {[...fuels()].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(f => {
                         const acctName = f.paymentMode === 'driver'
                           ? 'Paid by Driver (from Advance)'
                           : (accounts.find(a => a.id === f.paymentMode)?.accountName ||
                             orgProfile?.fuelCards?.find(fc => fc.id === f.paymentMode)?.cardName ||
                             'Cash/General');
                         return (
-                          <tr key={f.id} className="hover:bg-amber-50/20">
-                            <td className="p-2 pl-3 font-mono text-[10px]">
+                          <tr  class="hover:bg-amber-50/20">
+                            <td class="p-2 pl-3 font-mono text-[10px]">
                               {(() => {
                                 if (!f.date) return '—';
                                 const parts = f.date.split('-');
                                 return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : f.date;
                               })()}
                             </td>
-                            <td className="p-2 font-mono">{f.liters} L</td>
-                            <td className="p-2 font-mono">₹{f.rate}</td>
-                            <td className="p-2 font-mono text-amber-900">₹{f.amount.toLocaleString()}</td>
-                            <td className="p-2 font-sans font-bold">{f.shopName || '—'}</td>
-                            <td className="p-2 font-mono text-[10px] text-indigo-700">{acctName}</td>
-                            <td className="p-2 text-right pr-3">
+                            <td class="p-2 font-mono">{f.liters} L</td>
+                            <td class="p-2 font-mono">₹{f.rate}</td>
+                            <td class="p-2 font-mono text-amber-900">₹{f.amount.toLocaleString()}</td>
+                            <td class="p-2 font-sans font-bold">{f.shopName || '—'}</td>
+                            <td class="p-2 font-mono text-[10px] text-indigo-700">{acctName}</td>
+                            <td class="p-2 text-right pr-3">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveFuel(f.id)}
-                                className="text-rose-600 hover:text-rose-800 text-[10px] active:scale-95 transition font-bold cursor-pointer"
+                                class="text-rose-600 hover:text-rose-800 text-[10px] active:scale-95 transition font-bold cursor-pointer"
                               >
                                 Remove
                               </button>
@@ -2103,273 +2104,273 @@ export default function TripForm({
                 </div>
               )}
 
-              {/* Inline fuels Quick Builder tool */}
-              <div className="grid grid-cols-2 md:grid-cols-7 gap-2 bg-white/70 rounded-lg p-2 border border-amber-200/50">
+              {/* Inline fuels() Quick Builder tool */}
+              <div class="grid grid-cols-2 md:grid-cols-7 gap-2 bg-white/70 rounded-lg p-2 border border-amber-200/50">
                 <div>
-                  <label className="block text-[9px] font-bold text-slate-500 mb-1">Fuel Date</label>
+                  <label class="block text-[9px] font-bold text-slate-500 mb-1">Fuel Date</label>
                   <input
                     ref={fuelDateInputRef}
                     type="date"
-                    value={newFuelDate}
+                    value={newFuelDate()}
                     onChange={(e) => setNewFuelDate(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-500"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-500"
                   />
                 </div>
                 <div>
-                  <label htmlFor="input-new-fuel-liters" className="block text-[9px] font-bold text-slate-500 mb-1">Liters</label>
+                  <label for="input-new-fuel-liters" class="block text-[9px] font-bold text-slate-500 mb-1">Liters</label>
                   <input
                     id="input-new-fuel-liters"
                     type="number"
                     min="0"
                     step="any"
                     placeholder="0.00"
-                    value={newFuelLiters}
+                    value={newFuelLiters()}
                     onChange={(e) => handleLitersChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
                   />
                 </div>
                 <div>
-                  <label htmlFor="input-new-fuel-rate" className="block text-[9px] font-bold text-slate-500 mb-1">Rate / Lit</label>
+                  <label for="input-new-fuel-rate" class="block text-[9px] font-bold text-slate-500 mb-1">Rate / Lit</label>
                   <input
                     id="input-new-fuel-rate"
                     type="number"
                     min="0"
                     step="any"
                     placeholder="0.00"
-                    value={newFuelRate}
+                    value={newFuelRate()}
                     onChange={(e) => handleRateChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
                   />
                 </div>
                 <div>
-                  <label htmlFor="input-new-fuel-amount" className="block text-[9px] font-bold text-slate-500 mb-1">Total Amount (₹)</label>
+                  <label for="input-new-fuel-amount" class="block text-[9px] font-bold text-slate-500 mb-1">Total Amount (₹)</label>
                   <input
                     id="input-new-fuel-amount"
                     type="number"
                     min="0"
                     step="any"
                     placeholder="0"
-                    value={newFuelAmount}
+                    value={newFuelAmount()}
                     onChange={(e) => handleAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 font-mono text-xs focus:outline-none text-right"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-bold text-slate-500 mb-1">Fuel Station Shop</label>
+                  <label class="block text-[9px] font-bold text-slate-500 mb-1">Fuel Station Shop</label>
                   <input
                     type="text"
                     placeholder="e.g. TVS / SF Bunk"
-                    value={newFuelShop}
+                    value={newFuelShop()}
                     onChange={(e) => setNewFuelShop(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-bold text-slate-500 mb-1">Account Mode</label>
+                  <label class="block text-[9px] font-bold text-slate-500 mb-1">Account Mode</label>
                   <select
-                    value={newFuelPaymentMode}
+                    value={newFuelPaymentMode()}
                     onChange={(e) => setNewFuelPaymentMode(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none font-semibold text-slate-705"
+                    class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none font-semibold text-slate-705"
                   >
                     <option value="">Cash/General Mode</option>
                     <option value="driver">Paid by Driver (from Advance)</option>
                     {activeAccounts.map(a => (
-                      <option key={a.id} value={a.id}>{a.accountName}</option>
+                      <option  value={a.id}>{a.accountName}</option>
                     ))}
-                    {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newFuelPaymentMode).map(c => (
-                      <option key={c.id} value={c.id}>{c.cardName} (Fuel Card)</option>
+                    {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newFuelPaymentMode()).map(c => (
+                      <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col justify-end">
+                <div class="flex flex-col justify-end">
                   <button
                     type="button"
                     onClick={handleAddFuel}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded uppercase cursor-pointer transition active:scale-95"
+                    class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded uppercase cursor-pointer transition active:scale-95"
                   >
                     + Add Fuel
                   </button>
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start pt-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start pt-2">
               {/* RTO Expense */}
               <div>
-                <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1 flex items-center gap-1">₹ RTO Permits Expense</label>
+                <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1 flex items-center gap-1">₹ RTO Permits Expense</label>
                 <input
-                  id="input-common-rtoExpense"
+                  id="input-common-rtoExpense()"
                   type="number"
                   min="0"
-                  value={rtoExpense || ''}
+                  value={rtoExpense() || ''}
                   onChange={(e) => setRtoExpense(parseFloat(e.target.value) || 0)}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
+                  class="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
                 />
-                <label className="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
+                <label class="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={rtoPaidByDriver}
+                    checked={rtoPaidByDriver()}
                     onChange={(e) => setRtoPaidByDriver(e.target.checked)}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
+                    class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
                   />
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
+                  <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
                 </label>
               </div>
 
               {/* AdBlue Cost */}
               <div>
-                <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ AdBlue Cost</label>
+                <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ AdBlue Cost</label>
                 <input
-                  id="input-common-addBlueExpense"
+                  id="input-common-addBlueExpense()"
                   type="number"
                   min="0"
-                  value={addBlueExpense || ''}
+                  value={addBlueExpense() || ''}
                   onChange={(e) => setAddBlueExpense(parseFloat(e.target.value) || 0)}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
+                  class="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
                 />
-                <label className="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
+                <label class="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={addBluePaidByDriver}
+                    checked={addBluePaidByDriver()}
                     onChange={(e) => setAddBluePaidByDriver(e.target.checked)}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
+                    class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
                   />
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
+                  <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
                 </label>
               </div>
 
               {/* Fastag tolls */}
               <div>
-                <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ Fastag Toll Charges</label>
+                <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ Fastag Toll Charges</label>
                 <input
-                  id="input-common-fastagExpense"
+                  id="input-common-fastagExpense()"
                   type="number"
                   min="0"
-                  value={fastagExpense || ''}
+                  value={fastagExpense() || ''}
                   onChange={(e) => setFastagExpense(parseFloat(e.target.value) || 0)}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
+                  class="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
                 />
-                <label className="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
+                <label class="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={fastagPaidByDriver}
+                    checked={fastagPaidByDriver()}
                     onChange={(e) => setFastagPaidByDriver(e.target.checked)}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
+                    class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
                   />
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
+                  <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
                 </label>
               </div>
 
               {/* Other/Misc Overland */}
               <div>
-                <label className="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ Miscellaneous Other</label>
+                <label class="block text-[10px] text-slate-550 font-bold uppercase mb-1">₹ Miscellaneous Other</label>
                 <input
-                  id="input-common-otherExpense"
+                  id="input-common-otherExpense()"
                   type="number"
                   min="0"
-                  value={otherExpense || ''}
+                  value={otherExpense() || ''}
                   onChange={(e) => setOtherExpense(parseFloat(e.target.value) || 0)}
                   placeholder="0"
-                  className="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
+                  class="w-full bg-white border border-slate-205 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs text-right font-mono"
                 />
-                <label className="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
+                <label class="flex items-center gap-1.5 mt-1 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={otherPaidByDriver}
+                    checked={otherPaidByDriver()}
                     onChange={(e) => setOtherPaidByDriver(e.target.checked)}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
+                    class="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-3 w-3 shadow-2xs"
                   />
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
+                  <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Paid from Driver Advance</span>
                 </label>
               </div>
             </div>
           </div>
 
           {/* DYNAMIC CALCULATOR FEEDBACK CONTAINER */}
-          <div className="bg-slate-900 border border-slate-950 rounded-2xl p-5 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 font-sans shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-slate-804 bg-slate-800 rounded-xl text-blue-400">
-                <Calculator className="w-6 h-6" />
+          <div class="bg-slate-900 border border-slate-950 rounded-2xl p-5 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 font-sans shadow-sm">
+            <div class="flex items-center gap-3">
+              <div class="p-3 bg-slate-804 bg-slate-800 rounded-xl text-blue-400">
+                <Calculator class="w-6 h-6" />
               </div>
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest font-sans">Accumulated Journey Financial Ledger</span>
-                <div className="flex flex-wrap gap-x-3.5 text-xs text-slate-300">
-                  <span>Gross Billings: <strong className="text-white font-mono">₹{metrics.income.toLocaleString()}</strong></span>
+              <div class="space-y-1.5">
+                <span class="text-[10px] text-slate-400 uppercase font-bold tracking-widest font-sans">Accumulated Journey Financial Ledger</span>
+                <div class="flex flex-wrap gap-x-3.5 text-xs text-slate-300">
+                  <span>Gross Billings: <strong class="text-white font-mono">₹{metrics.income.toLocaleString()}</strong></span>
                   <span>&bull;</span>
-                  <span>Expenses Outflow: <strong className="text-red-300 font-mono">₹{metrics.totalExpense.toLocaleString()}</strong></span>
+                  <span>Expenses Outflow: <strong class="text-red-300 font-mono">₹{metrics.totalExpense.toLocaleString()}</strong></span>
                   <span>&bull;</span>
-                  <span>Driver Wages: <strong className="text-amber-200 font-mono">₹{metrics.driverWages.toLocaleString()}</strong></span>
+                  <span>Driver Wages: <strong class="text-amber-200 font-mono">₹{metrics.driverWages.toLocaleString()}</strong></span>
                   <span>&bull;</span>
-                  <span>Advances Received: <strong className="text-emerald-400 font-mono">₹{metrics.paymentsReceived.toLocaleString()}</strong></span>
+                  <span>Advances Received: <strong class="text-emerald-400 font-mono">₹{metrics.paymentsReceived.toLocaleString()}</strong></span>
                 </div>
-                <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-3.5">
-                  <span>Total Expense by Driver: <strong className="text-amber-300 font-mono">₹{totalDriverSpend.toLocaleString()}</strong></span>
+                <div class="text-[11px] text-slate-400 flex flex-wrap gap-x-3.5">
+                  <span>Total Expense by Driver: <strong class="text-amber-300 font-mono">₹{totalDriverSpend.toLocaleString()}</strong></span>
                   <span>&bull;</span>
-                  <span>Total Driver Advance: <strong className="text-emerald-400 font-mono">₹{totalIssuedToDriver.toLocaleString()}</strong></span>
+                  <span>Total Driver Advance: <strong class="text-emerald-400 font-mono">₹{totalIssuedToDriver.toLocaleString()}</strong></span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="text-right flex flex-col items-end gap-1">
-                <span className="text-[10px] text-slate-300 uppercase tracking-wider block font-medium flex items-center gap-1 justify-end">
+            <div class="flex items-center gap-4">
+              <div class="text-right flex flex-col items-end gap-1">
+                <span class="text-[10px] text-slate-300 uppercase tracking-wider block font-medium flex items-center gap-1 justify-end">
                   Driver Balance
-                  <span className={`h-1.5 w-1.5 rounded-full inline-block ${driverBalance >= 0 ? "bg-purple-400" : "bg-rose-500"}`} />
+                  <span class={`h-1.5 w-1.5 rounded-full inline-block ${driverBalance >= 0 ? "bg-purple-400" : "bg-rose-500"}`} />
                 </span>
-                <span className={`text-[15px] font-black font-mono block leading-none mt-1 ${driverBalance >= 0 ? "text-purple-300" : "text-amber-300"}`} title={driverBalance >= 0 ? "Payable to Driver" : "Due from Driver"}>
+                <span class={`text-[15px] font-black font-mono block leading-none mt-1 ${driverBalance >= 0 ? "text-purple-300" : "text-amber-300"}`} title={driverBalance >= 0 ? "Payable to Driver" : "Due from Driver"}>
                   ₹{driverBalance.toLocaleString("en-IN")}
                 </span>
-                <span className="text-[9px] font-sans font-normal block">{driverBalance >= 0 ? "Payable" : "Due from Drv"}</span>
+                <span class="text-[9px] font-sans font-normal block">{driverBalance >= 0 ? "Payable" : "Due from Drv"}</span>
                 {driverBalance !== 0 && (
                   <button
                     type="button"
-                    onClick={() => setShowQuickFwdPanel(!showQuickFwdPanel)}
-                    className="text-[9px] font-extrabold uppercase bg-slate-800 text-purple-300 hover:bg-slate-700 hover:text-white px-2 py-1 rounded border border-slate-700 transition cursor-pointer mt-1"
+                    onClick={() => setShowQuickFwdPanel(!showQuickFwdPanel())}
+                    class="text-[9px] font-extrabold uppercase bg-slate-800 text-purple-300 hover:bg-slate-700 hover:text-white px-2 py-1 rounded border border-slate-700 transition cursor-pointer mt-1"
                   >
-                    {showQuickFwdPanel ? "Close Transfer" : "Quick Transfer"}
+                    {showQuickFwdPanel() ? "Close Transfer" : "Quick Transfer"}
                   </button>
                 )}
               </div>
-              <div className="w-[1.5px] bg-slate-700 h-10 select-none"></div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Net Revenue Margin</span>
-                <span className={`text-base font-black font-mono block leading-none mt-1 ${metrics.profit >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400'}`}>
+              <div class="w-[1.5px] bg-slate-700 h-10 select-none"></div>
+              <div class="text-right">
+                <span class="text-[10px] text-slate-400 uppercase tracking-wider block">Net Revenue Margin</span>
+                <span class={`text-base font-black font-mono block leading-none mt-1 ${metrics.profit >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400'}`}>
                   ₹{metrics.profit.toLocaleString()}
                 </span>
               </div>
-              <div className="w-[1.5px] bg-slate-700 h-10 select-none"></div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-303 text-slate-300 uppercase tracking-wider block font-medium">Billed outstanding</span>
-                <span className={`text-lg font-mono font-black block leading-none mt-1 ${metrics.outstandingBalance > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}`}>
+              <div class="w-[1.5px] bg-slate-700 h-10 select-none"></div>
+              <div class="text-right">
+                <span class="text-[10px] text-slate-303 text-slate-300 uppercase tracking-wider block font-medium">Billed outstanding</span>
+                <span class={`text-lg font-mono font-black block leading-none mt-1 ${metrics.outstandingBalance > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}`}>
                   ₹{metrics.outstandingBalance.toLocaleString()}
                 </span>
               </div>
             </div>
           </div>
 
-          {showQuickFwdPanel && driverBalance !== 0 && (() => {
+          {showQuickFwdPanel() && driverBalance !== 0 && (() => {
             const allTrips = Array.isArray(trips) ? trips : [];
-            const finalTripNo = editingEntry ? tripNo : (tripNoOption === 'AUTO' ? tripNo : selectedExistingTripNo);
+            const finalTripNo = editingEntry ? tripNo() : (tripNoOption() === 'AUTO' ? tripNo() : selectedExistingTripNo());
             const eligibleFwdTrips = allTrips.filter(
               t => (!editingEntry || t.id !== editingEntry.id) && t.status !== 'Settled'
             ).sort((a, b) => {
-              const aSame = a.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
-              const bSame = b.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
+              const aSame = a.driverName?.toLowerCase().trim() === driverName()?.toLowerCase().trim();
+              const bSame = b.driverName?.toLowerCase().trim() === driverName()?.toLowerCase().trim();
               if (aSame && !bSame) return -1;
               if (!aSame && bSame) return 1;
               return a.tripNo.localeCompare(b.tripNo);
             });
 
             return (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3.5 text-xs font-sans text-slate-800">
-                <div className="flex border-b border-slate-200 pb-2 gap-2 text-xs">
+              <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3.5 text-xs font-sans text-slate-800">
+                <div class="flex border-b border-slate-200 pb-2 gap-2 text-xs">
                   <button
                     type="button"
                     onClick={() => setSelectedFwdMode('trip')}
-                    className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      selectedFwdMode === 'trip'
+                    class={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                      selectedFwdMode() === 'trip'
                         ? 'bg-blue-100 text-blue-900 border border-blue-300'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -2379,8 +2380,8 @@ export default function TripForm({
                   <button
                     type="button"
                     onClick={() => setSelectedFwdMode('account')}
-                    className={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      selectedFwdMode === 'account'
+                    class={`px-3 py-1 font-bold rounded-md transition-all cursor-pointer ${
+                      selectedFwdMode() === 'account'
                         ? 'bg-blue-100 text-blue-900 border border-blue-300'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
@@ -2389,71 +2390,71 @@ export default function TripForm({
                   </button>
                 </div>
 
-                {selectedFwdMode === 'trip' ? (
-                  <div className="space-y-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-amber-805 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                {selectedFwdMode() === 'trip' ? (
+                  <div class="space-y-3">
+                    <div class="flex flex-col gap-0.5">
+                      <span class="text-amber-805 text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">
                         {driverBalance < 0 ? 'Carry Forward Driver Deficit' : 'Carry Forward Driver Surplus'}
                       </span>
-                      <span className="text-slate-600 font-sans block mt-0.5">
-                        Move this {driverBalance < 0 ? 'negative' : 'positive'} balance of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> to another active trip.
+                      <span class="text-slate-600 font-sans block mt-0.5">
+                        Move this {driverBalance < 0 ? 'negative' : 'positive'} balance of <strong class="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> to another active trip.
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      <div className="flex flex-col gap-0.5 font-sans">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div class="flex flex-col gap-0.5 font-sans">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
                         <input
                           type="date"
-                          value={selectedFwdDate}
+                          value={selectedFwdDate()}
                           onChange={(e) => setSelectedFwdDate(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                          class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
                         />
                       </div>
-                      <div className="flex flex-col gap-0.5 sm:col-span-2">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Target Trip</span>
+                      <div class="flex flex-col gap-0.5 sm:col-span-2">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Target Trip</span>
                         <select
-                          value={selectedFwdTripId}
+                          value={selectedFwdTripId()}
                           onChange={(e) => setSelectedFwdTripId(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
+                          class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
                         >
                           <option value="">-- Select Next Trip --</option>
                           {eligibleFwdTrips.map(t => {
-                            const isSameDrv = t.driverName?.toLowerCase().trim() === driverName?.toLowerCase().trim();
+                            const isSameDrv = t.driverName?.toLowerCase().trim() === driverName()?.toLowerCase().trim();
                             return (
-                              <option key={t.id} value={t.id}>
+                              <option  value={t.id}>
                                 {t.tripNo} - {t.driverName || 'No Driver'} ({t.truckNo}){isSameDrv ? ' (Same Driver)' : ''}
                               </option>
                             );
                           })}
                         </select>
                       </div>
-                      <div className="flex flex-col gap-0.5 font-sans">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Move Amount (₹)</span>
+                      <div class="flex flex-col gap-0.5 font-sans">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Move Amount (₹)</span>
                         <input
                           type="number"
                           min="1"
                           step="any"
-                          value={selectedFwdAmount}
+                          value={selectedFwdAmount()}
                           onChange={(e) => setSelectedFwdAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                           placeholder="₹0.00"
-                          className="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
+                          class="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
                         />
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-2">
+                    <div class="flex justify-end pt-2">
                       <button
                         type="button"
                         onClick={() => {
-                          if (!selectedFwdTripId) {
+                          if (!selectedFwdTripId()) {
                             alert("Please select a target trip first.");
                             return;
                           }
-                          const destTrip = eligibleFwdTrips.find(t => t.id === selectedFwdTripId);
+                          const destTrip = eligibleFwdTrips.find(t => t.id === selectedFwdTripId());
                           if (!destTrip) return;
 
-                          const amtToMove = Number(selectedFwdAmount) || 0;
+                          const amtToMove = Number(selectedFwdAmount()) || 0;
                           if (amtToMove <= 0) {
                             alert("Please enter a valid amount to move greater than 0.");
                             return;
@@ -2467,7 +2468,7 @@ export default function TripForm({
                             const fwdAdvanceSource: TripAdvance = {
                               id: 'fwd_out_' + Date.now(),
                               amount: driverBalance < 0 ? -amtToMove : amtToMove,
-                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              date: selectedFwdDate() || new Date().toISOString().substring(0, 10),
                               fromAccountId: 'Direct Driver',
                               notes: driverBalance < 0
                                 ? `Negative balance carried forward to ${destTrip.tripNo}`
@@ -2478,7 +2479,7 @@ export default function TripForm({
                             const fwdAdvanceDest: TripAdvance = {
                               id: 'fwd_in_' + Date.now(),
                               amount: driverBalance < 0 ? amtToMove : -amtToMove,
-                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
+                              date: selectedFwdDate() || new Date().toISOString().substring(0, 10),
                               fromAccountId: 'Direct Driver',
                               notes: driverBalance < 0
                                 ? `Negative balance carried forward from ${finalTripNo}`
@@ -2487,7 +2488,7 @@ export default function TripForm({
                             };
 
                             // Add source side locally to current form state
-                            setAdvances([...advances, fwdAdvanceSource]);
+                            setAdvances([...advances(), fwdAdvanceSource]);
 
                             // Add dest side globally in the trips list
                             if (onSaveTrips && trips) {
@@ -2516,82 +2517,82 @@ export default function TripForm({
                             performFwd();
                           }
                         }}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
+                        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
                       >
                         Move Funds
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-emerald-805 text-emerald-800 font-extrabold uppercase text-[9px] tracking-wider block">
+                  <div class="space-y-3">
+                    <div class="flex flex-col gap-0.5">
+                      <span class="text-emerald-805 text-emerald-800 font-extrabold uppercase text-[9px] tracking-wider block">
                         {driverBalance < 0 ? 'Settle Deficit to Company Account' : 'Pay Driver Surplus from Company Account'}
                       </span>
-                      <span className="text-slate-600 font-sans block mt-0.5">
+                      <span class="text-slate-600 font-sans block mt-0.5">
                         {driverBalance < 0 ? (
-                          <span>Receive driver returned funds of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> into a company account.</span>
+                          <span>Receive driver returned funds of <strong class="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> into a company account.</span>
                         ) : (
-                          <span>Pay driver out-of-pocket surplus of <strong className="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> from a company account.</span>
+                          <span>Pay driver out-of-pocket surplus of <strong class="text-slate-850 font-mono">₹{Math.abs(driverBalance).toLocaleString('en-IN')}</strong> from a company account.</span>
                         )}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      <div className="flex flex-col gap-0.5 font-sans">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div class="flex flex-col gap-0.5 font-sans">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Tx Date</span>
                         <input
                           type="date"
-                          value={selectedFwdDate}
+                          value={selectedFwdDate()}
                           onChange={(e) => setSelectedFwdDate(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
+                          class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full"
                         />
                       </div>
-                      <div className="flex flex-col gap-0.5 sm:col-span-2">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
+                      <div class="flex flex-col gap-0.5 sm:col-span-2">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Company Account</span>
                         <select
-                          value={selectedFwdAccountId}
+                          value={selectedFwdAccountId()}
                           onChange={(e) => setSelectedFwdAccountId(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
+                          class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-750 focus:outline-none focus:border-blue-500 font-sans font-medium w-full font-semibold"
                         >
                           <option value="">-- Select Company Account --</option>
                           <option value="Cash">Cash</option>
                           {accounts.filter(a => a.status === 'Active').map(a => (
-                            <option key={a.id} value={a.id}>
+                            <option  value={a.id}>
                               {a.accountName} ({a.type})
                             </option>
                           ))}
                         </select>
                       </div>
-                      <div className="flex flex-col gap-0.5 font-sans">
-                        <span className="text-[8px] text-slate-400 font-bold uppercase">Settle Amount (₹)</span>
+                      <div class="flex flex-col gap-0.5 font-sans">
+                        <span class="text-[8px] text-slate-400 font-bold uppercase">Settle Amount (₹)</span>
                         <input
                           type="number"
                           min="1"
                           step="any"
-                          value={selectedFwdAmount}
+                          value={selectedFwdAmount()}
                           onChange={(e) => setSelectedFwdAmount(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                           placeholder="₹0.00"
-                          className="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
+                          class="bg-white border border-slate-205 rounded-lg px-2.5 py-1.5 text-xs text-slate-805 text-right font-mono font-bold focus:outline-none focus:border-blue-500 w-full"
                         />
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-2">
+                    <div class="flex justify-end pt-2">
                       <button
                         type="button"
                         onClick={() => {
-                          if (!selectedFwdAccountId) {
+                          if (!selectedFwdAccountId()) {
                             alert("Please select a target company account first.");
                             return;
                           }
-                          const amtToSettle = Number(selectedFwdAmount) || 0;
+                          const amtToSettle = Number(selectedFwdAmount()) || 0;
                           if (amtToSettle <= 0) {
                             alert("Please enter a valid settle amount greater than 0.");
                             return;
                           }
-                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId);
-                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId;
+                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId());
+                          const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId();
 
                           const confirmMsg = driverBalance < 0
                             ? `Are you sure you want to move the driver deficit of ₹${amtToSettle.toLocaleString('en-IN')} from this trip to company account "${accountName}"?\n\nThis will record a negative advance on this trip to reduce the driver's balance.`
@@ -2601,16 +2602,16 @@ export default function TripForm({
                             const settleAdvance: TripAdvance = {
                               id: 'fwd_settle_' + Date.now(),
                               amount: driverBalance < 0 ? -amtToSettle : amtToSettle,
-                              date: selectedFwdDate || new Date().toISOString().substring(0, 10),
-                              fromAccountId: selectedFwdAccountId,
+                              date: selectedFwdDate() || new Date().toISOString().substring(0, 10),
+                              fromAccountId: selectedFwdAccountId(),
                               notes: driverBalance < 0
                                 ? `Negative balance moved/returned to company account: ${accountName}`
                                 : `Positive balance paid to driver from company account: ${accountName}`,
                               receivedByDriverDirectly: false
                             };
 
-                            // Add locally to advances list in the current form
-                            setAdvances([...advances, settleAdvance]);
+                            // Add locally to advances() list in the current form
+                            setAdvances([...advances(), settleAdvance]);
                             
                             // If we didn't settle the full balance, keep the fwd panel open
                             const remaining = Math.max(0, Math.abs(driverBalance) - amtToSettle);
@@ -2627,7 +2628,7 @@ export default function TripForm({
                             performAccountSettle();
                           }
                         }}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
+                        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition text-xs shrink-0 cursor-pointer"
                       >
                         Confirm Settle
                       </button>
@@ -2639,32 +2640,32 @@ export default function TripForm({
           })()}
 
           {/* GENERAL TRANSPORT REMARKS */}
-          <div className="font-sans">
-            <label className="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1.5">General Transport Journey Remarks</label>
+          <div class="font-sans">
+            <label class="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1.5">General Transport Journey Remarks</label>
             <textarea
               rows={2}
               placeholder="e.g. Full standard journey including interstate road permit, customs checkpoints, and multiple coal depot offloads."
-              value={notes}
+              value={notes()}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-205 text-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500 focus:bg-white placeholder:text-slate-400"
+              class="w-full bg-slate-50 border border-slate-205 text-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500 focus:bg-white placeholder:text-slate-400"
             />
           </div>
 
         </div>
 
         {/* BOTTOM PANEL CONTROLS */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-240 flex justify-end gap-3 shrink-0 h-16 items-center">
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-240 flex justify-end gap-3 shrink-0 h-16 items-center">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+            class="px-5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
           >
             Cancel Journal
           </button>
           <button
             type="button"
             onClick={handleSubmitMasterForm}
-            className="bg-blue-600 hover:bg-blue-700 border border-blue-550 text-white font-bold text-xs px-6 py-2.5 rounded-lg shadow-md hover:scale-[1.01] transition duration-200 cursor-pointer bg-blue-605 h-10"
+            class="bg-blue-600 hover:bg-blue-700 border border-blue-550 text-white font-bold text-xs px-6 py-2.5 rounded-lg shadow-md hover:scale-[1.01] transition duration-200 cursor-pointer bg-blue-605 h-10"
           >
             {editingEntry ? 'Update Fleet Record' : 'Publish Fleet Record'}
           </button>

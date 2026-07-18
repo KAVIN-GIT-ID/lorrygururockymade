@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { createSignal, createMemo, For, Show } from 'solid-js';
+
 import { TripEntry, Truck, ExpenseEntry, getTripMetrics } from '../types';
 import { 
   Calendar, 
@@ -12,17 +13,8 @@ import {
   Award,
   AlertCircle,
   Truck as TruckIcon
-} from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer 
-} from 'recharts';
+} from 'lucide-solid';
+
 
 interface MonthlyReportProps {
   trips: TripEntry[];
@@ -34,18 +26,10 @@ interface MonthlyReportProps {
   setSelectedYear: (year: string) => void;
 }
 
-export default function MonthlyReport({ 
-  trips, 
-  trucks, 
-  expenses,
-  selectedMonth,
-  selectedYear,
-  setSelectedMonth,
-  setSelectedYear
-}: MonthlyReportProps) {
+export default function MonthlyReport(props: MonthlyReportProps) {
   // Query Filter state
-  const [showActiveOnly, setShowActiveOnly] = useState(false);
-  const [selectedTruck, setSelectedTruck] = useState('');
+  const [showActiveOnly, setShowActiveOnly] = createSignal(false);
+  const [selectedTruck, setSelectedTruck] = createSignal('');
 
   // Lists of months and years
   const months = [
@@ -65,45 +49,51 @@ export default function MonthlyReport({
 
   const years = ['2025', '2026', '2027', '2028', '2029', '2030', 'All Time'];
 
-  const isAllTime = selectedYear === 'All Time';
+    const selectedMonthObj = createMemo(() => months.find(m => m.value === props.selectedMonth));
 
-  // Filter raw collections to selected month or all-time
-  const targetTrips = isAllTime
-    ? trips
-    : trips.filter(t => t.startDate && t.startDate.startsWith(`${selectedYear}-${selectedMonth}`));
+  const isAllTime = createMemo(() => props.selectedYear === 'All Time');
 
-  const targetExpenses = isAllTime
-    ? expenses.filter(e => e.status !== 'Declined')
-    : expenses.filter(e => e.date && e.date.startsWith(`${selectedYear}-${selectedMonth}`) && e.status !== 'Declined');
+  const targetTrips = createMemo(() => isAllTime()
+    ? props.trips
+    : props.trips.filter(t => t.startDate && t.startDate.startsWith(`${props.selectedYear}-${props.selectedMonth}`)));
 
+  const targetExpenses = createMemo(() => isAllTime()
+    ? props.expenses.filter(e => e.status !== 'Declined')
+    : props.expenses.filter(e => e.date && e.date.startsWith(`${props.selectedYear}-${props.selectedMonth}`) && e.status !== 'Declined'));
 
-  // Group and compute metrics grouped by Truck
-  const filteredTrucks = selectedTruck 
-    ? trucks.filter(t => t.truckNo === selectedTruck)
-    : trucks;
+  const filteredTrucks = createMemo(() => selectedTruck()
+    ? props.trucks.filter(t => t.truckNo === selectedTruck())
+    : props.trucks);
 
-  const rawReportData = filteredTrucks.map(truck => {
-    const truckTrips = targetTrips.filter(t => t.truckNo === truck.truckNo);
-    const truckGeneralExpenses = targetExpenses.filter(e => e.truckNo === truck.truckNo);
+  const rawReportData = createMemo(() => filteredTrucks().map(truck => {
+    const truckTrips = targetTrips().filter(t => t.truckNo === truck.truckNo);
+    const truckExpenses = targetExpenses().filter(e => e.truckNo === truck.truckNo);
 
-    let totalIncome = 0;
-    let totalTripExpense = 0;
+    const totalDistance = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).totalKM || 0), 0);
     const tripsCount = truckTrips.length;
+    const averageMil = tripsCount > 0 
+      ? parseFloat((truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).millage || 0), 0) / tripsCount).toFixed(2))
+      : 0;
 
-    truckTrips.forEach(t => {
-      const metrics = getTripMetrics(t);
-      totalIncome += metrics.income;
-      totalTripExpense += metrics.totalExpense;
-    });
+    const freightRevenue = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).income || 0), 0);
+    const otherRevenue = truckTrips.reduce((sum, t) => {
+      const extra = (t.subTrips || []).reduce((s, st) => s + (st.income || 0), 0);
+      return sum + extra;
+    }, 0);
+    const totalIncome = freightRevenue + otherRevenue;
 
-    const totalGeneralExpense = truckGeneralExpenses.reduce(
-      (sum, e) => sum + (Number(e.amount) || 0), 
-      0
-    );
-
+    const driverSalary = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).driverWages || 0), 0);
+    const fuelExpenses = truckExpenses.filter(e => e.expenseType === 'Fuel').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const tollExpenses = truckExpenses.filter(e => e.expenseType === 'Toll').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const maintenanceExpenses = truckExpenses.filter(e => e.expenseType === 'Maintenance').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const adhocExpenses = truckExpenses.filter(e => e.expenseType === 'Adhoc').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const otherExpenses = truckExpenses.filter(e => !['Fuel', 'Toll', 'Maintenance', 'Adhoc'].includes(e.expenseType)).reduce((sum, e) => sum + (e.amount || 0), 0);
+    
+    const totalTripExpense = driverSalary + fuelExpenses + tollExpenses;
+    const totalGeneralExpense = maintenanceExpenses + adhocExpenses + otherExpenses;
     const totalExpense = totalTripExpense + totalGeneralExpense;
-    const netProfit = totalIncome - totalExpense;
-    const marginPct = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+    const truckNetProfit = totalIncome - totalExpense;
+    const marginPct = totalIncome > 0 ? (truckNetProfit / totalIncome) * 100 : 0;
 
     return {
       id: truck.id,
@@ -116,237 +106,108 @@ export default function MonthlyReport({
       totalTripExpense,
       totalGeneralExpense,
       totalExpense,
-      netProfit,
+      netProfit: truckNetProfit,
       marginPct
     };
-  });
-
-  // Filter based on user configuration
-  const reportData = showActiveOnly 
-    ? rawReportData.filter(d => d.tripsCount > 0 || d.totalGeneralExpense > 0)
-    : rawReportData;
-
-  // Monthly aggregated totals
-  const overallIncome = reportData.reduce((sum, d) => sum + d.totalIncome, 0);
-  const overallExpenses = reportData.reduce((sum, d) => sum + d.totalExpense, 0);
-  const overallNetProfit = overallIncome - overallExpenses;
-  const overallMargin = overallIncome > 0 ? (overallNetProfit / overallIncome) * 100 : 0;
-  const totalTripsRecorded = reportData.reduce((sum, d) => sum + d.tripsCount, 0);
-
-  // Find top performing vehicle of the month
-  const topTruck = reportData.length > 0 
-    ? [...reportData].sort((a, b) => b.netProfit - a.netProfit)[0]
-    : null;
-
-  // Chart structured formatting
-  const chartData = reportData.map(d => ({
-    name: d.truckNo,
-    Income: d.totalIncome,
-    Expenses: d.totalExpense,
-    'Net Profit': d.netProfit
   }));
 
-  // Recharts Modern Custom Tooltip
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900 border border-slate-800 text-white p-3.5 rounded-xl shadow-2xl font-sans text-xs">
-          <p className="font-extrabold text-amber-400 mb-2 font-mono tracking-wide">{label}</p>
-          <div className="space-y-1.5">
-            {payload.map((entry: any, index: number) => (
-              <div key={index} className="flex justify-between items-center gap-6">
-                <span className="text-slate-400 flex items-center gap-1.5 font-medium">
-                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: entry.color }}></span>
-                  {entry.name}:
-                </span>
-                <span className="font-mono font-bold text-slate-100">₹{entry.value.toLocaleString('en-IN')}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    return null;
+  const reportData = createMemo(() => showActiveOnly() 
+    ? rawReportData().filter(d => d.tripsCount > 0 || d.totalGeneralExpense > 0)
+    : rawReportData());
+
+  const handlePrint = () => {
+    window.print();
   };
 
-  // CSV Exporter Action
   const handleExportCSV = () => {
-    const headers = ['Vehicle No', 'Make', 'Model', 'Trips Ran', 'Billed Income (INR)', 'Trip Expenses (INR)', 'General Vouchers (INR)', 'Total Combined Expenses (INR)', 'Net Profit (INR)', 'Profit Margin (%)'];
-    const rows = reportData.map(d => [
+    const headers = ['Vehicle No', 'Make', 'Model', 'Type', 'Trips', 'Total Income', 'Trip Expense', 'General Expense', 'Total Expense', 'Net Profit', 'Margin %'];
+    const rows = reportData().map(d => [
       d.truckNo,
       d.make,
       d.model,
+      d.type,
       d.tripsCount,
       d.totalIncome,
       d.totalTripExpense,
       d.totalGeneralExpense,
       d.totalExpense,
       d.netProfit,
-      d.marginPct.toFixed(1)
+      d.marginPct.toFixed(2)
     ]);
-
     const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    
+      + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `FleetReport_${selectedYear}_${selectedMonth}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `LorryGuru_Monthly_Report_${props.selectedMonth}_${props.selectedYear}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Trigger browser print layout or native print
-  // Report Preview state
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-  const [previewTitle, setPreviewTitle] = useState<string>('');
+  const overallIncome = createMemo(() => reportData().reduce((sum, d) => sum + d.totalIncome, 0));
+  const overallExpenses = createMemo(() => reportData().reduce((sum, d) => sum + d.totalExpense, 0));
+  const overallNetProfit = createMemo(() => overallIncome() - overallExpenses());
+  const overallMargin = createMemo(() => overallIncome() > 0 ? (overallNetProfit() / overallIncome()) * 100 : 0);
+  const totalTripsRecorded = createMemo(() => reportData().reduce((sum, d) => sum + d.tripsCount, 0));
 
-  // Trigger browser print layout or native print
-  const handlePrint = () => {
-    const selectedMonthObj = months.find(m => m.value === selectedMonth);
-    const rowsHtml = reportData.map(d => `
-      <tr>
-        <td>
-          <strong>${d.truckNo}</strong><br/>
-          <span style="font-size: 9px; color: #666;">${d.make} ${d.model} &bull; ${d.type}</span>
-        </td>
-        <td style="text-align: center;">${d.tripsCount}</td>
-        <td style="text-align: right;">?${d.totalIncome.toLocaleString('en-IN')}</td>
-        <td style="text-align: right;">?${d.totalTripExpense.toLocaleString('en-IN')}</td>
-        <td style="text-align: right;">?${d.totalGeneralExpense.toLocaleString('en-IN')}</td>
-        <td style="text-align: right; font-weight: bold; color: #b91c1c;">?${d.totalExpense.toLocaleString('en-IN')}</td>
-        <td style="text-align: right; font-weight: bold; color: ${d.netProfit >= 0 ? '#166534' : '#b91c1c'};">?${d.netProfit.toLocaleString('en-IN')}</td>
-        <td style="text-align: center; font-weight: bold;">${d.marginPct.toFixed(1)}%</td>
-      </tr>
-    `).join('');
+  const topTruck = createMemo(() => reportData().length > 0 
+    ? [...reportData()].sort((a, b) => b.netProfit - a.netProfit)[0]
+    : null);
 
-    const totalTripExp = reportData.reduce((s,x)=> s + x.totalTripExpense, 0);
-    const totalGenExp = reportData.reduce((s,x)=> s + x.totalGeneralExpense, 0);
+  const chartData = createMemo(() => reportData().map(d => ({
+    name: d.truckNo,
+    Income: d.totalIncome,
+    Expenses: d.totalExpense,
+    'Net Profit': d.netProfit
+  })));
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Monthly Fleet Audit Report</title>
-        <style>
-          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 30px; line-height: 1.4; font-size: 11px; }
-          h2 { margin: 0; color: #1e3a8a; font-size: 20px; font-weight: 800; text-transform: uppercase; }
-          p.meta { margin: 4px 0 20px 0; font-size: 10px; color: #666; font-family: monospace; font-weight: bold; text-transform: uppercase; }
-          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-          .card { border: 1px solid #e2e8f0; background-color: #f8fafc; border-radius: 6px; padding: 10px; }
-          .card .label { font-size: 8px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
-          .card .value { font-size: 13px; font-weight: 850; color: #0f172a; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th { background-color: #f1f5f9; color: #334155; font-weight: 700; text-align: left; padding: 8px; font-size: 9px; text-transform: uppercase; border: 1px solid #cbd5e1; }
-          td { padding: 8px; border: 1px solid #e2e8f0; }
-          tr.total-row { font-weight: bold; background-color: #f8fafc; border-top: 2px solid #cbd5e1; }
-        </style>
-      </head>
-      <body>
-        <h2>Monthly Fleet Audit Report</h2>
-        <p class="meta">Accounting Period: ${selectedMonthObj?.label} ${selectedYear} | Generated on ${new Date().toLocaleDateString('en-IN')}</p>
-        
-        <div class="grid">
-          <div class="card">
-            <div class="label">Billed Income</div>
-            <div class="value">?${overallIncome.toLocaleString('en-IN')}</div>
-          </div>
-          <div class="card">
-            <div class="label">Gross Expenditure</div>
-            <div class="value" style="color: #b91c1c;">?${overallExpenses.toLocaleString('en-IN')}</div>
-          </div>
-          <div class="card">
-            <div class="label">Net Period Yield</div>
-            <div class="value" style="color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">?${overallNetProfit.toLocaleString('en-IN')}</div>
-          </div>
-          <div class="card">
-            <div class="label">Operating Margin</div>
-            <div class="value">${overallMargin.toFixed(1)}%</div>
-          </div>
-        </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Vehicle Details</th>
-              <th style="text-align: center;">Trips</th>
-              <th style="text-align: right;">Income</th>
-              <th style="text-align: right;">Trip Exp</th>
-              <th style="text-align: right;">Ledger Exp</th>
-              <th style="text-align: right;">Total Exp</th>
-              <th style="text-align: right;">Net Profit</th>
-              <th style="text-align: center;">Margin</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-            <tr class="total-row">
-              <td>TOTALS</td>
-              <td style="text-align: center;">${totalTripsRecorded}</td>
-              <td style="text-align: right; color: #2563eb;">?${overallIncome.toLocaleString('en-IN')}</td>
-              <td style="text-align: right;">?${totalTripExp.toLocaleString('en-IN')}</td>
-              <td style="text-align: right;">?${totalGenExp.toLocaleString('en-IN')}</td>
-              <td style="text-align: right; color: #b91c1c;">?${overallExpenses.toLocaleString('en-IN')}</td>
-              <td style="text-align: right; color: ${overallNetProfit >= 0 ? '#166534' : '#b91c1c'};">?${overallNetProfit.toLocaleString('en-IN')}</td>
-              <td style="text-align: center;">${overallMargin.toFixed(1)}%</td>
-            </tr>
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-
-    setPreviewHtml(htmlContent);
-    setPreviewTitle(`Monthly Fleet Audit Report - ${selectedMonthObj?.label} ${selectedYear}`);
-  };
-
-  const selectedMonthObj = months.find(m => m.value === selectedMonth);
-
+  
   return (
-    <div id="monthly-report-tab" className="space-y-6 animate-fade-in printing:p-0 printing:bg-white printing:text-black">
+    <div id="monthly-report-tab" class="space-y-6 animate-fade-in printing:p-0 printing:bg-white printing:text-black">
       
       {/* FILTER CONTROL BAR & TOOLBAR ACTIONS */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between no-print">
-        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between no-print">
+        <div class="flex flex-wrap items-center gap-4 w-full md:w-auto">
           {/* Calendar Selectors */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
-            <Calendar className="w-4 h-4 text-slate-450" />
+          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
+            <Calendar class="w-4 h-4 text-slate-450" />
             <select
               id="report-month-select"
-              value={selectedMonth}
-              disabled={isAllTime}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4 disabled:opacity-50 disabled:cursor-not-allowed"
+              value={props.selectedMonth}
+              disabled={isAllTime()}
+              onChange={(e) => props.setSelectedMonth(e.target.value)}
+              class="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {months.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
+                <option  value={m.value}>{m.label}</option>
               ))}
             </select>
             <select
               id="report-year-select"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pl-2 border-l border-slate-200"
+              value={props.selectedYear}
+              onChange={(e) => props.setSelectedYear(e.target.value)}
+              class="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pl-2 border-l border-slate-200"
             >
               {years.map(y => (
-                <option key={y} value={y}>{y}</option>
+                <option  value={y}>{y}</option>
               ))}
             </select>
           </div>
 
           {/* Truck Selector */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
-            <TruckIcon className="w-4 h-4 text-slate-450" />
+          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 px-3">
+            <TruckIcon class="w-4 h-4 text-slate-450" />
             <select
               id="report-truck-select"
-              value={selectedTruck}
+              value={selectedTruck()}
               onChange={(e) => setSelectedTruck(e.target.value)}
-              className="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4"
+              class="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4"
             >
               <option value="">&mdash; All Trucks &mdash;</option>
-              {trucks.map(t => (
-                <option key={t.id} value={t.truckNo}>{t.truckNo}</option>
+              {props.trucks.map(t => (
+                <option  value={t.truckNo}>{t.truckNo}</option>
               ))}
             </select>
           </div>
@@ -355,14 +216,14 @@ export default function MonthlyReport({
         </div>
 
         {/* Toolbar Buttons */}
-        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+        <div class="flex items-center gap-2.5 w-full md:w-auto justify-end">
           <button
             id="btn-print-report"
             onClick={handlePrint}
             title="Print Monthly Ledger Audit Sheet"
-            className="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
+            class="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
           >
-            <Printer className="w-3.5 h-3.5 text-slate-450" />
+            <Printer class="w-3.5 h-3.5 text-slate-450" />
             <span>Print Report</span>
           </button>
 
@@ -370,210 +231,216 @@ export default function MonthlyReport({
             id="btn-export-csv"
             onClick={handleExportCSV}
             title="Download CSV Worksheet (.csv)"
-            className="p-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg border border-slate-800 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
+            class="p-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg border border-slate-800 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
           >
-            <Download className="w-3.5 h-3.5 text-slate-300" />
+            <Download class="w-3.5 h-3.5 text-slate-300" />
             <span>Export CSV</span>
           </button>
         </div>
       </div>
 
       {/* HEADER SECTION IN PRINT FORMAT */}
-      <div className="hidden printing:block border-b border-slate-350 pb-4 mb-6">
-        <h2 className="text-2xl font-black text-slate-900 font-mono tracking-tight uppercase">FleetTrack Pro - Monthly Audit Document</h2>
-        <p className="text-xs text-slate-500 mt-1 uppercase font-mono font-bold">
-          Accounting Period: {selectedMonthObj?.label} {selectedYear} | Generated on {new Date().toLocaleDateString()}
+      <div class="hidden printing:block border-b border-slate-350 pb-4 mb-6">
+        <h2 class="text-2xl font-black text-slate-900 font-mono tracking-tight uppercase">FleetTrack Pro - Monthly Audit Document</h2>
+        <p class="text-xs text-slate-500 mt-1 uppercase font-mono font-bold">
+          Accounting Period: {selectedMonthObj()?.label} {props.selectedYear} | Generated on {new Date().toLocaleDateString()}
         </p>
       </div>
 
       {/* FINANCIAL OVERVIEW GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         
         {/* MONTHLY REVENUE */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Monthly Total Costing</span>
-            <span className="text-xl md:text-2xl font-extrabold text-slate-900 font-sans tracking-tight block">₹{overallIncome.toLocaleString('en-IN')}</span>
-            <p className="text-[10px] text-slate-450 mt-1 flex items-center gap-1">
-              <span className="font-bold text-blue-600">{totalTripsRecorded}</span> active trip legs registered
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
+          <div class="space-y-1">
+            <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Monthly Total Costing</span>
+            <span class="text-xl md:text-2xl font-extrabold text-slate-900 font-sans tracking-tight block">₹{overallIncome().toLocaleString('en-IN')}</span>
+            <p class="text-[10px] text-slate-450 mt-1 flex items-center gap-1">
+              <span class="font-bold text-blue-600">{totalTripsRecorded()}</span> active trip legs registered
             </p>
           </div>
-          <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-blue-605">
-            <TrendingUp className="w-5 h-5" />
+          <div class="p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-blue-605">
+            <TrendingUp class="w-5 h-5" />
           </div>
         </div>
 
         {/* COMBINED EXPENSES */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-405 font-extrabold uppercase tracking-wider block">Gross Month Expenditure</span>
-            <span className="text-xl md:text-2xl font-extrabold text-rose-600 font-sans tracking-tight block">₹{overallExpenses.toLocaleString('en-IN')}</span>
-            <p className="text-[10px] text-slate-450 mt-1">
-              ₹{targetExpenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString('en-IN')} separate from general vouchers
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
+          <div class="space-y-1">
+            <span class="text-[10px] text-slate-405 font-extrabold uppercase tracking-wider block">Gross Month Expenditure</span>
+            <span class="text-xl md:text-2xl font-extrabold text-rose-600 font-sans tracking-tight block">₹{overallExpenses().toLocaleString('en-IN')}</span>
+            <p class="text-[10px] text-slate-450 mt-1">
+              ₹{targetExpenses().reduce((sum, e) => sum + e.amount, 0).toLocaleString('en-IN')} separate from general vouchers
             </p>
           </div>
-          <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100 text-rose-500">
-            <Coins className="w-5 h-5" />
+          <div class="p-3 bg-rose-50/60 rounded-xl border border-rose-100 text-rose-500">
+            <Coins class="w-5 h-5" />
           </div>
         </div>
 
         {/* NET MONTH ADJUSTED MARGIN */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-405 font-extrabold uppercase tracking-wider block">Net Period Yield</span>
-            <span className={`text-xl md:text-2xl font-extrabold font-sans tracking-tight block ${overallNetProfit >= 0 ? 'text-emerald-600' : 'text-rose-605'}`}>
-              ₹{overallNetProfit.toLocaleString('en-IN')}
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
+          <div class="space-y-1">
+            <span class="text-[10px] text-slate-405 font-extrabold uppercase tracking-wider block">Net Period Yield</span>
+            <span class={`text-xl md:text-2xl font-extrabold font-sans tracking-tight block ${overallNetProfit() >= 0 ? 'text-emerald-600' : 'text-rose-605'}`}>
+              ₹{overallNetProfit().toLocaleString('en-IN')}
             </span>
-            <p className="text-[10px] text-slate-450 mt-1">
-              Operational Surplus margin: <strong className={overallMargin >= 0 ? 'text-emerald-605 font-bold' : 'text-rose-600 font-bold'}>{overallMargin.toFixed(1)}%</strong>
+            <p class="text-[10px] text-slate-450 mt-1">
+              Operational Surplus margin: <strong class={overallMargin() >= 0 ? 'text-emerald-605 font-bold' : 'text-rose-600 font-bold'}>{overallMargin().toFixed(1)}%</strong>
             </p>
           </div>
-          <div className={`p-3 rounded-xl border ${overallNetProfit >= 0 ? 'bg-emerald-50/60 border-emerald-100 text-emerald-600' : 'bg-rose-50/60 border-rose-100 text-rose-500'}`}>
-            <DollarSign className="w-5 h-5" />
+          <div class={`p-3 rounded-xl border ${overallNetProfit() >= 0 ? 'bg-emerald-50/60 border-emerald-100 text-emerald-600' : 'bg-rose-50/60 border-rose-100 text-rose-500'}`}>
+            <DollarSign class="w-5 h-5" />
           </div>
         </div>
 
         {/* DRIVING WINNER FLEET */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Highest Yielding Vehicle</span>
-            <span className="text-sm font-extrabold text-slate-800 font-mono tracking-wider block uppercase truncate max-w-[170px]">
-              {topTruck && topTruck.netProfit > 0 ? topTruck.truckNo : 'Not computed'}
+        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition hover:shadow-md duration-150">
+          <div class="space-y-1">
+            <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Highest Yielding Vehicle</span>
+            <span class="text-sm font-extrabold text-slate-800 font-mono tracking-wider block uppercase truncate max-w-[170px]">
+              {topTruck() && topTruck().netProfit > 0 ? topTruck().truckNo : 'Not computed'}
             </span>
-            <p className="text-[10px] text-slate-450 mt-1">
-              {topTruck && topTruck.netProfit > 0 ? (
-                <>Cleared net profit of <strong className="font-bold text-emerald-605">₹{topTruck.netProfit.toLocaleString('en-IN')}</strong></>
+            <p class="text-[10px] text-slate-450 mt-1">
+              {topTruck() && topTruck().netProfit > 0 ? (
+                <>Cleared net profit of <strong class="font-bold text-emerald-605">₹{topTruck().netProfit.toLocaleString('en-IN')}</strong></>
               ) : (
                 'No surplus calculated.'
               )}
             </p>
           </div>
-          <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-indigo-600">
-            <Award className="w-5 h-5" />
+          <div class="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-indigo-600">
+            <Award class="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {reportData.length === 0 ? (
+      {reportData().length === 0 ? (
         /* SILENT EMPTY STATE BANNER */
-        <div id="no-reports-banner" className="bg-slate-100 border border-slate-200 p-12 py-16 rounded-xl flex flex-col items-center text-center justify-center gap-3">
-          <AlertCircle className="w-12 h-12 text-slate-400" />
-          <h3 className="font-extrabold text-slate-700 text-sm uppercase tracking-wide">No Entries and Transactions in {selectedMonthObj?.label} {selectedYear}</h3>
-          <p className="text-xs text-slate-450 max-w-sm leading-relaxed">
+        <div id="no-reports-banner" class="bg-slate-100 border border-slate-200 p-12 py-16 rounded-xl flex flex-col items-center text-center justify-center gap-3">
+          <AlertCircle class="w-12 h-12 text-slate-400" />
+          <h3 class="font-extrabold text-slate-700 text-sm uppercase tracking-wide">No Entries and Transactions in {selectedMonthObj()?.label} {props.selectedYear}</h3>
+          <p class="text-xs text-slate-450 max-w-sm leading-relaxed">
             There were no trip starts or general expense vouchers logged inside this selected calendar timeline. Select a different month to examine analytics.
           </p>
         </div>
       ) : (
         <>
           {/* HIGHLY INTERACTIVE BAR CHART MODULE */}
-          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4 no-print">
+          <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4 no-print">
             <div>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Income, Expenses & Net Profit comparison</h3>
-              <p className="text-xs text-slate-450 leading-relaxed font-semibold">
+              <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Income, Expenses & Net Profit comparison</h3>
+              <p class="text-xs text-slate-450 leading-relaxed font-semibold">
                 Side-by-side transaction ratios comparing combined revenue flows and outgoings grouped per truck.
               </p>
             </div>
             
-            <div className="w-full h-80 min-h-[300px] pt-4 font-sans select-none">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="#475569" 
-                    fontSize={11} 
-                    fontWeight={600}
-                    tickLine={false} 
-                    axisLine={false}
-                    className="font-mono tracking-wider"
-                  />
-                  <YAxis 
-                    stroke="#475569" 
-                    fontSize={10} 
-                    tickLine={false} 
-                    axisLine={false} 
-                    tickFormatter={(val) => `₹${(val / 1000).toLocaleString()}k`}
-                    className="font-medium"
-                  />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }} />
-                  <Legend 
-                    verticalAlign="top" 
-                    height={36} 
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}
-                  />
-                  <Bar dataKey="Income" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                  <Bar dataKey="Expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                  <Bar dataKey="Net Profit" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
+                        <div class="w-full overflow-x-auto pt-4">
+              <div class="min-w-[600px] flex flex-col space-y-4">
+                <div class="flex flex-wrap gap-4 text-[10px] font-bold justify-center pb-2 border-b border-slate-100">
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-blue-500 rounded-xs"></span>Income</div>
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-rose-500 rounded-xs"></span>Expenses</div>
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-emerald-500 rounded-xs"></span>Net Profit</div>
+                </div>
+                <div class="h-64 flex items-end gap-6 px-4">
+                  <For each={chartData()}>
+                    {(item) => {
+                      const maxVal = Math.max(...chartData().map(d => Math.max(d.Income, d.Expenses, Math.abs(d['Net Profit']))), 1000);
+                      const incHeight = (item.Income / maxVal) * 180;
+                      const expHeight = (item.Expenses / maxVal) * 180;
+                      const netHeight = (Math.max(0, item['Net Profit']) / maxVal) * 180;
+                      return (
+                        <div class="flex-1 flex flex-col items-center group relative">
+                          <div class="w-full flex items-end justify-center gap-1.5 h-48 border-b border-slate-200 pb-1">
+                            <div 
+                              class="w-3.5 bg-blue-500 rounded-t-xs hover:bg-blue-600 transition-all cursor-pointer relative"
+                              style={{ height: `${incHeight}px` }}
+                              title={`Income: ₹${item.Income.toLocaleString('en-IN')}`}
+                            />
+                            <div 
+                              class="w-3.5 bg-rose-500 rounded-t-xs hover:bg-rose-600 transition-all cursor-pointer relative"
+                              style={{ height: `${expHeight}px` }}
+                              title={`Expenses: ₹${item.Expenses.toLocaleString('en-IN')}`}
+                            />
+                            <div 
+                              class="w-3.5 bg-emerald-500 rounded-t-xs hover:bg-emerald-600 transition-all cursor-pointer relative"
+                              style={{ height: `${netHeight}px` }}
+                              title={`Net Profit: ₹${item['Net Profit'].toLocaleString('en-IN')}`}
+                            />
+                          </div>
+                          <span class="text-[10px] font-mono font-bold text-slate-650 mt-2 truncate max-w-[70px]">
+                            {item.name}
+                          </span>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
             </div>
+
           </div>
 
           {/* DETAILED LEDGER GRID REPORT */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            <div className="p-6 pb-3 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+            <div class="p-6 pb-3 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Financial summary by active vehicles</h3>
-                <p className="text-xs text-slate-450 font-semibold font-sans">Individual balance sheets for each fleet asset recorded.</p>
+                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Financial summary by active vehicles</h3>
+                <p class="text-xs text-slate-450 font-semibold font-sans">Individual balance sheets for each fleet asset recorded.</p>
               </div>
-              <span className="text-[10px] text-slate-450 font-extrabold uppercase font-mono bg-slate-50 border border-slate-150 px-2.5 py-1 rounded-md shadow-3xs">
-                {reportData.length} active units
+              <span class="text-[10px] text-slate-450 font-extrabold uppercase font-mono bg-slate-50 border border-slate-150 px-2.5 py-1 rounded-md shadow-3xs">
+                {reportData().length} active units
               </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 py-3.5 border-b border-slate-100 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest font-sans">
-                    <th className="px-6 py-4">Vehicle Details</th>
-                    <th className="px-4 py-4 text-center">Trips Ran</th>
-                    <th className="px-4 py-4 text-right">Income (A)</th>
-                    <th className="px-4 py-4 text-right">Trip-Expenses (B)</th>
-                    <th className="px-4 py-4 text-right">Ledger-Expenses (C)</th>
-                    <th className="px-4 py-4 text-right">Total Outgoings (B+C)</th>
-                    <th className="px-4 py-4 text-right">Net Profit</th>
-                    <th className="px-6 py-4 text-center">Margin</th>
+                  <tr class="bg-slate-50 py-3.5 border-b border-slate-100 text-[10px] font-extrabold text-slate-500 uppercase tracking-widest font-sans">
+                    <th class="px-6 py-4">Vehicle Details</th>
+                    <th class="px-4 py-4 text-center">Trips Ran</th>
+                    <th class="px-4 py-4 text-right">Income (A)</th>
+                    <th class="px-4 py-4 text-right">Trip-Expenses (B)</th>
+                    <th class="px-4 py-4 text-right">Ledger-Expenses (C)</th>
+                    <th class="px-4 py-4 text-right">Total Outgoings (B+C)</th>
+                    <th class="px-4 py-4 text-right">Net Profit</th>
+                    <th class="px-6 py-4 text-center">Margin</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700 text-xs">
-                  {reportData.map((d) => (
-                    <tr key={d.id} id={`report-row-${d.id}`} className="hover:bg-slate-5/50 transition">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-mono font-extrabold text-slate-850 tracking-wider text-sm flex items-center gap-1">
-                            <TruckIcon className="w-3.5 h-3.5 text-blue-500 rounded bg-slate-100 p-0.5 shrink-0" />
+                <tbody class="divide-y divide-slate-100 font-medium text-slate-700 text-xs">
+                  {reportData().map((d) => (
+                    <tr  id={`report-row-${d.id}`} class="hover:bg-slate-5/50 transition">
+                      <td class="px-6 py-4">
+                        <div class="flex flex-col gap-0.5">
+                          <span class="font-mono font-extrabold text-slate-850 tracking-wider text-sm flex items-center gap-1">
+                            <TruckIcon class="w-3.5 h-3.5 text-blue-500 rounded bg-slate-100 p-0.5 shrink-0" />
                             {d.truckNo}
                           </span>
-                          <span className="text-[10px] text-slate-450 uppercase font-semibold">
+                          <span class="text-[10px] text-slate-450 uppercase font-semibold">
                             {d.make} {d.model} &bull; {d.type}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-center font-mono font-extrabold text-slate-700">
+                      <td class="px-4 py-4 text-center font-mono font-extrabold text-slate-700">
                         {d.tripsCount}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono font-extrabold text-slate-850">
+                      <td class="px-4 py-4 text-right font-mono font-extrabold text-slate-850">
                         ₹{d.totalIncome.toLocaleString()}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono font-bold text-slate-550">
+                      <td class="px-4 py-4 text-right font-mono font-bold text-slate-550">
                         ₹{d.totalTripExpense.toLocaleString()}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono font-bold text-slate-550">
+                      <td class="px-4 py-4 text-right font-mono font-bold text-slate-550">
                         ₹{d.totalGeneralExpense.toLocaleString()}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono font-extrabold text-rose-500">
+                      <td class="px-4 py-4 text-right font-mono font-extrabold text-rose-500">
                         ₹{d.totalExpense.toLocaleString()}
                       </td>
-                      <td className={`px-4 py-4 text-right font-mono font-extrabold ${d.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      <td class={`px-4 py-4 text-right font-mono font-extrabold ${d.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         ₹{d.netProfit.toLocaleString()}
                       </td>
-                      <td className="px-6 py-4 text-center whitespace-nowrap">
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      <td class="px-6 py-4 text-center whitespace-nowrap">
+                        <span class={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                           d.marginPct > 40
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                             : d.marginPct > 15
@@ -589,19 +456,19 @@ export default function MonthlyReport({
                   ))}
                   
                   {/* Totals Calculation Line */}
-                  <tr className="bg-slate-50/50 font-black text-slate-900 border-t-2 border-slate-200">
-                    <td className="px-6 py-4 font-bold text-slate-900 text-sm">TOTAL COMBINED PERIOD GAUGE</td>
-                    <td className="px-4 py-4 text-center font-mono font-black">{totalTripsRecorded}</td>
-                    <td className="px-4 py-4 text-right font-mono font-black border-slate-200 text-blue-600">₹{overallIncome.toLocaleString()}</td>
-                    <td className="px-4 py-4 text-right font-mono text-slate-600 font-bold">₹{reportData.reduce((s,x)=> s + x.totalTripExpense, 0).toLocaleString()}</td>
-                    <td className="px-4 py-4 text-right font-mono text-slate-600 font-bold">₹{reportData.reduce((s,x)=> s + x.totalGeneralExpense, 0).toLocaleString()}</td>
-                    <td className="px-4 py-4 text-right font-mono font-black text-rose-600">₹{overallExpenses.toLocaleString()}</td>
-                    <td className={`px-4 py-4 text-right font-mono font-black ${overallNetProfit >= 0 ? 'text-emerald-605 text-emerald-600' : 'text-rose-605'}`}>₹{overallNetProfit.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-xl text-[11px] font-black border uppercase shadow-3xs ${
-                        overallMargin >= 0 ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-rose-600 text-white border-rose-500'
+                  <tr class="bg-slate-50/50 font-black text-slate-900 border-t-2 border-slate-200">
+                    <td class="px-6 py-4 font-bold text-slate-900 text-sm">TOTAL COMBINED PERIOD GAUGE</td>
+                    <td class="px-4 py-4 text-center font-mono font-black">{totalTripsRecorded()}</td>
+                    <td class="px-4 py-4 text-right font-mono font-black border-slate-200 text-blue-600">₹{overallIncome().toLocaleString()}</td>
+                    <td class="px-4 py-4 text-right font-mono text-slate-600 font-bold">₹{reportData().reduce((s,x)=> s + x.totalTripExpense, 0).toLocaleString()}</td>
+                    <td class="px-4 py-4 text-right font-mono text-slate-600 font-bold">₹{reportData().reduce((s,x)=> s + x.totalGeneralExpense, 0).toLocaleString()}</td>
+                    <td class="px-4 py-4 text-right font-mono font-black text-rose-600">₹{overallExpenses().toLocaleString()}</td>
+                    <td class={`px-4 py-4 text-right font-mono font-black ${overallNetProfit() >= 0 ? 'text-emerald-605 text-emerald-600' : 'text-rose-605'}`}>₹{overallNetProfit().toLocaleString()}</td>
+                    <td class="px-6 py-4 text-center">
+                      <span class={`inline-block px-3 py-1 rounded-xl text-[11px] font-black border uppercase shadow-3xs ${
+                        overallMargin() >= 0 ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-rose-600 text-white border-rose-500'
                       }`}>
-                        {overallMargin.toFixed(1)}% Margin
+                        {overallMargin().toFixed(1)}% Margin
                       </span>
                     </td>
                   </tr>
@@ -611,34 +478,34 @@ export default function MonthlyReport({
           </div>
 
           {/* DETAILED TRANSACTION TRACE AUDITS SECTION */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print">
             
             {/* TRIP TRANSACTIONS LIST */}
-            <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-6 flex flex-col justify-between">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-6 flex flex-col justify-between">
               <div>
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Trip records this month</h3>
-                <p className="text-xs text-slate-500 leading-relaxed max-w-sm mb-4">
-                  Log of journeys initialized within {selectedMonthObj?.label} {selectedYear}.
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Trip records this month</h3>
+                <p class="text-xs text-slate-500 leading-relaxed max-w-sm mb-4">
+                  Log of journeys initialized within {selectedMonthObj()?.label} {props.selectedYear}.
                 </p>
 
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {targetTrips.length === 0 ? (
-                    <p className="text-center py-10 text-xs italic text-slate-400">No active trips started this month.</p>
+                <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {targetTrips().length === 0 ? (
+                    <p class="text-center py-10 text-xs italic text-slate-400">No active trips started this month.</p>
                   ) : (
-                    targetTrips.map((t) => {
+                    targetTrips().map((t) => {
                       const m = getTripMetrics(t);
                       return (
-                        <div key={t.id} className="bg-slate-50 p-3 rounded-lg border border-slate-150 text-xs flex justify-between items-center hover:bg-slate-100 transition">
-                          <div className="space-y-0.5">
-                            <p className="font-mono font-extrabold text-slate-800 tracking-wide">{t.tripNo}</p>
-                            <p className="text-[10px] text-slate-450 uppercase font-bold flex items-center gap-1 font-mono">
+                        <div  class="bg-slate-50 p-3 rounded-lg border border-slate-150 text-xs flex justify-between items-center hover:bg-slate-100 transition">
+                          <div class="space-y-0.5">
+                            <p class="font-mono font-extrabold text-slate-800 tracking-wide">{t.tripNo}</p>
+                            <p class="text-[10px] text-slate-450 uppercase font-bold flex items-center gap-1 font-mono">
                               {t.truckNo} &bull; {t.driverName}
                             </p>
                           </div>
                           
-                          <div className="text-right font-mono">
-                            <span className="font-extrabold text-slate-850 block">₹{m.income.toLocaleString()}</span>
-                            <span className="text-[10px] text-rose-500 font-bold block">Exp: ₹{m.totalExpense.toLocaleString()}</span>
+                          <div class="text-right font-mono">
+                            <span class="font-extrabold text-slate-850 block">₹{m.income.toLocaleString()}</span>
+                            <span class="text-[10px] text-rose-500 font-bold block">Exp: ₹{m.totalExpense.toLocaleString()}</span>
                           </div>
                         </div>
                       );
@@ -647,36 +514,36 @@ export default function MonthlyReport({
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-105 flex justify-between text-[11px] font-bold text-slate-500 font-sans">
+              <div class="mt-4 pt-3 border-t border-slate-105 flex justify-between text-[11px] font-bold text-slate-500 font-sans">
                 <span>Trip volume logged:</span>
-                <span className="font-mono font-black text-slate-800">{targetTrips.length} entries</span>
+                <span class="font-mono font-black text-slate-800">{targetTrips().length} entries</span>
               </div>
             </div>
 
             {/* GENERAL EXTRA EXPENDITURE VOUCHERS LIST */}
-            <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-6 flex flex-col justify-between">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-6 flex flex-col justify-between">
               <div>
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">General extra expense vouchers</h3>
-                <p className="text-xs text-slate-500 leading-relaxed max-w-sm mb-4">
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">General extra expense vouchers</h3>
+                <p class="text-xs text-slate-500 leading-relaxed max-w-sm mb-4">
                   Standalone operating & fleet maintenance bills registered.
                 </p>
 
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {targetExpenses.length === 0 ? (
-                    <p className="text-center py-10 text-xs italic text-slate-400">No standalone vouchers filed this month.</p>
+                <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {targetExpenses().length === 0 ? (
+                    <p class="text-center py-10 text-xs italic text-slate-400">No standalone vouchers filed this month.</p>
                   ) : (
-                    targetExpenses.map((exp) => (
-                      <div key={exp.id} className="bg-slate-50 p-3 rounded-lg border border-slate-150 text-xs flex justify-between items-center hover:bg-slate-100 transition">
-                        <div className="space-y-0.5">
-                          <p className="font-extrabold text-slate-800 tracking-wide truncate max-w-[160px]">{exp.expenseType} &bull; {exp.shopName}</p>
-                          <p className="text-[10px] text-slate-450 uppercase font-bold font-mono">
+                    targetExpenses().map((exp) => (
+                      <div  class="bg-slate-50 p-3 rounded-lg border border-slate-150 text-xs flex justify-between items-center hover:bg-slate-100 transition">
+                        <div class="space-y-0.5">
+                          <p class="font-extrabold text-slate-800 tracking-wide truncate max-w-[160px]">{exp.expenseType} &bull; {exp.shopName}</p>
+                          <p class="text-[10px] text-slate-450 uppercase font-bold font-mono">
                             {exp.truckNo} &bull; {exp.date}
                           </p>
                         </div>
                         
-                        <div className="text-right font-mono">
-                          <span className="font-extrabold text-rose-600 block">₹{exp.amount.toLocaleString()}</span>
-                          <span className="text-[9px] font-black uppercase text-slate-400 bg-white border px-1.5 py-0.5 rounded shadow-3xs">{exp.status}</span>
+                        <div class="text-right font-mono">
+                          <span class="font-extrabold text-rose-600 block">₹{exp.amount.toLocaleString()}</span>
+                          <span class="text-[9px] font-black uppercase text-slate-400 bg-white border px-1.5 py-0.5 rounded shadow-3xs">{exp.status}</span>
                         </div>
                       </div>
                     ))
@@ -684,9 +551,9 @@ export default function MonthlyReport({
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-105 flex justify-between text-[11px] font-bold text-slate-500 font-sans">
+              <div class="mt-4 pt-3 border-t border-slate-105 flex justify-between text-[11px] font-bold text-slate-500 font-sans">
                 <span>Vouchers count:</span>
-                <span className="font-mono font-black text-slate-800">{targetExpenses.length} files</span>
+                <span class="font-mono font-black text-slate-800">{targetExpenses().length} files</span>
               </div>
             </div>
 

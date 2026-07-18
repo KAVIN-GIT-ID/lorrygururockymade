@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { createSignal, createMemo, createEffect } from 'solid-js';
 import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
 import { getTripDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { db } from '../services/cache';
 
 interface UseTripsParams {
   orgId: string;
@@ -23,7 +24,7 @@ export function useTrips({
   activeYear,
   currentUserId
 }: UseTripsParams) {
-  const [trips, setTrips] = useState<TripEntry[]>(() => {
+  const [trips, setTrips] = createSignal<TripEntry[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_trips');
       if (stored) {
@@ -36,12 +37,22 @@ export function useTrips({
     } catch {
       return [];
     }
+  })());
+
+  // Load from Dexie cache on start
+  createEffect(() => {
+    db.trips.toArray().then(cached => {
+      if (cached && cached.length > 0) {
+        setTrips(cached);
+      }
+    });
   });
 
-  const tripsRef = useRef<TripEntry[]>(trips);
-  useEffect(() => {
-    tripsRef.current = trips;
-  }, [trips]);
+  // Sync back to Dexie cache reactively
+  createEffect(() => {
+    const list = trips();
+    db.trips.clear().then(() => db.trips.bulkPut(list));
+  });
 
   const saveTrips = (newTrips: TripEntry[]) => {
     // Sync to Appwrite if configured
@@ -49,7 +60,7 @@ export function useTrips({
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       newTrips.forEach(async (newT) => {
         if (newT.syncState === 'synced') return;
-        const oldT = trips.find(t => t.id === newT.id);
+        const oldT = trips().find(t => t.id === newT.id);
         // Only save if it's a new trip or the trip has changed
         if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
           try {
@@ -76,8 +87,8 @@ export function useTrips({
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
-    .map(t => t.deletedAt ? { ...t, status: 'Deleted' as any } : t);
+  const orgTrips = createMemo(() => (orgId === 'org_backend' ? trips() : trips().filter(t => t.organizationId === orgId))
+    .map(t => t.deletedAt ? { ...t, status: 'Deleted' as any } : t));
 
   const postTripEntry = async (entryInput: Omit<TripEntry, 'id'>, editingTrip: TripEntry | null) => {
     const tripId = editingTrip ? editingTrip.id : 't_id_' + Date.now();
@@ -131,7 +142,7 @@ export function useTrips({
       });
 
       const modifiedTripIds: string[] = [];
-      let next = tripsRef.current.map(t => t.id === editingTrip.id ? updated : t);
+      let next = trips().map(t => t.id === editingTrip.id ? updated : t);
 
       deletedFwdAdvances.forEach(deletedAdv => {
         const isDest = deletedAdv.id.startsWith('fwd_in_');
@@ -198,7 +209,7 @@ export function useTrips({
       showNotification(`Trip ${updated.tripNo} changes successfully committed.`);
     } else {
       // Create path
-      const isDup = tripsRef.current
+      const isDup = trips()
         .filter(t => orgId === 'org_backend' || t.organizationId === orgId)
         .some(t => t.tripNo.toUpperCase().trim() === finalEntryInput.tripNo.toUpperCase().trim());
       if (isDup) {
@@ -224,7 +235,7 @@ export function useTrips({
         }
       }
 
-      const nextTrips = [...tripsRef.current, newEntry];
+      const nextTrips = [...trips(), newEntry];
       saveTrips(nextTrips);
       await loadDashboardData(activeMonth, activeYear);
 
@@ -234,14 +245,14 @@ export function useTrips({
   };
 
   const deleteTripEntry = async (id: string) => {
-    const tEntry = tripsRef.current.find(t => t.id === id);
+    const tEntry = trips().find(t => t.id === id);
     if (!tEntry) return;
 
     const deletedTripNo = tEntry.tripNo;
     const modifiedTripIds: string[] = [];
 
     const updatedTrip = mutateRecord(tEntry, { deletedAt: new Date().toISOString() }, currentUserId);
-    let next = tripsRef.current.map(t => t.id === id ? updatedTrip : t);
+    let next = trips().map(t => t.id === id ? updatedTrip : t);
 
     // Clean up carried-forward advances on other trips that refer to the deleted trip
     next = next.map(t => {
@@ -288,5 +299,12 @@ export function useTrips({
     showNotification(`Trip entry permanently voided.`);
   };
 
-  return { trips, setTrips, orgTrips, saveTrips, postTripEntry, deleteTripEntry };
+  return {
+    get trips() { return trips(); },
+    setTrips,
+    get orgTrips() { return orgTrips(); },
+    saveTrips,
+    postTripEntry,
+    deleteTripEntry
+  };
 }

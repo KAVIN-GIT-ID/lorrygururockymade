@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { createSignal, createEffect } from 'solid-js';
+
 
 interface CountryCodePhoneInputProps {
   value: string; // E.164 format (e.g. +919876543210)
@@ -7,6 +8,7 @@ interface CountryCodePhoneInputProps {
   required?: boolean;
   disabled?: boolean;
   id?: string;
+  class?: string;
   className?: string;
 }
 
@@ -25,12 +27,13 @@ const COUNTRY_CODES = [
 ];
 
 export default function CountryCodePhoneInput({
-  value = '',
+  value,
   onChange,
   placeholder = 'Enter mobile number',
   required = false,
   disabled = false,
   id,
+  class: classVal = '',
   className = '',
 }: CountryCodePhoneInputProps) {
   // Parse initial country code and local number
@@ -50,42 +53,42 @@ export default function CountryCodePhoneInput({
   };
 
   const initialParts = getInitialParts(value);
-  const [selectedCountry, setSelectedCountry] = useState(initialParts.country);
-  const [localNumber, setLocalNumber] = useState(initialParts.local);
+  const [selectedCountry, setSelectedCountry] = createSignal(initialParts.country);
+  const [localNumber, setLocalNumber] = createSignal(initialParts.local);
 
   // Sync internal state when external value changes (unless it's matching the current combined string)
-  useEffect(() => {
+  createEffect(() => {
     const parts = getInitialParts(value);
     setSelectedCountry(parts.country);
     setLocalNumber(parts.local);
-  }, [value]);
+  });
 
-  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleCountryChange = (e: any) => {
     const newCountry = e.target.value;
     setSelectedCountry(newCountry);
-    const cleanedLocal = localNumber.replace(/[^0-9]/g, '');
+    const cleanedLocal = localNumber().replace(/[^0-9]/g, '');
     onChange(cleanedLocal ? `${newCountry}${cleanedLocal}` : '');
   };
 
-  const handleLocalNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalNumberChange = (e: any) => {
     const input = e.target.value;
     const cleanedLocal = input.replace(/[^0-9]/g, ''); // strip non-numeric
     setLocalNumber(cleanedLocal);
-    onChange(cleanedLocal ? `${selectedCountry}${cleanedLocal}` : '');
+    onChange(cleanedLocal ? `${selectedCountry()}${cleanedLocal}` : '');
   };
 
   return (
-    <div className={`flex rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-hidden ${disabled ? 'opacity-65 cursor-not-allowed' : ''} ${className}`}>
+    <div class={`flex rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-hidden ${disabled ? 'opacity-65 cursor-not-allowed' : ''} ${className || classVal}`}>
       {/* Country Code Select Dropdown */}
       <select
-        value={selectedCountry}
+        value={selectedCountry()}
         onChange={handleCountryChange}
         disabled={disabled}
-        className="bg-slate-50 dark:bg-slate-950 text-current text-xs px-2.5 py-2 border-r border-slate-200 dark:border-slate-800 outline-none focus:ring-0 cursor-pointer font-bold shrink-0 max-w-[95px] md:max-w-[110px]"
+        class="bg-slate-50 dark:bg-slate-950 text-current text-xs px-2.5 py-2 border-r border-slate-200 dark:border-slate-800 outline-none focus:ring-0 cursor-pointer font-bold shrink-0 max-w-[95px] md:max-w-[110px]"
         title="Select Country Code"
       >
         {COUNTRY_CODES.map((c) => (
-          <option key={c.code} value={c.code} className="bg-white dark:bg-slate-900 font-sans text-slate-900 dark:text-slate-100">
+          <option  value={c.code} class="bg-white dark:bg-slate-900 font-sans text-slate-900 dark:text-slate-100">
             {c.flag} {c.code}
           </option>
         ))}
@@ -98,9 +101,9 @@ export default function CountryCodePhoneInput({
         required={required}
         disabled={disabled}
         placeholder={placeholder}
-        value={localNumber}
+        value={localNumber()}
         onChange={handleLocalNumberChange}
-        className="w-full bg-transparent text-current text-xs px-3 py-2 outline-none focus:ring-0 placeholder-slate-400 dark:placeholder-slate-500 font-mono"
+        class="w-full bg-transparent text-current text-xs px-3 py-2 outline-none focus:ring-0 placeholder-slate-400 dark:placeholder-slate-500 font-mono"
       />
     </div>
   );

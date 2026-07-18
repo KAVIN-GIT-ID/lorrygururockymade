@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { Download, Sparkles, X, ChevronRight, Info, ChevronLeft, Wrench, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { createSignal, onMount, onCleanup } from 'solid-js';
+
+import { Download, Sparkles, X, ChevronRight, Info, ChevronLeft, Wrench, RefreshCw, CheckCircle2 } from 'lucide-solid';
 
 interface AppUpdateModalProps {
   isOpen: boolean;
@@ -53,21 +54,21 @@ export default function AppUpdateModal({
   releaseNotes,
   downloadUrl
 }: AppUpdateModalProps) {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isProgrammaticScroll = useRef(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentSlide, setCurrentSlide] = createSignal(0);
+  let scrollContainerRef: HTMLDivElement | undefined;
+  let isProgrammaticScroll: any;
+  let scrollTimeoutRef: NodeJS.Timeout | null | undefined;
 
   if (!isOpen) return null;
 
   const handleScroll = () => {
-    if (isProgrammaticScroll.current) return;
+    if (isProgrammaticScroll) return;
     
-    if (scrollContainerRef.current) {
-      const { scrollLeft, clientWidth } = scrollContainerRef.current;
+    if (scrollContainerRef) {
+      const { scrollLeft, clientWidth } = scrollContainerRef;
       if (clientWidth > 0) {
         const index = Math.round(scrollLeft / clientWidth);
-        if (index !== currentSlide && index >= 0) {
+        if (index !== currentSlide() && index >= 0) {
           setCurrentSlide(index);
         }
       }
@@ -75,18 +76,18 @@ export default function AppUpdateModal({
   };
 
   const scrollToSlide = (idx: number) => {
-    if (scrollContainerRef.current) {
-      isProgrammaticScroll.current = true;
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    if (scrollContainerRef) {
+      isProgrammaticScroll = true;
+      if (scrollTimeoutRef) clearTimeout(scrollTimeoutRef);
       
-      scrollContainerRef.current.scrollTo({
-        left: idx * scrollContainerRef.current.clientWidth,
+      scrollContainerRef.scrollTo({
+        left: idx * scrollContainerRef.clientWidth,
         behavior: 'smooth'
       });
       setCurrentSlide(idx);
 
-      scrollTimeoutRef.current = setTimeout(() => {
-        isProgrammaticScroll.current = false;
+      scrollTimeoutRef = setTimeout(() => {
+        isProgrammaticScroll = false;
       }, 500);
     }
   };
@@ -183,7 +184,7 @@ export default function AppUpdateModal({
     subtitle: string;
     themeColor: string;
     textColor: string;
-    icon: React.ReactNode;
+    icon: any;
     items: { title: string; description: string }[];
   }[] = [];
 
@@ -195,7 +196,7 @@ export default function AppUpdateModal({
       subtitle: downgrade ? "System Revert & Downgrade Features" : "Exciting new features and updates",
       themeColor: "emerald",
       textColor: "text-emerald-600 dark:text-emerald-400",
-      icon: <Sparkles className="w-6 h-6 text-emerald-500" />,
+      icon: <Sparkles class="w-6 h-6 text-emerald-500" />,
       items: combinedNew.length > 0 ? combinedNew : [{ title: "Lorry Guru Update", description: `Version v${latestVersion} release notes update details.` }]
     });
   }
@@ -207,7 +208,7 @@ export default function AppUpdateModal({
       subtitle: "System enhancements & interface tweaks",
       themeColor: "blue",
       textColor: "text-blue-600 dark:text-blue-400",
-      icon: <RefreshCw className="w-5 h-5 text-blue-500" />,
+      icon: <RefreshCw class="w-5 h-5 text-blue-500" />,
       items: changedItems
     });
   }
@@ -219,7 +220,7 @@ export default function AppUpdateModal({
       subtitle: "Resolved issues & performance stability",
       themeColor: "amber",
       textColor: "text-amber-600 dark:text-amber-400",
-      icon: <Wrench className="w-5 h-5 text-amber-500" />,
+      icon: <Wrench class="w-5 h-5 text-amber-500" />,
       items: fixedItems
     });
   }
@@ -231,14 +232,14 @@ export default function AppUpdateModal({
       subtitle: "General release notes and system configuration",
       themeColor: "slate",
       textColor: "text-slate-600 dark:text-slate-400",
-      icon: <CheckCircle2 className="w-5 h-5 text-slate-500" />,
+      icon: <CheckCircle2 class="w-5 h-5 text-slate-500" />,
       items: otherItems
     });
   }
 
-  const activeSlide = slides[currentSlide] || slides[0];
+  const activeSlide = slides[currentSlide()] || slides[0];
   const totalSlides = slides.length;
-  const isFinalSlide = currentSlide === totalSlides - 1;
+  const isFinalSlide = currentSlide() === totalSlides - 1;
 
   const handleNext = () => {
     if (isFinalSlide) {
@@ -249,25 +250,25 @@ export default function AppUpdateModal({
   };
 
   return (
-    <div className="fixed inset-0 z-250 flex items-start justify-center p-4 bg-slate-955/65 backdrop-blur-md animate-fade-in overflow-y-auto py-8">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden flex flex-col gap-6 text-left font-sans animate-scale-up my-auto min-h-[500px]">
+    <div class="fixed inset-0 z-250 flex items-start justify-center p-4 bg-slate-955/65 backdrop-blur-md animate-fade-in overflow-y-auto py-8">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden flex flex-col gap-6 text-left font-sans animate-scale-up my-auto min-h-[500px]">
         
         {/* Decorative background glows */}
-        <div className="absolute -top-12 -right-12 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl"></div>
-        <div className="absolute -bottom-12 -left-12 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl"></div>
+        <div class="absolute -top-12 -right-12 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl"></div>
+        <div class="absolute -bottom-12 -left-12 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl"></div>
 
         {/* Header navigation bar */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-3 relative z-10">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-600 dark:text-blue-400 font-mono">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-3 relative z-10">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-extrabold uppercase tracking-widest text-blue-600 dark:text-blue-400 font-mono">
               Lorry Guru v{latestVersion}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-655 dark:hover:text-slate-200 p-1 rounded-xl transition cursor-pointer"
+            class="text-slate-400 hover:text-slate-655 dark:hover:text-slate-200 p-1 rounded-xl transition cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X class="w-4 h-4" />
           </button>
         </div>
 
@@ -275,33 +276,33 @@ export default function AppUpdateModal({
         <div 
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar relative z-10 w-full"
+          class="flex-1 flex overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar relative z-10 w-full"
         >
           {slides.map((slide, slideIdx) => (
-            <div key={slideIdx} className="w-full shrink-0 snap-center px-1 flex flex-col gap-5 justify-between">
-              <div className="space-y-5">
+            <div  class="w-full shrink-0 snap-center px-1 flex flex-col gap-5 justify-between">
+              <div class="space-y-5">
                 {/* Title Section */}
-                <div className="text-center space-y-1">
-                  <h2 className="text-xl font-black text-slate-850 dark:text-white flex items-center justify-center gap-2">
+                <div class="text-center space-y-1">
+                  <h2 class="text-xl font-black text-slate-850 dark:text-white flex items-center justify-center gap-2">
                     {slide.icon}
                     <span>{slide.title}</span>
                   </h2>
-                  <p className="text-[11px] text-slate-450 dark:text-slate-550 font-semibold">{slide.subtitle}</p>
+                  <p class="text-[11px] text-slate-450 dark:text-slate-550 font-semibold">{slide.subtitle}</p>
                 </div>
 
                 {/* List Section: iOS Styled Row Layout */}
-                <div className="space-y-4 max-h-[250px] overflow-y-auto pr-1">
+                <div class="space-y-4 max-h-[250px] overflow-y-auto pr-1">
                   {slide.items.map((item, idx) => (
-                    <div key={idx} className="flex gap-3.5 items-start">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-850/50 border border-slate-100 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 font-bold text-xs shadow-xs mt-0.5">
+                    <div  class="flex gap-3.5 items-start">
+                      <div class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-850/50 border border-slate-100 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 font-bold text-xs shadow-xs mt-0.5">
                         {idx + 1}
                       </div>
-                      <div className="space-y-0.5">
-                        <h4 className="text-xs font-bold text-slate-850 dark:text-slate-200 leading-tight">
+                      <div class="space-y-0.5">
+                        <h4 class="text-xs font-bold text-slate-850 dark:text-slate-200 leading-tight">
                           {item.title}
                         </h4>
                         {item.description && (
-                          <p className="text-[11px] text-slate-450 dark:text-slate-400 leading-relaxed font-medium">
+                          <p class="text-[11px] text-slate-450 dark:text-slate-400 leading-relaxed font-medium">
                             {item.description}
                           </p>
                         )}
@@ -316,13 +317,13 @@ export default function AppUpdateModal({
 
         {/* Dot Indicators */}
         {totalSlides > 1 && (
-          <div className="flex justify-center items-center gap-2 mt-2 relative z-10">
+          <div class="flex justify-center items-center gap-2 mt-2 relative z-10">
             {slides.map((_, idx) => (
               <button
-                key={idx}
+                
                 onClick={() => scrollToSlide(idx)}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  currentSlide === idx 
+                class={`h-1.5 rounded-full transition-all duration-300 ${
+                  currentSlide() === idx 
                     ? 'w-4 bg-blue-600 dark:bg-blue-500' 
                     : 'w-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-350'
                 }`}
@@ -332,8 +333,8 @@ export default function AppUpdateModal({
         )}
 
         {/* Warning Banner */}
-        <div className="flex gap-2 items-start text-[9px] text-slate-500 leading-relaxed border-t border-slate-100 dark:border-slate-850 pt-3 relative z-10">
-          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-500" />
+        <div class="flex gap-2 items-start text-[9px] text-slate-500 leading-relaxed border-t border-slate-100 dark:border-slate-850 pt-3 relative z-10">
+          <Info class="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-500" />
           <p>
             {downgrade
               ? 'The downgrade package will download directly. Click Continue to final slide to install the revert package.'
@@ -342,23 +343,23 @@ export default function AppUpdateModal({
         </div>
 
         {/* Action button */}
-        <div className="flex gap-3 items-center relative z-10">
-          {currentSlide > 0 && (
+        <div class="flex gap-3 items-center relative z-10">
+          {currentSlide() > 0 && (
             <button
-              onClick={() => scrollToSlide(Math.max(0, currentSlide - 1))}
-              className="h-11 px-4 border border-slate-250 dark:border-slate-800 text-slate-655 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-2xl flex items-center justify-center font-bold text-xs transition cursor-pointer"
+              onClick={() => scrollToSlide(Math.max(0, currentSlide() - 1))}
+              class="h-11 px-4 border border-slate-250 dark:border-slate-800 text-slate-655 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850 rounded-2xl flex items-center justify-center font-bold text-xs transition cursor-pointer"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft class="w-4 h-4" />
             </button>
           )}
           
           <button
             onClick={handleNext}
-            className="flex-1 h-11 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/10 rounded-2xl flex items-center justify-center gap-1.5 font-bold text-xs transition active:scale-98 cursor-pointer"
+            class="flex-1 h-11 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/10 rounded-2xl flex items-center justify-center gap-1.5 font-bold text-xs transition active:scale-98 cursor-pointer"
           >
-            {isFinalSlide ? <Download className="w-4 h-4" /> : null}
+            {isFinalSlide ? <Download class="w-4 h-4" /> : null}
             <span>{isFinalSlide ? (downgrade ? "Downgrade & Revert Now" : "Download & Install Now") : "Continue"}</span>
-            {!isFinalSlide ? <ChevronRight className="w-4 h-4" /> : null}
+            {!isFinalSlide ? <ChevronRight class="w-4 h-4" /> : null}
           </button>
         </div>
 

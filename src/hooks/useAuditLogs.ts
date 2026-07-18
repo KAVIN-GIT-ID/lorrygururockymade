@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { createSignal, createMemo, createEffect } from 'solid-js';
 import { AuditLog } from '../types';
 import { migrateAuditLogs } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { db } from '../services/cache';
 
 interface UseAuditLogsParams {
   currentUser: { email?: string; name?: string } | null;
@@ -10,7 +11,7 @@ interface UseAuditLogsParams {
 }
 
 export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }: UseAuditLogsParams) {
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+  const [auditLogs, setAuditLogs] = createSignal<AuditLog[]>((() => {
     try {
       const saved = localStorage.getItem('fleet_audit_logs');
       if (saved) return migrateAuditLogs(JSON.parse(saved));
@@ -18,6 +19,21 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
     } catch {
       return [];
     }
+  })());
+
+  // Load from Dexie cache on start
+  createEffect(() => {
+    db.auditLogs.toArray().then(cached => {
+      if (cached && cached.length > 0) {
+        setAuditLogs(cached);
+      }
+    });
+  });
+
+  // Sync back to Dexie cache reactively
+  createEffect(() => {
+    const list = auditLogs();
+    db.auditLogs.clear().then(() => db.auditLogs.bulkPut(list));
   });
 
   const logAction = (
@@ -36,7 +52,7 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
       category,
       reference,
       details,
-      organizationId: targetOrgId || currentUserOrgId
+      organizationId: targetOrgId || currentUserOrgId || 'org_backend'
     };
 
     setAuditLogs(prev => {
@@ -47,7 +63,7 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
 
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      appwrite.saveFleetDocument(databaseId, 'audit_logs', newLog.id, newLog.organizationId || currentUserOrgId, newLog).catch(err => {
+      appwrite.saveFleetDocument(databaseId, 'audit_logs', newLog.id, newLog.organizationId || currentUserOrgId || 'org_backend', newLog).catch(err => {
         console.warn("Failed to save audit log to Appwrite:", err);
       });
     }
@@ -58,7 +74,7 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         // Delete each log from the database
-        const logsToDelete = [...auditLogs];
+        const logsToDelete = [...auditLogs()];
         for (const log of logsToDelete) {
           await appwrite.deleteFleetDocument(databaseId, 'audit_logs', log.id);
         }

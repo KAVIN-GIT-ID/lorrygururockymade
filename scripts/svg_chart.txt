@@ -1,0 +1,43 @@
+            <div class="w-full overflow-x-auto pt-4">
+              <div class="min-w-[600px] flex flex-col space-y-4">
+                <div class="flex flex-wrap gap-4 text-[10px] font-bold justify-center pb-2 border-b border-slate-100">
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-blue-500 rounded-xs"></span>Income</div>
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-rose-500 rounded-xs"></span>Expenses</div>
+                  <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-emerald-500 rounded-xs"></span>Net Profit</div>
+                </div>
+                <div class="h-64 flex items-end gap-6 px-4">
+                  <For each={chartData()}>
+                    {(item) => {
+                      const maxVal = Math.max(...chartData().map(d => Math.max(d.Income, d.Expenses, Math.abs(d['Net Profit']))), 1000);
+                      const incHeight = (item.Income / maxVal) * 180;
+                      const expHeight = (item.Expenses / maxVal) * 180;
+                      const netHeight = (Math.max(0, item['Net Profit']) / maxVal) * 180;
+                      return (
+                        <div class="flex-1 flex flex-col items-center group relative">
+                          <div class="w-full flex items-end justify-center gap-1.5 h-48 border-b border-slate-200 pb-1">
+                            <div 
+                              class="w-3.5 bg-blue-500 rounded-t-xs hover:bg-blue-600 transition-all cursor-pointer relative"
+                              style={{ height: `${incHeight}px` }}
+                              title={`Income: ₹${item.Income.toLocaleString('en-IN')}`}
+                            />
+                            <div 
+                              class="w-3.5 bg-rose-500 rounded-t-xs hover:bg-rose-600 transition-all cursor-pointer relative"
+                              style={{ height: `${expHeight}px` }}
+                              title={`Expenses: ₹${item.Expenses.toLocaleString('en-IN')}`}
+                            />
+                            <div 
+                              class="w-3.5 bg-emerald-500 rounded-t-xs hover:bg-emerald-600 transition-all cursor-pointer relative"
+                              style={{ height: `${netHeight}px` }}
+                              title={`Net Profit: ₹${item['Net Profit'].toLocaleString('en-IN')}`}
+                            />
+                          </div>
+                          <span class="text-[10px] font-mono font-bold text-slate-650 mt-2 truncate max-w-[70px]">
+                            {item.name}
+                          </span>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
+            </div>

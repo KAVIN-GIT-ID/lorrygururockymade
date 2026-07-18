@@ -1,36 +1,9 @@
 import '@testing-library/jest-dom';
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   (globalThis as any).mockGlobalConfigs = undefined;
-});
-
-// Global mock for Recharts
-vi.mock('recharts', () => {
-  return {
-    ResponsiveContainer: ({ children }: any) => {
-      // Mock responsive container by calling children function with fake dimensions
-      if (typeof children === 'function') {
-        return children({ width: 400, height: 300 });
-      }
-      return React.createElement('div', { 'data-testid': 'ResponsiveContainer' }, children);
-    },
-    BarChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'BarChart' }, children),
-    Bar: () => React.createElement('div', { 'data-testid': 'Bar' }),
-    XAxis: () => null,
-    YAxis: () => null,
-    CartesianGrid: () => null,
-    Tooltip: () => null,
-    Legend: () => null,
-    LineChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'LineChart' }, children),
-    Line: () => React.createElement('div', { 'data-testid': 'Line' }),
-    PieChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'PieChart' }, children),
-    Pie: () => React.createElement('div', { 'data-testid': 'Pie' }),
-    Cell: () => null,
-    AreaChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'AreaChart' }, children),
-    Area: () => React.createElement('div', { 'data-testid': 'Area' }),
-  };
 });
 
 // Global mock for Appwrite Service

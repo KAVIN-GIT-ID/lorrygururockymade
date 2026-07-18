@@ -1,4 +1,4 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import VoiceAssistant from './VoiceAssistant';

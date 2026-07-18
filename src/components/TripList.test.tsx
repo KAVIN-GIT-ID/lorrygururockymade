@@ -1,4 +1,4 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TripList from './TripList';

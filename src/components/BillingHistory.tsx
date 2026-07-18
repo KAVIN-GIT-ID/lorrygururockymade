@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Download, CreditCard, Receipt, FileText, Search, ShieldAlert } from 'lucide-react';
+import { createSignal } from 'solid-js';
+
+import { Download, CreditCard, Receipt, FileText, Search, ShieldAlert } from 'lucide-solid';
 
 interface BillingHistoryProps {
   payments: any[];
@@ -18,7 +19,7 @@ export default function BillingHistory({
   panNo = '',
   address = ''
 }: BillingHistoryProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = createSignal('');
 
   // Filter payments by organization (unless backend team is viewing)
   const isBackendTeam = currentUserOrgId === 'org_backend';
@@ -28,7 +29,7 @@ export default function BillingHistory({
 
   // Search filter
   const filteredPayments = orgPayments.filter(p => {
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm().toLowerCase();
     return (
       (p.truckNo || '').toLowerCase().includes(term) ||
       (p.transactionId || '').toLowerCase().includes(term) ||
@@ -168,61 +169,61 @@ export default function BillingHistory({
   };
 
   return (
-    <div id="billing-history-panel" className="space-y-6 font-sans">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-xs">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+    <div id="billing-history-panel" class="space-y-6 font-sans">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-2xl shadow-xs">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-blue-600" />
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Receipt class="w-5 h-5 text-blue-600" />
               Software Subscription & Billing Invoices
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <p class="text-xs text-slate-500 mt-1">
               Download tax invoices and official payment receipts for your organization subscriptions.
             </p>
           </div>
 
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div class="relative w-full md:w-72">
+            <Search class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search truck no, txn ID..."
-              value={searchTerm}
+              value={searchTerm()}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-blue-500 transition-colors"
+              class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
         </div>
 
         {filteredPayments.length === 0 ? (
-          <div className="text-center py-12 text-slate-405 dark:text-slate-500 italic text-xs bg-slate-50 dark:bg-slate-950/20 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            {searchTerm ? 'No matching payment records found.' : 'No subscription payment records found in history.'}
+          <div class="text-center py-12 text-slate-405 dark:text-slate-500 italic text-xs bg-slate-50 dark:bg-slate-950/20 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+            {searchTerm() ? 'No matching payment records found.' : 'No subscription payment records found in history.'}
           </div>
         ) : (
-          <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-955">
-            <table className="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap">
-              <thead className="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
+          <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-955">
+            <table class="w-full text-left text-xs divide-y divide-slate-150 dark:divide-slate-800 whitespace-nowrap">
+              <thead class="bg-slate-50 dark:bg-slate-950 font-bold text-[10px] text-slate-505 dark:text-slate-400 uppercase border-b border-slate-150 dark:border-slate-800">
                 <tr>
-                  <th className="p-3 pl-4">Date</th>
-                  <th className="p-3">Truck No</th>
-                  <th className="p-3">Amount</th>
-                  <th className="p-3">Duration</th>
-                  <th className="p-3">Transaction ID</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right pr-4">Action</th>
+                  <th class="p-3 pl-4">Date</th>
+                  <th class="p-3">Truck No</th>
+                  <th class="p-3">Amount</th>
+                  <th class="p-3">Duration</th>
+                  <th class="p-3">Transaction ID</th>
+                  <th class="p-3">Status</th>
+                  <th class="p-3 text-right pr-4">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-350">
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-350">
                 {filteredPayments.map((pay) => (
-                  <tr key={pay.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                    <td className="p-3 pl-4 text-slate-500">
+                  <tr  class="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                    <td class="p-3 pl-4 text-slate-500">
                       {new Date(pay.paymentDate || pay.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="p-3 font-mono font-bold uppercase">{pay.truckNo}</td>
-                    <td className="p-3 font-bold text-slate-900 dark:text-white">₹{pay.amount}</td>
-                    <td className="p-3">{pay.duration}</td>
-                    <td className="p-3 font-mono text-[11px] text-slate-500">{pay.transactionId}</td>
-                    <td className="p-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase border tracking-wider ${
+                    <td class="p-3 font-mono font-bold uppercase">{pay.truckNo}</td>
+                    <td class="p-3 font-bold text-slate-900 dark:text-white">₹{pay.amount}</td>
+                    <td class="p-3">{pay.duration}</td>
+                    <td class="p-3 font-mono text-[11px] text-slate-500">{pay.transactionId}</td>
+                    <td class="p-3">
+                      <span class={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase border tracking-wider ${
                         pay.status === 'Success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20' :
                         pay.status === 'Refunded' ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20' :
                         'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800/40'
@@ -230,14 +231,14 @@ export default function BillingHistory({
                         {pay.status}
                       </span>
                     </td>
-                    <td className="p-3 text-right pr-4">
+                    <td class="p-3 text-right pr-4">
                       {pay.status === 'Success' && (
                         <button
                           type="button"
                           onClick={() => handleDownloadInvoice(pay)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-blue-200 hover:border-blue-400 text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-900 rounded text-[10px] font-bold transition cursor-pointer"
+                          class="inline-flex items-center gap-1.5 px-2.5 py-1 border border-blue-200 hover:border-blue-400 text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-900 rounded text-[10px] font-bold transition cursor-pointer"
                         >
-                          <Download className="w-3 h-3" />
+                          <Download class="w-3 h-3" />
                           <span>Invoice</span>
                         </button>
                       )}

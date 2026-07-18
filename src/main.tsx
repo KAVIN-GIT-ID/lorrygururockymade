@@ -1,7 +1,6 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import { render } from 'solid-js/web';
 import App from './App.tsx';
-import { BrowserRouter } from 'react-router-dom';
+import { Router, Route } from '@solidjs/router';
 import './index.css';
 
 // 1. One-time startup migration: Obfuscate any legacy plain-text JSON keys
@@ -62,10 +61,11 @@ try {
   };
 })();
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </StrictMode>,
+render(
+  () => (
+    <Router>
+      <Route path="*" component={App} />
+    </Router>
+  ),
+  document.getElementById('root')!,
 );

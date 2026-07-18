@@ -1,8 +1,8 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import App from './App';
-import { BrowserRouter } from 'react-router-dom';
+import { Router } from '@solidjs/router';
 import * as appwriteModule from './lib/appwrite';
 
 const renderApp = () => render(<BrowserRouter><App /></BrowserRouter>);

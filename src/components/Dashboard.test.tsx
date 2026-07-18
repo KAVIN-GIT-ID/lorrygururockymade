@@ -1,4 +1,4 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import Dashboard from './Dashboard';

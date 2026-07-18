@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { createSignal, createEffect } from 'solid-js';
+
 import { ServiceType, ServiceDonePayload, Account, Driver } from '../types';
-import { X, ShoppingBag, Wrench, CheckCircle } from 'lucide-react';
+import { X, ShoppingBag, Wrench, CheckCircle } from 'lucide-solid';
 
 interface ServiceDoneModalProps {
   isOpen: boolean;
@@ -49,28 +50,28 @@ export default function ServiceDoneModal({
   const defaultNextKM = currentKM + intervalKM;
 
   // Common
-  const [serviceDate, setServiceDate] = useState(today);
-  const [newMilestoneKM, setNewMilestoneKM] = useState<number | ''>(defaultNextKM);
-  const [notes, setNotes] = useState('');
+  const [serviceDate, setServiceDate] = createSignal(today);
+  const [newMilestoneKM, setNewMilestoneKM] = createSignal<number | ''>(defaultNextKM);
+  const [notes, setNotes] = createSignal('');
 
   // Parts purchase
-  const [partsShopName, setPartsShopName] = useState('');
-  const [partsAmount, setPartsAmount] = useState<number | ''>('');
-  const [partsAccountType, setPartsAccountType] = useState<'Account' | 'Driver'>('Account');
-  const [partsPaymentMode, setPartsPaymentMode] = useState('');
-  const [partsDriverName, setPartsDriverName] = useState('');
-  const [partsStatus, setPartsStatus] = useState<'Paid' | 'Pending'>('Paid');
+  const [partsShopName, setPartsShopName] = createSignal('');
+  const [partsAmount, setPartsAmount] = createSignal<number | ''>('');
+  const [partsAccountType, setPartsAccountType] = createSignal<'Account' | 'Driver'>('Account');
+  const [partsPaymentMode, setPartsPaymentMode] = createSignal('');
+  const [partsDriverName, setPartsDriverName] = createSignal('');
+  const [partsStatus, setPartsStatus] = createSignal<'Paid' | 'Pending'>('Paid');
 
   // Labour
-  const [labourShopName, setLabourShopName] = useState('');
-  const [labourAmount, setLabourAmount] = useState<number | ''>('');
-  const [labourAccountType, setLabourAccountType] = useState<'Account' | 'Driver'>('Account');
-  const [labourPaymentMode, setLabourPaymentMode] = useState('');
-  const [labourDriverName, setLabourDriverName] = useState('');
-  const [labourStatus, setLabourStatus] = useState<'Paid' | 'Pending'>('Paid');
+  const [labourShopName, setLabourShopName] = createSignal('');
+  const [labourAmount, setLabourAmount] = createSignal<number | ''>('');
+  const [labourAccountType, setLabourAccountType] = createSignal<'Account' | 'Driver'>('Account');
+  const [labourPaymentMode, setLabourPaymentMode] = createSignal('');
+  const [labourDriverName, setLabourDriverName] = createSignal('');
+  const [labourStatus, setLabourStatus] = createSignal<'Paid' | 'Pending'>('Paid');
 
   // Reset when modal opens for a different truck/service
-  useEffect(() => {
+  createEffect(() => {
     if (isOpen) {
       setServiceDate(today);
       setNewMilestoneKM(currentKM + intervalKM);
@@ -89,9 +90,9 @@ export default function ServiceDoneModal({
       setLabourStatus('Paid');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, truckId, serviceType]);
+  });
 
-  useEffect(() => {
+  createEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         onCancel();
@@ -101,42 +102,42 @@ export default function ServiceDoneModal({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, onCancel]);
+  });
 
   if (!isOpen) return null;
 
   const colors = SERVICE_COLORS[serviceType];
   const icon = SERVICE_ICONS[serviceType];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: Event) => {
     e.preventDefault();
-    if (!newMilestoneKM || Number(newMilestoneKM) <= 0) {
+    if (!newMilestoneKM() || Number(newMilestoneKM()) <= 0) {
       alert('Please enter a valid Next Due KM value.');
       return;
     }
 
     onConfirm({
       serviceType,
-      serviceDate,
+      serviceDate: serviceDate(),
       truckId,
       truckNo,
-      newMilestoneKM: Number(newMilestoneKM),
-      notes: notes.trim() || undefined,
+      newMilestoneKM: Number(newMilestoneKM()),
+      notes: notes().trim() || undefined,
       partsExpense: {
-        shopName: partsShopName.trim() || 'General',
-        amount: partsAmount === '' ? 0 : Number(partsAmount),
-        paymentMode: partsAccountType === 'Driver' ? partsDriverName : (partsPaymentMode || 'Cash/General'),
-        accountType: partsAccountType,
-        driverName: partsAccountType === 'Driver' ? partsDriverName : undefined,
-        status: partsStatus,
+        shopName: partsShopName().trim() || 'General',
+        amount: partsAmount() === '' ? 0 : Number(partsAmount()),
+        paymentMode: partsAccountType() === 'Driver' ? partsDriverName() : (partsPaymentMode() || 'Cash/General'),
+        accountType: partsAccountType(),
+        driverName: partsAccountType() === 'Driver' ? partsDriverName() : undefined,
+        status: partsStatus(),
       },
       labourExpense: {
-        shopName: labourShopName.trim() || 'General Workshop',
-        amount: labourAmount === '' ? 0 : Number(labourAmount),
-        paymentMode: labourAccountType === 'Driver' ? labourDriverName : (labourPaymentMode || 'Cash/General'),
-        accountType: labourAccountType,
-        driverName: labourAccountType === 'Driver' ? labourDriverName : undefined,
-        status: labourStatus,
+        shopName: labourShopName().trim() || 'General Workshop',
+        amount: labourAmount() === '' ? 0 : Number(labourAmount()),
+        paymentMode: labourAccountType() === 'Driver' ? labourDriverName() : (labourPaymentMode() || 'Cash/General'),
+        accountType: labourAccountType(),
+        driverName: labourAccountType() === 'Driver' ? labourDriverName() : undefined,
+        status: labourStatus(),
       },
     });
   };
@@ -153,9 +154,9 @@ export default function ServiceDoneModal({
     paymentMode: string; setPaymentMode: (v: string) => void;
     driverName: string; setDriverName: (v: string) => void;
   }) => (
-    <div className="grid grid-cols-2 gap-2">
+    <div class="grid grid-cols-2 gap-2">
       <div>
-        <label htmlFor={`${id}-acct-type`} className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Paid Via</label>
+        <label for={`${id}-acct-type`} class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Paid Via</label>
         <select
           id={`${id}-acct-type`}
           value={accountType}
@@ -165,7 +166,7 @@ export default function ServiceDoneModal({
             if (v === 'Account') setDriverName('');
             else setPaymentMode('');
           }}
-          className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+          class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
         >
           <option value="Account">Account</option>
           <option value="Driver">Driver</option>
@@ -174,31 +175,31 @@ export default function ServiceDoneModal({
       <div>
         {accountType === 'Account' ? (
           <>
-            <label htmlFor={`${id}-account`} className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Account</label>
+            <label for={`${id}-account`} class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Account</label>
             <select
               id={`${id}-account`}
               value={paymentMode}
               onChange={e => setPaymentMode(e.target.value)}
-              className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+              class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
             >
               <option value="Cash/General">Cash / General</option>
               {accounts.map(a => (
-                <option key={a.id} value={a.accountName}>{a.accountName}</option>
+                <option  value={a.accountName}>{a.accountName}</option>
               ))}
             </select>
           </>
         ) : (
           <>
-            <label htmlFor={`${id}-driver`} className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Driver</label>
+            <label for={`${id}-driver`} class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Driver</label>
             <select
               id={`${id}-driver`}
               value={driverName}
               onChange={e => setDriverName(e.target.value)}
-              className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+              class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
             >
               <option value="">-- Select Driver --</option>
               {drivers.map(d => (
-                <option key={d.id} value={d.driverName}>{d.driverName}</option>
+                <option  value={d.driverName}>{d.driverName}</option>
               ))}
             </select>
           </>
@@ -208,80 +209,80 @@ export default function ServiceDoneModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
         {/* Header */}
-        <div className={`${colors.bg} ${colors.border} border-b px-6 py-4 flex items-center justify-between rounded-t-2xl`}>
-          <div className="flex items-center gap-3">
-            <span className={`text-2xl`}>{icon}</span>
+        <div class={`${colors.bg} ${colors.border} border-b px-6 py-4 flex items-center justify-between rounded-t-2xl`}>
+          <div class="flex items-center gap-3">
+            <span class={`text-2xl`}>{icon}</span>
             <div>
-              <h2 className={`text-sm font-extrabold ${colors.text} tracking-tight`}>
+              <h2 class={`text-sm font-extrabold ${colors.text} tracking-tight`}>
                 Service Done — {serviceType}
               </h2>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                <span className="font-mono font-bold text-slate-700">{truckNo}</span>
-                {' '}&bull;{' '}Current Odo: <span className="font-mono font-bold">{currentKM.toLocaleString()} KM</span>
+              <p class="text-[11px] text-slate-500 mt-0.5">
+                <span class="font-mono font-bold text-slate-700">{truckNo}</span>
+                {' '}&bull;{' '}Current Odo: <span class="font-mono font-bold">{currentKM.toLocaleString()} KM</span>
               </p>
             </div>
           </div>
-          <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-white/60 text-slate-400 hover:text-slate-700 transition cursor-pointer">
-            <X className="w-4 h-4" />
+          <button onClick={onCancel} class="p-1.5 rounded-lg hover:bg-white/60 text-slate-400 hover:text-slate-700 transition cursor-pointer">
+            <X class="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} class="p-6 space-y-5">
           {/* Service meta row */}
-          <div className="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="svc-date" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Service Date</label>
+              <label for="svc-date" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Service Date</label>
               <input
                 id="svc-date"
                 type="date"
-                value={serviceDate}
+                value={serviceDate()}
                 onChange={e => setServiceDate(e.target.value)}
                 required
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
+                class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
               />
             </div>
             <div>
-              <label htmlFor="svc-next-km" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">
+              <label for="svc-next-km" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">
                 New Next-Due KM
-                <span className="ml-1 text-slate-400 normal-case font-normal">(pre-filled: Odo + {intervalKM.toLocaleString()})</span>
+                <span class="ml-1 text-slate-400 normal-case font-normal">(pre-filled: Odo + {intervalKM.toLocaleString()})</span>
               </label>
               <input
                 id="svc-next-km"
                 type="number"
                 min={currentKM}
-                value={newMilestoneKM}
+                value={newMilestoneKM()}
                 onChange={e => setNewMilestoneKM(e.target.value === '' ? '' : Number(e.target.value))}
                 required
-                className="w-full bg-white border border-blue-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold"
+                class="w-full bg-white border border-blue-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold"
               />
             </div>
           </div>
 
           {/* Expense Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Parts Purchase Card */}
-            <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 border-b border-blue-100 pb-2">
-                <ShoppingBag className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="text-[11px] font-extrabold text-blue-800 uppercase tracking-wider">Parts Purchase</span>
+            <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-3">
+              <div class="flex items-center gap-2 border-b border-blue-100 pb-2">
+                <ShoppingBag class="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span class="text-[11px] font-extrabold text-blue-800 uppercase tracking-wider">Parts Purchase</span>
               </div>
               <div>
-                <label htmlFor="parts-shop" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name</label>
+                <label for="parts-shop" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Shop / Supplier Name</label>
                 <input
                   id="parts-shop"
                   type="text"
                   placeholder="e.g. TVS Auto Parts"
-                  value={partsShopName}
+                  value={partsShopName()}
                   onChange={e => setPartsShopName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
                 />
               </div>
               <div>
-                <label htmlFor="parts-amount" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">
-                  Parts Amount ₹ <span className="text-slate-400 normal-case font-normal">(0 = skip)</span>
+                <label for="parts-amount" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">
+                  Parts Amount ₹ <span class="text-slate-400 normal-case font-normal">(0 = skip)</span>
                 </label>
                 <input
                   id="parts-amount"
@@ -289,24 +290,24 @@ export default function ServiceDoneModal({
                   min="0"
                   step="any"
                   placeholder="0.00"
-                  value={partsAmount}
+                  value={partsAmount()}
                   onChange={e => setPartsAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold text-right"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold text-right"
                 />
               </div>
               <AccountPaymentField
                 id="parts"
-                accountType={partsAccountType} setAccountType={setPartsAccountType}
-                paymentMode={partsPaymentMode} setPaymentMode={setPartsPaymentMode}
-                driverName={partsDriverName} setDriverName={setPartsDriverName}
+                accountType={partsAccountType()} setAccountType={setPartsAccountType}
+                paymentMode={partsPaymentMode()} setPaymentMode={setPartsPaymentMode}
+                driverName={partsDriverName()} setDriverName={setPartsDriverName}
               />
               <div>
-                <label htmlFor="parts-status" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Settlement Status</label>
+                <label for="parts-status" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Settlement Status</label>
                 <select
                   id="parts-status"
-                  value={partsStatus}
+                  value={partsStatus()}
                   onChange={e => setPartsStatus(e.target.value as 'Paid' | 'Pending')}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-bold"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-bold"
                 >
                   <option value="Paid">Paid</option>
                   <option value="Pending">Pending</option>
@@ -315,25 +316,25 @@ export default function ServiceDoneModal({
             </div>
 
             {/* Mechanical Labour Card */}
-            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2 border-b border-amber-100 pb-2">
-                <Wrench className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider">Mechanical Labour</span>
+            <div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 space-y-3">
+              <div class="flex items-center gap-2 border-b border-amber-100 pb-2">
+                <Wrench class="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span class="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider">Mechanical Labour</span>
               </div>
               <div>
-                <label htmlFor="labour-shop" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Workshop Name</label>
+                <label for="labour-shop" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Workshop Name</label>
                 <input
                   id="labour-shop"
                   type="text"
                   placeholder="e.g. Kumar Workshop"
-                  value={labourShopName}
+                  value={labourShopName()}
                   onChange={e => setLabourShopName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-semibold"
                 />
               </div>
               <div>
-                <label htmlFor="labour-amount" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">
-                  Labour Charge ₹ <span className="text-slate-400 normal-case font-normal">(0 = skip)</span>
+                <label for="labour-amount" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">
+                  Labour Charge ₹ <span class="text-slate-400 normal-case font-normal">(0 = skip)</span>
                 </label>
                 <input
                   id="labour-amount"
@@ -341,24 +342,24 @@ export default function ServiceDoneModal({
                   min="0"
                   step="any"
                   placeholder="0.00"
-                  value={labourAmount}
+                  value={labourAmount()}
                   onChange={e => setLabourAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold text-right"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold text-right"
                 />
               </div>
               <AccountPaymentField
                 id="labour"
-                accountType={labourAccountType} setAccountType={setLabourAccountType}
-                paymentMode={labourPaymentMode} setPaymentMode={setLabourPaymentMode}
-                driverName={labourDriverName} setDriverName={setLabourDriverName}
+                accountType={labourAccountType()} setAccountType={setLabourAccountType}
+                paymentMode={labourPaymentMode()} setPaymentMode={setLabourPaymentMode}
+                driverName={labourDriverName()} setDriverName={setLabourDriverName}
               />
               <div>
-                <label htmlFor="labour-status" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Settlement Status</label>
+                <label for="labour-status" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Settlement Status</label>
                 <select
                   id="labour-status"
-                  value={labourStatus}
+                  value={labourStatus()}
                   onChange={e => setLabourStatus(e.target.value as 'Paid' | 'Pending')}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-bold"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-bold"
                 >
                   <option value="Paid">Paid</option>
                   <option value="Pending">Pending</option>
@@ -369,44 +370,44 @@ export default function ServiceDoneModal({
 
           {/* Notes field (always shown, prominently for wheel grease context) */}
           <div>
-            <label htmlFor="svc-notes" className="block text-[10px] font-bold text-slate-550 uppercase mb-1">
+            <label for="svc-notes()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">
               Service Notes
-              <span className="ml-1 text-slate-400 normal-case font-normal">— reason for early service, issue observed, etc. (visible on service window)</span>
+              <span class="ml-1 text-slate-400 normal-case font-normal">— reason for early service, issue observed, etc. (visible on service window)</span>
             </label>
             <textarea
-              id="svc-notes"
+              id="svc-notes()"
               rows={2}
               placeholder="e.g. Wheel grease done early due to bearing noise. Next due reset accordingly."
-              value={notes}
+              value={notes()}
               onChange={e => setNotes(e.target.value)}
-              className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-medium resize-none"
+              class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-medium resize-none"
             />
           </div>
 
           {/* Summary hint */}
-          {(Number(partsAmount) > 0 || Number(labourAmount) > 0) && (
-            <div className={`${colors.bg} ${colors.border} border rounded-lg px-4 py-2.5 flex items-center justify-between`}>
-              <span className={`text-[11px] font-bold ${colors.text}`}>Total Service Cost</span>
-              <span className={`font-mono font-extrabold text-sm ${colors.text}`}>
-                ₹{(Number(partsAmount || 0) + Number(labourAmount || 0)).toLocaleString('en-IN')}
+          {(Number(partsAmount()) > 0 || Number(labourAmount()) > 0) && (
+            <div class={`${colors.bg} ${colors.border} border rounded-lg px-4 py-2.5 flex items-center justify-between`}>
+              <span class={`text-[11px] font-bold ${colors.text}`}>Total Service Cost</span>
+              <span class={`font-mono font-extrabold text-sm ${colors.text}`}>
+                ₹{(Number(partsAmount() || 0) + Number(labourAmount() || 0)).toLocaleString('en-IN')}
               </span>
             </div>
           )}
 
           {/* Footer buttons */}
-          <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+          <div class="flex justify-end gap-3 pt-2 border-t border-slate-100">
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition"
+              class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={`flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer active:scale-95 transition-all`}
+              class={`flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer active:scale-95 transition-all`}
             >
-              <CheckCircle className="w-3.5 h-3.5" />
+              <CheckCircle class="w-3.5 h-3.5" />
               Mark Service Done &amp; Save
             </button>
           </div>

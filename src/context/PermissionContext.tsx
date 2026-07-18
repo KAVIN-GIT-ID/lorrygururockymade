@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import { createContext, useContext, createSignal, createMemo } from 'solid-js';
 import { UserPermission, UserRights } from '../types';
 import { permissionService } from '../services/permissionService';
 import { storageService } from '../services/storageService';
@@ -7,10 +7,10 @@ import { migrateUserPermissions } from '../lib/migrations';
 import { isAppwriteConfigured, appwrite } from '../lib/appwrite';
 
 interface PermissionContextType {
-  userRightsList: UserPermission[];
-  setUserRightsList: React.Dispatch<React.SetStateAction<UserPermission[]>>;
-  currentUserRights: UserRights;
-  permissionsMap: Map<string, UserPermission>;
+  userRightsList: () => UserPermission[];
+  setUserRightsList: (list: UserPermission[]) => void;
+  currentUserRights: () => UserRights;
+  permissionsMap: () => Map<string, UserPermission>;
   addPermission: (
     newPerm: Omit<UserPermission, 'id'>,
     showNotification: (msg: string) => void,
@@ -33,42 +33,43 @@ interface PermissionContextType {
 
 const PermissionContext = createContext<PermissionContextType | undefined>(undefined);
 
-export function PermissionProvider({ children }: { children: React.ReactNode }) {
+export function PermissionProvider(props: { children: any }) {
   const { currentUser } = useAuth();
-  const [userRightsList, setUserRightsList] = useState<UserPermission[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_user_rights');
-      let list = stored ? migrateUserPermissions(JSON.parse(stored)) : [];
-      if (isAppwriteConfigured()) {
-        list = list.filter(r => r.organizationId !== 'org_default');
-      }
-      return list;
-    } catch {
-      return [];
+  const [userRightsList, setUserRightsList] = createSignal<UserPermission[]>([]);
+
+  // Initialize state
+  try {
+    const stored = localStorage.getItem('ttt_user_rights');
+    let list = stored ? migrateUserPermissions(JSON.parse(stored)) : [];
+    if (isAppwriteConfigured()) {
+      list = list.filter(r => r.organizationId !== 'org_default');
     }
+    setUserRightsList(list);
+  } catch {
+    setUserRightsList([]);
+  }
+
+  const permissionsMap = createMemo(() => {
+    return new Map(userRightsList().map(u => [u.email.toLowerCase().trim(), u]));
   });
 
-  const permissionsMap = useMemo(() => {
-    return new Map(userRightsList.map(u => [u.email.toLowerCase().trim(), u]));
-  }, [userRightsList]);
-
-  const currentUserRights = useMemo(() => {
-    return permissionService.getCurrentUserRights(currentUser, userRightsList);
-  }, [currentUser, userRightsList]);
+  const currentUserRights = createMemo(() => {
+    return permissionService.getCurrentUserRights(currentUser(), userRightsList());
+  });
 
   const pushPermissions = async (nextUserRights: UserPermission[], forceEmail?: string) => {
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const loggedInEmail = (currentUser?.email || forceEmail || '').toLowerCase().trim();
-        const isNotLoggedIn = !currentUser;
-        const prevRights = userRightsList;
+        const loggedInEmail = (currentUser()?.email || forceEmail || '').toLowerCase().trim();
+        const isNotLoggedIn = !currentUser();
+        const prevRights = userRightsList();
 
         const savePromises = nextUserRights.map(async (ur) => {
-          const isOwnOrg = ur.organizationId && ur.organizationId === currentUserRights.organizationId;
+          const isOwnOrg = ur.organizationId && ur.organizationId === currentUserRights().organizationId;
           const isSelf = ur.email.toLowerCase().trim() === loggedInEmail;
 
-          if (!isNotLoggedIn && !currentUserRights.isSuperAdmin && !isOwnOrg && !isSelf) {
+          if (!isNotLoggedIn && !currentUserRights().isSuperAdmin && !isOwnOrg && !isSelf) {
             return;
           }
 
@@ -105,13 +106,13 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     logAction: (action: string, cat: string, ref: string, detail: string) => void
   ) => {
     if (newPerm.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canAddBackend) {
+      if (!currentUserRights().isSuperAdmin || !currentUserRights().canAddBackend) {
         showNotification("Error: You do not have permission to add backend team members.");
         return;
       }
     }
     const item = { ...newPerm, id: 'ur_' + Date.now() };
-    const next = [...userRightsList, item];
+    const next = [...userRightsList(), item];
     setUserRightsList(next);
     storageService.set('ttt_user_rights', next);
     await pushPermissions(next);
@@ -125,18 +126,18 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     logAction: (action: string, cat: string, ref: string, detail: string) => void,
     currentUserOrgId: string
   ) => {
-    const email = (currentUser?.email || '').toLowerCase().trim();
-    const currentMember = permissionsMap.get(email);
+    const email = (currentUser()?.email || '').toLowerCase().trim();
+    const currentMember = permissionsMap().get(email);
     const currentUserRole = currentMember?.role || 'Custom';
 
-    const original = permissionsMap.get(updated.email.toLowerCase().trim());
+    const original = permissionsMap().get(updated.email.toLowerCase().trim());
     if (original && currentUserRole === 'Custom' && (original.role === 'Admin' || original.role === 'SuperAdmin')) {
       showNotification("Error: You do not have permission to modify Administrator or Super Admin accounts.");
       return;
     }
 
     if (updated.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canEditBackend) {
+      if (!currentUserRights().isSuperAdmin || !currentUserRights().canEditBackend) {
         showNotification("Error: You do not have permission to edit backend team members.");
         return;
       }
@@ -144,7 +145,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     const wasApproved = original ? original.isApproved : false;
     const isNowApproved = updated.isApproved;
 
-    const next = userRightsList.map(p => p.id === updated.id ? updated : p);
+    const next = userRightsList().map(p => p.id === updated.id ? updated : p);
     setUserRightsList(next);
     storageService.set('ttt_user_rights', next);
     await pushPermissions(next);
@@ -175,11 +176,11 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     logAction: (action: string, cat: string, ref: string, detail: string) => void,
     currentUserOrgId: string
   ) => {
-    const target = userRightsList.find(p => p.id === id);
+    const target = userRightsList().find(p => p.id === id);
     if (!target) return;
 
-    const email = (currentUser?.email || '').toLowerCase().trim();
-    const currentMember = permissionsMap.get(email);
+    const email = (currentUser()?.email || '').toLowerCase().trim();
+    const currentMember = permissionsMap().get(email);
     const currentUserRole = currentMember?.role || 'Custom';
 
     if (currentUserRole === 'Custom' && (target.role === 'Admin' || target.role === 'SuperAdmin')) {
@@ -188,7 +189,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     }
 
     if (target.organizationId === 'org_backend') {
-      if (!currentUserRights.isSuperAdmin || !currentUserRights.canDeleteBackend) {
+      if (!currentUserRights().isSuperAdmin || !currentUserRights().canDeleteBackend) {
         showNotification("Error: You do not have permission to revoke backend team access.");
         return;
       }
@@ -210,7 +211,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
-    const next = userRightsList.filter(p => p.id !== id);
+    const next = userRightsList().filter(p => p.id !== id);
     setUserRightsList(next);
     storageService.set('ttt_user_rights', next);
 
@@ -234,7 +235,7 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  const permValue = React.useMemo(() => ({
+  const permValue: PermissionContextType = {
     userRightsList,
     setUserRightsList,
     currentUserRights,
@@ -243,15 +244,11 @@ export function PermissionProvider({ children }: { children: React.ReactNode }) 
     updatePermission,
     deletePermission,
     pushPermissions
-  }), [
-    userRightsList,
-    currentUserRights,
-    permissionsMap
-  ]);
+  };
 
   return (
     <PermissionContext.Provider value={permValue}>
-      {children}
+      {props.children}
     </PermissionContext.Provider>
   );
 }

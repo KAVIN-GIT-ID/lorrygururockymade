@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react';
+import { createSignal, createEffect, Accessor, Setter } from 'solid-js';
 import { storageService } from '../services/storageService';
 
-export function useLocalStorage<T>(key: string, initialValue: T): [T, (val: T | ((prev: T) => T)) => void] {
-  const [state, setState] = useState<T>(() => {
-    return storageService.get<T>(key, initialValue);
-  });
+export function useLocalStorage<T>(key: string, initialValue: T): [Accessor<T>, Setter<T>] {
+  const [state, setState] = createSignal<T>(storageService.get<T>(key, initialValue));
 
-  useEffect(() => {
-    storageService.set(key, state);
-  }, [key, state]);
+  createEffect(() => {
+    storageService.set(key, state());
+  });
 
   return [state, setState];
 }

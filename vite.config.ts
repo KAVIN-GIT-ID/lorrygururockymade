@@ -1,5 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
+import solid from 'vite-plugin-solid';
 import path from 'path';
 import {defineConfig} from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -10,7 +10,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig(() => {
   return {
     plugins: [
-      react(),
+      solid(),
       tailwindcss(),
       cloudflare(),
       basicSsl(),
@@ -43,6 +43,12 @@ export default defineConfig(() => {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,
           secure: false,
+        },
+        '/realtime': {
+          target: 'http://127.0.0.1:5000',
+          ws: true,
+          changeOrigin: true,
+          secure: false,
         }
       }
     },
@@ -51,16 +57,12 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks: {
-            // React Core
-            'vendor-react': ['react', 'react-dom'],
-            // Charting library — large, changes rarely
-            'vendor-recharts': ['recharts'],
+            // Solid Core
+            'vendor-solid': ['solid-js', '@solidjs/router'],
             // Appwrite SDK — large, changes rarely
             'vendor-appwrite': ['appwrite'],
             // Icon library — large, changes rarely
-            'vendor-lucide': ['lucide-react'],
-            // Animation library
-            'vendor-motion': ['motion'],
+            'vendor-lucide': ['lucide-solid'],
           },
         },
       },

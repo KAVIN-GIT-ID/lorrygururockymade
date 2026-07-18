@@ -135,13 +135,33 @@ class AppwriteService {
                   }
                 }
               }
-               if (channelsList.length > 0) {
-                const separator = urlStr.includes('?') ? '&' : '?';
-                const channelsQuery = channelsList
-                  .map(ch => `channels[]=${encodeURIComponent(ch)}`)
-                  .join('&');
-                urlStr = `${urlStr}${separator}${channelsQuery}`;
-              }
+                if (channelsList.length > 0) {
+                  // Only append channels that are not already present in the query parameters
+                  try {
+                    // Handle potential relative WebSocket URLs (e.g. wss:// or ws://) securely
+                    const parsedUrl = new URL(urlStr.replace(/^ws(s)?:/, 'http$1:'));
+                    const existingParams = parsedUrl.searchParams;
+                    const newChannels = channelsList.filter(ch => {
+                      const values = existingParams.getAll('channels[]');
+                      return !values.includes(ch);
+                    });
+                    
+                    if (newChannels.length > 0) {
+                      const separator = urlStr.includes('?') ? '&' : '?';
+                      const channelsQuery = newChannels
+                        .map(ch => `channels[]=${encodeURIComponent(ch)}`)
+                        .join('&');
+                      urlStr = `${urlStr}${separator}${channelsQuery}`;
+                    }
+                  } catch (urlErr) {
+                    // Fallback to simple query appending if URL parsing fails
+                    const separator = urlStr.includes('?') ? '&' : '?';
+                    const channelsQuery = channelsList
+                      .map(ch => `channels[]=${encodeURIComponent(ch)}`)
+                      .join('&');
+                    urlStr = `${urlStr}${separator}${channelsQuery}`;
+                  }
+                }
             }
           } catch (err) {
             // silent fail

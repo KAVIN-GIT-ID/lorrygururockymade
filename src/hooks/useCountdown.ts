@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { createSignal, createEffect, onCleanup } from 'solid-js';
 
 export function useCountdown(initialSeconds: number = 0) {
-  const [seconds, setSeconds] = useState(initialSeconds);
-  const timerRef = useRef<any>(null);
+  const [seconds, setSeconds] = createSignal(initialSeconds);
+  let timer: any = null;
 
   const start = (secs: number) => {
     setSeconds(secs);
@@ -12,24 +12,35 @@ export function useCountdown(initialSeconds: number = 0) {
     setSeconds(0);
   };
 
-  useEffect(() => {
-    if (seconds > 0) {
-      timerRef.current = setInterval(() => {
+  createEffect(() => {
+    if (seconds() > 0) {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
         setSeconds(prev => {
           if (prev <= 1) {
-            clearInterval(timerRef.current);
+            clearInterval(timer);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-    }
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+    } else {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
       }
-    };
-  }, [seconds]);
+    }
+  });
 
-  return { seconds, start, stop };
+  onCleanup(() => {
+    if (timer) {
+      clearInterval(timer);
+    }
+  });
+
+  return {
+    get seconds() { return seconds(); },
+    start,
+    stop
+  };
 }

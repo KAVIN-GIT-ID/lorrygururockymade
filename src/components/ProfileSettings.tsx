@@ -1,4 +1,5 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
+
 import { UserRights, OrganizationProfile } from '../types';
 import { isAppwriteConfigured } from '../lib/appwrite';
 
@@ -19,7 +20,7 @@ interface ProfileSettingsProps {
   confirmPassword: string;
   setConfirmPassword: (val: string) => void;
   onCancel: () => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (e: Event) => void;
   onChangeMobileClick: () => void;
   onEnable2FAClick: () => void;
   onDisable2FAClick: () => void;
@@ -63,58 +64,58 @@ export default function ProfileSettings({
   setProfileAddress
 }: ProfileSettingsProps) {
   return (
-    <form onSubmit={onSubmit} className="max-w-md space-y-4">
+    <form onSubmit={onSubmit} class="max-w-md space-y-4">
       {/* DISPLAY NAME */}
       <div>
-        <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Display Name</label>
+        <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Display Name</label>
         <input
           type="text"
           value={profileName}
           onChange={(e) => setProfileName(e.target.value)}
           required
-          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+          class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
         />
       </div>
 
       {/* ORGANIZATION NAME */}
       {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
         <div>
-          <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Organization Name</label>
+          <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Organization Name</label>
           <input
             type="text"
             value={profileOrgName}
             onChange={(e) => setProfileOrgName(e.target.value)}
             required
-            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+            class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
           />
         </div>
       )}
 
       {/* EMAIL (READ-ONLY) */}
       <div>
-        <label className="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
+        <label class="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
         <input
           type="email"
           value={currentUser?.email || ''}
           disabled
-          className="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
+          class="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
         />
       </div>
 
       {/* MOBILE NUMBER */}
       <div>
-        <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Mobile Number</label>
-        <div className="flex gap-2">
+        <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Mobile Number</label>
+        <div class="flex gap-2">
           <input
             type="text"
             value={currentUserRights.phone || 'Not Set'}
             disabled
-            className="flex-1 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
+            class="flex-1 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
           />
           <button
             type="button"
             onClick={onChangeMobileClick}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-755 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+            class="px-3 py-2 bg-blue-600 hover:bg-blue-755 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
           >
             Change
           </button>
@@ -123,12 +124,12 @@ export default function ProfileSettings({
 
       {/* VOICE ASSISTANT LANGUAGE */}
       <div>
-        <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
+        <label for="voice-lang-select" class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
         <select
           id="voice-lang-select"
           value={profileVoiceLang}
           onChange={(e) => setProfileVoiceLang(e.target.value)}
-          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+          class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
         >
           <option value="en-IN">English (India) - en-IN</option>
           <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
@@ -140,13 +141,13 @@ export default function ProfileSettings({
       </div>
 
       {/* GST & BUSINESS KYC DETAILS (BILLING) */}
-      <div className="border-t border-slate-105 dark:border-slate-800 pt-3">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">
+      <div class="border-t border-slate-105 dark:border-slate-800 pt-3">
+        <span class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">
           GST & Business KYC Details (Billing)
         </span>
-        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4.5 space-y-3">
+        <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4.5 space-y-3">
           <div>
-            <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">GSTIN (15 Characters)</label>
+            <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">GSTIN (15 Characters)</label>
             <input
               type="text"
               value={profileGst}
@@ -155,13 +156,13 @@ export default function ProfileSettings({
                 setProfileGst(val);
               }}
               placeholder="e.g. 33AAFCL8686P1Z4"
-              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+              class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">PAN Card (10 Characters)</label>
+              <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">PAN Card (10 Characters)</label>
               <input
                 type="text"
                 value={profilePan}
@@ -170,11 +171,11 @@ export default function ProfileSettings({
                   setProfilePan(val);
                 }}
                 placeholder="e.g. AAFCL8686P"
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">Aadhaar (12 Digits)</label>
+              <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">Aadhaar (12 Digits)</label>
               <input
                 type="text"
                 value={profileAadhaar}
@@ -183,34 +184,34 @@ export default function ProfileSettings({
                   setProfileAadhaar(val);
                 }}
                 placeholder="e.g. 123456789012"
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-slate-555 uppercase tracking-wide mb-1">Billing Address</label>
+            <label class="block text-[10px] font-bold text-slate-555 uppercase tracking-wide mb-1">Billing Address</label>
             <textarea
               value={profileAddress}
               onChange={(e) => setProfileAddress(e.target.value)}
               placeholder="Full billing address for tax invoices"
               rows={2}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+              class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
             />
           </div>
         </div>
       </div>
 
       {/* TWO-FACTOR AUTHENTICATION (2FA) */}
-      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
-        <div className="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
+      <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+        <span class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
+        <div class="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
+          <div class="space-y-0.5">
+            <div class="flex items-center gap-1.5">
+              <span class={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
+            <p class="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
               Protect your account with Google Authenticator TOTP codes.
             </p>
           </div>
@@ -218,7 +219,7 @@ export default function ProfileSettings({
             <button
               type="button"
               onClick={onDisable2FAClick}
-              className="px-3 py-1.5 border border-red-500/30 hover:border-red-50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
+              class="px-3 py-1.5 border border-red-500/30 hover:border-red-50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
             >
               Disable
             </button>
@@ -226,7 +227,7 @@ export default function ProfileSettings({
             <button
               type="button"
               onClick={onEnable2FAClick}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
+              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
             >
               Enable
             </button>
@@ -235,57 +236,57 @@ export default function ProfileSettings({
       </div>
 
       {/* CHANGE PASSWORD */}
-      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
+      <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+        <span class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
 
         {localStorage.getItem('ttt_login_method') === 'appwrite' && (
-          <div className="mb-3">
-            <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Current Password</label>
+          <div class="mb-3">
+            <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Current Password</label>
             <input
               type="password"
               value={oldPassword}
               onChange={(e) => setOldPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">New Password</label>
+            <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">New Password</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Confirm Password</label>
+            <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Confirm Password</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+              class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
           </div>
         </div>
       </div>
 
-      <div className="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100 dark:border-slate-800">
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40 dark:border-slate-700/60"
+          class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40 dark:border-slate-700/60"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer"
         >
           Save Changes
         </button>

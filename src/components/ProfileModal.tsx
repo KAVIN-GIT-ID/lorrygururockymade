@@ -1,9 +1,10 @@
-import React, { Suspense } from 'react';
-import { User, MessageSquare } from 'lucide-react';
-import ProfileSettings from './ProfileSettings';
-import { UserPermission, OrganizationProfile, SupportTicket } from '../types';
+import { Suspense, lazy, Component } from 'solid-js';
 
-const ProfileSupportTickets = React.lazy(() => import('./ProfileSupportTickets'));
+import { User, MessageSquare } from 'lucide-solid';
+import ProfileSettings from './ProfileSettings';
+import { UserPermission, OrganizationProfile, SupportTicket, UserRights } from '../types';
+
+const ProfileSupportTickets = lazy(() => import('./ProfileSupportTickets'));
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface ProfileModalProps {
   isBackendTeam: boolean;
   getClientUnreadTicketsCount: () => number;
   currentUser: any;
-  currentUserRights: UserPermission;
+  currentUserRights: UserRights;
   organizationProfiles: OrganizationProfile[];
   profileName: string;
   setProfileName: (val: string) => void;
@@ -48,12 +49,12 @@ interface ProfileModalProps {
 }
 
 const LoadingTab = () => (
-  <div className="flex items-center justify-center p-12 h-64">
-    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+  <div class="flex items-center justify-center p-12 h-64">
+    <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
   </div>
 );
 
-export const ProfileModal: React.FC<ProfileModalProps> = ({
+export const ProfileModal: Component<ProfileModalProps> = ({
   isOpen,
   onClose,
   profileActiveTab,
@@ -97,17 +98,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in flex flex-col md:flex-row overflow-hidden h-[600px] text-left">
+    <div class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in flex flex-col md:flex-row overflow-hidden h-[600px] text-left">
         
         {/* Sidebar navigation */}
-        <div className="w-full md:w-56 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-1.5 shrink-0">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-extrabold text-slate-850 dark:text-slate-100 text-sm uppercase tracking-wider">Settings Panel</h3>
+        <div class="w-full md:w-56 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-1.5 shrink-0">
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="font-extrabold text-slate-850 dark:text-slate-100 text-sm uppercase tracking-wider">Settings Panel</h3>
             {/* Close button for mobile */}
             <button
               onClick={onClose}
-              className="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
+              class="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
             >
               ✕
             </button>
@@ -115,41 +116,41 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
           <button
             onClick={() => setProfileActiveTab('SETTINGS')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+            class={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
               profileActiveTab === 'SETTINGS'
                 ? 'bg-blue-600 text-white shadow-md'
                 : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
             }`}
           >
-            <User className="w-4 h-4" />
+            <User class="w-4 h-4" />
             <span>Profile & Security</span>
           </button>
 
           {!isBackendTeam && (
             <button
               onClick={() => setProfileActiveTab('SUPPORT')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+              class={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
                 profileActiveTab === 'SUPPORT'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
               }`}
             >
-              <div className="flex items-center gap-2.5">
-                <MessageSquare className="w-4 h-4" />
+              <div class="flex items-center gap-2.5">
+                <MessageSquare class="w-4 h-4" />
                 <span>Support Center</span>
               </div>
               {getClientUnreadTicketsCount() > 0 && (
-                <span className="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
+                <span class="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
                   {getClientUnreadTicketsCount()}
                 </span>
               )}
             </button>
           )}
           
-          <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
+          <div class="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
             <button
               onClick={onClose}
-              className="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-355 text-xs font-semibold rounded-lg transition cursor-pointer"
+              class="w-full py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-355 text-xs font-semibold rounded-lg transition cursor-pointer"
             >
               Close Settings
             </button>
@@ -157,20 +158,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
 
         {/* Main content pane */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/20 dark:bg-slate-950/5 shrink-0">
-            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+        <div class="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
+          <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/20 dark:bg-slate-950/5 shrink-0">
+            <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm">
               {profileActiveTab === 'SETTINGS' ? 'Profile & Security' : 'Support Center Help Desk'}
             </h3>
             <button
               onClick={onClose}
-              className="hidden md:block text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1 cursor-pointer"
+              class="hidden md:block text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1 cursor-pointer"
             >
               ✕
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 min-h-0">
+          <div class="flex-1 overflow-y-auto p-5 min-h-0">
             {profileActiveTab === 'SETTINGS' ? (
               <ProfileSettings
                 currentUser={currentUser}

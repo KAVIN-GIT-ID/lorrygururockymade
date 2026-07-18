@@ -1,54 +1,54 @@
-import React, { createContext, useContext, useState } from 'react';
+import { createContext, useContext, createSignal } from 'solid-js';
 import { OrganizationProfile } from '../types';
-import { storageService } from '../services/storageService';
 import { organizationService } from '../services/organizationService';
 import { isAppwriteConfigured } from '../lib/appwrite';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 
 interface OrganizationContextType {
-  organizationProfiles: OrganizationProfile[];
-  setOrganizationProfiles: React.Dispatch<React.SetStateAction<OrganizationProfile[]>>;
+  organizationProfiles: () => OrganizationProfile[];
+  setOrganizationProfiles: (profiles: OrganizationProfile[]) => void;
   saveProfiles: (nextProfiles: OrganizationProfile[]) => Promise<void>;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
 
-export function OrganizationProvider({ children }: { children: React.ReactNode }) {
+export function OrganizationProvider(props: { children: any }) {
   const { currentUser } = useAuth();
   const { currentUserRights } = usePermissions();
-  const [organizationProfiles, setOrganizationProfiles] = useState<OrganizationProfile[]>(() => {
-    try {
-      const stored = localStorage.getItem('ttt_organization_profiles');
-      let profiles = stored ? JSON.parse(stored) : [];
-      if (isAppwriteConfigured()) {
-        profiles = profiles.filter((p: any) => p.organizationId !== 'org_default');
-      }
-      return profiles;
-    } catch {
-      return [];
+  const [organizationProfiles, setOrganizationProfiles] = createSignal<OrganizationProfile[]>([]);
+
+  // Since we want initializer logic to run immediately:
+  try {
+    const stored = localStorage.getItem('ttt_organization_profiles');
+    let profiles = stored ? JSON.parse(stored) : [];
+    if (isAppwriteConfigured()) {
+      profiles = profiles.filter((p: any) => p.organizationId !== 'org_default');
     }
-  });
+    setOrganizationProfiles(profiles);
+  } catch {
+    setOrganizationProfiles([]);
+  }
 
   const saveProfiles = async (nextProfiles: OrganizationProfile[]) => {
     await organizationService.saveOrganizationProfiles(
       nextProfiles,
-      organizationProfiles,
-      currentUser?.email,
-      currentUserRights
+      organizationProfiles(),
+      currentUser()?.email,
+      currentUserRights()
     );
     setOrganizationProfiles(nextProfiles);
   };
 
-  const orgValue = React.useMemo(() => ({
+  const orgValue: OrganizationContextType = {
     organizationProfiles,
     setOrganizationProfiles,
     saveProfiles
-  }), [organizationProfiles]);
+  };
 
   return (
     <OrganizationContext.Provider value={orgValue}>
-      {children}
+      {props.children}
     </OrganizationContext.Provider>
   );
 }
