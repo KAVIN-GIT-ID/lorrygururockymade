@@ -26,19 +26,7 @@ interface AppModalsProps {
   currentUser: () => any;
   currentUserRights: () => any;
   organizationProfiles: () => OrganizationProfile[];
-  profileName: () => string;
-  setProfileName: (name: string) => void;
-  profileOrgName: () => string;
-  setProfileOrgName: (name: string) => void;
-  profileVoiceLang: () => string;
-  setProfileVoiceLang: (lang: string) => void;
-  oldPassword: () => string;
-  setOldPassword: (pass: string) => void;
-  newPassword: () => string;
-  setNewPassword: (pass: string) => void;
-  confirmPassword: () => string;
-  setConfirmPassword: (pass: string) => void;
-  handleUpdateProfile: (newName: string, newOrgName?: string, newPass?: string, oldPass?: string) => Promise<void>;
+  handleUpdateProfile: (newName: string, newOrgName?: string, newPass?: string, oldPass?: string, kycDetails?: { gst?: string; pan?: string; aadhaar?: string; address?: string }) => Promise<void>;
   setMobileWizardOpen: (open: boolean) => void;
   setSetup2FAOpen: (open: boolean) => void;
   setDisable2FAOpen: (open: boolean) => void;
@@ -46,14 +34,6 @@ interface AppModalsProps {
   currentUserOrgId: string;
   handleCreateSupportTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   handleSendSupportTicketMessage: (ticketId: string, message: any) => Promise<any>;
-  profileGst: () => string;
-  setProfileGst: (val: string) => void;
-  profilePan: () => string;
-  setProfilePan: (val: string) => void;
-  profileAadhaar: () => string;
-  setProfileAadhaar: (val: string) => void;
-  profileAddress: () => string;
-  setProfileAddress: (val: string) => void;
   payments: () => any[];
 
   mobileWizardOpen: () => boolean;
@@ -132,39 +112,14 @@ export default function AppModals(rawProps: AppModalsProps) {
           onClose={() => props.setProfileModalOpen(false)}
           profileActiveTab={props.profileActiveTab()}
           setProfileActiveTab={props.setProfileActiveTab}
-          isBackendTeam={props.isBackendTeam}
           getClientUnreadTicketsCount={props.getClientUnreadTicketsCount}
-          currentUser={props.currentUser()}
-          currentUserRights={props.currentUserRights()}
-          organizationProfiles={props.organizationProfiles()}
-          profileName={props.profileName()}
-          setProfileName={props.setProfileName}
-          profileOrgName={props.profileOrgName()}
-          setProfileOrgName={props.setProfileOrgName}
-          profileVoiceLang={props.profileVoiceLang()}
-          setProfileVoiceLang={props.setProfileVoiceLang}
-          oldPassword={props.oldPassword()}
-          setOldPassword={props.setOldPassword}
-          newPassword={props.newPassword()}
-          setNewPassword={props.setNewPassword}
-          confirmPassword={props.confirmPassword()}
-          setConfirmPassword={props.setConfirmPassword}
           handleUpdateProfile={props.handleUpdateProfile}
           onChangeMobileClick={() => props.setMobileWizardOpen(true)}
           onEnable2FAClick={() => props.setSetup2FAOpen(true)}
           onDisable2FAClick={() => props.setDisable2FAOpen(true)}
           supportTickets={props.supportTickets()}
-          currentUserOrgId={props.currentUserOrgId}
           handleCreateSupportTicket={props.handleCreateSupportTicket}
           handleSendSupportTicketMessage={props.handleSendSupportTicketMessage}
-          profileGst={props.profileGst()}
-          setProfileGst={props.setProfileGst}
-          profilePan={props.profilePan()}
-          setProfilePan={props.setProfilePan}
-          profileAadhaar={props.profileAadhaar()}
-          setProfileAadhaar={props.setProfileAadhaar}
-          profileAddress={props.profileAddress()}
-          setProfileAddress={props.setProfileAddress}
           payments={props.payments()}
         />
       )}

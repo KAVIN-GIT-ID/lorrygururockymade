@@ -50,11 +50,19 @@ import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import versionData from './version.json';
 const APP_VERSION = versionData.version;
 
-import { useAuditLogs } from './hooks/useAuditLogs';
+import { useAuditLogsContext } from './context/AuditLogContext';
 import { useSupportTicketsState } from './hooks/useSupportTicketsState';
 import { useTruckHandlers } from './hooks/useTruckHandlers';
 import { useBackendSync } from './hooks/useBackendSync';
 import { useUserManagement, reconcileOrganizationProfiles } from './hooks/useUserManagement';
+import { useModalWizardState } from './hooks/useModalWizardState';
+import { useAuthHandlers } from './hooks/useAuthHandlers';
+import { useConfirmAction } from './hooks/useConfirmAction';
+import { useNavigationState } from './hooks/useNavigationState';
+import { useCapacitorListeners } from './hooks/useCapacitorListeners';
+import { useAdminActions } from './hooks/useAdminActions';
+import { useBackupRestore } from './hooks/useBackupRestore';
+import { useAppUpdate } from './hooks/useAppUpdate';
 import {
   migrateTripsIfNecessary,
   migrateUserPermissions,
@@ -166,8 +174,6 @@ function AppContent(): any {
 
   const [profileModalOpen, setProfileModalOpen] = createSignal(false);
   const [profileActiveTab, setProfileActiveTab] = createSignal<'SETTINGS' | 'SUPPORT'>('SETTINGS');
-  const [emailVerificationSuccess, setEmailVerificationSuccess] = createSignal(false);
-  const [emailVerificationError, setEmailVerificationError] = createSignal<string | null>(null);
   const [profileDropdownOpen, setProfileDropdownOpen] = createSignal(false);
 
   const notifications = useNotifications();
@@ -263,40 +269,39 @@ function AppContent(): any {
   const updateTruck = trucksCtx.updateTruck;
   const deleteTruck = trucksCtx.deleteTruck;
 
-  const emailTimerHook = useCountdown(0);
-  const phoneTimerHook = useCountdown(0);
-  const mobileWizardTimerHook = useCountdown(0);
-
-  const emailTimer = emailTimerHook.seconds;
-  const setEmailTimer = emailTimerHook.start;
-  const phoneTimer = phoneTimerHook.seconds;
-  const setPhoneTimer = phoneTimerHook.start;
-  const mobileWizardTimer = mobileWizardTimerHook.seconds;
-  const setMobileWizardTimer = mobileWizardTimerHook.start;
-
-  // Mobile Change Wizard States
-  const [mobileWizardOpen, setMobileWizardOpen] = createSignal(false);
-  const [mobileWizardStep, setMobileWizardStep] = createSignal(1);
-  const [mobileWizardCode, setMobileWizardCode] = createSignal('');
-  const [mobileWizardNewPhone, setMobileWizardNewPhone] = createSignal('');
-  const [mobileWizardPassword, setMobileWizardPassword] = createSignal('');
-  const [mobileWizardError, setMobileWizardError] = createSignal<string | null>(null);
-  const [mobileWizardGeneratedOtp, setMobileWizardGeneratedOtp] = createSignal('');
-
-  // 2FA Setup/Disable States
-  const [setup2FAOpen, setSetup2FAOpen] = createSignal(false);
-  const [setup2FASecret, setSetup2FASecret] = createSignal('');
-
-  const [disable2FAOpen, setDisable2FAOpen] = createSignal(false);
-
-  const [resetPasswordState, setResetPasswordState] = createSignal<{
-    active: boolean;
-    userId: string;
-    secret: string;
-  } | null>(null);
+  const modalWizard = useModalWizardState();
+  const emailTimer = modalWizard.emailTimer;
+  const setEmailTimer = modalWizard.setEmailTimer;
+  const phoneTimer = modalWizard.phoneTimer;
+  const setPhoneTimer = modalWizard.setPhoneTimer;
+  const mobileWizardTimer = modalWizard.mobileWizardTimer;
+  const setMobileWizardTimer = modalWizard.setMobileWizardTimer;
+  const mobileWizardOpen = modalWizard.mobileWizardOpen;
+  const setMobileWizardOpen = modalWizard.setMobileWizardOpen;
+  const mobileWizardStep = modalWizard.mobileWizardStep;
+  const setMobileWizardStep = modalWizard.setMobileWizardStep;
+  const mobileWizardCode = modalWizard.mobileWizardCode;
+  const setMobileWizardCode = modalWizard.setMobileWizardCode;
+  const mobileWizardNewPhone = modalWizard.mobileWizardNewPhone;
+  const setMobileWizardNewPhone = modalWizard.setMobileWizardNewPhone;
+  const mobileWizardPassword = modalWizard.mobileWizardPassword;
+  const setMobileWizardPassword = modalWizard.setMobileWizardPassword;
+  const mobileWizardError = modalWizard.mobileWizardError;
+  const setMobileWizardError = modalWizard.setMobileWizardError;
+  const mobileWizardGeneratedOtp = modalWizard.mobileWizardGeneratedOtp;
+  const setMobileWizardGeneratedOtp = modalWizard.setMobileWizardGeneratedOtp;
+  const setup2FAOpen = modalWizard.setup2FAOpen;
+  const setSetup2FAOpen = modalWizard.setSetup2FAOpen;
+  const setup2FASecret = modalWizard.setup2FASecret;
+  const setSetup2FASecret = modalWizard.setSetup2FASecret;
+  const disable2FAOpen = modalWizard.disable2FAOpen;
+  const setDisable2FAOpen = modalWizard.setDisable2FAOpen;
+  const resetPasswordState = modalWizard.resetPasswordState;
+  const setResetPasswordState = modalWizard.setResetPasswordState;
 
   let profileDropdownRef: HTMLDivElement | undefined;
   let verifiedTxns: any;
+  let prevTabIdxRef = 0;
 
   onMount(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -324,18 +329,7 @@ function AppContent(): any {
     }
   });
 
-  // Profile update form states
-  const [profileName, setProfileName] = createSignal('');
-  const [profileOrgName, setProfileOrgName] = createSignal('');
-  const [oldPassword, setOldPassword] = createSignal('');
-  const [newPassword, setNewPassword] = createSignal('');
-  const [confirmPassword, setConfirmPassword] = createSignal('');
 
-  // Profile KYC states
-  const [profileGst, setProfileGst] = createSignal('');
-  const [profilePan, setProfilePan] = createSignal('');
-  const [profileAadhaar, setProfileAadhaar] = createSignal('');
-  const [profileAddress, setProfileAddress] = createSignal('');
 
   // Payments State
   const [payments, setPayments] = createSignal<any[]>(
@@ -369,24 +363,7 @@ function AppContent(): any {
     }
   });
 
-  // Sync profile update inputs when user details or modal state updates
-  createEffect(() => {
-    if (profileModalOpen() && currentUser()) {
-      setProfileName(currentUser().name || '');
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      const email = (currentUser().email || '').toLowerCase().trim();
-      setProfileVoiceLang(localStorage.getItem(`ttt_voice_lang_${email}`) || 'en-IN');
-      const currentOrgId = currentUserRights()?.organizationId || '';
-      const orgProfile = organizationProfiles().find(p => p.organizationId === currentOrgId);
-      setProfileOrgName(orgProfile ? orgProfile.organizationName : '');
-      setProfileGst(orgProfile?.gstNo || '');
-      setProfilePan(orgProfile?.panNo || '');
-      setProfileAadhaar(orgProfile?.aadhaarNo || '');
-      setProfileAddress(orgProfile?.address || '');
-    }
-  });
+
 
   const saveUserRightsList = (nextList: UserPermission[]) => {
     setUserRightsList(nextList);
@@ -483,173 +460,6 @@ function AppContent(): any {
     }
   });
 
-  const handleEmailVerificationRedirect = async (userId: string, secret: string) => {
-    setLoadingUser(true);
-    try {
-      if (isAppwriteConfigured()) {
-        await appwrite.updateVerification(userId, secret);
-        showNotification("Email verified successfully! You can now log in.");
-
-        const user = await appwrite.getCurrentUser();
-        if (user) {
-          // Reconcile session fetches the latest cloud configs/rights list and updates user verification status safely
-          await reconcileSession(user);
-        }
-      } else {
-        showNotification("Mock Email verified successfully!");
-        if (currentUser()) {
-          const email = (currentUser().email || '').toLowerCase().trim();
-          const updated = userRightsList().map(ur =>
-            ur.email.toLowerCase().trim() === email ? { ...ur, isEmailVerified: true } : ur
-          );
-          setUserRightsList(updated);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-        }
-      }
-      setEmailVerificationSuccess(true);
-    } catch (err: any) {
-      console.error("Email verification failure:", err);
-      setEmailVerificationError(err.message || err);
-      showNotification(`Email verification failed: ${err.message || err}`);
-    } finally {
-      window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-      setLoadingUser(false);
-    }
-  };
-
-
-
-  createEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const mode = params.get('mode');
-    const userId = params.get('userId');
-    const secret = params.get('secret');
-    const txnId = params.get('txnId');
-    const truckNo = params.get('truckNo');
-
-    if (mode === 'recovery' && userId && secret) {
-      setResetPasswordState({ active: true, userId, secret });
-    } else if (mode === 'verify' && userId && secret) {
-      handleEmailVerificationRedirect(userId, secret);
-    } else if (txnId && truckNo) {
-      // Handled by the PhonePePaymentModal inside TruckMaster component
-    }
-  });
-
-
-
-
-  const handleLogout = async () => {
-    try {
-      await appwrite.logout();
-    } catch (err) {
-      console.warn("Appwrite logout error:", err);
-    }
-    setCurrentUser(null);
-    localStorage.clear();
-    sessionStorage.clear();
-
-    // Clear all cookies to avoid session conflicts
-    try {
-      const cookies = document.cookie.split(";");
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i];
-        const eqPos = cookie.indexOf("=");
-        const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
-        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
-        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + window.location.hostname;
-        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=." + window.location.hostname.split('.').slice(-2).join('.');
-      }
-    } catch (cookieErr) {
-      console.warn("Error clearing cookies on logout:", cookieErr);
-    }
-    // Reset React state arrays
-    setTrucks([]);
-    setDrivers([]);
-    setOffices([]);
-    setAccounts([]);
-    setTrips([]);
-    setExpenses([]);
-    setTyres([]);
-    setAuditLogs([]);
-    setUserRightsList([]);
-    setOrganizationProfiles([]);
-    showNotification('Logged out successfully.');
-    navigate('/');
-  };
-
-
-
-
-
-  const handleUpdateProfile = async (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string) => {
-    try {
-      const loginMethod = localStorage.getItem('ttt_login_method');
-      if (loginMethod === 'appwrite') {
-        if (newName.trim() && newName.trim() !== currentUser()?.name) {
-          await appwrite.updateName(newName.trim());
-        }
-        if (newPassword && oldPassword) {
-          await appwrite.updatePassword(newPassword, oldPassword);
-        }
-        if (newPassword) {
-          logAction('Edited', 'Password', (currentUser()?.email || '').toLowerCase().trim(), `Your account password was updated successfully.`, currentUserRights()?.organizationId || '');
-        }
-      }
-
-      // Update local representation
-      const updatedUser = {
-        ...currentUser(),
-        name: newName.trim()
-      };
-      setCurrentUser(updatedUser);
-
-      // Update name in userRightsList() so it reflects everywhere
-      const email = (currentUser()?.email || '').toLowerCase().trim();
-      const updatedRightsList = userRightsList().map(ur =>
-        ur.email.toLowerCase().trim() === email
-          ? { ...ur, name: newName.trim() }
-          : ur
-      );
-      saveUserRightsList(updatedRightsList);
-
-      if (isAppwriteConfigured()) {
-        await pushPermissionsToCloud(updatedRightsList);
-      }
-
-      // Update organization name and KYC if user is Admin
-      const currentOrgId = currentUserRights()?.organizationId || '';
-      if (currentUserRights().isAdmin && currentOrgId) {
-        const nextProfiles = organizationProfiles().map(p =>
-          p.organizationId === currentOrgId
-            ? {
-              ...p,
-              organizationName: newOrgName && newOrgName.trim() ? newOrgName.trim() : p.organizationName,
-              gstNo: profileGst().trim(),
-              panNo: profilePan().trim(),
-              aadhaarNo: profileAadhaar().trim(),
-              address: profileAddress().trim()
-            }
-            : p
-        );
-        await saveOrganizationProfiles(nextProfiles);
-      }
-
-      // Save voice language settings
-      if (currentUser()) {
-        const userEmail = (currentUser().email || '').toLowerCase().trim();
-        localStorage.setItem(`ttt_voice_lang_${userEmail}`, profileVoiceLang());
-        setUserVoiceLang(profileVoiceLang());
-      }
-
-      showNotification("Profile updated successfully!");
-      setProfileModalOpen(false);
-    } catch (err: any) {
-      console.error("DEBUG PROFILE UPDATE ERROR:", err);
-      alert(`Error updating profile: ${err.message || 'Operation failed'}`);
-    }
-  };
-
   const handleUpdateOrgProfile = async (updatedProfile: OrganizationProfile) => {
     const nextProfiles = organizationProfiles().map(p =>
       p.organizationId === updatedProfile.organizationId ? updatedProfile : p
@@ -719,16 +529,12 @@ function AppContent(): any {
       setActiveTab(fallbackTab);
     }
   });
-  // Custom hooks managing operational states
-  const auditLogsHook = useAuditLogs({
-    currentUser: currentUser(),
-    currentUserOrgId: currentUserOrgId(),
-    showNotification
-  });
-  const auditLogs = createReactiveArrayWrapper<any>(() => auditLogsHook.auditLogs);
-  const setAuditLogs = auditLogsHook.setAuditLogs;
-  const logAction = auditLogsHook.logAction;
-  const handleClearAuditLogs = auditLogsHook.handleClearAuditLogs;
+  // Retrieve audit log context
+  const auditLogsCtx = useAuditLogsContext();
+  const auditLogs = createReactiveArrayWrapper<any>(() => auditLogsCtx.auditLogs);
+  const setAuditLogs = auditLogsCtx.saveAuditLogs;
+  const logAction = auditLogsCtx.logAction;
+  const handleClearAuditLogs = auditLogsCtx.handleClearAuditLogs;
   const saveAuditLogs = setAuditLogs;
 
 
@@ -802,6 +608,119 @@ function AppContent(): any {
   );
 
   const {
+    appUpdateConfig,
+    handleSaveAppUpdateConfig,
+    renderAppUpdateModal
+  } = useAppUpdate(APP_VERSION);
+
+  const {
+    confirmModal,
+    setConfirmModal,
+    confirmAction
+  } = useConfirmAction();
+
+  const {
+    isMobile,
+    setIsMobile,
+    mobileTab,
+    setMobileTab,
+    registrySubTab,
+    setRegistrySubTab,
+    fabOpened,
+    setFabOpened,
+    autoOpenFormTab,
+    setAutoOpenFormTab,
+    triggerOpenAddForm
+  } = useNavigationState();
+
+  const {
+    handleUpdateOrgStatus,
+    handleUpdateOrgLimit,
+    handleApproveTruckRequest,
+    handleRejectTruckRequest
+  } = useAdminActions({
+    organizationProfiles,
+    saveOrganizationProfiles,
+    showNotification,
+    logAction
+  });
+
+  const {
+    handleTriggerDownloadBackup,
+    handleUploadBackupChange,
+    triggerClearAllLocalData
+  } = useBackupRestore({
+    showNotification,
+    setTrucks,
+    setDrivers,
+    setOffices,
+    setAccounts,
+    setTrips,
+    setExpenses,
+    setTyres,
+    setAuditLogs,
+    setUserRightsList,
+    setOrganizationProfiles,
+    logAction
+  });
+
+  const {
+    handleTouchStart,
+    handleTouchEnd
+  } = useCapacitorListeners({
+    registrySubTab,
+    setRegistrySubTab,
+    mobileTab,
+    setMobileTab,
+    profileModalOpen,
+    setProfileModalOpen,
+    setup2FAOpen,
+    setSetup2FAOpen,
+    disable2FAOpen,
+    setDisable2FAOpen,
+    confirmModal,
+    setConfirmModal,
+    showPhoneUpdateModal,
+    setShowPhoneUpdateModal
+  });
+
+  const {
+    handleEmailVerificationRedirect,
+    handleLogout,
+    handleUpdateProfile,
+    emailVerificationError,
+    emailVerificationSuccess,
+    setEmailVerificationSuccess,
+    setEmailVerificationError
+  } = useAuthHandlers(
+    currentUser,
+    setCurrentUser,
+    userRightsList,
+    setUserRightsList,
+    organizationProfiles,
+    setOrganizationProfiles,
+    saveOrganizationProfiles,
+    setTrucks,
+    setDrivers,
+    setOffices,
+    setAccounts,
+    setTrips,
+    setExpenses,
+    setTyres,
+    setAuditLogs,
+    showNotification,
+    navigate,
+    setLoadingUser,
+    logAction,
+    setResetPasswordState,
+    reconcileSession,
+    currentUserRights,
+    pushPermissionsToCloud,
+    setUserVoiceLang,
+    setProfileModalOpen
+  );
+
+  const {
     checkUserApproval,
     sendWhatsAppOTP,
     handlePhoneUpdateSubmit,
@@ -823,348 +742,6 @@ function AppContent(): any {
     setWhatsappOtpCode,
     setWhatsappOtpPhone
   );
-
-
-
-  const [appUpdateConfig, setAppUpdateConfig] = createSignal<{
-    version: string;
-    releaseNotes: string;
-    downloadUrl: string;
-    updatedAt?: string;
-  } | null>(
-    (() => {
-      try {
-        const stored = localStorage.getItem('ttt_app_update_config');
-        return stored ? JSON.parse(stored) : null;
-      } catch {
-        return null;
-      }
-    })()
-  );
-
-  const [dismissedVersion, setDismissedVersion] = createSignal<string | null>(
-    (() => {
-      try {
-        return localStorage.getItem('ttt_dismissed_version');
-      } catch {
-        return null;
-      }
-    })()
-  );
-
-  const handleDismissVersion = (ver: string | null) => {
-    setDismissedVersion(ver);
-    try {
-      if (ver) {
-        localStorage.setItem('ttt_dismissed_version', ver);
-      } else {
-        localStorage.removeItem('ttt_dismissed_version');
-      }
-    } catch (e) {
-      console.warn("Failed to save dismissed version:", e);
-    }
-  };
-
-  const [confirmModal, setConfirmModal] = createSignal<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
-
-  const confirmAction = (message: string, onConfirm: () => void, title = 'Confirm Action') => {
-    setConfirmModal({
-      isOpen: true,
-      title,
-      message,
-      onConfirm: () => {
-        onConfirm();
-        setConfirmModal(null);
-      }
-    });
-  };
-
-  const [isMobile, setIsMobile] = createSignal(typeof window !== 'undefined' && window.innerWidth < 768);
-  const [mobileTab, setMobileTab] = createSignal<'HOME' | 'TRIPS' | 'REGISTRY' | 'ACCOUNT'>('HOME');
-  const [registrySubTab, setRegistrySubTab] = createSignal<string>('TRUCKS');
-
-  const [fabOpened, setFabOpened] = createSignal(false);
-  const [autoOpenFormTab, setAutoOpenFormTab] = createSignal<string | null>(null);
-
-  const triggerOpenAddForm = (tabId: string) => {
-    setRegistrySubTab(tabId);
-    setAutoOpenFormTab(tabId);
-    setFabOpened(false);
-
-    // Fallback/Legacy button click timeout (runs concurrently for safety)
-    setTimeout(() => {
-      let btnId = '';
-      let formQuery = '';
-      if (tabId === 'TRUCKS') {
-        btnId = 'btn-add-truck';
-        formQuery = '#truck-form';
-      } else if (tabId === 'DRIVERS') {
-        btnId = 'btn-add-driver';
-        formQuery = '#driver-form';
-      } else if (tabId === 'EXPENSES') {
-        btnId = 'btn-toggle-expense-form';
-        formQuery = '#expense-registration-form';
-      } else if (tabId === 'TYRES') {
-        btnId = 'btn-add-tyre';
-        formQuery = '#tyre-form';
-      } else if (tabId === 'OFFICES') {
-        btnId = 'btn-add-office';
-        formQuery = '#office-form';
-      } else if (tabId === 'ACCOUNTS') {
-        btnId = 'btn-add-account';
-        formQuery = '#account-form';
-      }
-
-      if (btnId) {
-        const formExists = formQuery ? !!document.querySelector(formQuery) : false;
-        if (!formExists) {
-          const btn = document.getElementById(btnId);
-          if (btn) {
-            btn.click();
-          }
-        }
-      }
-    }, 200);
-  };
-
-  // Registry Touch Swipe / Anim refs
-  let touchStartXRef: number | null | undefined;
-  let touchStartYRef: number | null | undefined;
-  let prevTabIdxRef = 0;
-
-  const handleTouchStart = (e: TouchEvent) => {
-    touchStartXRef = e.touches[0].clientX;
-    touchStartYRef = e.touches[0].clientY;
-  };
-
-  const handleTouchEnd = (e: TouchEvent) => {
-    if (touchStartXRef === null || touchStartYRef === null) return;
-
-    // Bypass swipe gestures on reports and outstanding subtabs to prevent scroll conflict
-    if (registrySubTab() === 'REPORTS' || registrySubTab() === 'OUTSTANDING') {
-      touchStartXRef = null;
-      touchStartYRef = null;
-      return;
-    }
-
-    const diffX = e.changedTouches[0].clientX - touchStartXRef;
-    const diffY = e.changedTouches[0].clientY - touchStartYRef;
-
-    if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
-      const tabs = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
-      const currentIdx = tabs.indexOf(registrySubTab());
-      if (diffX < 0) {
-        if (currentIdx < tabs.length - 1) {
-          setRegistrySubTab(tabs[currentIdx + 1]);
-        }
-      } else {
-        if (currentIdx > 0) {
-          setRegistrySubTab(tabs[currentIdx - 1]);
-        }
-      }
-    }
-    touchStartXRef = null;
-    touchStartYRef = null;
-  };
-
-  onMount(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', handleResize);
-    onCleanup(() => window.removeEventListener('resize', handleResize));
-  });
-
-  // Native back button intercept using Capacitor App plugin
-  onMount(() => {
-    let backListener: any = null;
-
-    const setupBackButton = async () => {
-      try {
-        const isCapacitor = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor);
-        if (!isCapacitor) return;
-
-        // Dynamically import @capacitor/app to prevent issues on non-mobile platforms
-        const { App: CapApp } = await import('@capacitor/app');
-
-        backListener = await CapApp.addListener('backButton', (data) => {
-          // 1. Dispatch custom event for child views/modals to handle
-          const customEvent = new CustomEvent('app-back-press', {
-            cancelable: true
-          });
-          window.dispatchEvent(customEvent);
-
-          if (customEvent.defaultPrevented) {
-            // Event was handled by a modal/sub-view, do not close the app
-            return;
-          }
-
-          // 2. If no custom handlers, check if we can navigate back in tab states or exit app
-          if (mobileTab() !== 'HOME') {
-            setMobileTab('HOME');
-          } else if (data.canGoBack) {
-            window.history.back();
-          } else {
-            CapApp.exitApp();
-          }
-        });
-      } catch (err) {
-        console.warn("Capacitor BackButton listener initialization failed:", err);
-      }
-    };
-
-    setupBackButton();
-
-    return () => {
-      if (backListener && typeof backListener.remove === 'function') {
-        backListener.remove();
-      }
-    };
-  });
-
-  // Listen for native back button to dismiss modals
-  onMount(() => {
-    const handleBackPress = (e: Event) => {
-      let closedSomething = false;
-      if (profileModalOpen()) {
-        setProfileModalOpen(false);
-        closedSomething = true;
-      }
-      if (setup2FAOpen()) {
-        setSetup2FAOpen(false);
-        closedSomething = true;
-      }
-      if (disable2FAOpen()) {
-        setDisable2FAOpen(false);
-        closedSomething = true;
-      }
-      if (confirmModal()) {
-        setConfirmModal(null);
-        closedSomething = true;
-      }
-      if (showPhoneUpdateModal()) {
-        setShowPhoneUpdateModal(false);
-        closedSomething = true;
-      }
-
-      if (closedSomething) {
-        e.preventDefault(); // Stop default action (don't exit app or navigate back)
-      }
-    };
-    window.addEventListener('app-back-press', handleBackPress);
-    onCleanup(() => window.removeEventListener('app-back-press', handleBackPress));
-  });
-
-  const renderAppUpdateModal = () => (
-    <Suspense fallback={null}>
-      <AppUpdateModal
-        isOpen={
-          typeof window !== 'undefined' &&
-          (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || window.innerWidth < 768) &&
-          !import.meta.env.DEV &&
-          !!appUpdateConfig() &&
-          isVersionNewer(APP_VERSION, appUpdateConfig().version) &&
-          dismissedVersion() !== appUpdateConfig().version
-        }
-        onClose={() => handleDismissVersion(appUpdateConfig()?.version || null)}
-        currentVersion={APP_VERSION}
-        latestVersion={appUpdateConfig()?.version || ''}
-        releaseNotes={appUpdateConfig()?.releaseNotes || ''}
-        downloadUrl={appUpdateConfig()?.downloadUrl || ''}
-      />
-    </Suspense>
-  );
-
-  const isVersionNewer = (current: string, latest: string) => {
-    if (!current || !latest) return false;
-    const currParts = current.split('.').map(Number);
-    const lateParts = latest.split('.').map(Number);
-    for (let i = 0; i < Math.max(currParts.length, lateParts.length); i++) {
-      const curr = currParts[i] || 0;
-      const late = lateParts[i] || 0;
-      if (late > curr) return true;
-      if (curr > late) return false;
-    }
-    return false;
-  };
-
-  onMount(() => {
-    const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-    const fetchAppVersion = async () => {
-      try {
-        const config = await appwrite.loadGlobalConfig(databaseId, 'cfg_app_version');
-        if (config) {
-          localStorage.setItem('ttt_app_update_config', JSON.stringify(config));
-          setAppUpdateConfig(config);
-        }
-      } catch (err) {
-        console.warn("Failed to fetch app version config:", err);
-      }
-    };
-
-    const handleUpdateEvent = (e: any) => {
-      if (e.detail) {
-        setAppUpdateConfig(e.detail);
-      }
-    };
-
-    const handleResume = () => {
-      console.log("App resumed/focused: checking for update configuration...");
-      fetchAppVersion();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        handleResume();
-      }
-    };
-
-    // 1. Initial check on mount/load
-    fetchAppVersion();
-
-    // 2. Listeners
-    window.addEventListener('ttt_app_update_event', handleUpdateEvent);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('resume', handleResume);
-    window.addEventListener('focus', handleResume);
-
-    // 3. Periodic check (every 3 minutes) while app is open
-    const interval = setInterval(fetchAppVersion, 3 * 60 * 1000);
-
-    onCleanup(() => {
-      window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('resume', handleResume);
-      window.removeEventListener('focus', handleResume);
-      clearInterval(interval);
-    });
-  });
-
-
-  const handleSaveAppUpdateConfig = async (config: any) => {
-    try {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      const payload = {
-        key: 'cfg_app_version',
-        ...config
-      };
-      await appwrite.saveGlobalConfig(databaseId, 'cfg_app_version', payload);
-      setAppUpdateConfig(payload);
-      localStorage.setItem('ttt_app_update_config', JSON.stringify(payload));
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: payload }));
-      }
-    } catch (err: any) {
-      console.error("Failed to save app update config:", err);
-      throw err;
-    }
-  };
 
 
 
@@ -1506,215 +1083,6 @@ function AppContent(): any {
 
 
 
-  const handleUpdateOrgStatus = async (orgId: string, status: 'Active' | 'Disabled') => {
-    const nextProfiles = organizationProfiles().map(p =>
-      p.organizationId === orgId ? { ...p, status } : p
-    );
-    await saveOrganizationProfiles(nextProfiles);
-    showNotification(`Organization ${orgId} has been ${status === 'Active' ? 'enabled' : 'disabled'}.`);
-    logAction('Edited', 'Organization', orgId, `Super Admin updated status to ${status}.`, orgId);
-  };
-
-  const handleUpdateOrgLimit = async (orgId: string, limit: number) => {
-    const nextProfiles = organizationProfiles().map(p =>
-      p.organizationId === orgId ? { ...p, maxTrucksAllowed: limit } : p
-    );
-    await saveOrganizationProfiles(nextProfiles);
-    showNotification(`Truck registration limit for ${orgId} set to ${limit}.`);
-    logAction('Edited', 'Organization', orgId, `Super Admin set max truck limit to ${limit}.`, orgId);
-  };
-
-  const handleApproveTruckRequest = async (orgId: string, requestId: string, truckNo: string, duration: '1M' | '3M' | '6M' | '1Y' = '1Y') => {
-    const profile = organizationProfiles().find(p => p.organizationId === orgId);
-    if (!profile) return;
-
-    let requestItem = (profile.truckRequests || []).find(r => r.id === requestId);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const existingTruck = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
-
-    let baseDate = new Date(today);
-
-    let monthsToAdd = 12;
-    if (duration === '1M') monthsToAdd = 1;
-    else if (duration === '3M') monthsToAdd = 3;
-    else if (duration === '6M') monthsToAdd = 6;
-
-    const nextExpiry = new Date(baseDate);
-    nextExpiry.setMonth(nextExpiry.getMonth() + monthsToAdd);
-
-    const yyyy = nextExpiry.getFullYear();
-    const mm = String(nextExpiry.getMonth() + 1).padStart(2, '0');
-    const dd = String(nextExpiry.getDate()).padStart(2, '0');
-    const expiryStr = `${yyyy}-${mm}-${dd}`;
-
-    const wasAlreadyApproved = existingTruck && existingTruck.isApproved === true;
-
-    const nextRequests = (profile.truckRequests || []).filter(r =>
-      r.id !== requestId && r.truckNo.toUpperCase() !== truckNo.toUpperCase()
-    );
-
-    const nextProfiles = organizationProfiles().map(p =>
-      p.organizationId === orgId
-        ? {
-          ...p,
-          maxTrucksAllowed: wasAlreadyApproved ? p.maxTrucksAllowed : p.maxTrucksAllowed + 1,
-          truckRequests: nextRequests
-        }
-        : p
-    );
-
-    await saveOrganizationProfiles(nextProfiles);
-
-    const truckId = existingTruck ? existingTruck.id : ('tr_' + Date.now());
-    let updatedTruck: Truck;
-    if (existingTruck) {
-      updatedTruck = mutateRecord(existingTruck, {
-        isApproved: true,
-        requestStatus: 'Approved' as const,
-        status: 'Active' as const,
-        registrationExpiryDate: expiryStr,
-        currentKM: (existingTruck.currentKM !== undefined && existingTruck.currentKM !== null && existingTruck.currentKM !== 0) ? existingTruck.currentKM : (requestItem?.currentKM || 0)
-      }, currentUserId());
-    } else {
-      updatedTruck = createRecord<Truck>({
-        id: truckId,
-        truckNo: truckNo.toUpperCase(),
-        organizationId: orgId,
-        isApproved: true,
-        requestStatus: 'Approved',
-        status: 'Active',
-        registrationExpiryDate: expiryStr,
-        make: requestItem?.make,
-        model: requestItem?.model,
-        type: requestItem?.type,
-        currentKM: requestItem?.currentKM || 0
-      }, currentUserId());
-    }
-
-    setTrucks(prev => {
-      const exists = prev.some(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNo.toUpperCase());
-      const next = exists
-        ? prev.map(t => t.id === truckId ? updatedTruck : t)
-        : [...prev, updatedTruck];
-      localStorage.setItem('ttt_trucks', JSON.stringify(next));
-      return next;
-    });
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        await appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, updatedTruck);
-      } catch (err) {
-        console.warn("Failed to push truck approval sync to database:", err);
-      }
-    }
-
-    // Pass orgId as targetOrgId so the local log entry is stored under the correct org,
-    // making it visible to the org's users in their activity feed.
-    const detailsMsg = `Truck registration approved by system administrator for ${duration === '1Y' ? '1 Year' : duration === '6M' ? '6 Months' : duration === '3M' ? '3 Months' : '1 Month'}. Active until: ${expiryStr}`;
-    logAction('Approved', 'Truck', truckNo, detailsMsg, orgId);
-    showNotification(`✓ Truck ${truckNo} approved for Org ${orgId}.`);
-  };
-
-  const handleRejectTruckRequest = async (orgId: string, requestId: string, fallbackTruckNo?: string) => {
-    const profile = organizationProfiles().find(p => p.organizationId === orgId);
-    if (!profile) return;
-
-    let reqItem = (profile.truckRequests || []).find(r => r.id === requestId);
-    const truckNoToReject = reqItem?.truckNo || fallbackTruckNo;
-
-    const nextRequests = (profile.truckRequests || []).filter(r =>
-      r.id !== requestId && !(truckNoToReject && r.truckNo.toUpperCase() === truckNoToReject.toUpperCase())
-    );
-
-    const nextProfiles = organizationProfiles().map(p =>
-      p.organizationId === orgId ? { ...p, truckRequests: nextRequests } : p
-    );
-
-    // Update local state immediately
-    setOrganizationProfiles(nextProfiles);
-    localStorage.setItem('ttt_organization_profiles', JSON.stringify(nextProfiles));
-    touchLastModified();
-
-    let truckId = 'tr_' + Date.now();
-    let rejectedTruckObj: Truck | null = null;
-
-    if (truckNoToReject) {
-      const existing = trucks.find(t => t.organizationId === orgId && t.truckNo.toUpperCase() === truckNoToReject.toUpperCase());
-      if (existing) {
-        truckId = existing.id;
-        rejectedTruckObj = mutateRecord(existing, {
-          isApproved: false,
-          requestStatus: 'Rejected' as const,
-          status: 'Inactive' as const
-        }, currentUserId());
-      } else {
-        rejectedTruckObj = createRecord<Truck>({
-          id: truckId,
-          truckNo: truckNoToReject.toUpperCase(),
-          organizationId: orgId,
-          isApproved: false,
-          requestStatus: 'Rejected',
-          status: 'Inactive',
-          make: reqItem?.make,
-          model: reqItem?.model,
-          type: reqItem?.type,
-          currentKM: reqItem?.currentKM || 0
-        }, currentUserId());
-      }
-
-      setTrucks(prev => {
-        const otherOrgs = orgId === 'org_backend' ? [] : prev.filter(t => t.organizationId !== orgId && t.organizationId !== 'org_default');
-        const thisOrg = prev.filter(t => t.organizationId === orgId);
-
-        let nextOrg;
-        if (existing) {
-          nextOrg = thisOrg.map(t => t.id === truckId ? (rejectedTruckObj || t) : t);
-        } else if (rejectedTruckObj) {
-          nextOrg = [...thisOrg, rejectedTruckObj];
-        } else {
-          nextOrg = thisOrg;
-        }
-
-        const next = [...otherOrgs, ...nextOrg];
-        localStorage.setItem('ttt_trucks', JSON.stringify(next));
-        return next;
-      });
-    }
-
-    // Trigger network requests concurrently
-    if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      const targetProfile = nextProfiles.find(p => p.organizationId === orgId);
-      const docId = appwrite.getOrgDocId(orgId);
-
-      const syncPromises = [];
-      if (targetProfile) {
-        syncPromises.push(
-          appwrite.saveGlobalConfig(databaseId, docId, targetProfile)
-            .catch(err => console.warn("Failed to sync organization profile:", err))
-        );
-      }
-
-      if (truckNoToReject && rejectedTruckObj) {
-        syncPromises.push(
-          appwrite.saveFleetDocument(databaseId, 'trucks', truckId, orgId, rejectedTruckObj)
-            .catch(err => console.warn("Failed to push truck rejection sync:", err))
-        );
-      }
-
-      Promise.all(syncPromises).then(() => {
-        console.log("Rejection backend synchronization complete.");
-      });
-    }
-
-    logAction('Rejected', 'Truck', truckNoToReject || orgId, 'Truck registration request rejected by system administrator.', orgId);
-    showNotification(`✗ Truck request rejected for Org ${orgId}.`);
-  };
-
   // Reconcile pending trucks if approved in global profiles.
   // NOTE: only tracks organizationProfiles() and currentUserRights() — NOT trucks.
   // Trucks are read inside untrack() to avoid a self-triggering loop:
@@ -1902,92 +1270,6 @@ function AppContent(): any {
   };
 
   // --- BACKUP RESTORE SYSTEM ---
-  const handleTriggerDownloadBackup = () => {
-    const payload = {
-      trucks,
-      drivers,
-      offices,
-      accounts,
-      trips,
-      tyres,
-      exportDate: new Date().toISOString(),
-      source: 'Truck Trip Tracker System'
-    };
-
-    const fileData = JSON.stringify(payload, null, 2);
-    const blob = new Blob([fileData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `TT_Tracker_Backup_${new Date().toISOString().substring(0, 10)}.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showNotification("Backup snapshot exported to folder successfully.");
-  };
-
-  const handleUploadBackupChange = (e: any) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.trucks && parsed.offices && parsed.accounts && parsed.trips) {
-          saveTrucks(parsed.trucks);
-          if (parsed.drivers) {
-            saveDrivers(parsed.drivers);
-          } else {
-            saveDrivers([]);
-          }
-          if (parsed.tyres) {
-            saveTyres(parsed.tyres);
-          } else {
-            saveTyres([]);
-          }
-          saveOffices(parsed.offices);
-          saveAccounts(parsed.accounts);
-          saveTrips(parsed.trips);
-          showNotification("System data recovered successfully! Master list updated.");
-        } else {
-          alert("Corrupted Schema. Uploaded file doesn't match Truck Trip Tracker backup signature.");
-        }
-      } catch (err) {
-        alert("Failed to parse JSON file template. Please upload a valid JSON backup.");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const triggerClearAllLocalData = () => {
-    confirmAction(
-      "Are you sure you want to clear all local data? This will wipe all trucks, drivers, offices, accounts, trips, expenses, tyres, and audit logs.",
-      () => {
-        localStorage.removeItem('ttt_trucks');
-        localStorage.removeItem('ttt_drivers');
-        localStorage.removeItem('ttt_offices');
-        localStorage.removeItem('ttt_accounts');
-        localStorage.removeItem('ttt_trips');
-        localStorage.removeItem('ttt_expenses');
-        localStorage.removeItem('ttt_tyres');
-        localStorage.removeItem('fleet_audit_logs');
-
-        setTrucks([]);
-        setDrivers([]);
-        setOffices([]);
-        setAccounts([]);
-        setTrips([]);
-        setExpenses([]);
-        setTyres([]);
-        setAuditLogs([]);
-
-        showNotification("All database journals cleared successfully.");
-      },
-      "Clear Database Journals"
-    );
-  };
-
   return () => {
     if (emailVerificationSuccess()) {
       return (
@@ -2489,25 +1771,9 @@ function AppContent(): any {
           currentUser={currentUser}
           currentUserRights={currentUserRights}
           organizationProfiles={organizationProfiles}
-          profileName={profileName}
-          setProfileName={setProfileName}
-          profileOrgName={profileOrgName}
-          setProfileOrgName={setProfileOrgName}
-          profileVoiceLang={profileVoiceLang}
-          setProfileVoiceLang={setProfileVoiceLang}
-          oldPassword={oldPassword}
-          setOldPassword={setOldPassword}
-          newPassword={newPassword}
-          setNewPassword={setNewPassword}
-          confirmPassword={confirmPassword}
-          setConfirmPassword={setConfirmPassword}
-          handleUpdateProfile={async (newName, newOrgName, newPass, oldPass) => {
-            if (newPass && newPass !== confirmPassword()) {
-              alert("New passwords do not match!");
-              return;
-            }
+          handleUpdateProfile={async (newName, newOrgName, newPass, oldPass, kycDetails) => {
             const loginMethod = localStorage.getItem('ttt_login_method');
-            if (loginMethod === 'appwrite' && newPass && !oldPass) {
+            if (newPass && loginMethod === 'appwrite' && !oldPass) {
               alert("Current password is required to change password in Appwrite.");
               return;
             }
@@ -2515,7 +1781,8 @@ function AppContent(): any {
               newName,
               currentUserRights().isAdmin ? newOrgName : undefined,
               newPass || undefined,
-              oldPass || undefined
+              oldPass || undefined,
+              kycDetails
             );
           }}
           setMobileWizardOpen={setMobileWizardOpen}
@@ -2525,14 +1792,6 @@ function AppContent(): any {
           currentUserOrgId={currentUserOrgId()}
           handleCreateSupportTicket={handleCreateSupportTicket}
           handleSendSupportTicketMessage={handleSendSupportTicketMessage}
-          profileGst={profileGst}
-          setProfileGst={setProfileGst}
-          profilePan={profilePan}
-          setProfilePan={setProfilePan}
-          profileAadhaar={profileAadhaar}
-          setProfileAadhaar={setProfileAadhaar}
-          profileAddress={profileAddress}
-          setProfileAddress={setProfileAddress}
           payments={payments}
           mobileWizardOpen={mobileWizardOpen}
           mobileWizardStep={mobileWizardStep}
