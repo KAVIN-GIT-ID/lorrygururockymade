@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { ExpenseEntry, createRecord, mutateRecord } from '../types';
 import { migrateExpenses } from '../lib/migrations';
 import { getExpenseDiff } from '../utils/diffUtils';
@@ -16,7 +17,7 @@ interface UseExpensesParams {
 }
 
 export function useExpenses({ orgId, showNotification, logAction, loadDashboardData, activeMonth, activeYear, currentUserId }: UseExpensesParams) {
-  const [expenses, setExpenses] = createSignal<ExpenseEntry[]>((() => {
+  const [expenses, setExpenses] = createStore<ExpenseEntry[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_expenses');
       return stored ? migrateExpenses(JSON.parse(stored)) : [];
@@ -29,24 +30,24 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
   createEffect(() => {
     db.expenses.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setExpenses(cached);
+        setExpenses(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = expenses();
+    const list = [...expenses];
     db.expenses.clear().then(() => db.expenses.bulkPut(list));
   });
 
   const saveExpenses = (newExpenses: ExpenseEntry[]) => {
-    setExpenses(newExpenses);
+    setExpenses(reconcile(newExpenses));
     localStorage.setItem('ttt_expenses', JSON.stringify(newExpenses));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgExpenses = createMemo(() => (orgId === 'org_backend' ? expenses() : expenses().filter(e => e.organizationId === orgId)).filter(e => !e.deletedAt));
+  const orgExpenses = createMemo(() => (orgId === 'org_backend' ? expenses : expenses.filter(e => e.organizationId === orgId)).filter(e => !e.deletedAt));
 
   const addExpense = async (expenseInput: Omit<ExpenseEntry, 'id'>) => {
     const newExp = createRecord<ExpenseEntry>({
@@ -67,7 +68,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       }
     }
 
-    const nextExpenses = [...expenses(), newExp];
+    const nextExpenses = [...expenses, newExp];
     saveExpenses(nextExpenses);
     await loadDashboardData(activeMonth, activeYear);
 
@@ -76,7 +77,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
   };
 
   const updateExpense = async (updated: ExpenseEntry) => {
-    const oldExpense = expenses().find(e => e.id === updated.id);
+    const oldExpense = expenses.find(e => e.id === updated.id);
     const merged: ExpenseEntry = oldExpense
       ? mutateRecord(oldExpense, updated, currentUserId)
       : createRecord<ExpenseEntry>({ ...updated, organizationId: orgId } as any, currentUserId);
@@ -93,7 +94,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       }
     }
 
-    const next = expenses().map(e => e.id === updated.id ? merged : e);
+    const next = expenses.map(e => e.id === updated.id ? merged : e);
     saveExpenses(next);
     await loadDashboardData(activeMonth, activeYear);
 
@@ -105,7 +106,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
   };
 
   const deleteExpense = async (id: string) => {
-    const exp = expenses().find(e => e.id === id);
+    const exp = expenses.find(e => e.id === id);
     if (!exp) return;
 
     const updatedExpense = mutateRecord(exp, { deletedAt: new Date().toISOString() }, currentUserId);
@@ -122,7 +123,7 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
       }
     }
 
-    const next = expenses().map(e => e.id === id ? updatedExpense : e);
+    const next = expenses.map(e => e.id === id ? updatedExpense : e);
     saveExpenses(next);
     await loadDashboardData(activeMonth, activeYear);
 
@@ -130,5 +131,5 @@ export function useExpenses({ orgId, showNotification, logAction, loadDashboardD
     showNotification(`Expense record deleted.`);
   };
 
-  return { get expenses() { return expenses(); }, setExpenses, get orgExpenses() { return orgExpenses(); }, saveExpenses, addExpense, updateExpense, deleteExpense };
+  return { get expenses() { return expenses; }, setExpenses, get orgExpenses() { return orgExpenses(); }, saveExpenses, addExpense, updateExpense, deleteExpense };
 }

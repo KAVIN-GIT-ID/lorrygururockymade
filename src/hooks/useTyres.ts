@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { Tyre, ExpenseEntry, TyreMovementLog } from '../types';
 import { migrateTyres } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -16,7 +17,7 @@ interface UseTyresParams {
 }
 
 export function useTyres({ orgId, expenses, saveExpenses, showNotification, logAction, loadDashboardData, activeMonth, activeYear }: UseTyresParams) {
-  const [tyres, setTyres] = createSignal<Tyre[]>((() => {
+  const [tyres, setTyres] = createStore<Tyre[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_tyres');
       return stored ? migrateTyres(JSON.parse(stored)) : [];
@@ -29,24 +30,24 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
   createEffect(() => {
     db.tyres.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setTyres(cached);
+        setTyres(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = tyres();
+    const list = [...tyres];
     db.tyres.clear().then(() => db.tyres.bulkPut(list));
   });
 
   const saveTyres = (newTyres: Tyre[]) => {
-    setTyres(newTyres);
+    setTyres(reconcile(newTyres));
     localStorage.setItem('ttt_tyres', JSON.stringify(newTyres));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgTyres = createMemo(() => orgId === 'org_backend' ? tyres() : tyres().filter(t => t.organizationId === orgId));
+  const orgTyres = createMemo(() => orgId === 'org_backend' ? tyres : tyres.filter(t => t.organizationId === orgId));
 
   const addTyre = async (
     tyreInput: Omit<Tyre, 'id' | 'movementHistory' | 'accumulatedKM'>,
@@ -92,7 +93,7 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
       }
     }
 
-    const nextTyres = [...tyres(), n];
+    const nextTyres = [...tyres, n];
     saveTyres(nextTyres);
 
     logAction('Created', 'Tyre', n.tyreNo, `Registered brand new ${n.manufacturer} (${n.size}) tyre to yard warehouse.`);
@@ -132,7 +133,7 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
   };
 
   const updateTyre = async (updated: Tyre) => {
-    const oldTyre = tyres().find(t => t.id === updated.id);
+    const oldTyre = tyres.find(t => t.id === updated.id);
     const merged: Tyre = oldTyre ? { ...oldTyre, ...updated } : updated;
 
     if (isAppwriteConfigured()) {
@@ -146,7 +147,7 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
       }
     }
 
-    const next = tyres().map(t => t.id === updated.id ? merged : t);
+    const next = tyres.map(t => t.id === updated.id ? merged : t);
     saveTyres(next);
 
     let actionD = `Updated tyre specifications`;
@@ -168,7 +169,7 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
   };
 
   const deleteTyre = async (id: string) => {
-    const tyreToDelete = tyres().find(t => t.id === id);
+    const tyreToDelete = tyres.find(t => t.id === id);
     if (!tyreToDelete) return;
     if (tyreToDelete.status === 'Active') {
       alert("Cannot delete an active tyre currently mounted on a running vehicle. Dismount it first.");
@@ -186,12 +187,12 @@ export function useTyres({ orgId, expenses, saveExpenses, showNotification, logA
       }
     }
 
-    const next = tyres().filter(t => t.id !== id);
+    const next = tyres.filter(t => t.id !== id);
     saveTyres(next);
 
     logAction('Deleted', 'Tyre', tyreToDelete.tyreNo, `Removed tyre serial ${tyreToDelete.tyreNo} specification datasheet.`);
     showNotification(`Tyre archived.`);
   };
 
-  return { get tyres() { return tyres(); }, setTyres, get orgTyres() { return orgTyres(); }, saveTyres, addTyre, updateTyre, deleteTyre };
+  return { get tyres() { return tyres; }, setTyres, get orgTyres() { return orgTyres(); }, saveTyres, addTyre, updateTyre, deleteTyre };
 }

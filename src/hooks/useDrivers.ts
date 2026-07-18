@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { Driver, TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateDrivers } from '../lib/migrations';
 import { getDriverDiff } from '../utils/diffUtils';
@@ -14,7 +15,7 @@ interface UseDriversParams {
 }
 
 export function useDrivers({ orgId, trips, showNotification, logAction, currentUserId }: UseDriversParams) {
-  const [drivers, setDrivers] = createSignal<Driver[]>((() => {
+  const [drivers, setDrivers] = createStore<Driver[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_drivers');
       return stored ? migrateDrivers(JSON.parse(stored)) : [];
@@ -27,24 +28,24 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
   createEffect(() => {
     db.drivers.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setDrivers(cached);
+        setDrivers(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = drivers();
+    const list = [...drivers];
     db.drivers.clear().then(() => db.drivers.bulkPut(list));
   });
 
   const saveDrivers = (newDrivers: Driver[]) => {
-    setDrivers(newDrivers);
+    setDrivers(reconcile(newDrivers));
     localStorage.setItem('ttt_drivers', JSON.stringify(newDrivers));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgDrivers = createMemo(() => (orgId === 'org_backend' ? drivers() : drivers().filter(d => d.organizationId === orgId)).filter(d => !d.deletedAt));
+  const orgDrivers = createMemo(() => (orgId === 'org_backend' ? drivers : drivers.filter(d => d.organizationId === orgId)).filter(d => !d.deletedAt));
   const addDriver = async (driverInput: Omit<Driver, 'id'>) => {
     const isDup = orgDrivers().some(d => d.driverName.toUpperCase().trim() === driverInput.driverName.toUpperCase().trim());
     if (isDup) {
@@ -69,13 +70,13 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       }
     }
 
-    saveDrivers([...drivers(), d]);
+    saveDrivers([...drivers, d]);
     logAction('Created', 'Driver', d.driverName, `Added operator driver ${d.driverName} (License: ${d.licenseNo || 'N/A'})`);
     showNotification(`Driver ${d.driverName} added successfully.`);
   };
 
   const updateDriver = async (updated: Driver) => {
-    const oldDriver = drivers().find(d => d.id === updated.id);
+    const oldDriver = drivers.find(d => d.id === updated.id);
     const merged: Driver = oldDriver
       ? mutateRecord(oldDriver, updated, currentUserId)
       : createRecord<Driver>({ ...updated, organizationId: orgId } as any, currentUserId);
@@ -98,7 +99,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       }
     }
 
-    const next = drivers().map(d => d.id === updated.id ? merged : d);
+    const next = drivers.map(d => d.id === updated.id ? merged : d);
     saveDrivers(next);
 
     const diff = oldDriver ? getDriverDiff(oldDriver, merged) : `Updated driver specs or active status to ${merged.status}`;
@@ -109,7 +110,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
   };
 
   const deleteDriver = async (id: string) => {
-    const dr = drivers().find(d => d.id === id);
+    const dr = drivers.find(d => d.id === id);
     const orgTrips = orgId === 'org_backend' ? trips() : trips().filter(t => t.organizationId === orgId);
     const inUse = orgTrips.some(tr => tr.driverName === dr?.driverName);
     if (inUse) {
@@ -136,7 +137,7 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
       }
     }
 
-    const next = drivers().map(d => d.id === id ? updatedDriver : d);
+    const next = drivers.map(d => d.id === id ? updatedDriver : d);
     saveDrivers(next);
 
     if (dr) {
@@ -145,5 +146,5 @@ export function useDrivers({ orgId, trips, showNotification, logAction, currentU
     showNotification(`Driver deleted from records.`);
   };
 
-  return { get drivers() { return drivers(); }, setDrivers, get orgDrivers() { return orgDrivers(); }, saveDrivers, addDriver, updateDriver, deleteDriver };
+  return { get drivers() { return drivers; }, setDrivers, get orgDrivers() { return orgDrivers(); }, saveDrivers, addDriver, updateDriver, deleteDriver };
 }

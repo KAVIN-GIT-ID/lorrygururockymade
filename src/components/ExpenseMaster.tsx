@@ -1,4 +1,13 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 
 import { ExpenseEntry, Truck, Account, Driver, OrganizationProfile } from '../types';
 import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings } from 'lucide-solid';
@@ -20,24 +29,52 @@ interface ExpenseMasterProps {
   autoOpenAdd?: boolean;
   onAutoOpenCleared?: () => void;
   orgProfile?: OrganizationProfile;
+  confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
 }
 
-export default function ExpenseMaster({
-  expenses = [],
-  trucks = [],
-  accounts = [],
-  drivers = [],
-  onAddExpense,
-  onUpdateExpense,
-  onDeleteExpense,
-  canViewExpenses = true,
-  canEditExpenses = true,
-  canDeleteExpenses = true,
-  organizationId,
-  autoOpenAdd,
-  onAutoOpenCleared,
-  orgProfile,
-}: ExpenseMasterProps) {
+export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
+  const expenseCtx = useExpensesContext();
+  const trucksCtx = useTrucksContext();
+  const driversCtx = useDriversContext();
+  const permissionCtx = usePermissions();
+
+  const props = mergeProps(rawProps, {
+    get expenses() { return expenseCtx.orgExpenses(); },
+    get trucks() { return trucksCtx.orgTrucks(); },
+    get drivers() { return driversCtx.orgDrivers(); },
+    onAddExpense: expenseCtx.addExpense,
+    onUpdateExpense: expenseCtx.updateExpense,
+    onDeleteExpense: expenseCtx.deleteExpense,
+    confirmAction: rawProps.confirmAction,
+    get accounts() { return rawProps.accounts || []; },
+    autoOpenAdd: rawProps.autoOpenAdd,
+    onAutoOpenCleared: rawProps.onAutoOpenCleared,
+    orgProfile: rawProps.orgProfile,
+    
+    get canViewExpenses() { return permissionCtx.currentUserRights().canViewExpenses; },
+    get canEditExpenses() { return permissionCtx.currentUserRights().canEditExpenses; },
+    get canDeleteExpenses() { return permissionCtx.currentUserRights().canDeleteExpenses; },
+    get organizationId() { return permissionCtx.currentUserOrgId(); }
+  });
+  const {
+    expenses,
+    trucks,
+    drivers,
+    onAddExpense,
+    onUpdateExpense,
+    onDeleteExpense,
+    confirmAction,
+    canViewExpenses,
+    canEditExpenses,
+    canDeleteExpenses,
+    organizationId,
+    autoOpenAdd,
+    onAutoOpenCleared,
+    orgProfile,
+    accounts
+  } = props;
+
+
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showForm, setShowForm] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);

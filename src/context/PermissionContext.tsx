@@ -10,6 +10,7 @@ interface PermissionContextType {
   userRightsList: () => UserPermission[];
   setUserRightsList: (list: UserPermission[]) => void;
   currentUserRights: () => UserRights;
+  currentUserOrgId: () => string;
   permissionsMap: () => Map<string, UserPermission>;
   addPermission: (
     newPerm: Omit<UserPermission, 'id'>,
@@ -235,10 +236,13 @@ export function PermissionProvider(props: { children: any }) {
     }
   };
 
+  const currentUserOrgId = createMemo(() => currentUserRights()?.organizationId || '');
+
   const permValue: PermissionContextType = {
     userRightsList,
     setUserRightsList,
     currentUserRights,
+    currentUserOrgId,
     permissionsMap,
     addPermission,
     updatePermission,

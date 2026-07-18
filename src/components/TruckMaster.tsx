@@ -1,4 +1,13 @@
-import { createSignal, createEffect, onMount } from 'solid-js';
+import { createSignal, createEffect, onMount, mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 
 import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry } from '../types';
 import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark, Search, MoreVertical } from 'lucide-solid';
@@ -194,35 +203,70 @@ interface TruckMasterProps {
   onAutoOpenCleared?: () => void;
 }
 
-export default function TruckMaster({ 
-  trucks, 
-  trips = [], 
-  expenses = [], 
-  onAddTruck, 
-  onUpdateTruck, 
-  onDeleteTruck, 
-  confirmAction, 
-  canViewTrucks = true,
-  canEditTrucks = true,
-  canDeleteTrucks = true,
-  maxTrucksAllowed = 2,
-  onAddTruckRequest,
-  organizationId = '',
-  orgProfile,
-  onServiceDone,
-  accounts = [],
-  drivers = [],
-  onAddExpense,
-  canEditLoans = true,
-  canDeleteLoans = true,
-  canEditExpenses = true,
-  currentUserEmail = '',
-  currentUserName = '',
-  currentUserPhone = '',
-  onProcessTruckPayment,
-  autoOpenAdd,
-  onAutoOpenCleared,
-}: TruckMasterProps) {
+export default function TruckMaster(rawProps: TruckMasterProps) {
+  const tripsCtx = useTripsContext();
+  const trucksCtx = useTrucksContext();
+  const driversCtx = useDriversContext();
+  const expenseCtx = useExpensesContext();
+  const accountCtx = useAccountsContext();
+  const permissionCtx = usePermissions();
+  const authCtx = useAuth();
+
+  const props = mergeProps(rawProps, {
+    get trucks() { return trucksCtx.orgTrucks(); },
+    get trips() { return tripsCtx.orgTrips(); },
+    get expenses() { return expenseCtx.orgExpenses(); },
+    get accounts() { return accountCtx.orgAccounts(); },
+    get drivers() { return driversCtx.orgDrivers(); },
+    onAddTruck: trucksCtx.addTruck,
+    onUpdateTruck: trucksCtx.updateTruck,
+    onDeleteTruck: trucksCtx.deleteTruck,
+    onAddTruckRequest: trucksCtx.handleAddTruckRequest,
+    onProcessTruckPayment: trucksCtx.handleProcessTruckPayment,
+    onAddExpense: expenseCtx.addExpense,
+    
+    get canViewTrucks() { return permissionCtx.currentUserRights().canViewTrucks; },
+    get canEditTrucks() { return permissionCtx.currentUserRights().canEditTrucks; },
+    get canDeleteTrucks() { return permissionCtx.currentUserRights().canDeleteTrucks; },
+    get canEditLoans() { return permissionCtx.currentUserRights().canEditLoans !== false; },
+    get canDeleteLoans() { return permissionCtx.currentUserRights().canDeleteLoans !== false; },
+    get canEditExpenses() { return permissionCtx.currentUserRights().canEditExpenses !== false; },
+    get organizationId() { return permissionCtx.currentUserOrgId(); },
+    get currentUserEmail() { return authCtx.currentUser()?.email || ''; },
+    get currentUserName() { return authCtx.currentUser()?.name || ''; },
+    get currentUserPhone() { return authCtx.currentUser()?.phone || ''; }
+  });
+  const {
+    trucks,
+    trips,
+    expenses,
+    onAddTruck,
+    onUpdateTruck,
+    onDeleteTruck,
+    confirmAction,
+    canViewTrucks,
+    canEditTrucks,
+    canDeleteTrucks,
+    maxTrucksAllowed,
+    onAddTruckRequest,
+    organizationId,
+    orgProfile,
+    onServiceDone,
+    accounts,
+    drivers,
+    onAddExpense,
+    canEditLoans,
+    canDeleteLoans,
+    canEditExpenses,
+    currentUserEmail,
+    currentUserName,
+    currentUserPhone,
+    onProcessTruckPayment,
+    autoOpenAdd,
+    onAutoOpenCleared
+  } = props;
+
+
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);

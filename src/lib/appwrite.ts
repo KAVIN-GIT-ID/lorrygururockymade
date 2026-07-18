@@ -94,6 +94,17 @@ export function compressImageIfNeeded(file: File): Promise<File> {
   });
 }
 
+interface QueueItem {
+  id: string;
+  type: 'save' | 'delete' | 'save_global' | 'delete_global';
+  dbId: string;
+  collectionId?: string;
+  docId: string;
+  orgId?: string;
+  dataObj?: any;
+  timestamp: number;
+}
+
 class AppwriteService {
   private client: Client;
   private account: AppwriteAccount;
@@ -606,10 +617,10 @@ class AppwriteService {
   /**
    * Fetch all records for the active organization in a dynamic collection.
    */
-  async listFleetDocuments(dbId: string, collectionId: string, orgId: string): Promise<any[]> {
+  async listFleetDocuments(dbId: string, collectionId: string, orgId: string, extraQueries: string[] = []): Promise<any[]> {
     await this.initSession();
     try {
-      const queries = [];
+      const queries = [...extraQueries];
       if (orgId !== 'org_backend') {
         queries.push(Query.equal('organizationId', orgId));
       }
@@ -756,17 +767,47 @@ class AppwriteService {
   /**
    * Save a single document (upsert) to Appwrite Database via secure proxy.
    */
-  async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
-    const res = await this.proxyRequest('/api/database/save', { dbId, collectionId, docId, orgId, dataObj });
-    return res.docId;
+  async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any, bypassQueue = false): Promise<string> {
+    if (!bypassQueue && !this.isRealtimeConnected()) {
+      this.addToSyncQueue({ type: 'save', dbId, collectionId, docId, orgId, dataObj });
+      return docId;
+    }
+    try {
+      const res = await this.proxyRequest('/api/database/save', { dbId, collectionId, docId, orgId, dataObj });
+      return res.docId;
+    } catch (err: any) {
+      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
+        throw err;
+      }
+      if (!bypassQueue) {
+        this.addToSyncQueue({ type: 'save', dbId, collectionId, docId, orgId, dataObj });
+        return docId;
+      }
+      throw err;
+    }
   }
 
   /**
    * Delete a single document from Appwrite Database via secure proxy.
    */
-  async deleteFleetDocument(dbId: string, collectionId: string, docId: string): Promise<boolean> {
-    const res = await this.proxyRequest('/api/database/delete', { dbId, collectionId, docId });
-    return !!res.success;
+  async deleteFleetDocument(dbId: string, collectionId: string, docId: string, bypassQueue = false): Promise<boolean> {
+    if (!bypassQueue && !this.isRealtimeConnected()) {
+      this.addToSyncQueue({ type: 'delete', dbId, collectionId, docId });
+      return true;
+    }
+    try {
+      const res = await this.proxyRequest('/api/database/delete', { dbId, collectionId, docId });
+      return !!res.success;
+    } catch (err: any) {
+      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
+        throw err;
+      }
+      if (!bypassQueue) {
+        this.addToSyncQueue({ type: 'delete', dbId, collectionId, docId });
+        return true;
+      }
+      throw err;
+    }
   }
 
   getEmailDocId(email: string): string {
@@ -809,13 +850,28 @@ class AppwriteService {
   /**
    * Delete a global configuration document by key from Appwrite Database via secure proxy.
    */
-  async deleteGlobalConfig(dbId: string, key: string): Promise<boolean> {
-    const res = await this.proxyRequest('/api/database/delete', {
-      dbId,
-      collectionId: 'global_configs',
-      docId: key
-    });
-    return !!res.success;
+  async deleteGlobalConfig(dbId: string, key: string, bypassQueue = false): Promise<boolean> {
+    if (!bypassQueue && !this.isRealtimeConnected()) {
+      this.addToSyncQueue({ type: 'delete_global', dbId, docId: key });
+      return true;
+    }
+    try {
+      const res = await this.proxyRequest('/api/database/delete', {
+        dbId,
+        collectionId: 'global_configs',
+        docId: key
+      });
+      return !!res.success;
+    } catch (err: any) {
+      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
+        throw err;
+      }
+      if (!bypassQueue) {
+        this.addToSyncQueue({ type: 'delete_global', dbId, docId: key });
+        return true;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -841,15 +897,30 @@ class AppwriteService {
   /**
    * Save a global configuration document by key to Appwrite Database via secure proxy.
    */
-  async saveGlobalConfig(dbId: string, key: string, payload: any): Promise<string> {
-    const res = await this.proxyRequest('/api/database/save', {
-      dbId,
-      collectionId: 'global_configs',
-      docId: key,
-      orgId: payload.organizationId || 'global',
-      dataObj: payload
-    });
-    return res.docId;
+  async saveGlobalConfig(dbId: string, key: string, payload: any, bypassQueue = false): Promise<string> {
+    if (!bypassQueue && !this.isRealtimeConnected()) {
+      this.addToSyncQueue({ type: 'save_global', dbId, docId: key, dataObj: payload });
+      return key;
+    }
+    try {
+      const res = await this.proxyRequest('/api/database/save', {
+        dbId,
+        collectionId: 'global_configs',
+        docId: key,
+        orgId: payload.organizationId || 'global',
+        dataObj: payload
+      });
+      return res.docId;
+    } catch (err: any) {
+      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
+        throw err;
+      }
+      if (!bypassQueue) {
+        this.addToSyncQueue({ type: 'save_global', dbId, docId: key, dataObj: payload });
+        return key;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -1652,6 +1723,68 @@ class AppwriteService {
       throw err;
     }
   }
+
+
+  private getSyncQueue(): QueueItem[] {
+    try {
+      const stored = localStorage.getItem('ttt_offline_sync_queue');
+      return stored ? JSON.parse(stored) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  private saveSyncQueue(queue: QueueItem[]) {
+    localStorage.setItem('ttt_offline_sync_queue', JSON.stringify(queue));
+  }
+
+  addToSyncQueue(item: Omit<QueueItem, 'id' | 'timestamp'>) {
+    const queue = this.getSyncQueue();
+    const newItem: QueueItem = {
+      ...item,
+      id: Math.random().toString(36).substring(2, 11),
+      timestamp: Date.now()
+    };
+    queue.push(newItem);
+    this.saveSyncQueue(queue);
+    console.log('Appwrite offline queue: added item:', newItem);
+  }
+
+  async flushSyncQueue(showNotification?: (msg: string) => void): Promise<void> {
+    if (!this.isRealtimeConnected()) return;
+    const queue = this.getSyncQueue();
+    if (queue.length === 0) return;
+
+    console.log(`Appwrite queue: starting flush of ${queue.length} items...\n`);
+    const failed: QueueItem[] = [];
+
+    for (const item of queue) {
+      try {
+        if (item.type === 'save' && item.collectionId && item.orgId) {
+          await this.saveFleetDocument(item.dbId, item.collectionId, item.docId, item.orgId, item.dataObj, true);
+        } else if (item.type === 'delete' && item.collectionId) {
+          await this.deleteFleetDocument(item.dbId, item.collectionId, item.docId, true);
+        } else if (item.type === 'save_global') {
+          await this.saveGlobalConfig(item.dbId, item.docId, item.dataObj, true);
+        } else if (item.type === 'delete_global') {
+          await this.deleteGlobalConfig(item.dbId, item.docId, true);
+        }
+      } catch (err: any) {
+        console.warn(`Appwrite queue: failed to sync item ${item.id}, retaining in queue:`, err.message);
+        failed.push(item);
+      }
+    }
+
+    this.saveSyncQueue(failed);
+    const syncedCount = queue.length - failed.length;
+    if (syncedCount > 0) {
+      console.log(`Appwrite queue: successfully synced ${syncedCount} offline operations.`);
+      if (showNotification) {
+        showNotification(`Synced ${syncedCount} offline updates to cloud.`);
+      }
+    }
+  }
+
 }
 
 export const appwrite = new AppwriteService();

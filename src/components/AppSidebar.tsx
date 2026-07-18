@@ -40,40 +40,39 @@ interface AppSidebarProps {
   setProfileModalOpen: (open: boolean) => void;
 }
 
-export const AppSidebar: Component<AppSidebarProps> = ({
-  logo,
-  isMobileMenuOpen,
-  setIsMobileMenuOpen,
-  activeTab,
-  selectTab,
-  currentUserRights,
-  hasUsersTabAccess,
-  isBackendTeam,
-  getClientUnreadTicketsCount,
-  getAgentUnreadTicketsCount,
-  currentUser,
-  currentUserOrgId,
-  showNotification,
-  handleLogout,
-  setProfileActiveTab,
-  setProfileModalOpen
-}) => {
+export const AppSidebar: Component<AppSidebarProps> = (props) => {
+  const logo = () => props.logo;
+  const isMobileMenuOpen = () => props.isMobileMenuOpen;
+  const setIsMobileMenuOpen = props.setIsMobileMenuOpen;
+  const activeTab = () => props.activeTab;
+  const selectTab = props.selectTab;
+  const currentUserRights = () => props.currentUserRights;
+  const hasUsersTabAccess = () => props.hasUsersTabAccess;
+  const isBackendTeam = () => props.isBackendTeam;
+  const getClientUnreadTicketsCount = props.getClientUnreadTicketsCount;
+  const getAgentUnreadTicketsCount = props.getAgentUnreadTicketsCount;
+  const currentUser = () => props.currentUser;
+  const currentUserOrgId = () => props.currentUserOrgId;
+  const showNotification = props.showNotification;
+  const handleLogout = props.handleLogout;
+  const setProfileActiveTab = props.setProfileActiveTab;
+  const setProfileModalOpen = props.setProfileModalOpen;
   return (
     <aside class="w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
       {/* Header Panel (Logo & Mobile Toggle Button) */}
       <div class="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
         <div class="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
-          <img src={logo} alt="LorryGuru Logo" class="h-8 w-auto shrink-0" />
+          <img src={logo()} alt="LorryGuru Logo" class="h-8 w-auto shrink-0" />
           <span>LorryGuru</span>
         </div>
 
         {/* Mobile Menu Toggle Button */}
         <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen())}
           class="md:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
           aria-label="Toggle Navigation Menu"
         >
-          {isMobileMenuOpen ? (
+          {isMobileMenuOpen() ? (
             <X class="w-5 h-5" />
           ) : (
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,14 +83,14 @@ export const AppSidebar: Component<AppSidebarProps> = ({
       </div>
 
       {/* Collapsible Content Area */}
-      <div class={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-h-0 overflow-hidden`}>
+      <div class={`${isMobileMenuOpen() ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-h-0 overflow-hidden`}>
         {/* Navigation Items */}
         <div class="p-6 pt-4 md:p-6 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
           <nav class="space-y-1 flex-1 overflow-y-auto pr-1">
             <button
               id="tab-btn-dashboard"
               onClick={() => selectTab('DASHBOARD')}
-              class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
+              class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'DASHBOARD'
                 ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                 : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                 }`}
@@ -99,11 +98,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
               <BarChart3 class="w-4 h-4" />
               <span>Dashboard</span>
             </button>
-            {currentUserRights.canViewTrips && (
+            {currentUserRights()?.canViewTrips && (
               <button
                 id="tab-btn-trips"
                 onClick={() => selectTab('TRIPS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'TRIPS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -112,11 +111,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Trip Management</span>
               </button>
             )}
-            {currentUserRights.canViewTrucks && (
+            {currentUserRights()?.canViewTrucks && (
               <button
                 id="tab-btn-trucks"
                 onClick={() => selectTab('TRUCKS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'TRUCKS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -125,11 +124,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Truck Registry</span>
               </button>
             )}
-            {currentUserRights.canViewOffices && (
+            {currentUserRights()?.canViewOffices && (
               <button
                 id="tab-btn-offices"
                 onClick={() => selectTab('OFFICES')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'OFFICES'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -138,11 +137,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Offices</span>
               </button>
             )}
-            {currentUserRights.canViewAccounts && (
+            {currentUserRights()?.canViewAccounts && (
               <button
                 id="tab-btn-accounts"
                 onClick={() => selectTab('ACCOUNTS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'ACCOUNTS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -151,11 +150,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Account Ledger</span>
               </button>
             )}
-            {currentUserRights.canViewDrivers && (
+            {currentUserRights()?.canViewDrivers && (
               <button
                 id="tab-btn-drivers"
                 onClick={() => selectTab('DRIVERS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'DRIVERS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -164,11 +163,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Drivers Database</span>
               </button>
             )}
-            {currentUserRights.canViewExpenses && (
+            {currentUserRights()?.canViewExpenses && (
               <button
                 id="tab-btn-expenses"
                 onClick={() => selectTab('EXPENSES')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'EXPENSES'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -177,11 +176,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Expense Ledger</span>
               </button>
             )}
-            {(currentUserRights.isAdmin || currentUserRights.isSuperAdmin) && (
+            {(currentUserRights()?.isAdmin || currentUserRights()?.isSuperAdmin) && (
               <button
                 id="tab-btn-billing"
                 onClick={() => selectTab('BILLING')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BILLING'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'BILLING'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -190,11 +189,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Billing & Invoices</span>
               </button>
             )}
-            {currentUserRights.canViewTrips && (
+            {currentUserRights()?.canViewTrips && (
               <button
                 id="tab-btn-reports"
                 onClick={() => selectTab('REPORTS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'REPORTS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -203,11 +202,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Monthly Reports</span>
               </button>
             )}
-            {currentUserRights.isAdmin && (
+            {currentUserRights()?.isAdmin && (
               <button
                 id="tab-btn-audit"
                 onClick={() => selectTab('AUDIT')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'AUDIT'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -216,11 +215,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>System Audit Logs</span>
               </button>
             )}
-            {currentUserRights.canViewTyres && (
+            {currentUserRights()?.canViewTyres && (
               <button
                 id="tab-btn-tyres"
                 onClick={() => selectTab('TYRES')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'TYRES'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -229,11 +228,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 <span>Tyre Ledger & ODO</span>
               </button>
             )}
-            {hasUsersTabAccess && (
+            {hasUsersTabAccess() && (
               <button
                 id="tab-btn-users"
                 onClick={() => selectTab('USERS')}
-                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
+                class={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'USERS'
                   ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -243,7 +242,7 @@ export const AppSidebar: Component<AppSidebarProps> = ({
               </button>
             )}
 
-            {!isBackendTeam && (
+            {!isBackendTeam() && (
               <button
                 id="tab-btn-support-direct"
                 onClick={() => {
@@ -263,11 +262,11 @@ export const AppSidebar: Component<AppSidebarProps> = ({
                 )}
               </button>
             )}
-            {(currentUserRights.isSuperAdmin || currentUserOrgId === 'org_backend') && (
+            {(currentUserRights()?.isSuperAdmin || currentUserOrgId() === 'org_backend') && (
               <button
                 id="tab-btn-backend"
                 onClick={() => selectTab('BACKEND')}
-                class={`w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
+                class={`w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab() === 'BACKEND'
                   ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
                   : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
                   }`}
@@ -290,17 +289,17 @@ export const AppSidebar: Component<AppSidebarProps> = ({
         <div class="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-855 space-y-3 shrink-0">
           <div>
             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">Logged in as</div>
-            <div class="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser?.email || currentUser?.name || 'User'}>
+            <div class="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser()?.email || currentUser()?.name || 'User'}>
               <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-              <span class="truncate">{currentUser?.name || currentUser?.email || 'Logistics Admin'}</span>
+              <span class="truncate">{currentUser()?.name || currentUser()?.email || 'Logistics Admin'}</span>
             </div>
           </div>
-          {currentUserOrgId && (
+          {currentUserOrgId() && (
             <div class="flex items-center justify-between bg-slate-150 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
-              <span class="truncate font-semibold select-all" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
+              <span class="truncate font-semibold select-all" title={currentUserOrgId()}>Org: {currentUserOrgId()}</span>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(currentUserOrgId);
+                  navigator.clipboard.writeText(currentUserOrgId());
                   showNotification("Organization ID copied to clipboard!");
                 }}
                 class="text-slate-555 hover:text-slate-900 dark:hover:text-white transition-colors p-0.5 shrink-0 ml-1.5 cursor-pointer"

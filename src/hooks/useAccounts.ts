@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { Account, TripEntry } from '../types';
 import { migrateAccounts } from '../lib/migrations';
 import { getAccountDiff } from '../utils/diffUtils';
@@ -13,7 +14,7 @@ interface UseAccountsParams {
 }
 
 export function useAccounts({ orgId, trips, showNotification, logAction }: UseAccountsParams) {
-  const [accounts, setAccounts] = createSignal<Account[]>((() => {
+  const [accounts, setAccounts] = createStore<Account[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_accounts');
       return stored ? migrateAccounts(JSON.parse(stored)) : [];
@@ -26,24 +27,24 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
   createEffect(() => {
     db.accounts.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setAccounts(cached);
+        setAccounts(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = accounts();
+    const list = [...accounts];
     db.accounts.clear().then(() => db.accounts.bulkPut(list));
   });
 
   const saveAccounts = (newAccounts: Account[]) => {
-    setAccounts(newAccounts);
+    setAccounts(reconcile(newAccounts));
     localStorage.setItem('ttt_accounts', JSON.stringify(newAccounts));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgAccounts = createMemo(() => orgId === 'org_backend' ? accounts() : accounts().filter(a => a.organizationId === orgId));
+  const orgAccounts = createMemo(() => orgId === 'org_backend' ? accounts : accounts.filter(a => a.organizationId === orgId));
 
   const addAccount = async (accountInput: Omit<Account, 'id'>) => {
     const isDup = orgAccounts().some(a => a.accountName.toLowerCase().trim() === accountInput.accountName.toLowerCase().trim());
@@ -64,13 +65,13 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
       }
     }
 
-    saveAccounts([...accounts(), n]);
+    saveAccounts([...accounts, n]);
     logAction('Created', 'Account', n.accountName, `Opened account register for ${n.accountName} (Type: ${n.type})`);
     showNotification(`Account ledger ${n.accountName} registered.`);
   };
 
   const updateAccount = async (updated: Account) => {
-    const oldAccount = accounts().find(a => a.id === updated.id);
+    const oldAccount = accounts.find(a => a.id === updated.id);
     const merged: Account = oldAccount ? { ...oldAccount, ...updated } : updated;
 
     if (isAppwriteConfigured()) {
@@ -84,7 +85,7 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
       }
     }
 
-    const next = accounts().map(a => a.id === updated.id ? merged : a);
+    const next = accounts.map(a => a.id === updated.id ? merged : a);
     saveAccounts(next);
 
     const diff = oldAccount ? getAccountDiff(oldAccount, merged) : `Adjusted ledger account balances or info`;
@@ -95,7 +96,7 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
   };
 
   const deleteAccount = async (id: string) => {
-    const current = accounts().find(a => a.id === id);
+    const current = accounts.find(a => a.id === id);
     const orgTrips = orgId === 'org_backend' ? trips() : trips().filter(t => t.organizationId === orgId);
     const inUse = orgTrips.some(t =>
       t.payments?.some(p => p.receivedBy === id)
@@ -116,7 +117,7 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
       }
     }
 
-    const next = accounts().filter(a => a.id !== id);
+    const next = accounts.filter(a => a.id !== id);
     saveAccounts(next);
 
     if (current) {
@@ -125,5 +126,5 @@ export function useAccounts({ orgId, trips, showNotification, logAction }: UseAc
     showNotification(`Ledger account detached.`);
   };
 
-  return { get accounts() { return accounts(); }, setAccounts, get orgAccounts() { return orgAccounts(); }, saveAccounts, addAccount, updateAccount, deleteAccount };
+  return { get accounts() { return accounts; }, setAccounts, get orgAccounts() { return orgAccounts(); }, saveAccounts, addAccount, updateAccount, deleteAccount };
 }

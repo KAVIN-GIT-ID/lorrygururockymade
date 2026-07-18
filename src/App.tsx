@@ -8,61 +8,48 @@ import { useNavigate, useLocation } from '@solidjs/router';
 import ConnectionStatusBlocker from './components/ConnectionStatusBlocker';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PermissionProvider, usePermissions } from './context/PermissionContext';
+import { NotificationProvider } from './context/NotificationContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { TripProvider } from './context/TripContext';
+import { TruckProvider } from './context/TruckContext';
+import { DriverProvider } from './context/DriverContext';
+import { ExpenseProvider } from './context/ExpenseContext';
+import { OfficeProvider } from './context/OfficeContext';
+import { AccountProvider } from './context/AccountContext';
+import { TyreProvider } from './context/TyreContext';
+import { AuditLogProvider } from './context/AuditLogContext';
+import { useTripsContext } from './context/TripContext';
+import { useTrucksContext } from './context/TruckContext';
+import { useDriversContext } from './context/DriverContext';
+import { useExpensesContext } from './context/ExpenseContext';
+import { useOfficesContext } from './context/OfficeContext';
+import { useAccountsContext } from './context/AccountContext';
+import { useTyresContext } from './context/TyreContext';
 import { OrganizationProvider, useOrganizations } from './context/OrganizationContext';
-import { useNotifications } from './hooks/useNotifications';
+import { useNotifications } from './context/NotificationContext';
 import { useCountdown } from './hooks/useCountdown';
 import { migrationService } from './services/migrationService';
 import { organizationService } from './services/organizationService';
 import { cloudSyncService } from './services/cloudSyncService';
 
-const Dashboard = lazy(() => import('./components/Dashboard'));
-const TripList = lazy(() => import('./components/TripList'));
-const TripForm = lazy(() => import('./components/TripForm'));
-const TruckMaster = lazy(() => import('./components/TruckMaster'));
-const DriverMaster = lazy(() => import('./components/DriverMaster'));
-const OfficeMaster = lazy(() => import('./components/OfficeMaster'));
-const AccountMaster = lazy(() => import('./components/AccountMaster'));
-const ExpenseMaster = lazy(() => import('./components/ExpenseMaster'));
-const MonthlyReport = lazy(() => import('./components/MonthlyReport'));
-const AuditLogView = lazy(() => import('./components/AuditLogView'));
-const TyreMaster = lazy(() => import('./components/TyreMaster'));
-const UserAccessControl = lazy(() => import('./components/UserAccessControl'));
-const isMobileTarget = import.meta.env.VITE_BUILD_TARGET === 'mobile';
-const BackendDashboard = isMobileTarget
-  ? () => null
-  : lazy(() => import('./components/BackendDashboard'));
-const BillingHistory = lazy(() => import('./components/BillingHistory'));
-const VoiceAssistant = lazy(() => import('./components/VoiceAssistant'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
-
-import Setup2FAModal from './components/Setup2FAModal';
-import Disable2FAModal from './components/Disable2FAModal';
 
 import OrgDisabledScreen from './components/OrgDisabledScreen';
 import PendingApprovalScreen from './components/PendingApprovalScreen';
 import PasswordResetScreen from './components/PasswordResetScreen';
-import ConfirmModal from './components/ConfirmModal';
 import AppSidebar from './components/AppSidebar';
 import AppHeader from './components/AppHeader';
 import VerificationRequiredScreen from './components/VerificationRequiredScreen';
-import ProfileModal from './components/ProfileModal';
-import MobileChangeWizardModal from './components/MobileChangeWizardModal';
 import AppwriteCloudSync from './components/AppwriteCloudSync';
+import DesktopViewport from './components/DesktopViewport';
+import MobileViewport from './components/MobileViewport';
+import AppModals from './components/AppModals';
 const AppUpdateModal = lazy(() => import('./components/AppUpdateModal'));
-import MobileBottomTabBar from './components/MobileBottomTabBar';
-import MobileHomeTab from './components/MobileHomeTab';
-import MobileAccountTab from './components/MobileAccountTab';
-import MobileOutstandingView from './components/MobileOutstandingView';
+
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import versionData from './version.json';
 const APP_VERSION = versionData.version;
-import { useDrivers } from './hooks/useDrivers';
-import { useOffices } from './hooks/useOffices';
-import { useAccounts } from './hooks/useAccounts';
-import { useExpenses } from './hooks/useExpenses';
-import { useTyres } from './hooks/useTyres';
-import { useTrucks } from './hooks/useTrucks';
-import { useTrips } from './hooks/useTrips';
+
 import { useAuditLogs } from './hooks/useAuditLogs';
 import {
   migrateTripsIfNecessary,
@@ -77,22 +64,12 @@ import {
   migrateAuditLogs
 } from './lib/migrations';
 
-import { generateSecret } from './utils/totp';
+
 
 import {
   CheckCircle,
   AlertCircle,
   Loader,
-  Sun,
-  Moon,
-  Bell,
-  Plus,
-  Truck as TruckIcon,
-  UserPlus,
-  Wrench,
-  MapPin,
-  CreditCard,
-  Coins,
 } from 'lucide-solid';
 
 const LoadingTab = () => (
@@ -205,7 +182,27 @@ export default function App() {
     <AuthProvider>
       <PermissionProvider>
         <OrganizationProvider>
-          <AppContent />
+          <NotificationProvider>
+            <ThemeProvider>
+              <TripProvider>
+                <TruckProvider>
+                  <DriverProvider>
+                    <ExpenseProvider>
+                      <OfficeProvider>
+                        <AccountProvider>
+                          <TyreProvider>
+                            <AuditLogProvider>
+                              <AppContent />
+                            </AuditLogProvider>
+                          </TyreProvider>
+                        </AccountProvider>
+                      </OfficeProvider>
+                    </ExpenseProvider>
+                  </DriverProvider>
+                </TruckProvider>
+              </TripProvider>
+            </ThemeProvider>
+          </NotificationProvider>
         </OrganizationProvider>
       </PermissionProvider>
     </AuthProvider>
@@ -232,6 +229,42 @@ function AppContent(): any {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Retrieve global states/methods from Contexts
+  const perm = usePermissions();
+  const userRightsList = perm.userRightsList;
+  const setUserRightsList = perm.setUserRightsList;
+  const currentUserRights = perm.currentUserRights;
+  const handleAddPermission = perm.addPermission;
+  const handleUpdatePermission = perm.updatePermission;
+  const handleDeletePermission = perm.deletePermission;
+  const pushPermissionsToCloud = perm.pushPermissions;
+
+  const orgs = useOrganizations();
+  const organizationProfiles = orgs.organizationProfiles;
+  const setOrganizationProfiles = orgs.setOrganizationProfiles;
+  const saveOrganizationProfiles = orgs.saveProfiles;
+
+  const [profileModalOpen, setProfileModalOpen] = createSignal(false);
+  const [profileActiveTab, setProfileActiveTab] = createSignal<'SETTINGS' | 'SUPPORT'>('SETTINGS');
+  const [emailVerificationSuccess, setEmailVerificationSuccess] = createSignal(false);
+  const [emailVerificationError, setEmailVerificationError] = createSignal<string | null>(null);
+  const [profileDropdownOpen, setProfileDropdownOpen] = createSignal(false);
+
+  const notifications = useNotifications();
+  const toastMessage = () => notifications.toastMessage();
+  const showNotification = notifications.showNotification;
+  const notificationOpen = () => notifications.notificationOpen();
+  const setNotificationOpen = notifications.setNotificationOpen;
+  const lastReadNotificationTime = () => notifications.lastReadNotificationTime();
+  const updateLastReadNotificationTime = notifications.updateLastReadNotificationTime;
+  const notificationRef = () => notifications.notificationRef();
+  const setNotificationRef = notifications.setNotificationRef;
+
+  const [verificationOtpSent, setVerificationOtpSent] = createSignal(false);
+  const [whatsappOtpCode, setWhatsappOtpCode] = createSignal<string | null>(null);
+  const [whatsappOtpPhone, setWhatsappOtpPhone] = createSignal<string | null>(null);
+  const [showPhoneUpdateModal, setShowPhoneUpdateModal] = createSignal(false);
+
   const auth = useAuth();
   const currentUser = auth.currentUser;
   const setCurrentUser = auth.setCurrentUser;
@@ -245,43 +278,70 @@ function AppContent(): any {
   const setDisconnectReason = auth.setDisconnectReason;
   const reconcileUserSession = auth.reconcileUserSession;
 
-  const perm = usePermissions();
-  const userRightsList = perm.userRightsList;
-  const setUserRightsList = perm.setUserRightsList;
-  const currentUserRights = perm.currentUserRights;
-  const handleAddPermission = perm.addPermission;
-  const handleUpdatePermission = perm.updatePermission;
-  const handleDeletePermission = perm.deletePermission;
-  const pushPermissionsToCloud = perm.pushPermissions;
+  const tripsCtx = useTripsContext();
+  const trucksCtx = useTrucksContext();
+  const driversCtx = useDriversContext();
+  const expenseCtx = useExpensesContext();
+  const officeCtx = useOfficesContext();
+  const accountCtx = useAccountsContext();
+  const tyreCtx = useTyresContext();
 
-  if (import.meta.env.DEV) {
-    console.log("DEBUG RENDER AppContent currentUserRights:", currentUserRights());
-  }
+  const trips = createReactiveArrayWrapper(() => tripsCtx.trips);
+  const orgTrips = createReactiveArrayWrapper(() => tripsCtx.orgTrips());
 
-  const orgs = useOrganizations();
-  const organizationProfiles = orgs.organizationProfiles;
-  const setOrganizationProfiles = orgs.setOrganizationProfiles;
-  const saveOrganizationProfiles = orgs.saveProfiles;
+  const setTrips = tripsCtx.saveTrips;
+  const setTrucks = trucksCtx.saveTrucks;
+  const setDrivers = driversCtx.saveDrivers;
+  const setExpenses = expenseCtx.saveExpenses;
+  const setOffices = officeCtx.saveOffices;
+  const setAccounts = accountCtx.saveAccounts;
+  const setTyres = tyreCtx.saveTyres;
+  const saveTrips = tripsCtx.saveTrips;
+  const postTripEntry = tripsCtx.postTripEntry;
+  const deleteTripEntry = tripsCtx.deleteTripEntry;
 
-  const [profileModalOpen, setProfileModalOpen] = createSignal(false);
-  const [profileActiveTab, setProfileActiveTab] = createSignal<'SETTINGS' | 'SUPPORT'>('SETTINGS');
-  const [emailVerificationSuccess, setEmailVerificationSuccess] = createSignal(false);
-  const [emailVerificationError, setEmailVerificationError] = createSignal<string | null>(null);
-  const [profileDropdownOpen, setProfileDropdownOpen] = createSignal(false);
+  const accounts = createReactiveArrayWrapper(() => accountCtx.accounts);
+  const orgAccounts = createReactiveArrayWrapper(() => accountCtx.orgAccounts());
+  const saveAccounts = accountCtx.saveAccounts;
+  const addAccount = accountCtx.addAccount;
+  const updateAccount = accountCtx.updateAccount;
+  const deleteAccount = accountCtx.deleteAccount;
 
-  const notifications = useNotifications(() => currentUser()?.email || '');
-  const toastMessage = () => notifications.toastMessage;
-  const showNotification = notifications.showNotification;
-  const notificationOpen = () => notifications.notificationOpen;
-  const setNotificationOpen = notifications.setNotificationOpen;
-  const lastReadNotificationTime = () => notifications.lastReadNotificationTime;
-  const updateLastReadNotificationTime = notifications.updateLastReadNotificationTime;
-  const notificationRef = () => notifications.notificationRef;
-  const setNotificationRef = notifications.setNotificationRef;
-  const [verificationOtpSent, setVerificationOtpSent] = createSignal(false);
-  const [whatsappOtpCode, setWhatsappOtpCode] = createSignal<string | null>(null);
-  const [whatsappOtpPhone, setWhatsappOtpPhone] = createSignal<string | null>(null);
-  const [showPhoneUpdateModal, setShowPhoneUpdateModal] = createSignal(false);
+  const drivers = createReactiveArrayWrapper(() => driversCtx.drivers);
+  const orgDrivers = createReactiveArrayWrapper(() => driversCtx.orgDrivers());
+  const saveDrivers = driversCtx.saveDrivers;
+  const addDriver = driversCtx.addDriver;
+  const updateDriver = driversCtx.updateDriver;
+  const deleteDriver = driversCtx.deleteDriver;
+
+  const offices = createReactiveArrayWrapper(() => officeCtx.offices);
+  const orgOffices = createReactiveArrayWrapper(() => officeCtx.orgOffices());
+  const saveOffices = officeCtx.saveOffices;
+  const addOffice = officeCtx.addOffice;
+  const updateOffice = officeCtx.updateOffice;
+  const deleteOffice = officeCtx.deleteOffice;
+
+  const expenses = createReactiveArrayWrapper(() => expenseCtx.expenses);
+  const orgExpenses = createReactiveArrayWrapper(() => expenseCtx.orgExpenses());
+  const saveExpenses = expenseCtx.saveExpenses;
+  const addExpense = expenseCtx.addExpense;
+  const updateExpense = expenseCtx.updateExpense;
+  const deleteExpense = expenseCtx.deleteExpense;
+
+  const tyres = createReactiveArrayWrapper(() => tyreCtx.tyres);
+  const orgTyres = createReactiveArrayWrapper(() => tyreCtx.orgTyres());
+  const saveTyres = tyreCtx.saveTyres;
+  const addTyre = tyreCtx.addTyre;
+  const updateTyre = tyreCtx.updateTyre;
+  const deleteTyre = tyreCtx.deleteTyre;
+
+  const trucks = createReactiveArrayWrapper(() => trucksCtx.trucks);
+  const orgTrucks = createReactiveArrayWrapper(() => trucksCtx.orgTrucks());
+  const saveTrucks = trucksCtx.saveTrucks;
+  const addTruck = trucksCtx.addTruck;
+  const updateTruck = trucksCtx.updateTruck;
+  const deleteTruck = trucksCtx.deleteTruck;
+
   const emailTimerHook = useCountdown(0);
   const phoneTimerHook = useCountdown(0);
   const mobileWizardTimerHook = useCountdown(0);
@@ -540,7 +600,7 @@ function AppContent(): any {
     try {
       showNotification("Verifying PhonePe payment status...");
       const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
-      
+
       const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
       const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
       const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
@@ -1132,14 +1192,14 @@ function AppContent(): any {
       if (currentUserRights().isAdmin && currentOrgId) {
         const nextProfiles = organizationProfiles().map(p =>
           p.organizationId === currentOrgId
-            ? { 
-                ...p, 
-                organizationName: newOrgName && newOrgName.trim() ? newOrgName.trim() : p.organizationName,
-                gstNo: profileGst().trim(),
-                panNo: profilePan().trim(),
-                aadhaarNo: profileAadhaar().trim(),
-                address: profileAddress().trim()
-              }
+            ? {
+              ...p,
+              organizationName: newOrgName && newOrgName.trim() ? newOrgName.trim() : p.organizationName,
+              gstNo: profileGst().trim(),
+              panNo: profilePan().trim(),
+              aadhaarNo: profileAadhaar().trim(),
+              address: profileAddress().trim()
+            }
             : p
         );
         await saveOrganizationProfiles(nextProfiles);
@@ -1167,8 +1227,8 @@ function AppContent(): any {
     await saveOrganizationProfiles(nextProfiles);
   };
 
-  const currentUserOrgId = currentUserRights()?.organizationId || '';
-  const hasUsersTabAccess = currentUserOrgId === 'org_backend' ? !!currentUserRights().canViewBackendTeam : !!currentUserRights().isAdmin;
+  const currentUserOrgId = createMemo(() => currentUserRights()?.organizationId || '');
+  const hasUsersTabAccess = createMemo(() => currentUserOrgId() === 'org_backend' ? !!currentUserRights().canViewBackendTeam : !!currentUserRights().isAdmin);
 
 
 
@@ -1188,9 +1248,9 @@ function AppContent(): any {
 
   // Fetch live Appwrite memberships whenever admin opens the USERS panel
   createEffect(() => {
-    if (activeTab() === 'USERS' && hasUsersTabAccess && currentUserOrgId && isAppwriteConfigured()) {
+    if (activeTab() === 'USERS' && hasUsersTabAccess() && currentUserOrgId() && isAppwriteConfigured()) {
       setLoadingTeamMembers(true);
-      appwrite.getTeamMemberships(currentUserOrgId)
+      appwrite.getTeamMemberships(currentUserOrgId())
         .then(members => setTeamMembers(members))
         .catch(err => console.warn('Could not fetch team memberships:', err))
         .finally(() => setLoadingTeamMembers(false));
@@ -1199,9 +1259,9 @@ function AppContent(): any {
 
   // Redirect non-admin/unauthorized users away from restricted tabs
   createEffect(() => {
-    const isBackendUser = !!(currentUserRights().isSuperAdmin || currentUserOrgId === 'org_backend');
+    const isBackendUser = !!(currentUserRights().isSuperAdmin || currentUserOrgId() === 'org_backend');
     const fallbackTab = isBackendUser ? 'BACKEND' : 'DASHBOARD';
-    if (activeTab() === 'USERS' && !hasUsersTabAccess) {
+    if (activeTab() === 'USERS' && !hasUsersTabAccess()) {
       setActiveTab(fallbackTab);
     } else if (activeTab() === 'BACKEND' && !isBackendUser) {
       setActiveTab(fallbackTab);
@@ -1225,17 +1285,17 @@ function AppContent(): any {
       setActiveTab(fallbackTab);
     } else if (activeTab() === 'TYRES' && !currentUserRights().canViewTyres) {
       setActiveTab(fallbackTab);
-    } else if (activeTab() === 'BILLING' && !(currentUserRights().isAdmin || currentUserRights().isSuperAdmin || currentUserOrgId === 'org_backend')) {
+    } else if (activeTab() === 'BILLING' && !(currentUserRights().isAdmin || currentUserRights().isSuperAdmin || currentUserOrgId() === 'org_backend')) {
       setActiveTab(fallbackTab);
     }
   });
   // Custom hooks managing operational states
   const auditLogsHook = useAuditLogs({
     currentUser: currentUser(),
-    currentUserOrgId,
+    currentUserOrgId: currentUserOrgId(),
     showNotification
   });
-  const auditLogs = createReactiveArrayWrapper<any>(() => auditLogsHook.auditLogs());
+  const auditLogs = createReactiveArrayWrapper<any>(() => auditLogsHook.auditLogs);
   const setAuditLogs = auditLogsHook.setAuditLogs;
   const logAction = auditLogsHook.logAction;
   const handleClearAuditLogs = auditLogsHook.handleClearAuditLogs;
@@ -1324,7 +1384,7 @@ function AppContent(): any {
     setRegistrySubTab(tabId);
     setAutoOpenFormTab(tabId);
     setFabOpened(false);
-    
+
     // Fallback/Legacy button click timeout (runs concurrently for safety)
     setTimeout(() => {
       let btnId = '';
@@ -1348,7 +1408,7 @@ function AppContent(): any {
         btnId = 'btn-add-account';
         formQuery = '#account-form';
       }
-      
+
       if (btnId) {
         const formExists = formQuery ? !!document.querySelector(formQuery) : false;
         if (!formExists) {
@@ -1373,7 +1433,7 @@ function AppContent(): any {
 
   const handleTouchEnd = (e: TouchEvent) => {
     if (touchStartXRef === null || touchStartYRef === null) return;
-    
+
     // Bypass swipe gestures on reports and outstanding subtabs to prevent scroll conflict
     if (registrySubTab() === 'REPORTS' || registrySubTab() === 'OUTSTANDING') {
       touchStartXRef = null;
@@ -1383,7 +1443,7 @@ function AppContent(): any {
 
     const diffX = e.changedTouches[0].clientX - touchStartXRef;
     const diffY = e.changedTouches[0].clientY - touchStartYRef;
-    
+
     if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
       const tabs = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
       const currentIdx = tabs.indexOf(registrySubTab());
@@ -1480,7 +1540,7 @@ function AppContent(): any {
         setShowPhoneUpdateModal(false);
         closedSomething = true;
       }
-      
+
       if (closedSomething) {
         e.preventDefault(); // Stop default action (don't exit app or navigate back)
       }
@@ -1612,7 +1672,7 @@ function AppContent(): any {
 
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      
+
       if (changedTickets.length > 0) {
         changedTickets.forEach(async (t) => {
           try {
@@ -1638,7 +1698,7 @@ function AppContent(): any {
   const handleInitiateRefund = async (orgId: string, truckNo: string, paymentRecord: any) => {
     try {
       showNotification("Initiating refund via PhonePe gateway...");
-      
+
       const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
       const response = await fetch(`${serverUrl}/api/payment/refund`, {
         method: 'POST',
@@ -1796,7 +1856,7 @@ function AppContent(): any {
     const newTicket = createRecord<SupportTicket>({
       id: ticketId,
       ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
-      organizationId: currentUserOrgId || '',
+      organizationId: currentUserOrgId() || '',
       requesterName: currentUser()?.name || currentUser()?.email || 'Unknown User',
       requesterEmail: currentUser()?.email || '',
       requesterPhone: currentUserRights()?.phone || '',
@@ -1815,7 +1875,7 @@ function AppContent(): any {
   };
 
   const getClientUnreadTicketsCount = () => {
-    const myTickets = supportTickets().filter(st => currentUserOrgId === 'org_backend' || st.organizationId === currentUserOrgId);
+    const myTickets = supportTickets().filter(st => currentUserOrgId() === 'org_backend' || st.organizationId === currentUserOrgId());
     let totalUnread = 0;
     myTickets.forEach(t => {
       if (t.status === 'Closed') return;
@@ -1893,7 +1953,7 @@ function AppContent(): any {
     }
 
     const myRights = userRightsList().find(u => u.email === currentUser()?.email);
-    const isSupportAgent = currentUserOrgId === 'org_backend' || myRights?.role === 'SuperAdmin';
+    const isSupportAgent = currentUserOrgId() === 'org_backend' || myRights?.role === 'SuperAdmin';
 
     const newMessage = {
       id: `msg-${Date.now()}`,
@@ -1923,124 +1983,12 @@ function AppContent(): any {
 
   const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
 
-
-  const tripsHook = useTrips({
-    orgId: currentUserOrgId,
-    showNotification,
-    logAction,
-    loadDashboardData,
-    activeMonth: activeMonth(),
-    activeYear: activeYear(),
-    currentUserId
-  });
-  const trips = createReactiveArrayWrapper(() => tripsHook.trips);
-  const setTrips = tripsHook.setTrips;
-  const orgTrips = createReactiveArrayWrapper(() => tripsHook.orgTrips);
-  const saveTrips = tripsHook.saveTrips;
-  const postTripEntry = tripsHook.postTripEntry;
-  const deleteTripEntry = tripsHook.deleteTripEntry;
-
-  const accountsHook = useAccounts({
-    orgId: currentUserOrgId,
-    trips: () => tripsHook.trips,
-    showNotification,
-    logAction
-  });
-  const accounts = createReactiveArrayWrapper(() => accountsHook.accounts);
-  const setAccounts = accountsHook.setAccounts;
-  const orgAccounts = createReactiveArrayWrapper(() => accountsHook.orgAccounts);
-  const saveAccounts = accountsHook.saveAccounts;
-  const addAccount = accountsHook.addAccount;
-  const updateAccount = accountsHook.updateAccount;
-  const deleteAccount = accountsHook.deleteAccount;
-
-  const driversHook = useDrivers({
-    orgId: currentUserOrgId,
-    trips: () => tripsHook.trips,
-    showNotification,
-    logAction,
-    currentUserId
-  });
-  const drivers = createReactiveArrayWrapper(() => driversHook.drivers);
-  const setDrivers = driversHook.setDrivers;
-  const orgDrivers = createReactiveArrayWrapper(() => driversHook.orgDrivers);
-  const saveDrivers = driversHook.saveDrivers;
-  const addDriver = driversHook.addDriver;
-  const updateDriver = driversHook.updateDriver;
-  const deleteDriver = driversHook.deleteDriver;
-
-  const officesHook = useOffices({
-    orgId: currentUserOrgId,
-    trips: () => tripsHook.trips,
-    showNotification,
-    logAction
-  });
-  const offices = createReactiveArrayWrapper(() => officesHook.offices);
-  const setOffices = officesHook.setOffices;
-  const orgOffices = createReactiveArrayWrapper(() => officesHook.orgOffices);
-  const saveOffices = officesHook.saveOffices;
-  const addOffice = officesHook.addOffice;
-  const updateOffice = officesHook.updateOffice;
-  const deleteOffice = officesHook.deleteOffice;
-
-  const expensesHook = useExpenses({
-    orgId: currentUserOrgId,
-    showNotification,
-    logAction,
-    loadDashboardData,
-    activeMonth: activeMonth(),
-    activeYear: activeYear(),
-    currentUserId
-  });
-  const expenses = createReactiveArrayWrapper(() => expensesHook.expenses);
-  const setExpenses = expensesHook.setExpenses;
-  const orgExpenses = createReactiveArrayWrapper(() => expensesHook.orgExpenses);
-  const saveExpenses = expensesHook.saveExpenses;
-  const addExpense = expensesHook.addExpense;
-  const updateExpense = expensesHook.updateExpense;
-  const deleteExpense = expensesHook.deleteExpense;
-
-  const tyresHook = useTyres({
-    orgId: currentUserOrgId,
-    expenses: () => expensesHook.expenses,
-    saveExpenses,
-    showNotification,
-    logAction,
-    loadDashboardData,
-    activeMonth: activeMonth(),
-    activeYear: activeYear()
-  });
-  const tyres = createReactiveArrayWrapper(() => tyresHook.tyres);
-  const setTyres = tyresHook.setTyres;
-  const orgTyres = createReactiveArrayWrapper(() => tyresHook.orgTyres);
-  const saveTyres = tyresHook.saveTyres;
-  const addTyre = tyresHook.addTyre;
-  const updateTyre = tyresHook.updateTyre;
-  const deleteTyre = tyresHook.deleteTyre;
-
-  const trucksHook = useTrucks({
-    orgId: currentUserOrgId,
-    trips: () => tripsHook.trips,
-    organizationProfiles: organizationProfiles(),
-    saveOrganizationProfiles,
-    showNotification,
-    logAction,
-    pushFleetSnapshotNow,
-    currentUserId
-  });
-  const trucks = createReactiveArrayWrapper(() => trucksHook.trucks);
-  const setTrucks = trucksHook.setTrucks;
-  const orgTrucks = createReactiveArrayWrapper(() => trucksHook.orgTrucks);
-  const saveTrucks = trucksHook.saveTrucks;
-  const addTruck = trucksHook.addTruck;
-  const updateTruck = trucksHook.updateTruck;
-  const deleteTruck = trucksHook.deleteTruck;
   const [dashboardTrips, setDashboardTrips] = createSignal<TripEntry[]>([]);
   const [dashboardExpenses, setDashboardExpenses] = createSignal<ExpenseEntry[]>([]);
 
   async function loadDashboardData(month: string, year: string) {
-    const orgId = currentUserOrgId || 'org_default';
-    
+    const orgId = currentUserOrgId() || 'org_default';
+
     // Filter by organization and ensure deleted records are excluded
     const activeTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
       .filter(t => !t.deletedAt);
@@ -2129,7 +2077,7 @@ function AppContent(): any {
     return auditLogs
       .filter(l => {
         const currentUserEmail = (currentUser()?.email || '').toLowerCase().trim();
-        if (currentUserOrgId === 'org_backend') {
+        if (currentUserOrgId() === 'org_backend') {
           const cat = (l.category || '').toLowerCase();
           if (cat.includes('password')) {
             return (l.reference || '').toLowerCase().trim() === currentUserEmail;
@@ -2142,7 +2090,7 @@ function AppContent(): any {
           return isBackendUserAction || isIncomingTruckRequest || isTruckApproveOrReject;
         }
 
-        return l.organizationId === currentUserOrgId && canUserViewCategory(l.category, l.reference, l.details);
+        return l.organizationId === currentUserOrgId() && canUserViewCategory(l.category, l.reference, l.details);
       })
       .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
   });
@@ -2187,7 +2135,7 @@ function AppContent(): any {
 
 
   function touchLastModified() {
-    if (currentUserOrgId !== 'org_backend') {
+    if (currentUserOrgId() !== 'org_backend') {
       localStorage.setItem('ttt_last_modified_at', Date.now().toString());
     }
     sessionStorage.setItem('ttt_recent_action_at', Date.now().toString());
@@ -2250,11 +2198,11 @@ function AppContent(): any {
         const isSurplus = adv.notes?.includes('Excess amount/surplus');
         const matchingNotes = isDest
           ? (isSurplus
-              ? `Excess amount/surplus carried forward to ${t.tripNo}`
-              : `Negative balance carried forward to ${t.tripNo}`)
+            ? `Excess amount/surplus carried forward to ${t.tripNo}`
+            : `Negative balance carried forward to ${t.tripNo}`)
           : (isSurplus
-              ? `Excess amount/surplus carried forward from ${t.tripNo}`
-              : `Negative balance carried forward from ${t.tripNo}`);
+            ? `Excess amount/surplus carried forward from ${t.tripNo}`
+            : `Negative balance carried forward from ${t.tripNo}`);
 
         const hasMatching = (targetTrip.advances || []).some(x => {
           const isMatchingFwd = isDest ? x.id.startsWith('fwd_out_') : x.id.startsWith('fwd_in_');
@@ -2309,7 +2257,8 @@ function AppContent(): any {
         expenses,
         tyres,
         auditLogs,
-        supportTickets: supportTickets(), userRightsList: userRightsList(), organizationProfiles: organizationProfiles()}
+        supportTickets: supportTickets(), userRightsList: userRightsList(), organizationProfiles: organizationProfiles()
+      }
     );
 
     if (!result) return false;
@@ -2674,7 +2623,7 @@ function AppContent(): any {
       newTruckObj = createRecord<Truck>({
         ...truckPayload,
         id: targetTruckId,
-        organizationId: currentUserOrgId,
+        organizationId: currentUserOrgId(),
         isApproved: false,
         requestStatus: 'Rejected' as const,
         status: 'Inactive' as const,
@@ -2741,7 +2690,7 @@ function AppContent(): any {
       newTruckObj = createRecord<Truck>({
         ...truckPayload,
         id: targetTruckId,
-        organizationId: currentUserOrgId,
+        organizationId: currentUserOrgId(),
         isApproved: true,
         requestStatus: 'Approved' as const,
         status: 'Active' as const,
@@ -2768,7 +2717,7 @@ function AppContent(): any {
     };
 
     const nextProfiles = organizationProfiles().map(p => {
-      if (p.organizationId === currentUserOrgId) {
+      if (p.organizationId === currentUserOrgId()) {
         const cleanedRequests = (p.truckRequests || []).filter(
           r => r.truckNo.toUpperCase() !== truckPayload.truckNo.toUpperCase()
         );
@@ -2798,13 +2747,13 @@ function AppContent(): any {
     });
 
     if (!matchedAccount) {
-      matchedAccount = activeAccounts.find(a => 
+      matchedAccount = activeAccounts.find(a =>
         paymentDetails.paymentMethod === 'upi' ? a.type === 'Digital Wallets' : a.type === 'Bank'
       ) || activeAccounts[0];
     }
 
-    const paymentModeName = matchedAccount 
-      ? matchedAccount.accountName 
+    const paymentModeName = matchedAccount
+      ? matchedAccount.accountName
       : (paymentDetails.paymentMethod === 'upi' ? 'Digital Wallets' : 'Bank');
 
     // Auto-register expense
@@ -2825,7 +2774,7 @@ function AppContent(): any {
 
     const paymentRecord = {
       id: 'pay_' + Date.now(),
-      organizationId: currentUserOrgId,
+      organizationId: currentUserOrgId(),
       truckNo: truckPayload.truckNo.toUpperCase(),
       amount: paymentDetails.amount,
       transactionId: paymentDetails.transactionId,
@@ -2849,7 +2798,7 @@ function AppContent(): any {
           'fleet_db',
           'payments',
           paymentRecord.id,
-          currentUserOrgId,
+          currentUserOrgId(),
           paymentRecord
         );
       } catch (err) {
@@ -2935,488 +2884,488 @@ function AppContent(): any {
     return untrack(() => {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
-    const reloadBackendData = async () => {
-      try {
-        const orgFleetData: { [orgId: string]: any } = {};
-        let userRightsData: any = null;
-
-        const categories: { key: string; collection: string }[] = [
-          { key: 'trucks', collection: 'trucks' },
-          { key: 'drivers', collection: 'drivers' },
-          { key: 'offices', collection: 'offices' },
-          { key: 'accounts', collection: 'accounts' },
-          { key: 'trips', collection: 'trips' },
-          { key: 'expenses', collection: 'expenses' },
-          { key: 'tyres', collection: 'tyres' },
-          { key: 'auditLogs', collection: 'audit_logs' },
-          { key: 'supportTickets', collection: 'support_tickets' }
-        ];
-
-        const fetchPromises = categories.map(async (cat) => {
-          try {
-            const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, 'org_backend');
-            for (const doc of docs) {
-              const orgId = doc.organizationId;
-              if (!orgId || orgId === 'global' || orgId === 'org_backend') continue;
-
-              if (!orgFleetData[orgId]) {
-                orgFleetData[orgId] = {
-                  trucks: [],
-                  drivers: [],
-                  offices: [],
-                  accounts: [],
-                  trips: [],
-                  expenses: [],
-                  tyres: [],
-                  auditLogs: [],
-                  supportTickets: []
-                };
-              }
-
-              const record = appwrite.reconstructRecord(doc);
-              if (record) {
-                orgFleetData[orgId][cat.key].push(record);
-              }
-            }
-          } catch (catErr: any) {
-            console.warn(`Failed to fetch backend documents for ${cat.collection}:`, catErr.message);
-          }
-        });
-
-        const loadRightsPromise = (async () => {
-          try {
-            userRightsData = await organizationService.fetchAllGlobalConfigs(databaseId);
-          } catch (e) {
-            console.warn('Failed to load global rights config for backend reload:', e);
-          }
-        })();
-
-        await Promise.all([...fetchPromises, loadRightsPromise]);
-
-        // 1. Update user rights & organization profiles
-        if (userRightsData) {
-          if (userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)) {
-            const cloudRights = migrateUserPermissions(userRightsData.userRightsList);
-            setUserRightsList(cloudRights);
-            localStorage.setItem('ttt_user_rights', JSON.stringify(cloudRights));
-          }
-          if (userRightsData.organizationProfiles && Array.isArray(userRightsData.organizationProfiles)) {
-            setOrganizationProfiles(userRightsData.organizationProfiles);
-            localStorage.setItem('ttt_organization_profiles', JSON.stringify(userRightsData.organizationProfiles));
-          }
-          if (userRightsData.appUpdateConfig) {
-            setAppUpdateConfig(userRightsData.appUpdateConfig);
-            localStorage.setItem('ttt_app_update_config', JSON.stringify(userRightsData.appUpdateConfig));
-          }
-        }
-
-        // 2. Update states
-        const currentProfiles = userRightsData?.organizationProfiles || organizationProfiles();
-
-        // Self-healing: Automatically clean up orphaned requests from user_rights_snapshot when a vehicle is deleted
-        let profilesChanged = false;
-        const cleanedProfiles = currentProfiles.map(profile => {
-          if (profile.organizationId === 'org_backend') return profile;
-
-          const orgData = orgFleetData[profile.organizationId];
-          if (!orgData) return profile;
-
-          const orgTrucksCloud = orgData.trucks || [];
-          const currentRequests = profile.truckRequests || [];
-
-          const nextRequests = currentRequests.filter(req => {
-            const truckExists = orgTrucksCloud.some(
-              (t: any) => t.truckNo.toUpperCase() === req.truckNo.toUpperCase()
-            );
-            if (truckExists) return true;
-
-            // Grace period: do not delete newly created requests (less than 60 seconds old)
-            // to allow asynchronous DB writes and replication to complete.
-            const reqTimestampMatch = req.id.match(/^req_(\d+)/);
-            const isNewRequest = reqTimestampMatch
-              ? (Date.now() - Number(reqTimestampMatch[1]) < 60000)
-              : false;
-
-            if (isNewRequest) {
-              return true;
-            }
-
-            if (req.status === 'Pending' || req.status === 'Rejected') {
-              console.info(`Self-Healing: Removing orphaned ${req.status} request for truck ${req.truckNo} in org ${profile.organizationId} because the vehicle registry record was deleted.`);
-              profilesChanged = true;
-              return false;
-            }
-            return true;
-          });
-
-          if (nextRequests.length !== currentRequests.length) {
-            return {
-              ...profile,
-              truckRequests: nextRequests
-            };
-          }
-          return profile;
-        });
-
-        if (profilesChanged) {
-          await saveOrganizationProfiles(cleanedProfiles);
-        }
-
-        batch(() => {
-          setTrucks(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.trucks && Array.isArray(orgData.trucks)) {
-                updated = [
-                  ...updated.filter(t => t.organizationId !== orgId),
-                  ...migrateTrucks(orgData.trucks).map(t => ({ ...t, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_trucks', JSON.stringify(updated));
-            return updated;
-          });
-
-          setTrips(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.trips && Array.isArray(orgData.trips)) {
-                updated = [
-                  ...updated.filter(t => t.organizationId !== orgId),
-                  ...migrateTrips(migrateTripsIfNecessary(orgData.trips)).map(t => ({ ...t, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_trips', JSON.stringify(updated));
-            return updated;
-          });
-
-          setDrivers(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.drivers && Array.isArray(orgData.drivers)) {
-                updated = [
-                  ...updated.filter(d => d.organizationId !== orgId),
-                  ...migrateDrivers(orgData.drivers).map(d => ({ ...d, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_drivers', JSON.stringify(updated));
-            return updated;
-          });
-
-          setOffices(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.offices && Array.isArray(orgData.offices)) {
-                updated = [
-                  ...updated.filter(o => o.organizationId !== orgId),
-                  ...migrateOffices(orgData.offices).map(o => ({ ...o, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_offices', JSON.stringify(updated));
-            return updated;
-          });
-
-          setAccounts(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.accounts && Array.isArray(orgData.accounts)) {
-                updated = [
-                  ...updated.filter(a => a.organizationId !== orgId),
-                  ...migrateAccounts(orgData.accounts).map(a => ({ ...a, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_accounts', JSON.stringify(updated));
-            return updated;
-          });
-
-          setExpenses(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.expenses && Array.isArray(orgData.expenses)) {
-                updated = [
-                  ...updated.filter(e => e.organizationId !== orgId),
-                  ...migrateExpenses(orgData.expenses).map(e => ({ ...e, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_expenses', JSON.stringify(updated));
-            return updated;
-          });
-
-          setTyres(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.tyres && Array.isArray(orgData.tyres)) {
-                updated = [
-                  ...updated.filter(ty => ty.organizationId !== orgId),
-                  ...migrateTyres(orgData.tyres).map(ty => ({ ...ty, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_tyres', JSON.stringify(updated));
-            return updated;
-          });
-
-          setAuditLogs(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.auditLogs && Array.isArray(orgData.auditLogs)) {
-                updated = [
-                  ...updated.filter(l => l.organizationId !== orgId),
-                  ...migrateAuditLogs(orgData.auditLogs).map(l => ({ ...l, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
-            return updated;
-          });
-
-          setSupportTickets(prev => {
-            let updated = [...prev];
-            for (const orgId in orgFleetData) {
-              const orgData = orgFleetData[orgId];
-              if (orgData.supportTickets && Array.isArray(orgData.supportTickets)) {
-                updated = [
-                  ...updated.filter(t => t.organizationId !== orgId),
-                  ...orgData.supportTickets.map(t => ({ ...t, organizationId: orgId }))
-                ];
-              }
-            }
-            localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
-            return updated;
-          });
-        }); // end batch — single reactive flush for all 9 collections
-
-      } catch (err) {
-        console.warn("Backend live data sync failed:", err);
-      }
-    };
-
-    // Initial load
-    reloadBackendData();
-
-    // Subscribe to realtime database document events
-    let unsubscribe: any = null;
-    let destroyed = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectDelay = 5000;
-    const MAX_DELAY = 60000;
-
-    const teardown = () => {
-      if (unsubscribe) {
+      const reloadBackendData = async () => {
         try {
-          if (typeof unsubscribe === 'function') {
-            unsubscribe();
-          } else {
-            const subAny = unsubscribe as any;
-            if (typeof subAny.close === 'function') {
-              subAny.close();
-            } else if (typeof subAny.unsubscribe === 'function') {
-              subAny.unsubscribe();
+          const orgFleetData: { [orgId: string]: any } = {};
+          let userRightsData: any = null;
+
+          const categories: { key: string; collection: string }[] = [
+            { key: 'trucks', collection: 'trucks' },
+            { key: 'drivers', collection: 'drivers' },
+            { key: 'offices', collection: 'offices' },
+            { key: 'accounts', collection: 'accounts' },
+            { key: 'trips', collection: 'trips' },
+            { key: 'expenses', collection: 'expenses' },
+            { key: 'tyres', collection: 'tyres' },
+            { key: 'auditLogs', collection: 'audit_logs' },
+            { key: 'supportTickets', collection: 'support_tickets' }
+          ];
+
+          const fetchPromises = categories.map(async (cat) => {
+            try {
+              const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, 'org_backend');
+              for (const doc of docs) {
+                const orgId = doc.organizationId;
+                if (!orgId || orgId === 'global' || orgId === 'org_backend') continue;
+
+                if (!orgFleetData[orgId]) {
+                  orgFleetData[orgId] = {
+                    trucks: [],
+                    drivers: [],
+                    offices: [],
+                    accounts: [],
+                    trips: [],
+                    expenses: [],
+                    tyres: [],
+                    auditLogs: [],
+                    supportTickets: []
+                  };
+                }
+
+                const record = appwrite.reconstructRecord(doc);
+                if (record) {
+                  orgFleetData[orgId][cat.key].push(record);
+                }
+              }
+            } catch (catErr: any) {
+              console.warn(`Failed to fetch backend documents for ${cat.collection}:`, catErr.message);
+            }
+          });
+
+          const loadRightsPromise = (async () => {
+            try {
+              userRightsData = await organizationService.fetchAllGlobalConfigs(databaseId);
+            } catch (e) {
+              console.warn('Failed to load global rights config for backend reload:', e);
+            }
+          })();
+
+          await Promise.all([...fetchPromises, loadRightsPromise]);
+
+          // 1. Update user rights & organization profiles
+          if (userRightsData) {
+            if (userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)) {
+              const cloudRights = migrateUserPermissions(userRightsData.userRightsList);
+              setUserRightsList(cloudRights);
+              localStorage.setItem('ttt_user_rights', JSON.stringify(cloudRights));
+            }
+            if (userRightsData.organizationProfiles && Array.isArray(userRightsData.organizationProfiles)) {
+              setOrganizationProfiles(userRightsData.organizationProfiles);
+              localStorage.setItem('ttt_organization_profiles', JSON.stringify(userRightsData.organizationProfiles));
+            }
+            if (userRightsData.appUpdateConfig) {
+              setAppUpdateConfig(userRightsData.appUpdateConfig);
+              localStorage.setItem('ttt_app_update_config', JSON.stringify(userRightsData.appUpdateConfig));
             }
           }
-        } catch (_) { /* ignore close-state errors */ }
-        unsubscribe = null;
-      }
-    };
 
-    const scheduleReconnect = () => {
-      if (destroyed) return;
-      reconnectTimer = setTimeout(() => {
-        if (!destroyed) setupRealtime();
-      }, reconnectDelay);
-      reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
-    };
+          // 2. Update states
+          const currentProfiles = userRightsData?.organizationProfiles || organizationProfiles();
 
-    const setupRealtime = async () => {
-      if (destroyed) return;
-      teardown();
-      try {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Connect to Fastify realtime gateway server
-        const wsHost = window.location.host;
-        const gatewayUrl = `${wsProtocol}//${wsHost}/realtime?orgId=${connectedOrgId}&email=${userEmail}&isSuperAdmin=${isSuper}`;
-        
-        const socket = new WebSocket(gatewayUrl);
-        unsubscribe = {
-          close: () => socket.close()
-        };
+          // Self-healing: Automatically clean up orphaned requests from user_rights_snapshot when a vehicle is deleted
+          let profilesChanged = false;
+          const cleanedProfiles = currentProfiles.map(profile => {
+            if (profile.organizationId === 'org_backend') return profile;
 
-        socket.onopen = () => {
-          console.log("WebSocket connection established with Fastify Realtime Gateway.");
-          reconnectDelay = 1000; // Reset backoff
-        };
+            const orgData = orgFleetData[profile.organizationId];
+            if (!orgData) return profile;
 
-        socket.onmessage = (msg) => {
+            const orgTrucksCloud = orgData.trucks || [];
+            const currentRequests = profile.truckRequests || [];
+
+            const nextRequests = currentRequests.filter(req => {
+              const truckExists = orgTrucksCloud.some(
+                (t: any) => t.truckNo.toUpperCase() === req.truckNo.toUpperCase()
+              );
+              if (truckExists) return true;
+
+              // Grace period: do not delete newly created requests (less than 60 seconds old)
+              // to allow asynchronous DB writes and replication to complete.
+              const reqTimestampMatch = req.id.match(/^req_(\d+)/);
+              const isNewRequest = reqTimestampMatch
+                ? (Date.now() - Number(reqTimestampMatch[1]) < 60000)
+                : false;
+
+              if (isNewRequest) {
+                return true;
+              }
+
+              if (req.status === 'Pending' || req.status === 'Rejected') {
+                console.info(`Self-Healing: Removing orphaned ${req.status} request for truck ${req.truckNo} in org ${profile.organizationId} because the vehicle registry record was deleted.`);
+                profilesChanged = true;
+                return false;
+              }
+              return true;
+            });
+
+            if (nextRequests.length !== currentRequests.length) {
+              return {
+                ...profile,
+                truckRequests: nextRequests
+              };
+            }
+            return profile;
+          });
+
+          if (profilesChanged) {
+            await saveOrganizationProfiles(cleanedProfiles);
+          }
+
+          batch(() => {
+            setTrucks(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.trucks && Array.isArray(orgData.trucks)) {
+                  updated = [
+                    ...updated.filter(t => t.organizationId !== orgId),
+                    ...migrateTrucks(orgData.trucks).map(t => ({ ...t, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_trucks', JSON.stringify(updated));
+              return updated;
+            });
+
+            setTrips(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.trips && Array.isArray(orgData.trips)) {
+                  updated = [
+                    ...updated.filter(t => t.organizationId !== orgId),
+                    ...migrateTrips(migrateTripsIfNecessary(orgData.trips)).map(t => ({ ...t, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_trips', JSON.stringify(updated));
+              return updated;
+            });
+
+            setDrivers(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.drivers && Array.isArray(orgData.drivers)) {
+                  updated = [
+                    ...updated.filter(d => d.organizationId !== orgId),
+                    ...migrateDrivers(orgData.drivers).map(d => ({ ...d, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_drivers', JSON.stringify(updated));
+              return updated;
+            });
+
+            setOffices(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.offices && Array.isArray(orgData.offices)) {
+                  updated = [
+                    ...updated.filter(o => o.organizationId !== orgId),
+                    ...migrateOffices(orgData.offices).map(o => ({ ...o, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_offices', JSON.stringify(updated));
+              return updated;
+            });
+
+            setAccounts(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.accounts && Array.isArray(orgData.accounts)) {
+                  updated = [
+                    ...updated.filter(a => a.organizationId !== orgId),
+                    ...migrateAccounts(orgData.accounts).map(a => ({ ...a, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_accounts', JSON.stringify(updated));
+              return updated;
+            });
+
+            setExpenses(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.expenses && Array.isArray(orgData.expenses)) {
+                  updated = [
+                    ...updated.filter(e => e.organizationId !== orgId),
+                    ...migrateExpenses(orgData.expenses).map(e => ({ ...e, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_expenses', JSON.stringify(updated));
+              return updated;
+            });
+
+            setTyres(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.tyres && Array.isArray(orgData.tyres)) {
+                  updated = [
+                    ...updated.filter(ty => ty.organizationId !== orgId),
+                    ...migrateTyres(orgData.tyres).map(ty => ({ ...ty, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_tyres', JSON.stringify(updated));
+              return updated;
+            });
+
+            setAuditLogs(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.auditLogs && Array.isArray(orgData.auditLogs)) {
+                  updated = [
+                    ...updated.filter(l => l.organizationId !== orgId),
+                    ...migrateAuditLogs(orgData.auditLogs).map(l => ({ ...l, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
+              return updated;
+            });
+
+            setSupportTickets(prev => {
+              let updated = [...prev];
+              for (const orgId in orgFleetData) {
+                const orgData = orgFleetData[orgId];
+                if (orgData.supportTickets && Array.isArray(orgData.supportTickets)) {
+                  updated = [
+                    ...updated.filter(t => t.organizationId !== orgId),
+                    ...orgData.supportTickets.map(t => ({ ...t, organizationId: orgId }))
+                  ];
+                }
+              }
+              localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
+              return updated;
+            });
+          }); // end batch — single reactive flush for all 9 collections
+
+        } catch (err) {
+          console.warn("Backend live data sync failed:", err);
+        }
+      };
+
+      // Initial load
+      reloadBackendData();
+
+      // Subscribe to realtime database document events
+      let unsubscribe: any = null;
+      let destroyed = false;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let reconnectDelay = 5000;
+      const MAX_DELAY = 60000;
+
+      const teardown = () => {
+        if (unsubscribe) {
           try {
-            const event = JSON.parse(msg.data);
-            const payload = event.payload;
-            if (!payload) return;
-
-            // --- Event Router ---
-            // Parse the collection name from the Appwrite event string:
-            // Format: databases.{dbId}.collections.{collectionId}.documents.{docId}.{type}
-            const rawEvents: string[] = event.events || [];
-            const eventStr = rawEvents[0] || '';
-            const parts = eventStr.split('.');
-            const collection = (parts.length >= 5 && parts[2] === 'collections') ? parts[3] : null;
-            const isDelete = rawEvents.some((e: string) => e.endsWith('.delete'));
-
-            console.log(`[Realtime] ${collection ?? 'unknown'} ${isDelete ? 'delete' : 'upsert'}`);
-
-            // Helper: upsert a single reconstructed record into a store
-            const upsert = <T extends { id: string; organizationId?: string }>(prev: T[], rec: T): T[] => {
-              const exists = prev.some(x => x.id === rec.id);
-              return exists ? prev.map(x => x.id === rec.id ? rec : x) : [...prev, rec];
-            };
-
-            switch (collection) {
-              case 'trucks': {
-                if (isDelete) {
-                  setTrucks(prev => prev.filter(t => t.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setTrucks(prev => upsert(prev, { ...migrateTrucks([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
+            if (typeof unsubscribe === 'function') {
+              unsubscribe();
+            } else {
+              const subAny = unsubscribe as any;
+              if (typeof subAny.close === 'function') {
+                subAny.close();
+              } else if (typeof subAny.unsubscribe === 'function') {
+                subAny.unsubscribe();
               }
-              case 'trips': {
-                if (isDelete) {
-                  setTrips(prev => prev.filter(t => t.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setTrips(prev => upsert(prev, { ...migrateTrips(migrateTripsIfNecessary([rec]))[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'drivers': {
-                if (isDelete) {
-                  setDrivers(prev => prev.filter(d => d.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setDrivers(prev => upsert(prev, { ...migrateDrivers([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'offices': {
-                if (isDelete) {
-                  setOffices(prev => prev.filter(o => o.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setOffices(prev => upsert(prev, { ...migrateOffices([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'accounts': {
-                if (isDelete) {
-                  setAccounts(prev => prev.filter(a => a.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setAccounts(prev => upsert(prev, { ...migrateAccounts([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'expenses': {
-                if (isDelete) {
-                  setExpenses(prev => prev.filter(e => e.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setExpenses(prev => upsert(prev, { ...migrateExpenses([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'tyres': {
-                if (isDelete) {
-                  setTyres(prev => prev.filter(ty => ty.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setTyres(prev => upsert(prev, { ...migrateTyres([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'audit_logs': {
-                if (isDelete) {
-                  setAuditLogs(prev => prev.filter(l => l.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setAuditLogs(prev => upsert(prev, { ...migrateAuditLogs([rec])[0], organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'support_tickets': {
-                if (isDelete) {
-                  setSupportTickets(prev => prev.filter(t => t.id !== payload.$id));
-                } else {
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) setSupportTickets(prev => upsert(prev, { ...rec, organizationId: rec.organizationId }));
-                }
-                break;
-              }
-              case 'global_configs': {
-                // global_configs holds org profiles, user rights, and app config
-                const key: string = payload.key || '';
-                if (key.startsWith('prf_')) {
-                  // Org profile changed — upsert immediately
-                  const rec = appwrite.reconstructRecord(payload);
-                  if (rec) {
-                    const prev = organizationProfiles();
-                    const next = prev.some(p => p.organizationId === rec.organizationId)
-                      ? prev.map(p => p.organizationId === rec.organizationId ? rec : p)
-                      : [...prev, rec];
-                    setOrganizationProfiles(next);
-                    localStorage.setItem('ttt_organization_profiles', JSON.stringify(next));
-                  }
-                } else {
-                  // User rights or app config changed — full reload for safety
-                  reloadBackendData();
-                }
-                break;
-              }
-              default:
-                // Unknown collection — fall back to full reload
-                console.log(`[Realtime] Unknown collection "${collection}", falling back to full reload`);
-                reloadBackendData();
-                break;
             }
-          } catch (err: any) {
-            console.warn("Failed to parse realtime event message:", err.message);
-          }
-        };
+          } catch (_) { /* ignore close-state errors */ }
+          unsubscribe = null;
+        }
+      };
 
-        socket.onclose = () => {
-          if (!destroyed) {
-            console.warn("Fastify Realtime Gateway socket closed. Scheduling reconnect...");
-            scheduleReconnect();
-          }
-        };
+      const scheduleReconnect = () => {
+        if (destroyed) return;
+        reconnectTimer = setTimeout(() => {
+          if (!destroyed) setupRealtime();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+      };
 
-        socket.onerror = (err) => {
-          console.error("Fastify Realtime Gateway socket error:", err);
-          socket.close();
-        };
-      } catch (e: any) {
-        console.warn("Realtime socket setup failed:", e);
-      }
-    };
+      const setupRealtime = async () => {
+        if (destroyed) return;
+        teardown();
+        try {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          // Connect to Fastify realtime gateway server
+          const wsHost = window.location.host;
+          const gatewayUrl = `${wsProtocol}//${wsHost}/realtime?orgId=${connectedOrgId}&email=${userEmail}&isSuperAdmin=${isSuper}`;
 
-    setupRealtime();
+          const socket = new WebSocket(gatewayUrl);
+          unsubscribe = {
+            close: () => socket.close()
+          };
 
-    return () => {
-      destroyed = true;
-      teardown();
-    };
+          socket.onopen = () => {
+            console.log("WebSocket connection established with Fastify Realtime Gateway.");
+            reconnectDelay = 1000; // Reset backoff
+          };
+
+          socket.onmessage = (msg) => {
+            try {
+              const event = JSON.parse(msg.data);
+              const payload = event.payload;
+              if (!payload) return;
+
+              // --- Event Router ---
+              // Parse the collection name from the Appwrite event string:
+              // Format: databases.{dbId}.collections.{collectionId}.documents.{docId}.{type}
+              const rawEvents: string[] = event.events || [];
+              const eventStr = rawEvents[0] || '';
+              const parts = eventStr.split('.');
+              const collection = (parts.length >= 5 && parts[2] === 'collections') ? parts[3] : null;
+              const isDelete = rawEvents.some((e: string) => e.endsWith('.delete'));
+
+              console.log(`[Realtime] ${collection ?? 'unknown'} ${isDelete ? 'delete' : 'upsert'}`);
+
+              // Helper: upsert a single reconstructed record into a store
+              const upsert = <T extends { id: string; organizationId?: string }>(prev: T[], rec: T): T[] => {
+                const exists = prev.some(x => x.id === rec.id);
+                return exists ? prev.map(x => x.id === rec.id ? rec : x) : [...prev, rec];
+              };
+
+              switch (collection) {
+                case 'trucks': {
+                  if (isDelete) {
+                    setTrucks(prev => prev.filter(t => t.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setTrucks(prev => upsert(prev, { ...migrateTrucks([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'trips': {
+                  if (isDelete) {
+                    setTrips(prev => prev.filter(t => t.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setTrips(prev => upsert(prev, { ...migrateTrips(migrateTripsIfNecessary([rec]))[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'drivers': {
+                  if (isDelete) {
+                    setDrivers(prev => prev.filter(d => d.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setDrivers(prev => upsert(prev, { ...migrateDrivers([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'offices': {
+                  if (isDelete) {
+                    setOffices(prev => prev.filter(o => o.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setOffices(prev => upsert(prev, { ...migrateOffices([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'accounts': {
+                  if (isDelete) {
+                    setAccounts(prev => prev.filter(a => a.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setAccounts(prev => upsert(prev, { ...migrateAccounts([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'expenses': {
+                  if (isDelete) {
+                    setExpenses(prev => prev.filter(e => e.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setExpenses(prev => upsert(prev, { ...migrateExpenses([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'tyres': {
+                  if (isDelete) {
+                    setTyres(prev => prev.filter(ty => ty.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setTyres(prev => upsert(prev, { ...migrateTyres([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'audit_logs': {
+                  if (isDelete) {
+                    setAuditLogs(prev => prev.filter(l => l.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setAuditLogs(prev => upsert(prev, { ...migrateAuditLogs([rec])[0], organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'support_tickets': {
+                  if (isDelete) {
+                    setSupportTickets(prev => prev.filter(t => t.id !== payload.$id));
+                  } else {
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) setSupportTickets(prev => upsert(prev, { ...rec, organizationId: rec.organizationId }));
+                  }
+                  break;
+                }
+                case 'global_configs': {
+                  // global_configs holds org profiles, user rights, and app config
+                  const key: string = payload.key || '';
+                  if (key.startsWith('prf_')) {
+                    // Org profile changed — upsert immediately
+                    const rec = appwrite.reconstructRecord(payload);
+                    if (rec) {
+                      const prev = organizationProfiles();
+                      const next = prev.some(p => p.organizationId === rec.organizationId)
+                        ? prev.map(p => p.organizationId === rec.organizationId ? rec : p)
+                        : [...prev, rec];
+                      setOrganizationProfiles(next);
+                      localStorage.setItem('ttt_organization_profiles', JSON.stringify(next));
+                    }
+                  } else {
+                    // User rights or app config changed — full reload for safety
+                    reloadBackendData();
+                  }
+                  break;
+                }
+                default:
+                  // Unknown collection — fall back to full reload
+                  console.log(`[Realtime] Unknown collection "${collection}", falling back to full reload`);
+                  reloadBackendData();
+                  break;
+              }
+            } catch (err: any) {
+              console.warn("Failed to parse realtime event message:", err.message);
+            }
+          };
+
+          socket.onclose = () => {
+            if (!destroyed) {
+              console.warn("Fastify Realtime Gateway socket closed. Scheduling reconnect...");
+              scheduleReconnect();
+            }
+          };
+
+          socket.onerror = (err) => {
+            console.error("Fastify Realtime Gateway socket error:", err);
+            socket.close();
+          };
+        } catch (e: any) {
+          console.warn("Realtime socket setup failed:", e);
+        }
+      };
+
+      setupRealtime();
+
+      return () => {
+        destroyed = true;
+        teardown();
+      };
     });
   });
 
@@ -3432,7 +3381,7 @@ function AppContent(): any {
   // Creates up to 2 expense entries (parts + labour) and advances the truck's next-due KM milestone
   const handleServiceDone = async (payload: import('./types').ServiceDonePayload) => {
     const { serviceType, serviceDate, truckId, truckNo, newMilestoneKM, notes, partsExpense, labourExpense } = payload;
-    const orgId = currentUserOrgId;
+    const orgId = currentUserOrgId();
     const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
     // Map service type → truck field key
@@ -3630,1367 +3579,592 @@ function AppContent(): any {
   return () => {
     if (emailVerificationSuccess()) {
       return (
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
-        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-500/10 rounded-full border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10">
-            <CheckCircle class="w-8 h-8" />
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
+          <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-500/10 rounded-full border border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/10">
+              <CheckCircle class="w-8 h-8" />
+            </div>
+            <div class="space-y-2">
+              <h2 class="text-2xl font-bold tracking-tight">Email Verified!</h2>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                Your email address has been successfully verified. Your account configuration and organization setup are complete.
+              </p>
+            </div>
+            <div class="bg-slate-950/60 border border-slate-850 p-4 rounded-xl text-left text-xs space-y-2 text-slate-300">
+              <p class="font-semibold text-slate-200">What to do next:</p>
+              <ul class="list-disc pl-4 space-y-1">
+                <li>Open the <strong>LorryGuru Mobile App</strong> on your phone.</li>
+                <li>Tap on <strong>Refresh Status</strong> to reload your dashboard.</li>
+                <li>If you closed the app, simply log in using your email and password.</li>
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEmailVerificationSuccess(false);
+                navigate(currentUser() ? '/console/dashboard' : '/login');
+              }}
+              class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/10 hover:shadow-blue-600/25 transition cursor-pointer"
+            >
+              Go to Console
+            </button>
           </div>
-          <div class="space-y-2">
-            <h2 class="text-2xl font-bold tracking-tight">Email Verified!</h2>
-            <p class="text-xs text-slate-400 leading-relaxed">
-              Your email address has been successfully verified. Your account configuration and organization setup are complete.
-            </p>
-          </div>
-          <div class="bg-slate-950/60 border border-slate-850 p-4 rounded-xl text-left text-xs space-y-2 text-slate-300">
-            <p class="font-semibold text-slate-200">What to do next:</p>
-            <ul class="list-disc pl-4 space-y-1">
-              <li>Open the <strong>LorryGuru Mobile App</strong> on your phone.</li>
-              <li>Tap on <strong>Refresh Status</strong> to reload your dashboard.</li>
-              <li>If you closed the app, simply log in using your email and password.</li>
-            </ul>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setEmailVerificationSuccess(false);
-              navigate(currentUser() ? '/console/dashboard' : '/login');
-            }}
-            class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/10 hover:shadow-blue-600/25 transition cursor-pointer"
-          >
-            Go to Console
-          </button>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (emailVerificationError()) {
-    return (
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
-        <div class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-rose-500/10 rounded-full border border-rose-500/30 text-rose-450">
-            <AlertCircle class="w-8 h-8" />
+    if (emailVerificationError()) {
+      return (
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white font-sans p-4">
+          <div class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 space-y-6 text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-rose-500/10 rounded-full border border-rose-500/30 text-rose-450">
+              <AlertCircle class="w-8 h-8" />
+            </div>
+            <div class="space-y-2">
+              <h2 class="text-2xl font-bold tracking-tight">Verification Failed</h2>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                We encountered an issue while verifying your email address. The link might have expired or is invalid.
+              </p>
+              <p class="text-[11px] font-mono text-rose-400 bg-rose-950/20 border border-rose-500/20 p-2 rounded-lg mt-2">
+                {emailVerificationError()}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEmailVerificationError(null);
+                navigate('/login');
+              }}
+              class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs transition cursor-pointer"
+            >
+              Back to Login
+            </button>
           </div>
-          <div class="space-y-2">
-            <h2 class="text-2xl font-bold tracking-tight">Verification Failed</h2>
-            <p class="text-xs text-slate-400 leading-relaxed">
-              We encountered an issue while verifying your email address. The link might have expired or is invalid.
-            </p>
-            <p class="text-[11px] font-mono text-rose-400 bg-rose-950/20 border border-rose-500/20 p-2 rounded-lg mt-2">
-              {emailVerificationError()}
-            </p>
+        </div>
+      );
+    }
+
+    if (resetPasswordState() && resetPasswordState().active) {
+      return (
+        <PasswordResetScreen
+          resetPasswordState={resetPasswordState()}
+          setResetPasswordState={setResetPasswordState}
+          setLoadingUser={setLoadingUser}
+          showNotification={showNotification}
+        />
+      );
+    }
+
+    if (loadingUser()) {
+      return (
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-white font-sans">
+          <div class="flex flex-col items-center gap-3">
+            <Loader class="w-8 h-8 animate-spin text-blue-500" />
+            <p class="text-xs text-slate-400">Verifying session credentials...</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setEmailVerificationError(null);
-              navigate('/login');
-            }}
-            class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs transition cursor-pointer"
-          >
-            Back to Login
-          </button>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (resetPasswordState() && resetPasswordState().active) {
-    return (
-      <PasswordResetScreen
-        resetPasswordState={resetPasswordState()}
-        setResetPasswordState={setResetPasswordState}
-        setLoadingUser={setLoadingUser}
-        showNotification={showNotification}
-      />
-    );
-  }
+    const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
+    if (publicLegalPaths.includes(location.pathname)) {
+      const defaultTab = location.pathname === '/privacy' ? 'privacy' : (location.pathname === '/refunds' || location.pathname === '/refund-policy') ? 'refunds' : 'terms';
+      return (
+        <Suspense fallback={<LoadingTab />}>
+          <LegalPage defaultTab={defaultTab} onBack={() => navigate(currentUser() ? '/console/dashboard' : '/')} />
+        </Suspense>
+      );
+    }
 
-  if (loadingUser()) {
-    return (
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-white font-sans">
-        <div class="flex flex-col items-center gap-3">
-          <Loader class="w-8 h-8 animate-spin text-blue-500" />
-          <p class="text-xs text-slate-400">Verifying session credentials...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
-  if (publicLegalPaths.includes(location.pathname)) {
-    const defaultTab = location.pathname === '/privacy' ? 'privacy' : (location.pathname === '/refunds' || location.pathname === '/refund-policy') ? 'refunds' : 'terms';
-    return (
-      <Suspense fallback={<LoadingTab />}>
-        <LegalPage defaultTab={defaultTab} onBack={() => navigate(currentUser() ? '/console/dashboard' : '/')} />
-      </Suspense>
-    );
-  }
-
-  if (!currentUser()) {
-    if (location.pathname === '/login') {
+    if (!currentUser()) {
+      if (location.pathname === '/login') {
+        return (
+          <>
+            <LoginScreen
+              onLoginSuccess={async (user) => {
+                const method = isAppwriteConfigured() ? 'appwrite' : 'mock';
+                localStorage.setItem('ttt_login_method', method);
+                if (method === 'mock') {
+                  localStorage.setItem('ttt_mock_user', JSON.stringify(user));
+                }
+                localStorage.removeItem('ttt_guest_user');
+                setLoadingUser(true);
+                setInitialPullDone(false);
+                try {
+                  await reconcileSession(user);
+                  showNotification(`Successfully logged in as ${user.name || user.email}`);
+                  navigate('/console/dashboard');
+                } catch (err) {
+                  console.error(err);
+                } finally {
+                  setLoadingUser(false);
+                }
+              }}
+              checkUserApproval={checkUserApproval}
+              onRegisterUserPermissions={handleRegisterUserPermissions}
+              onBackToHome={() => navigate('/')}
+            />
+            {renderAppUpdateModal()}
+          </>
+        );
+      }
       return (
         <>
-          <LoginScreen
-            onLoginSuccess={async (user) => {
-              const method = isAppwriteConfigured() ? 'appwrite' : 'mock';
-              localStorage.setItem('ttt_login_method', method);
-              if (method === 'mock') {
-                localStorage.setItem('ttt_mock_user', JSON.stringify(user));
-              }
-              localStorage.removeItem('ttt_guest_user');
-              setLoadingUser(true);
-              setInitialPullDone(false);
-              try {
-                await reconcileSession(user);
-                showNotification(`Successfully logged in as ${user.name || user.email}`);
-                navigate('/console/dashboard');
-              } catch (err) {
-                console.error(err);
-              } finally {
-                setLoadingUser(false);
-              }
-            }}
-            checkUserApproval={checkUserApproval}
-            onRegisterUserPermissions={handleRegisterUserPermissions}
-            onBackToHome={() => navigate('/')}
+          <LandingPage onEnterConsole={() => navigate('/login')} />
+          {renderAppUpdateModal()}
+        </>
+      );
+    }
+
+    const isVerificationPending = currentUser() && currentUserRights().isApproved && (
+      (!currentUserRights().isEmailVerified && currentUser().emailVerification !== true) ||
+      (!currentUserRights().isPhoneVerified && currentUser().phoneVerification !== true)
+    );
+
+    if (isVerificationPending) {
+      return (
+        <>
+          <VerificationRequiredScreen
+            currentUser={currentUser()}
+            currentUserRights={currentUserRights() as any}
+            userRightsList={userRightsList()}
+            setUserRightsList={setUserRightsList}
+            pushPermissionsToCloud={pushPermissionsToCloud}
+            reconcileSession={reconcileSession as any}
+            showNotification={showNotification}
+            toastMessage={toastMessage()}
+            emailTimer={emailTimer}
+            setEmailTimer={setEmailTimer}
+            phoneTimer={phoneTimer}
+            setPhoneTimer={setPhoneTimer}
+            verificationOtpSent={verificationOtpSent()}
+            setVerificationOtpSent={setVerificationOtpSent}
+            showPhoneUpdateModal={showPhoneUpdateModal()}
+            setShowPhoneUpdateModal={setShowPhoneUpdateModal}
+            whatsappOtpCode={whatsappOtpCode()}
+            setWhatsappOtpCode={setWhatsappOtpCode}
+            sendWhatsAppOTP={sendWhatsAppOTP as any}
+            handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
+            handleLogout={handleLogout}
+            setLoadingUser={setLoadingUser}
+            setOrganizationProfiles={setOrganizationProfiles}
           />
           {renderAppUpdateModal()}
         </>
       );
     }
-    return (
-      <>
-        <LandingPage onEnterConsole={() => navigate('/login')} />
-        {renderAppUpdateModal()}
-      </>
-    );
-  }
 
-  const isVerificationPending = currentUser() && currentUserRights().isApproved && (
-    (!currentUserRights().isEmailVerified && currentUser().emailVerification !== true) ||
-    (!currentUserRights().isPhoneVerified && currentUser().phoneVerification !== true)
-  );
-
-  if (isVerificationPending) {
-    return (
-      <>
-        <VerificationRequiredScreen
-          currentUser={currentUser()}
-          currentUserRights={currentUserRights() as any}
-          userRightsList={userRightsList()}
-          setUserRightsList={setUserRightsList}
-          pushPermissionsToCloud={pushPermissionsToCloud}
-          reconcileSession={reconcileSession as any}
-          showNotification={showNotification}
-          toastMessage={toastMessage()}
-          emailTimer={emailTimer}
-          setEmailTimer={setEmailTimer}
-          phoneTimer={phoneTimer}
-          setPhoneTimer={setPhoneTimer}
-          verificationOtpSent={verificationOtpSent()}
-          setVerificationOtpSent={setVerificationOtpSent}
-          showPhoneUpdateModal={showPhoneUpdateModal()}
-          setShowPhoneUpdateModal={setShowPhoneUpdateModal}
-          whatsappOtpCode={whatsappOtpCode()}
-          setWhatsappOtpCode={setWhatsappOtpCode}
-          sendWhatsAppOTP={sendWhatsAppOTP as any}
-          handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
-          handleLogout={handleLogout}
-          setLoadingUser={setLoadingUser}
-          setOrganizationProfiles={setOrganizationProfiles}
-        />
-        {renderAppUpdateModal()}
-      </>
-    );
-  }
-
-  if (currentUser() && isOrgDisabled() && !currentUserRights().isSuperAdmin) {
-    return (
-      <>
-        <AppwriteCloudSync
-          currentLocalState={{
-            trucks,
-            drivers,
-            offices,
-            accounts,
-            trips,
-            expenses,
-            tyres,
-            auditLogs,
-            supportTickets: supportTickets()
-          }}
-          onLoadCloudState={onLoadCloudState}
-          showNotification={showNotification}
-          logAction={logAction}
-          currentUserOrgId={() => session().orgId}
-          currentUserEmail={() => session().user?.email || ''}
-          currentUserId={() => session().user?.email || ''}
-          isAdmin={() => !!session().rights?.isAdmin}
-          onInitialSyncComplete={setInitialPullDone}
-          onConnectionChange={(online, reason) => {
-            setIsOnline(online);
-            setDisconnectReason(reason);
-          }}
-          activeTicketId={activeTicketId}
-          hideUI={true}
-        />
-        <OrgDisabledScreen
-          currentUserOrgId={() => session().orgId}
-          onLogout={handleLogout}
-        />
-        {renderAppUpdateModal()}
-      </>
-    );
-  }
-
-  if (currentUser() && !currentUserRights().isApproved) {
-    return (
-      <>
-        <AppwriteCloudSync
-          currentLocalState={{
-            trucks,
-            drivers,
-            offices,
-            accounts,
-            trips,
-            expenses,
-            tyres,
-            auditLogs,
-            supportTickets: supportTickets()
-          }}
-          onLoadCloudState={onLoadCloudState}
-          showNotification={showNotification}
-          logAction={logAction}
-          currentUserOrgId={() => session().orgId}
-          currentUserEmail={() => session().user?.email || ''}
-          currentUserId={() => session().user?.email || ''}
-          isAdmin={() => !!session().rights?.isAdmin}
-          onInitialSyncComplete={setInitialPullDone}
-          onConnectionChange={(online, reason) => {
-            setIsOnline(online);
-            setDisconnectReason(reason);
-          }}
-          activeTicketId={activeTicketId}
-          hideUI={true}
-        />
-        <PendingApprovalScreen
-          currentUserRights={currentUserRights() as any}
-          onLogout={handleLogout}
-          onRequestToJoinOrganization={handleRequestToJoinOrganization}
-          showNotification={showNotification}
-        />
-        {renderAppUpdateModal()}
-      </>
-    );
-  }
-
-
-
-  const handleCyanClick = () => {
-    if (currentUserRights().isAdmin) {
-      setActiveTab('USERS');
-    } else {
-      setActiveTab('TRIPS');
+    if (currentUser() && isOrgDisabled() && !currentUserRights().isSuperAdmin) {
+      return (
+        <>
+          <AppwriteCloudSync
+            currentLocalState={{
+              trucks,
+              drivers,
+              offices,
+              accounts,
+              trips,
+              expenses,
+              tyres,
+              auditLogs,
+              supportTickets: supportTickets()
+            }}
+            onLoadCloudState={onLoadCloudState}
+            showNotification={showNotification}
+            logAction={logAction}
+            currentUserOrgId={() => session().orgId}
+            currentUserEmail={() => session().user?.email || ''}
+            currentUserId={() => session().user?.email || ''}
+            isAdmin={() => !!session().rights?.isAdmin}
+            onInitialSyncComplete={setInitialPullDone}
+            onConnectionChange={(online, reason) => {
+              setIsOnline(online);
+              setDisconnectReason(reason);
+            }}
+            activeTicketId={activeTicketId}
+            hideUI={true}
+          />
+          <OrgDisabledScreen
+            currentUserOrgId={() => session().orgId}
+            onLogout={handleLogout}
+          />
+          {renderAppUpdateModal()}
+        </>
+      );
     }
-  };
 
-  const tabsList = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
-  const currentTabIdx = tabsList.indexOf(registrySubTab());
-  const isSlideRight = currentTabIdx > prevTabIdxRef;
-  prevTabIdxRef = currentTabIdx;
-  const slideClassName = isSlideRight ? 'animate-slide-in-right' : 'animate-slide-in-left';
+    if (currentUser() && !currentUserRights().isApproved) {
+      return (
+        <>
+          <AppwriteCloudSync
+            currentLocalState={{
+              trucks,
+              drivers,
+              offices,
+              accounts,
+              trips,
+              expenses,
+              tyres,
+              auditLogs,
+              supportTickets: supportTickets()
+            }}
+            onLoadCloudState={onLoadCloudState}
+            showNotification={showNotification}
+            logAction={logAction}
+            currentUserOrgId={() => session().orgId}
+            currentUserEmail={() => session().user?.email || ''}
+            currentUserId={() => session().user?.email || ''}
+            isAdmin={() => !!session().rights?.isAdmin}
+            onInitialSyncComplete={setInitialPullDone}
+            onConnectionChange={(online, reason) => {
+              setIsOnline(online);
+              setDisconnectReason(reason);
+            }}
+            activeTicketId={activeTicketId}
+            hideUI={true}
+          />
+          <PendingApprovalScreen
+            currentUserRights={currentUserRights() as any}
+            onLogout={handleLogout}
+            onRequestToJoinOrganization={handleRequestToJoinOrganization}
+            showNotification={showNotification}
+          />
+          {renderAppUpdateModal()}
+        </>
+      );
+    }
 
-  const isBackendTeam = currentUserOrgId === 'org_backend' || currentUserRights().isSuperAdmin;
 
-  if (isMobile()) {
+
+    const handleCyanClick = () => {
+      if (currentUserRights().isAdmin) {
+        setActiveTab('USERS');
+      } else {
+        setActiveTab('TRIPS');
+      }
+    };
+
+    const tabsList = ['TRUCKS', 'DRIVERS', 'EXPENSES', 'OUTSTANDING', 'REPORTS', 'TYRES', 'OFFICES', 'ACCOUNTS', 'AUDIT'];
+    const currentTabIdx = tabsList.indexOf(registrySubTab());
+    const isSlideRight = currentTabIdx > prevTabIdxRef;
+    prevTabIdxRef = currentTabIdx;
+    const slideClassName = isSlideRight ? 'animate-slide-in-right' : 'animate-slide-in-left';
+
+    const isBackendTeam = currentUserOrgId() === 'org_backend' || currentUserRights().isSuperAdmin;
+
+    if (isMobile()) {
+      return (
+        <MobileViewport
+          logo={logo}
+          toastMessage={toastMessage}
+          notificationOpen={notificationOpen}
+          setNotificationOpen={setNotificationOpen}
+          setProfileDropdownOpen={setProfileDropdownOpen}
+          updateLastReadNotificationTime={updateLastReadNotificationTime}
+          currentUser={currentUser}
+          hasUnreadNotifications={hasUnreadNotifications}
+          orgAuditLogs={orgAuditLogs}
+          currentUserRights={currentUserRights}
+          currentUserOrgId={currentUserOrgId()}
+          mobileTab={mobileTab}
+          setMobileTab={setMobileTab}
+          registrySubTab={registrySubTab}
+          setRegistrySubTab={setRegistrySubTab}
+          orgTrips={orgTrips}
+          orgTrucks={orgTrucks}
+          orgDrivers={orgDrivers}
+          approvedOrgTrucks={approvedOrgTrucks}
+          orgOffices={orgOffices}
+          orgAccounts={orgAccounts}
+          currentOrgProfile={currentOrgProfileMemo()}
+          orgExpenses={orgExpenses}
+          orgTyres={orgTyres}
+          auditLogs={auditLogs}
+          handleClearAuditLogs={handleClearAuditLogs}
+          confirmAction={confirmAction}
+          organizationProfiles={organizationProfiles}
+          addTruck={addTruck}
+          updateTruck={updateTruck}
+          deleteTruck={deleteTruck}
+          handleAddTruckRequest={handleAddTruckRequest}
+          handleServiceDone={handleServiceDone}
+          addExpense={addExpense}
+          handleProcessTruckPayment={handleProcessTruckPayment}
+          addDriver={addDriver}
+          updateDriver={updateDriver}
+          deleteDriver={deleteDriver}
+          saveTrips={saveTrips}
+          updateExpense={updateExpense}
+          deleteExpense={deleteExpense}
+          addTyre={addTyre}
+          updateTyre={updateTyre}
+          deleteTyre={deleteTyre}
+          addOffice={addOffice}
+          updateOffice={updateOffice}
+          deleteOffice={deleteOffice}
+          addAccount={addAccount}
+          updateAccount={updateAccount}
+          deleteAccount={deleteAccount}
+          theme={theme}
+          setTheme={setTheme}
+          isOnline={isOnline()}
+          handleLogout={handleLogout}
+          setProfileActiveTab={setProfileActiveTab}
+          setProfileModalOpen={setProfileModalOpen}
+          setSetup2FAOpen={setSetup2FAOpen}
+          setDisable2FAOpen={setDisable2FAOpen}
+          getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+          showNotification={showNotification}
+          appVersion={APP_VERSION}
+          setEditingTrip={setEditingTrip}
+          setBookingModalOpen={setBookingModalOpen}
+          setIsVoiceAssistantOpen={setIsVoiceAssistantOpen}
+          setNotificationRef={setNotificationRef}
+          dashboardTrips={dashboardTrips}
+          dashboardExpenses={dashboardExpenses}
+          activeMonth={activeMonth}
+          activeYear={activeYear}
+          setActiveMonth={setActiveMonth}
+          setActiveYear={setActiveYear}
+          handleEditTripTrigger={handleEditTripTrigger}
+          deleteTripEntry={deleteTripEntry}
+        />
+      );
+    }
+
     return (
-      <div class="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans overflow-hidden select-none">
-        
+      <div class="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
+
         {/* GLOBAL TOAST BANNER */}
         {toastMessage() && (
-          <div id="toast-notify" class="fixed bottom-20 left-4 right-4 z-50 bg-blue-600 border border-blue-400/30 text-white p-3 px-5 rounded-2xl shadow-xl flex items-center gap-2.5 animate-bounce">
+          <div id="toast-notify" class="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
             <CheckCircle class="w-4 h-4 text-white" />
             <span class="text-xs font-semibold">{toastMessage()}</span>
           </div>
         )}
 
-        {/* Dynamic Mobile Header */}
-        <div class="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 p-4 shrink-0 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <img src={logo} alt="LorryGuru Logo" class="h-7 w-auto" />
-            <span class="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">LorryGuru</span>
-          </div>
-          <div class="flex items-center gap-2.5">
-            <div ref={setNotificationRef} class="relative">
-              <button
-                id="btn-notifications-toggle-mobile"
-                onClick={() => {
-                  setNotificationOpen(!notificationOpen());
-                  setProfileDropdownOpen(false);
-                  const now = Date.now();
-                  updateLastReadNotificationTime(now);
-                  if (currentUser()) {
-                    const key = `ttt_last_read_notifications_${(currentUser()!.email || '').toLowerCase().trim()}`;
-                    localStorage.setItem(key, now.toString());
-                  }
-                }}
-                class="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1.5 cursor-pointer relative flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                title="Notifications"
-              >
-                <Bell class="w-4 h-4" />
-                {hasUnreadNotifications() && (
-                  <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
-                )}
-              </button>
-
-              {notificationOpen() && (
-                <div class="
-                  fixed left-3 right-3 top-16
-                  bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800
-                  text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left
-                ">
-                  <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-                    <span class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Recent Activity Logs</span>
-                    <button
-                      onClick={() => setNotificationOpen(false)}
-                      class="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {orgAuditLogs.length === 0 ? (
-                      <p class="text-center py-6 text-xs text-slate-400 dark:text-slate-500 italic">No recent activities logged.</p>
-                    ) : (
-                      orgAuditLogs.slice(0, 8).map((log) => (
-                        <div class="text-[11px] p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 space-y-1">
-                          <div class="flex justify-between items-center">
-                            <span class={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
-                              log.action === 'Rejected' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50' :
-                                log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
-                                  log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
-                                    log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
-                                      'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
-                              }`}>
-                              {log.action}
-                            </span>
-                            <span class="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">{(log.timestamp || '').substring(11, 16)}</span>
-                          </div>
-                          <p class="text-slate-700 dark:text-slate-300 leading-tight">
-                            <strong class="text-slate-900 dark:text-white">{log.category} ({log.reference}):</strong> {log.details}
-                          </p>
-                          <p class="text-[9px] text-slate-400 dark:text-slate-500">By {log.user}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {orgAuditLogs.length > 0 && currentUserRights().isAdmin && (
-                    <button
-                      onClick={() => {
-                        setMobileTab('REGISTRY');
-                        setRegistrySubTab('AUDIT');
-                        setNotificationOpen(false);
-                      }}
-                      class="w-full text-center text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline pt-1 block border-t border-slate-100 dark:border-slate-800"
-                    >
-                      View Full Audit Trail
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => setTheme(theme() === 'dark' ? 'light' : 'dark')}
-              class="text-slate-500 hover:text-slate-900 dark:hover:text-white transition p-1 cursor-pointer"
-            >
-              {theme() === 'dark' ? <Sun class="w-4 h-4" /> : <Moon class="w-4 h-4" />}
-            </button>
-            <span class={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-rose-500 animate-pulse'}`}></span>
-          </div>
-        </div>
-
-        {/* Mobile Viewport / Tab Content */}
-        <div class="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-50 dark:bg-slate-955">
-          <Suspense fallback={<LoadingTab />}>
-            {mobileTab() === 'HOME' && (
-              <MobileHomeTab
-                currentUser={currentUser()}
-                orgTrips={orgTrips}
-                orgTrucks={orgTrucks}
-                orgDrivers={orgDrivers}
-                setActiveTab={setMobileTab}
-                onNavigateToSubTab={(sub) => {
-                  setMobileTab('REGISTRY');
-                  setRegistrySubTab(sub);
-                }}
-                onQuickAction={(action) => {
-                  if (action === 'ADD_TRIP') {
-                    setEditingTrip(null);
-                    setBookingModalOpen(true);
-                  } else if (action === 'ADD_EXPENSE') {
-                    setMobileTab('REGISTRY');
-                    setRegistrySubTab('EXPENSES');
-                  } else if (action === 'VOICE') {
-                    setIsVoiceAssistantOpen(true);
-                  }
-                }}
-              />
-            )}
-
-            {mobileTab() === 'TRIPS' && (
-              <div class="flex-1 overflow-y-auto p-4 pb-20 space-y-4">
-                <TripList
-                  trips={orgTrips}
-                  trucks={approvedOrgTrucks}
-                  offices={orgOffices}
-                  accounts={orgAccounts}
-                  onEditEntry={handleEditTripTrigger}
-                  onDeleteEntry={deleteTripEntry}
-                  confirmAction={confirmAction}
-                  canViewTrips={currentUserRights().canViewTrips}
-                  canEditTrips={currentUserRights().canEditTrips}
-                  canDeleteTrips={currentUserRights().canDeleteTrips}
-                  organizationId={currentUserOrgId}
-                  onSaveTrips={saveTrips}
-                  orgProfile={currentOrgProfile}
-                />
-              </div>
-            )}
-
-            {mobileTab() === 'REGISTRY' && (
-              <div class="flex-1 overflow-hidden flex flex-col pb-20 relative">
-                {/* Scrollable Sub-Tab Bar for Registry Lists */}
-                <div class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 overflow-x-auto whitespace-nowrap scrollbar-hide flex gap-1.5 shrink-0">
-                  {[
-                    { id: 'TRUCKS', label: 'Trucks' },
-                    { id: 'DRIVERS', label: 'Drivers' },
-                    { id: 'EXPENSES', label: 'Expenses' },
-                    { id: 'OUTSTANDING', label: 'Outstanding' },
-                    { id: 'REPORTS', label: 'Reports' },
-                    { id: 'TYRES', label: 'Tyres' },
-                    { id: 'OFFICES', label: 'Offices' },
-                    { id: 'ACCOUNTS', label: 'Accounts' },
-                    { id: 'AUDIT', label: 'Audit Logs' }
-                  ].map((tab) => (
-                    <button
-                      
-                      onClick={() => setRegistrySubTab(tab.id)}
-                      class={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                        registrySubTab() === tab.id
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-slate-800'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Sub-Tab Viewport Content */}
-                <div 
-                  
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
-                  class={`flex-1 overflow-y-auto p-4 space-y-4 ${slideClassName}`}
-                >
-                  {registrySubTab() === 'TRUCKS' && (
-                    <TruckMaster
-                      trucks={orgTrucks}
-                      trips={orgTrips}
-                      expenses={orgExpenses}
-                      onAddTruck={addTruck}
-                      onUpdateTruck={updateTruck}
-                      onDeleteTruck={deleteTruck}
-                      confirmAction={confirmAction}
-                      canViewTrucks={currentUserRights().canViewTrucks}
-                      canEditTrucks={currentUserRights().canEditTrucks}
-                      canDeleteTrucks={currentUserRights().canDeleteTrucks}
-                      maxTrucksAllowed={currentOrgProfile?.maxTrucksAllowed || 2}
-                      onAddTruckRequest={handleAddTruckRequest}
-                      organizationId={currentUserOrgId}
-                      orgProfile={currentOrgProfile}
-                      onServiceDone={(currentUserRights().canEditTrucks || currentUserRights().canEditExpenses) ? handleServiceDone : undefined}
-                      accounts={orgAccounts}
-                      drivers={orgDrivers}
-                      onAddExpense={addExpense}
-                      canEditLoans={currentUserRights().canEditLoans !== false}
-                      canDeleteLoans={currentUserRights().canDeleteLoans !== false}
-                      canEditExpenses={currentUserRights().canEditExpenses !== false}
-                      currentUserEmail={currentUser()?.email || ''}
-                      currentUserName={currentUser()?.name || ''}
-                      currentUserPhone={currentUser()?.phone || ''}
-                      onProcessTruckPayment={handleProcessTruckPayment}
-                      autoOpenAdd={autoOpenFormTab() === 'TRUCKS'}
-                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
-                    />
-                  )}
-                  {registrySubTab() === 'DRIVERS' && (
-                    <DriverMaster
-                      drivers={orgDrivers}
-                      trips={orgTrips}
-                      expenses={orgExpenses}
-                      accounts={orgAccounts}
-                      onAddDriver={addDriver}
-                      onUpdateDriver={updateDriver}
-                      onDeleteDriver={deleteDriver}
-                      canViewDrivers={currentUserRights().canViewDrivers}
-                      canEditDrivers={currentUserRights().canEditDrivers}
-                      canDeleteDrivers={currentUserRights().canDeleteDrivers}
-                      organizationId={currentUserOrgId}
-                      orgProfile={currentOrgProfile}
-                      autoOpenAdd={autoOpenFormTab() === 'DRIVERS'}
-                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
-                      onSaveTrips={saveTrips}
-                      confirmAction={confirmAction}
-                    />
-                  )}
-                  {registrySubTab() === 'EXPENSES' && (
-                    <ExpenseMaster
-                      expenses={orgExpenses}
-                      trucks={approvedOrgTrucks}
-                      accounts={orgAccounts}
-                      drivers={orgDrivers}
-                      onAddExpense={addExpense}
-                      onUpdateExpense={updateExpense}
-                      onDeleteExpense={deleteExpense}
-                      canViewExpenses={currentUserRights().canViewExpenses}
-                      canEditExpenses={currentUserRights().canEditExpenses}
-                      canDeleteExpenses={currentUserRights().canDeleteExpenses}
-                      organizationId={currentUserOrgId}
-                      autoOpenAdd={autoOpenFormTab() === 'EXPENSES'}
-                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
-                      orgProfile={currentOrgProfile}
-                    />
-                  )}
-                  {registrySubTab() === 'TYRES' && (
-                    <TyreMaster
-                      tyres={orgTyres}
-                      trucks={approvedOrgTrucks}
-                      accounts={orgAccounts}
-                      onAddTyre={addTyre}
-                      onUpdateTyre={updateTyre}
-                      onDeleteTyre={deleteTyre}
-                      confirmAction={confirmAction}
-                      canViewTyres={currentUserRights().canViewTyres}
-                      canEditTyres={currentUserRights().canEditTyres}
-                      canDeleteTyres={currentUserRights().canDeleteTyres}
-                      organizationId={currentUserOrgId}
-                      autoOpenAdd={autoOpenFormTab() === 'TYRES'}
-                      onAutoOpenCleared={() => setAutoOpenFormTab(null)}
-                    />
-                  )}
-                  {registrySubTab() === 'OFFICES' && (
-                    <OfficeMaster
-                      offices={orgOffices}
-                      onAddOffice={addOffice}
-                      onUpdateOffice={updateOffice}
-                      onDeleteOffice={deleteOffice}
-                      confirmAction={confirmAction}
-                      canViewOffices={currentUserRights().canViewOffices}
-                      canEditOffices={currentUserRights().canEditOffices}
-                      canDeleteOffices={currentUserRights().canDeleteOffices}
-                    />
-                  )}
-                  {registrySubTab() === 'ACCOUNTS' && (
-                    <AccountMaster
-                      accounts={orgAccounts}
-                      onAddAccount={addAccount}
-                      onUpdateAccount={updateAccount}
-                      onDeleteAccount={deleteAccount}
-                      confirmAction={confirmAction}
-                      canViewAccounts={currentUserRights().canViewAccounts}
-                      canEditAccounts={currentUserRights().canEditAccounts}
-                      canDeleteAccounts={currentUserRights().canDeleteAccounts}
-                    />
-                  )}
-                  {registrySubTab() === 'OUTSTANDING' && (
-                    <MobileOutstandingView
-                      trips={orgTrips}
-                      trucks={approvedOrgTrucks}
-                      offices={orgOffices}
-                      accounts={orgAccounts}
-                      orgProfile={currentOrgProfile}
-                      expenses={orgExpenses}
-                      onSaveTrips={saveTrips}
-                    />
-                  )}
-                  {registrySubTab() === 'REPORTS' && (
-                    <MonthlyReport
-                      trips={dashboardTrips()}
-                      trucks={approvedOrgTrucks}
-                      expenses={dashboardExpenses()}
-                      selectedMonth={activeMonth()}
-                      selectedYear={activeYear()}
-                      setSelectedMonth={setActiveMonth}
-                      setSelectedYear={setActiveYear}
-                    />
-                  )}
-                  {registrySubTab() === 'AUDIT' && (
-                    <AuditLogView
-                      logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
-                      onClearLogs={handleClearAuditLogs}
-                      confirmAction={confirmAction}
-                      organizationProfiles={organizationProfiles()}
-                      currentUserOrgId={currentUserOrgId}
-                    />
-                  )}
-                </div>
-                {/* Custom Floating Action Button (FAB) */}
-                {fabOpened() && (
-                  <div 
-                    class="fixed inset-0 bg-slate-950/35 backdrop-blur-3xs z-30 transition-opacity animate-fade-in"
-                    onClick={() => setFabOpened(false)}
-                  />
-                )}
-                
-                <div class="absolute bottom-24 right-6 z-40 flex flex-col items-end">
-                  {fabOpened() && (
-                    <div class="flex flex-col items-end gap-3 mb-4 animate-scale-up origin-bottom">
-                      {[
-                        { id: 'TRUCKS', label: 'Add Truck', icon: <TruckIcon class="w-4 h-4 text-emerald-600 dark:text-emerald-450" /> },
-                        { id: 'DRIVERS', label: 'Add Driver', icon: <UserPlus class="w-4 h-4 text-blue-600 dark:text-blue-400" /> },
-                        { id: 'EXPENSES', label: 'Register Expense', icon: <Coins class="w-4 h-4 text-purple-600 dark:text-purple-400" /> },
-                        { id: 'TYRES', label: 'Register Tyre', icon: <Wrench class="w-4 h-4 text-amber-600 dark:text-amber-450" /> },
-                        { id: 'OFFICES', label: 'Add Office', icon: <MapPin class="w-4 h-4 text-rose-600 dark:text-rose-400" /> },
-                        { id: 'ACCOUNTS', label: 'Add Account', icon: <CreditCard class="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> }
-                      ].map((act) => (
-                        <div 
-                           
-                          class="flex items-center gap-3 cursor-pointer group active:scale-95 transition-transform" 
-                          onClick={() => triggerOpenAddForm(act.id)}
-                        >
-                          <span class="bg-slate-900/80 dark:bg-slate-950/90 backdrop-blur-xs text-white text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-md transition transform group-hover:-translate-x-1 uppercase tracking-wider select-none">
-                            {act.label}
-                          </span>
-                          <div class="w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center transition hover:bg-slate-50 dark:hover:bg-slate-750">
-                            {act.icon}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  <button
-                    onClick={() => setFabOpened(!fabOpened())}
-                    class={`w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-xl flex items-center justify-center transition-all duration-300 active:scale-90 cursor-pointer ${
-                      fabOpened() ? 'rotate-135 bg-gradient-to-tr from-rose-650 to-red-500' : ''
-                    }`}
-                    title="Quick Actions"
-                  >
-                    <Plus class="w-6 h-6 transition-transform duration-300" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {mobileTab() === 'ACCOUNT' && (
-              <MobileAccountTab
-                currentUser={currentUser()}
-                currentUserOrgId={currentUserOrgId}
-                currentUserRights={currentUserRights() as any}
-                theme={theme()}
-                setTheme={setTheme}
-                handleLogout={handleLogout}
-                setProfileActiveTab={setProfileActiveTab}
-                setProfileModalOpen={setProfileModalOpen}
-                setSetup2FAOpen={setSetup2FAOpen}
-                setDisable2FAOpen={setDisable2FAOpen}
-                clientUnreadCount={getClientUnreadTicketsCount()}
-                showNotification={showNotification}
-                appVersion={APP_VERSION}
-              />
-            )}
-          </Suspense>
-        </div>
-
-        {/* Mobile Bottom Navigation Bar */}
-        <MobileBottomTabBar
-          activeTab={mobileTab()}
-          setActiveTab={setMobileTab}
-          clientUnreadCount={getClientUnreadTicketsCount()}
+        {/* Sidebar Navigation */}
+        <AppSidebar
+          logo={logo}
+          isMobileMenuOpen={isMobileMenuOpen()}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
+          activeTab={activeTab()}
+          selectTab={selectTab}
+          currentUserRights={currentUserRights()}
+          hasUsersTabAccess={hasUsersTabAccess()}
+          isBackendTeam={isBackendTeam}
+          getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+          getAgentUnreadTicketsCount={getAgentUnreadTicketsCount}
+          currentUser={currentUser()}
+          currentUserOrgId={currentUserOrgId()}
+          showNotification={showNotification}
+          handleLogout={handleLogout}
+          setProfileActiveTab={setProfileActiveTab}
+          setProfileModalOpen={setProfileModalOpen}
         />
 
-        {/* Global Modals rendered on top */}
-        {profileModalOpen() && (
-          <ProfileModal
-            isOpen={profileModalOpen()}
-            onClose={() => setProfileModalOpen(false)}
-            profileActiveTab={profileActiveTab()}
-            setProfileActiveTab={setProfileActiveTab}
-            isBackendTeam={isBackendTeam}
-            getClientUnreadTicketsCount={getClientUnreadTicketsCount}
-            currentUser={currentUser()}
+        {/* Main Content Area */}
+        <main class="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
+          {/* Header */}
+          <AppHeader
+            activeTab={activeTab()}
+            orgTrips={orgTrips}
+            orgTrucks={orgTrucks}
+            orgOffices={orgOffices}
+            orgAccounts={orgAccounts}
+            orgDrivers={orgDrivers}
+            orgExpenses={orgExpenses}
+            orgTyres={orgTyres}
+            orgAuditLogs={orgAuditLogs}
             currentUserRights={currentUserRights()}
-            organizationProfiles={organizationProfiles()}
-            profileName={profileName()}
-            setProfileName={setProfileName}
-            profileOrgName={profileOrgName()}
-            setProfileOrgName={setProfileOrgName}
-            profileVoiceLang={profileVoiceLang()}
-            setProfileVoiceLang={setProfileVoiceLang}
-            oldPassword={oldPassword()}
-            setOldPassword={setOldPassword}
-            newPassword={newPassword()}
-            setNewPassword={setNewPassword}
-            confirmPassword={confirmPassword()}
-            setConfirmPassword={setConfirmPassword}
-            handleUpdateProfile={handleUpdateProfile}
-            onChangeMobileClick={() => setMobileWizardOpen(true)}
-            onEnable2FAClick={() => setSetup2FAOpen(true)}
-            onDisable2FAClick={() => setDisable2FAOpen(true)}
+            currentUserOrgId={currentUserOrgId()}
+            currentUser={currentUser()}
+            cyanCount={cyanCount()}
+            theme={theme()}
+            setTheme={setTheme}
+            handleCyanClick={handleCyanClick}
+            notificationOpen={notificationOpen()}
+            setNotificationOpen={setNotificationOpen}
+            profileDropdownOpen={profileDropdownOpen()}
+            setProfileDropdownOpen={setProfileDropdownOpen}
+            notificationRef={setNotificationRef}
+            profileDropdownRef={(el) => profileDropdownRef = el}
+            hasUnreadNotifications={hasUnreadNotifications()}
+            updateLastReadNotificationTime={updateLastReadNotificationTime}
+            showNotification={showNotification}
+            getUserInitials={getUserInitials}
+            isBackendTeam={isBackendTeam}
+            hasUsersTabAccess={hasUsersTabAccess()}
+            setProfileActiveTab={setProfileActiveTab}
+            setProfileModalOpen={setProfileModalOpen}
+            setActiveTab={setActiveTab}
+            handleLogout={handleLogout}
+            triggerClearAllLocalData={triggerClearAllLocalData}
+            handleTriggerDownloadBackup={handleTriggerDownloadBackup}
+            handleUploadBackupChange={handleUploadBackupChange}
+            setEditingTrip={setEditingTrip}
+            setBookingModalOpen={setBookingModalOpen}
+            setIsVoiceAssistantOpen={setIsVoiceAssistantOpen}
+            onLoadCloudState={onLoadCloudState}
             supportTickets={supportTickets()}
-            currentUserOrgId={currentUserOrgId}
-            handleCreateSupportTicket={handleCreateSupportTicket}
-            handleSendSupportTicketMessage={handleSendSupportTicketMessage}
-            profileGst={profileGst()}
-            setProfileGst={setProfileGst}
-            profilePan={profilePan()}
-            setProfilePan={setProfilePan}
-            profileAadhaar={profileAadhaar()}
-            setProfileAadhaar={setProfileAadhaar}
-            profileAddress={profileAddress()}
-            setProfileAddress={setProfileAddress}
-            payments={payments()}
+            activeTicketId={activeTicketId()}
+            setInitialPullDone={setInitialPullDone}
+            setIsOnline={setIsOnline}
+            setDisconnectReason={setDisconnectReason}
+            trucks={trucks}
+            drivers={drivers}
+            offices={offices}
+            accounts={accounts}
+            trips={trips}
+            expenses={expenses}
+            tyres={tyres}
+            auditLogs={auditLogs}
+            logAction={logAction}
           />
-        )}
 
-        <Setup2FAModal
-          isOpen={setup2FAOpen()}
-          onClose={() => setSetup2FAOpen(false)}
-          setup2FASecret={setup2FASecret()}
-          showNotification={showNotification}
-          reconcileSession={reconcileSession}
-        />
-
-        <Disable2FAModal
-          isOpen={disable2FAOpen()}
-          onClose={() => setDisable2FAOpen(false)}
-          showNotification={showNotification}
-          reconcileSession={reconcileSession}
-        />
-
-        <ConfirmModal
-          confirmModal={confirmModal()}
-          onClose={() => setConfirmModal(null)}
-        />
-
-        <Suspense fallback={null}>
-          <TripForm
-            isOpen={bookingModalOpen()}
-            onClose={() => {
-              setBookingModalOpen(false);
-              setEditingTrip(null);
-            }}
-            trucks={approvedOrgTrucks}
-            drivers={orgDrivers}
-            offices={orgOffices}
-            accounts={orgAccounts}
-            existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-            onSubmit={handlePostTripEntry}
-            editingEntry={editingTrip()}
-            canViewDrivers={currentUserRights().canViewDrivers}
-            orgProfile={currentOrgProfile}
-            trips={orgTrips}
-            onSaveTrips={saveTrips}
+          <DesktopViewport
+            activeTab={activeTab}
+            currentUserRights={currentUserRights}
+            currentUserOrgId={currentUserOrgId()}
+            currentUser={currentUser}
+            currentOrgProfile={currentOrgProfileMemo()}
+            userRightsList={userRightsList}
+            supportTickets={supportTickets}
+            activeTicketId={activeTicketId}
+            payments={payments}
+            appUpdateConfig={appUpdateConfig}
+            dashboardTrips={dashboardTrips}
+            dashboardExpenses={dashboardExpenses}
+            activeMonth={activeMonth}
+            activeYear={activeYear}
+            setActiveMonth={setActiveMonth}
+            setActiveYear={setActiveYear}
+            handleEditTripTrigger={handleEditTripTrigger}
             confirmAction={confirmAction}
+            handleUpdateOrgStatus={handleUpdateOrgStatus}
+            handleUpdateOrgLimit={handleUpdateOrgLimit}
+            handleApproveTruckRequest={handleApproveTruckRequest}
+            handleRejectTruckRequest={handleRejectTruckRequest}
+            handleBackendUpdateTruck={handleBackendUpdateTruck}
+            saveUserRightsListWithSync={saveUserRightsListWithSync}
+            saveOrganizationProfiles={saveOrganizationProfiles}
+            saveSupportTickets={saveSupportTickets}
+            setActiveTicketId={setActiveTicketId}
+            handleInitiateRefund={handleInitiateRefund}
+            handleSaveAppUpdateConfig={handleSaveAppUpdateConfig}
+            orgUserRights={orgUserRights}
+            handleAddPermission={handleAddPermission}
+            handleUpdatePermission={handleUpdatePermission}
+            handleDeletePermission={handleDeletePermission}
+            teamMembers={teamMembers}
+            loadingTeamMembers={loadingTeamMembers}
+            handleUpdateOrgProfile={handleUpdateOrgProfile}
+            hasUsersTabAccess={hasUsersTabAccess()}
+            showNotification={showNotification}
+            handleServiceDone={handleServiceDone}
           />
-        </Suspense>
+        </main>
 
-        <Suspense fallback={null}>
-          <VoiceAssistant
-            isOpen={isVoiceAssistantOpen()}
-            onClose={() => setIsVoiceAssistantOpen(false)}
-            trucks={approvedOrgTrucks}
-            drivers={orgDrivers}
-            offices={orgOffices}
-            accounts={orgAccounts}
-            existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-            onSubmitTrip={handlePostTripEntry}
-            onSubmitExpense={addExpense}
-            voiceLang={userVoiceLang()}
-          />
-        </Suspense>
-
-        {renderAppUpdateModal()}
-
-        {/* Sync background module */}
-        <AppwriteCloudSync
-          currentLocalState={{
-            trucks: trucks,
-            drivers: drivers,
-            offices: offices,
-            accounts: accounts,
-            trips: trips,
-            expenses: expenses,
-            tyres: tyres,
-            auditLogs: auditLogs,
-            supportTickets: supportTickets()
+        <AppModals
+          profileModalOpen={profileModalOpen}
+          setProfileModalOpen={setProfileModalOpen}
+          profileActiveTab={profileActiveTab}
+          setProfileActiveTab={setProfileActiveTab}
+          isBackendTeam={isBackendTeam}
+          getClientUnreadTicketsCount={getClientUnreadTicketsCount}
+          currentUser={currentUser}
+          currentUserRights={currentUserRights}
+          organizationProfiles={organizationProfiles}
+          profileName={profileName}
+          setProfileName={setProfileName}
+          profileOrgName={profileOrgName}
+          setProfileOrgName={setProfileOrgName}
+          profileVoiceLang={profileVoiceLang}
+          setProfileVoiceLang={setProfileVoiceLang}
+          oldPassword={oldPassword}
+          setOldPassword={setOldPassword}
+          newPassword={newPassword}
+          setNewPassword={setNewPassword}
+          confirmPassword={confirmPassword}
+          setConfirmPassword={setConfirmPassword}
+          handleUpdateProfile={async (newName, newOrgName, newPass, oldPass) => {
+            if (newPass && newPass !== confirmPassword()) {
+              alert("New passwords do not match!");
+              return;
+            }
+            const loginMethod = localStorage.getItem('ttt_login_method');
+            if (loginMethod === 'appwrite' && newPass && !oldPass) {
+              alert("Current password is required to change password in Appwrite.");
+              return;
+            }
+            await handleUpdateProfile(
+              newName,
+              currentUserRights().isAdmin ? newOrgName : undefined,
+              newPass || undefined,
+              oldPass || undefined
+            );
           }}
-          onLoadCloudState={onLoadCloudState}
+          setMobileWizardOpen={setMobileWizardOpen}
+          setSetup2FAOpen={setSetup2FAOpen}
+          setDisable2FAOpen={setDisable2FAOpen}
+          supportTickets={supportTickets}
+          currentUserOrgId={currentUserOrgId()}
+          handleCreateSupportTicket={handleCreateSupportTicket}
+          handleSendSupportTicketMessage={handleSendSupportTicketMessage}
+          profileGst={profileGst}
+          setProfileGst={setProfileGst}
+          profilePan={profilePan}
+          setProfilePan={setProfilePan}
+          profileAadhaar={profileAadhaar}
+          setProfileAadhaar={setProfileAadhaar}
+          profileAddress={profileAddress}
+          setProfileAddress={setProfileAddress}
+          payments={payments}
+          mobileWizardOpen={mobileWizardOpen}
+          mobileWizardStep={mobileWizardStep}
+          setMobileWizardStep={setMobileWizardStep}
+          mobileWizardCode={mobileWizardCode}
+          setMobileWizardCode={setMobileWizardCode}
+          mobileWizardNewPhone={mobileWizardNewPhone}
+          setMobileWizardNewPhone={setMobileWizardNewPhone}
+          mobileWizardPassword={mobileWizardPassword}
+          setMobileWizardPassword={setMobileWizardPassword}
+          mobileWizardError={mobileWizardError}
+          setMobileWizardError={setMobileWizardError}
+          mobileWizardGeneratedOtp={mobileWizardGeneratedOtp}
+          setMobileWizardGeneratedOtp={setMobileWizardGeneratedOtp}
+          mobileWizardTimer={mobileWizardTimer}
+          setMobileWizardTimer={setMobileWizardTimer}
+          sendWhatsAppOTP={sendWhatsAppOTP}
+          userRightsList={userRightsList}
+          setUserRightsList={setUserRightsList}
+          pushPermissionsToCloud={pushPermissionsToCloud}
+          reconcileSession={reconcileSession}
+          setCurrentUser={setCurrentUser}
           showNotification={showNotification}
-          logAction={logAction}
-          currentUserOrgId={() => session().orgId}
-          currentUserEmail={() => session().user?.email || ''}
-          currentUserId={() => session().user?.email || ''}
-          isAdmin={() => !!session().rights?.isAdmin}
-          onInitialSyncComplete={setInitialPullDone}
-          onConnectionChange={(online, reason) => {
-            setIsOnline(online);
-            setDisconnectReason(reason);
-          }}
-          activeTicketId={activeTicketId}
-          hideUI={true}
+          setup2FAOpen={setup2FAOpen}
+          setup2FASecret={setup2FASecret}
+          disable2FAOpen={disable2FAOpen}
+          confirmModal={confirmModal}
+          setConfirmModal={setConfirmModal}
+          bookingModalOpen={bookingModalOpen}
+          setBookingModalOpen={setBookingModalOpen}
+          setEditingTrip={setEditingTrip}
+          editingTrip={editingTrip}
+          currentOrgProfile={currentOrgProfileMemo()}
+          confirmAction={confirmAction}
+          isVoiceAssistantOpen={isVoiceAssistantOpen}
+          setIsVoiceAssistantOpen={setIsVoiceAssistantOpen}
+          userVoiceLang={userVoiceLang}
         />
 
-        {!isOnline && (
+        {!isOnline() && (
           <ConnectionStatusBlocker reason={disconnectReason()} />
         )}
 
       </div>
     );
-  }
-
-  return (
-    <div class="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
-
-      {/* GLOBAL TOAST BANNER */}
-      {toastMessage() && (
-        <div id="toast-notify" class="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-          <CheckCircle class="w-4 h-4 text-white" />
-          <span class="text-xs font-semibold">{toastMessage()}</span>
-        </div>
-      )}
-
-      {/* Sidebar Navigation */}
-      <AppSidebar
-        logo={logo}
-        isMobileMenuOpen={isMobileMenuOpen()}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-        activeTab={activeTab()}
-        selectTab={selectTab}
-        currentUserRights={currentUserRights()}
-        hasUsersTabAccess={hasUsersTabAccess}
-        isBackendTeam={isBackendTeam}
-        getClientUnreadTicketsCount={getClientUnreadTicketsCount}
-        getAgentUnreadTicketsCount={getAgentUnreadTicketsCount}
-        currentUser={currentUser()}
-        currentUserOrgId={currentUserOrgId}
-        showNotification={showNotification}
-        handleLogout={handleLogout}
-        setProfileActiveTab={setProfileActiveTab}
-        setProfileModalOpen={setProfileModalOpen}
-      />
-
-      {/* Main Content Area */}
-      <main class="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
-        {/* Header */}
-        <AppHeader
-          activeTab={activeTab()}
-          orgTrips={orgTrips}
-          orgTrucks={orgTrucks}
-          orgOffices={orgOffices}
-          orgAccounts={orgAccounts}
-          orgDrivers={orgDrivers}
-          orgExpenses={orgExpenses}
-          orgTyres={orgTyres}
-          orgAuditLogs={orgAuditLogs}
-          currentUserRights={currentUserRights()}
-          currentUserOrgId={currentUserOrgId}
-          currentUser={currentUser()}
-          cyanCount={cyanCount()}
-          theme={theme()}
-          setTheme={setTheme}
-          handleCyanClick={handleCyanClick}
-          notificationOpen={notificationOpen()}
-          setNotificationOpen={setNotificationOpen}
-          profileDropdownOpen={profileDropdownOpen()}
-          setProfileDropdownOpen={setProfileDropdownOpen}
-          notificationRef={setNotificationRef}
-          profileDropdownRef={profileDropdownRef}
-          hasUnreadNotifications={hasUnreadNotifications()}
-          updateLastReadNotificationTime={updateLastReadNotificationTime}
-          showNotification={showNotification}
-          getUserInitials={getUserInitials}
-          isBackendTeam={isBackendTeam}
-          hasUsersTabAccess={hasUsersTabAccess}
-          setProfileActiveTab={setProfileActiveTab}
-          setProfileModalOpen={setProfileModalOpen}
-          setActiveTab={setActiveTab}
-          handleLogout={handleLogout}
-          triggerClearAllLocalData={triggerClearAllLocalData}
-          handleTriggerDownloadBackup={handleTriggerDownloadBackup}
-          handleUploadBackupChange={handleUploadBackupChange}
-          setEditingTrip={setEditingTrip}
-          setBookingModalOpen={setBookingModalOpen}
-          setIsVoiceAssistantOpen={setIsVoiceAssistantOpen}
-          onLoadCloudState={onLoadCloudState}
-          supportTickets={supportTickets()}
-          activeTicketId={activeTicketId()}
-          setInitialPullDone={setInitialPullDone}
-          setIsOnline={setIsOnline}
-          setDisconnectReason={setDisconnectReason}
-          trucks={trucks}
-          drivers={drivers}
-          offices={offices}
-          accounts={accounts}
-          trips={trips}
-          expenses={expenses}
-          tyres={tyres}
-          auditLogs={auditLogs}
-          logAction={logAction}
-        />
-
-        {/* Outer content container */}
-        <div id="app-viewport-container" class="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 space-y-6">
-          <Suspense fallback={<LoadingTab />}>
-            {/* WARNING BAR IF MASTERS INACTIVE */}
-            {!currentUserRights().isSuperAdmin && (orgTrucks.length === 0 || orgOffices.length === 0 || orgAccounts.length === 0) && (
-              <div id="safety-warning-banner" class="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3 shadow-xs">
-                <AlertCircle class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div class="text-xs">
-                  <p class="font-bold text-amber-800">Prerequisites Required</p>
-                  <p class="text-slate-600 mt-1 leading-relaxed">
-                    Before recording any transaction logs, ensure you register at least <strong>1 operational Truck</strong>, <strong>1 active branch Office</strong>, and <strong>1 receiving Account Ledger</strong>. Go to their respective master database tabs above to populate the datasheets first.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* TAB RENDERING CONTROLS */}
-            {activeTab() === 'DASHBOARD' && (
-              <Dashboard
-                trips={dashboardTrips()}
-                allTrips={orgTrips}
-                trucks={approvedOrgTrucks}
-                offices={orgOffices}
-                accounts={orgAccounts}
-                currentUserRights={currentUserRights()}
-                activeMonth={activeMonth()}
-                activeYear={activeYear()}
-                setActiveMonth={setActiveMonth}
-                setActiveYear={setActiveYear}
-                orgProfile={currentOrgProfile}
-                expenses={orgExpenses}
-                onAddExpense={addExpense}
-                onUpdateTruck={updateTruck}
-                onSaveTrips={saveTrips}
-              />
-            )}
-
-            {activeTab() === 'TRIPS' && currentUserRights().canViewTrips && (
-              <TripList
-                trips={orgTrips}
-                trucks={approvedOrgTrucks}
-                offices={orgOffices}
-                accounts={orgAccounts}
-                onEditEntry={handleEditTripTrigger}
-                onDeleteEntry={deleteTripEntry}
-                confirmAction={confirmAction}
-                canViewTrips={currentUserRights().canViewTrips}
-                canEditTrips={currentUserRights().canEditTrips}
-                canDeleteTrips={currentUserRights().canDeleteTrips}
-                organizationId={currentUserOrgId}
-                onSaveTrips={saveTrips}
-                auditLogs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
-                currentUserRights={currentUserRights()}
-                orgProfile={currentOrgProfile}
-              />
-            )}
-
-            {activeTab() === 'TRUCKS' && currentUserRights().canViewTrucks && (
-              <TruckMaster
-                trucks={orgTrucks}
-                trips={orgTrips}
-                expenses={orgExpenses}
-                onAddTruck={addTruck}
-                onUpdateTruck={updateTruck}
-                onDeleteTruck={deleteTruck}
-                confirmAction={confirmAction}
-                canViewTrucks={currentUserRights().canViewTrucks}
-                canEditTrucks={currentUserRights().canEditTrucks}
-                canDeleteTrucks={currentUserRights().canDeleteTrucks}
-                maxTrucksAllowed={currentOrgProfile?.maxTrucksAllowed || 2}
-                onAddTruckRequest={handleAddTruckRequest}
-                organizationId={currentUserOrgId}
-                orgProfile={currentOrgProfile}
-                onServiceDone={(currentUserRights().canEditTrucks || currentUserRights().canEditExpenses) ? handleServiceDone : undefined}
-                accounts={orgAccounts}
-                drivers={orgDrivers}
-                onAddExpense={addExpense}
-                canEditLoans={currentUserRights().canEditLoans !== false}
-                canDeleteLoans={currentUserRights().canDeleteLoans !== false}
-                canEditExpenses={currentUserRights().canEditExpenses !== false}
-                currentUserEmail={currentUser()?.email || ''}
-                currentUserName={currentUser()?.name || ''}
-                currentUserPhone={currentUser()?.phone || ''}
-                onProcessTruckPayment={handleProcessTruckPayment}
-              />
-            )}
-
-            {activeTab() === 'OFFICES' && currentUserRights().canViewOffices && (
-              <OfficeMaster
-                offices={orgOffices}
-                onAddOffice={addOffice}
-                onUpdateOffice={updateOffice}
-                onDeleteOffice={deleteOffice}
-                confirmAction={confirmAction}
-                canViewOffices={currentUserRights().canViewOffices}
-                canEditOffices={currentUserRights().canEditOffices}
-                canDeleteOffices={currentUserRights().canDeleteOffices}
-              />
-            )}
-
-            {activeTab() === 'ACCOUNTS' && currentUserRights().canViewAccounts && (
-              <AccountMaster
-                accounts={orgAccounts}
-                onAddAccount={addAccount}
-                onUpdateAccount={updateAccount}
-                onDeleteAccount={deleteAccount}
-                confirmAction={confirmAction}
-                canViewAccounts={currentUserRights().canViewAccounts}
-                canEditAccounts={currentUserRights().canEditAccounts}
-                canDeleteAccounts={currentUserRights().canDeleteAccounts}
-              />
-            )}
-
-            {activeTab() === 'DRIVERS' && currentUserRights().canViewDrivers && (
-              <DriverMaster
-                drivers={orgDrivers}
-                trips={orgTrips}
-                expenses={orgExpenses}
-                accounts={orgAccounts}
-                onAddDriver={addDriver}
-                onUpdateDriver={updateDriver}
-                onDeleteDriver={deleteDriver}
-                canViewDrivers={currentUserRights().canViewDrivers}
-                canEditDrivers={currentUserRights().canEditDrivers}
-                canDeleteDrivers={currentUserRights().canDeleteDrivers}
-                organizationId={currentUserOrgId}
-                orgProfile={currentOrgProfile}
-                onSaveTrips={saveTrips}
-                confirmAction={confirmAction}
-              />
-            )}
-
-            {activeTab() === 'EXPENSES' && currentUserRights().canViewExpenses && (
-              <ExpenseMaster
-                expenses={orgExpenses}
-                trucks={approvedOrgTrucks}
-                accounts={orgAccounts}
-                drivers={orgDrivers}
-                onAddExpense={addExpense}
-                onUpdateExpense={updateExpense}
-                onDeleteExpense={deleteExpense}
-                canViewExpenses={currentUserRights().canViewExpenses}
-                canEditExpenses={currentUserRights().canEditExpenses}
-                canDeleteExpenses={currentUserRights().canDeleteExpenses}
-                organizationId={currentUserOrgId}
-                orgProfile={currentOrgProfile}
-              />
-            )}
-
-            {activeTab() === 'REPORTS' && currentUserRights().canViewTrips && (
-              <MonthlyReport
-                trips={dashboardTrips()}
-                trucks={approvedOrgTrucks}
-                expenses={dashboardExpenses()}
-                selectedMonth={activeMonth()}
-                selectedYear={activeYear()}
-                setSelectedMonth={setActiveMonth}
-                setSelectedYear={setActiveYear}
-              />
-            )}
-
-            {activeTab() === 'AUDIT' && currentUserRights().isAdmin && (
-              <AuditLogView
-                logs={currentUserOrgId === 'org_backend' ? auditLogs : orgAuditLogs}
-                onClearLogs={handleClearAuditLogs}
-                confirmAction={confirmAction}
-                organizationProfiles={organizationProfiles()}
-                currentUserOrgId={currentUserOrgId}
-              />
-            )}
-
-            {activeTab() === 'TYRES' && currentUserRights().canViewTyres && (
-              <TyreMaster
-                tyres={orgTyres}
-                trucks={approvedOrgTrucks}
-                accounts={orgAccounts}
-                onAddTyre={addTyre}
-                onUpdateTyre={updateTyre}
-                onDeleteTyre={deleteTyre}
-                confirmAction={confirmAction}
-                canViewTyres={currentUserRights().canViewTyres}
-                canEditTyres={currentUserRights().canEditTyres}
-                canDeleteTyres={currentUserRights().canDeleteTyres}
-                organizationId={currentUserOrgId}
-              />
-            )}
-
-            {activeTab() === 'BACKEND' && (currentUserRights()?.isSuperAdmin || currentUserRights()?.organizationId === 'org_backend') && (
-              <BackendDashboard
-                organizationProfiles={organizationProfiles}
-                userRightsList={userRightsList}
-                trucks={() => trucks}
-                onUpdateOrgStatus={handleUpdateOrgStatus}
-                onUpdateOrgLimit={handleUpdateOrgLimit}
-                onApproveTruckRequest={handleApproveTruckRequest}
-                onRejectTruckRequest={handleRejectTruckRequest}
-                onUpdateTruckDetails={handleBackendUpdateTruck}
-                logAction={logAction}
-                canEditBackend={() => currentUserRights()?.canEditBackend ?? false}
-                canApproveBackend={() => currentUserRights()?.canApproveBackend ?? false}
-                canAddBackend={() => currentUserRights()?.canAddBackend ?? false}
-                canDeleteBackend={() => currentUserRights()?.canDeleteBackend ?? false}
-                canViewBackend={() => currentUserRights()?.canViewBackend ?? false}
-                canViewTruckRequests={() => currentUserRights()?.canViewTruckRequests ?? false}
-                canViewDatabaseConsole={() => currentUserRights()?.canViewDatabaseConsole ?? false}
-                canEditDatabaseConsole={() => currentUserRights()?.canEditDatabaseConsole ?? false}
-                canDeleteDatabaseConsole={() => currentUserRights()?.canDeleteDatabaseConsole ?? false}
-                drivers={() => drivers}
-                offices={() => offices}
-                accounts={() => accounts}
-                trips={() => trips}
-                expenses={() => expenses}
-                tyres={() => tyres}
-                auditLogs={() => auditLogs}
-                onSaveTrucks={saveTrucks}
-                onSaveDrivers={saveDrivers}
-                onSaveOffices={saveOffices}
-                onSaveAccounts={saveAccounts}
-                onSaveTrips={saveTrips}
-                onSaveExpenses={saveExpenses}
-                onSaveTyres={saveTyres}
-                onSaveAuditLogs={saveAuditLogs}
-                onSaveUserRightsList={saveUserRightsListWithSync}
-                onSaveOrganizationProfiles={saveOrganizationProfiles}
-                supportTickets={supportTickets}
-                onSaveSupportTickets={saveSupportTickets}
-                currentUser={currentUser()}
-                activeTicketId={activeTicketId()}
-                onSetActiveTicketId={setActiveTicketId}
-                payments={payments()}
-                onInitiateRefund={handleInitiateRefund}
-                appUpdateConfig={appUpdateConfig()}
-                onSaveAppUpdateConfig={handleSaveAppUpdateConfig}
-              />
-            )}
-
-            {activeTab() === 'USERS' && hasUsersTabAccess && (
-              <UserAccessControl
-                permissions={orgUserRights()}
-                currentUserEmail={currentUser()?.email}
-                onAddPermission={handleAddPermission as any}
-                onUpdatePermission={handleUpdatePermission as any}
-                onDeletePermission={handleDeletePermission as any}
-                confirmAction={confirmAction}
-                showNotification={showNotification}
-                currentUserOrgId={currentUserOrgId}
-                teamMembers={teamMembers()}
-                loadingTeamMembers={loadingTeamMembers()}
-                canAddBackend={currentUserRights().canAddBackend}
-                canEditBackend={currentUserRights().canEditBackend}
-                canDeleteBackend={currentUserRights().canDeleteBackend}
-                orgProfile={currentOrgProfile}
-                onUpdateOrgProfile={handleUpdateOrgProfile}
-              />
-            )}
-
-            {activeTab() === 'BILLING' && (currentUserRights().isAdmin || currentUserRights().isSuperAdmin || currentUserOrgId === 'org_backend') && (
-              <BillingHistory
-                payments={payments()}
-                currentUserOrgId={currentUserOrgId}
-                orgName={currentOrgProfile?.organizationName || ''}
-                gstNo={currentOrgProfile?.gstNo || ''}
-                panNo={currentOrgProfile?.panNo || ''}
-                address={currentOrgProfile?.address || ''}
-              />
-            )}
-          </Suspense>
-        </div>
-      </main>
-
-      {/* DYNAMIC FORM MODAL BINDERS */}
-      <Suspense fallback={null}>
-        <TripForm
-          isOpen={bookingModalOpen()}
-          onClose={() => {
-            setBookingModalOpen(false);
-            setEditingTrip(null);
-          }}
-          trucks={approvedOrgTrucks}
-          drivers={orgDrivers}
-          offices={orgOffices}
-          accounts={orgAccounts}
-          existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-          onSubmit={handlePostTripEntry}
-          editingEntry={editingTrip()}
-          canViewDrivers={currentUserRights().canViewDrivers}
-          orgProfile={currentOrgProfile}
-          trips={orgTrips}
-          onSaveTrips={saveTrips}
-          confirmAction={confirmAction}
-        />
-      </Suspense>
-
-      <Suspense fallback={null}>
-        <VoiceAssistant
-          isOpen={isVoiceAssistantOpen()}
-          onClose={() => setIsVoiceAssistantOpen(false)}
-          trucks={approvedOrgTrucks}
-          drivers={orgDrivers}
-          offices={orgOffices}
-          accounts={orgAccounts}
-          existingTripNos={Array.from(new Set(orgTrips.map(t => t.tripNo).filter(Boolean)))}
-          onSubmitTrip={handlePostTripEntry}
-          onSubmitExpense={addExpense}
-          voiceLang={userVoiceLang()}
-        />
-      </Suspense>
-      <ProfileModal
-        isOpen={profileModalOpen()}
-        onClose={() => setProfileModalOpen(false)}
-        profileActiveTab={profileActiveTab()}
-        setProfileActiveTab={setProfileActiveTab}
-        isBackendTeam={isBackendTeam}
-        getClientUnreadTicketsCount={getClientUnreadTicketsCount}
-        currentUser={currentUser()}
-        currentUserRights={currentUserRights()}
-        organizationProfiles={organizationProfiles()}
-        profileName={profileName()}
-        setProfileName={setProfileName}
-        profileOrgName={profileOrgName()}
-        setProfileOrgName={setProfileOrgName}
-        profileVoiceLang={profileVoiceLang()}
-        setProfileVoiceLang={setProfileVoiceLang}
-        oldPassword={oldPassword()}
-        setOldPassword={setOldPassword}
-        newPassword={newPassword()}
-        setNewPassword={setNewPassword}
-        confirmPassword={confirmPassword()}
-        setConfirmPassword={setConfirmPassword}
-        handleUpdateProfile={async (newName, newOrgName, newPass, oldPass) => {
-          if (newPass && newPass !== confirmPassword()) {
-            alert("New passwords do not match!");
-            return;
-          }
-          const loginMethod = localStorage.getItem('ttt_login_method');
-          if (loginMethod === 'appwrite' && newPass && !oldPass) {
-            alert("Current password is required to change password in Appwrite.");
-            return;
-          }
-          await handleUpdateProfile(
-            newName,
-            currentUserRights().isAdmin ? newOrgName : undefined,
-            newPass || undefined,
-            oldPass || undefined
-          );
-        }}
-        onChangeMobileClick={async () => {
-          setMobileWizardStep(1);
-          setMobileWizardOpen(true);
-          setMobileWizardTimer(120);
-          setMobileWizardCode('');
-          setMobileWizardNewPhone('');
-          setMobileWizardPassword('');
-          setMobileWizardError(null);
-          try {
-            if (currentUserRights().phone) {
-              const otp = await sendWhatsAppOTP(currentUserRights().phone);
-              setMobileWizardGeneratedOtp(otp);
-              showNotification("Verification OTP code has been sent via WhatsApp!");
-            } else {
-              const otp = Math.floor(100000 + Math.random() * 900000).toString();
-              setMobileWizardGeneratedOtp(otp);
-              alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-            }
-          } catch (err: any) {
-            setMobileWizardError(err.message || 'Failed to send WhatsApp OTP.');
-          }
-        }}
-        onEnable2FAClick={() => {
-          const secret = generateSecret();
-          setSetup2FASecret(secret);
-          setSetup2FAOpen(true);
-        }}
-        onDisable2FAClick={() => {
-          setDisable2FAOpen(true);
-        }}
-        supportTickets={supportTickets()}
-        currentUserOrgId={currentUserOrgId}
-        handleCreateSupportTicket={handleCreateSupportTicket}
-        handleSendSupportTicketMessage={handleSendSupportTicketMessage}
-        profileGst={profileGst()}
-        setProfileGst={setProfileGst}
-        profilePan={profilePan()}
-        setProfilePan={setProfilePan}
-        profileAadhaar={profileAadhaar()}
-        setProfileAadhaar={setProfileAadhaar}
-        profileAddress={profileAddress()}
-        setProfileAddress={setProfileAddress}
-        payments={payments()}
-      />
-
-      <MobileChangeWizardModal
-        isOpen={mobileWizardOpen()}
-        onClose={() => setMobileWizardOpen(false)}
-        currentUser={currentUser()}
-        currentUserRights={currentUserRights() as any}
-        userRightsList={userRightsList()}
-        setUserRightsList={setUserRightsList}
-        pushPermissionsToCloud={pushPermissionsToCloud}
-        reconcileSession={reconcileSession as any}
-        setCurrentUser={setCurrentUser}
-        showNotification={showNotification}
-        mobileWizardStep={mobileWizardStep()}
-        setMobileWizardStep={setMobileWizardStep}
-        mobileWizardCode={mobileWizardCode()}
-        setMobileWizardCode={setMobileWizardCode}
-        mobileWizardNewPhone={mobileWizardNewPhone()}
-        setMobileWizardNewPhone={setMobileWizardNewPhone}
-        mobileWizardPassword={mobileWizardPassword()}
-        setMobileWizardPassword={setMobileWizardPassword}
-        mobileWizardError={mobileWizardError()}
-        setMobileWizardError={setMobileWizardError}
-        mobileWizardGeneratedOtp={mobileWizardGeneratedOtp()}
-        setMobileWizardGeneratedOtp={setMobileWizardGeneratedOtp}
-        mobileWizardTimer={mobileWizardTimer}
-        setMobileWizardTimer={setMobileWizardTimer}
-        sendWhatsAppOTP={sendWhatsAppOTP as any}
-      />
-
-      {/* ENABLE 2FA WIZARD MODAL */}
-      <Setup2FAModal
-        isOpen={setup2FAOpen()}
-        onClose={() => setSetup2FAOpen(false)}
-        setup2FASecret={setup2FASecret()}
-        showNotification={showNotification}
-        reconcileSession={reconcileSession as any}
-      />
-
-      {/* DISABLE 2FA WIZARD MODAL */}
-      <Disable2FAModal
-        isOpen={disable2FAOpen()}
-        onClose={() => setDisable2FAOpen(false)}
-        showNotification={showNotification}
-        reconcileSession={reconcileSession as any}
-      />
-
-      <ConfirmModal
-        confirmModal={confirmModal()}
-        onClose={() => setConfirmModal(null)}
-      />
-
-       {renderAppUpdateModal()}
-
-      {!isOnline() && (
-        <ConnectionStatusBlocker reason={disconnectReason()} />
-      )}
-
-    </div>
-  );
   };
 }

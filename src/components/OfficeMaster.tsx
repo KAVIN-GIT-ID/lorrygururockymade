@@ -1,3 +1,13 @@
+import { mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 import { createSignal } from 'solid-js';
 
 import { Office } from '../types';
@@ -15,16 +25,32 @@ interface OfficeMasterProps {
   canDeleteOffices?: boolean;
 }
 
-export default function OfficeMaster({ 
-  offices, 
-  onAddOffice, 
-  onUpdateOffice, 
-  onDeleteOffice, 
-  confirmAction, 
-  canViewOffices = true,
-  canEditOffices = true,
-  canDeleteOffices = true
-}: OfficeMasterProps) {
+export default function OfficeMaster(rawProps: OfficeMasterProps) {
+  const officeCtx = useOfficesContext();
+  const permissionCtx = usePermissions();
+
+  const props = mergeProps(rawProps, {
+    get offices() { return officeCtx.orgOffices(); },
+    onAddOffice: officeCtx.addOffice,
+    onUpdateOffice: officeCtx.updateOffice,
+    onDeleteOffice: officeCtx.deleteOffice,
+    
+    get canViewOffices() { return permissionCtx.currentUserRights().canViewOffices; },
+    get canEditOffices() { return permissionCtx.currentUserRights().canEditOffices; },
+    get canDeleteOffices() { return permissionCtx.currentUserRights().canDeleteOffices; }
+  });
+  const {
+    offices,
+    onAddOffice,
+    onUpdateOffice,
+    onDeleteOffice,
+    confirmAction,
+    canViewOffices,
+    canEditOffices,
+    canDeleteOffices
+  } = props;
+
+
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showAddForm, setShowAddForm] = createSignal(false);
 

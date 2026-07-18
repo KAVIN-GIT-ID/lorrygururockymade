@@ -1,4 +1,13 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 
 import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile, getTripMetrics, TripAdvance } from '../types';
 import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X, MoreVertical, Settings, AlertCircle, ArrowRightLeft } from 'lucide-solid';
@@ -24,24 +33,48 @@ interface DriverMasterProps {
   confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
 }
 
-export default function DriverMaster({
-  drivers,
-  trips = [],
-  expenses = [],
-  accounts = [],
-  onAddDriver,
-  onUpdateDriver,
-  onDeleteDriver,
-  canViewDrivers = true,
-  canEditDrivers = true,
-  canDeleteDrivers = true,
-  organizationId = '',
-  orgProfile,
-  autoOpenAdd,
-  onAutoOpenCleared,
-  onSaveTrips,
-  confirmAction,
-}: DriverMasterProps) {
+export default function DriverMaster(rawProps: DriverMasterProps) {
+  const tripsCtx = useTripsContext();
+  const driversCtx = useDriversContext();
+  const expenseCtx = useExpensesContext();
+  const accountCtx = useAccountsContext();
+  const permissionCtx = usePermissions();
+
+  const props = mergeProps(rawProps, {
+    get drivers() { return driversCtx.orgDrivers(); },
+    get trips() { return tripsCtx.orgTrips(); },
+    get expenses() { return expenseCtx.orgExpenses(); },
+    get accounts() { return accountCtx.orgAccounts(); },
+    onAddDriver: driversCtx.addDriver,
+    onUpdateDriver: driversCtx.updateDriver,
+    onDeleteDriver: driversCtx.deleteDriver,
+    onSaveTrips: tripsCtx.saveTrips,
+    
+    get canViewDrivers() { return permissionCtx.currentUserRights().canViewDrivers; },
+    get canEditDrivers() { return permissionCtx.currentUserRights().canEditDrivers; },
+    get canDeleteDrivers() { return permissionCtx.currentUserRights().canDeleteDrivers; },
+    get organizationId() { return permissionCtx.currentUserOrgId(); }
+  });
+  const {
+    drivers,
+    trips,
+    expenses,
+    accounts,
+    onAddDriver,
+    onUpdateDriver,
+    onDeleteDriver,
+    canViewDrivers,
+    canEditDrivers,
+    canDeleteDrivers,
+    organizationId,
+    orgProfile,
+    autoOpenAdd,
+    onAutoOpenCleared,
+    onSaveTrips,
+    confirmAction
+  } = props;
+
+
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);

@@ -1,6 +1,15 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 
-import { Tyre, Truck, TyreMovementLog, TyreStatus, Account } from '../types';
+import { Tyre, Truck, TyreMovementLog, TyreStatus, Account, OrganizationProfile } from '../types';
 import { 
   CheckCircle, 
   XCircle, 
@@ -23,7 +32,10 @@ import {
   Edit2
 } from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+
 interface TyreMasterProps {
+  showNotification?: (msg: string) => void;
+  logAction?: (action: string, details?: any) => void;
   tyres: Tyre[];
   trucks: Truck[];
   accounts: Account[];
@@ -44,23 +56,62 @@ interface TyreMasterProps {
   organizationId?: string;
   autoOpenAdd?: boolean;
   onAutoOpenCleared?: () => void;
+  orgProfile?: OrganizationProfile;
+  onSaveExpenses?: (newExpenses: any[]) => void;
 }
 
-export default function TyreMaster({ 
-  tyres, 
-  trucks, 
-  accounts, 
-  onAddTyre, 
-  onUpdateTyre, 
-  onDeleteTyre, 
-  confirmAction, 
-  canViewTyres = true,
-  canEditTyres = true,
-  canDeleteTyres = true,
-  organizationId,
-  autoOpenAdd,
-  onAutoOpenCleared,
-}: TyreMasterProps) {
+export default function TyreMaster(rawProps: TyreMasterProps) {
+  const tyreCtx = useTyresContext();
+  const trucksCtx = useTrucksContext();
+  const driversCtx = useDriversContext();
+  const permissionCtx = usePermissions();
+  const expenseCtx = useExpensesContext();
+
+  const props = mergeProps(rawProps, {
+    get tyres() { return tyreCtx.orgTyres(); },
+    get expenses() { return expenseCtx.orgExpenses(); },
+    get trucks() { return trucksCtx.orgTrucks(); },
+    get drivers() { return driversCtx.orgDrivers(); },
+    onSaveExpenses: expenseCtx.saveExpenses,
+    onAddTyre: tyreCtx.addTyre,
+    onUpdateTyre: tyreCtx.updateTyre,
+    onDeleteTyre: tyreCtx.deleteTyre,
+    showNotification: rawProps.showNotification,
+    logAction: rawProps.logAction,
+    confirmAction: rawProps.confirmAction,
+    orgProfile: rawProps.orgProfile,
+    autoOpenAdd: rawProps.autoOpenAdd,
+    onAutoOpenCleared: rawProps.onAutoOpenCleared,
+    get accounts() { return rawProps.accounts || []; },
+    
+    get canViewTyres() { return permissionCtx.currentUserRights().canViewTyres; },
+    get canEditTyres() { return permissionCtx.currentUserRights().canEditTyres; },
+    get canDeleteTyres() { return permissionCtx.currentUserRights().canDeleteTyres; },
+    get organizationId() { return permissionCtx.currentUserOrgId(); }
+  });
+  const {
+    tyres,
+    expenses,
+    onSaveExpenses,
+    showNotification,
+    logAction,
+    onAddTyre,
+    onUpdateTyre,
+    onDeleteTyre,
+    confirmAction,
+    canViewTyres,
+    canEditTyres,
+    canDeleteTyres,
+    trucks,
+    drivers,
+    orgProfile,
+    organizationId,
+    autoOpenAdd,
+    onAutoOpenCleared,
+    accounts
+  } = props;
+
+
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);
 

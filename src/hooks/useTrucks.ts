@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { Truck, TripEntry, OrganizationProfile, createRecord, mutateRecord } from '../types';
 import { migrateTrucks } from '../lib/migrations';
 import { getTruckDiff } from '../utils/diffUtils';
@@ -26,7 +27,7 @@ export function useTrucks({
   pushFleetSnapshotNow,
   currentUserId
 }: UseTrucksParams) {
-  const [trucks, setTrucks] = createSignal<Truck[]>((() => {
+  const [trucks, setTrucks] = createStore<Truck[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_trucks');
       return stored ? migrateTrucks(JSON.parse(stored)) : [];
@@ -39,24 +40,24 @@ export function useTrucks({
   createEffect(() => {
     db.trucks.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setTrucks(cached);
+        setTrucks(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = trucks();
+    const list = [...trucks];
     db.trucks.clear().then(() => db.trucks.bulkPut(list));
   });
 
   const saveTrucks = (newTrucks: Truck[]) => {
-    setTrucks(newTrucks);
+    setTrucks(reconcile(newTrucks));
     localStorage.setItem('ttt_trucks', JSON.stringify(newTrucks));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgTrucks = createMemo(() => (orgId === 'org_backend' ? trucks() : trucks().filter(t => t.organizationId === orgId)).filter(t => !t.deletedAt));
+  const orgTrucks = createMemo(() => (orgId === 'org_backend' ? trucks : trucks.filter(t => t.organizationId === orgId)).filter(t => !t.deletedAt));
 
   const addTruck = async (truckInput: Omit<Truck, 'id'>) => {
     const isDup = orgTrucks().some(t => t.truckNo.toUpperCase().trim() === truckInput.truckNo.toUpperCase().trim());
@@ -88,13 +89,13 @@ export function useTrucks({
       }
     }
 
-    saveTrucks([...trucks(), n]);
+    saveTrucks([...trucks, n]);
     logAction('Created', 'Truck', n.truckNo, `Created truck sheet for vehicle make ${n.make} Model: ${n.model}`);
     showNotification(`Truck ${n.truckNo} added successfully.`);
   };
 
   const updateTruck = async (updated: Truck) => {
-    const oldTruck = trucks().find(t => t.id === updated.id);
+    const oldTruck = trucks.find(t => t.id === updated.id);
     const merged: Truck = oldTruck
       ? mutateRecord(oldTruck, updated, currentUserId)
       : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
@@ -124,7 +125,7 @@ export function useTrucks({
       }
     }
 
-    const next = trucks().map(t => t.id === updated.id ? merged : t);
+    const next = trucks.map(t => t.id === updated.id ? merged : t);
     saveTrucks(next);
  
     const diff = oldTruck ? getTruckDiff(oldTruck, merged) : `Updated truck specifications and compliance expiry dates`;
@@ -135,7 +136,7 @@ export function useTrucks({
   };
 
   const deleteTruck = async (id: string) => {
-    const truckToDelete = trucks().find(t => t.id === id);
+    const truckToDelete = trucks.find(t => t.id === id);
     const orgTrips = orgId === 'org_backend' ? trips() : trips().filter(t => t.organizationId === orgId);
     const inUse = orgTrips.some(tr => tr.truckNo === truckToDelete?.truckNo);
     if (inUse) {
@@ -164,7 +165,7 @@ export function useTrucks({
       }
     }
 
-    const next = trucks().filter(t => t.id !== id);
+    const next = trucks.filter(t => t.id !== id);
     saveTrucks(next);
 
     const targetOrgId = truckToDelete?.organizationId || orgId;
@@ -190,5 +191,5 @@ export function useTrucks({
     pushFleetSnapshotNow(next);
   };
 
-  return { get trucks() { return trucks(); }, setTrucks, get orgTrucks() { return orgTrucks(); }, saveTrucks, addTruck, updateTruck, deleteTruck };
+  return { get trucks() { return trucks; }, setTrucks, get orgTrucks() { return orgTrucks(); }, saveTrucks, addTruck, updateTruck, deleteTruck };
 }

@@ -1,3 +1,13 @@
+import { mergeProps } from 'solid-js';
+import { useTripsContext } from '../context/TripContext';
+import { useTrucksContext } from '../context/TruckContext';
+import { useDriversContext } from '../context/DriverContext';
+import { useExpensesContext } from '../context/ExpenseContext';
+import { useOfficesContext } from '../context/OfficeContext';
+import { useAccountsContext } from '../context/AccountContext';
+import { useTyresContext } from '../context/TyreContext';
+import { usePermissions } from '../context/PermissionContext';
+import { useAuth } from '../context/AuthContext';
 import { createSignal } from 'solid-js';
 
 import { Account } from '../types';
@@ -14,16 +24,32 @@ interface AccountMasterProps {
   canDeleteAccounts?: boolean;
 }
 
-export default function AccountMaster({ 
-  accounts, 
-  onAddAccount, 
-  onUpdateAccount, 
-  onDeleteAccount, 
-  confirmAction, 
-  canViewAccounts = true,
-  canEditAccounts = true,
-  canDeleteAccounts = true
-}: AccountMasterProps) {
+export default function AccountMaster(rawProps: AccountMasterProps) {
+  const accountCtx = useAccountsContext();
+  const permissionCtx = usePermissions();
+
+  const props = mergeProps(rawProps, {
+    get accounts() { return accountCtx.orgAccounts(); },
+    onAddAccount: accountCtx.addAccount,
+    onUpdateAccount: accountCtx.updateAccount,
+    onDeleteAccount: accountCtx.deleteAccount,
+    
+    get canViewAccounts() { return permissionCtx.currentUserRights().canViewAccounts; },
+    get canEditAccounts() { return permissionCtx.currentUserRights().canEditAccounts; },
+    get canDeleteAccounts() { return permissionCtx.currentUserRights().canDeleteAccounts; }
+  });
+  const {
+    accounts,
+    onAddAccount,
+    onUpdateAccount,
+    onDeleteAccount,
+    confirmAction,
+    canViewAccounts,
+    canEditAccounts,
+    canDeleteAccounts
+  } = props;
+
+
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showAddForm, setShowAddForm] = createSignal(false);
 

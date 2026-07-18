@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { AuditLog } from '../types';
 import { migrateAuditLogs } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -11,7 +12,7 @@ interface UseAuditLogsParams {
 }
 
 export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }: UseAuditLogsParams) {
-  const [auditLogs, setAuditLogs] = createSignal<AuditLog[]>((() => {
+  const [auditLogs, setAuditLogs] = createStore<AuditLog[]>((() => {
     try {
       const saved = localStorage.getItem('fleet_audit_logs');
       if (saved) return migrateAuditLogs(JSON.parse(saved));
@@ -25,14 +26,14 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
   createEffect(() => {
     db.auditLogs.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setAuditLogs(cached);
+        setAuditLogs(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = auditLogs();
+    const list = [...auditLogs];
     db.auditLogs.clear().then(() => db.auditLogs.bulkPut(list));
   });
 
@@ -74,7 +75,7 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         // Delete each log from the database
-        const logsToDelete = [...auditLogs()];
+        const logsToDelete = [...auditLogs];
         for (const log of logsToDelete) {
           await appwrite.deleteFleetDocument(databaseId, 'audit_logs', log.id);
         }
@@ -82,10 +83,10 @@ export function useAuditLogs({ currentUser, currentUserOrgId, showNotification }
         console.error("Failed to clear audit logs from Appwrite server:", err);
       }
     }
-    setAuditLogs([]);
+    setAuditLogs(reconcile([]));
     localStorage.removeItem('fleet_audit_logs');
     showNotification("Audit logs history successfully cleared.");
   };
 
-  return { auditLogs, setAuditLogs, logAction, handleClearAuditLogs };
+  return { get auditLogs() { return auditLogs; }, setAuditLogs, logAction, handleClearAuditLogs };
 }

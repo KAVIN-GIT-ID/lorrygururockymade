@@ -1,3 +1,4 @@
+import { Query } from 'appwrite';
 import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
@@ -71,6 +72,8 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     const handleOnline = () => {
       setIsOnline(true);
       if (props.onConnectionChange) props.onConnectionChange(true);
+      // Flush offline writes queue when connection is restored
+      appwrite.flushSyncQueue(showNotification);
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -121,9 +124,37 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
   let allowedCollectionsRef = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets'];
 
-  // Initial pull from Appwrite Database
-  const handlePullFromDB = async (quiet = false) => {
+  let activeAbortController: AbortController | null = null;
+
+  const wrapAbort = <T,>(promise: Promise<T>, signal: AbortSignal): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new Error('Aborted'));
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort);
+      promise.then(
+        (res) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(res);
+        },
+        (err) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(err);
+        }
+      );
+    });
+  };
+
+  // Initial pull from Appwrite Database (incremental by default on auto-triggers)
+  const handlePullFromDB = async (quiet = false, incremental = false) => {
     if (!isConfigured) return;
+    
+    // Abort any active in-flight sync request
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    activeAbortController = new AbortController();
+    const signal = activeAbortController.signal;
+
     if (!quiet) {
       setLoading(true);
       setErrorMsg(null);
@@ -132,10 +163,17 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
     try {
       if (!quiet) {
-        console.log('Appwrite DB: Fetching fleet documents from multi-collection structure...');
+        console.log(`Appwrite DB: Fetching fleet documents (${incremental ? 'incremental' : 'full'})...`);
       }
 
-      const loadedState: any = {
+      const lastSyncTime = incremental ? Number(localStorage.getItem('appwrite_last_sync_time') || '0') : 0;
+      const extraQueries: string[] = [];
+      if (lastSyncTime > 0) {
+        extraQueries.push(Query.greaterThan('$updatedAt', new Date(lastSyncTime).toISOString()));
+      }
+
+      // Reconstruct the full state structure
+      const currentState = currentLocalStateRef || {
         trucks: [],
         drivers: [],
         offices: [],
@@ -147,11 +185,23 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
         supportTickets: []
       };
 
+      const loadedState: any = {
+        trucks: [...(currentState.trucks || [])],
+        drivers: [...(currentState.drivers || [])],
+        offices: [...(currentState.offices || [])],
+        accounts: [...(currentState.accounts || [])],
+        trips: [...(currentState.trips || [])],
+        expenses: [...(currentState.expenses || [])],
+        tyres: [...(currentState.tyres || [])],
+        auditLogs: [...(currentState.auditLogs || [])],
+        supportTickets: [...(currentState.supportTickets || [])]
+      };
+
       let userRightsData: any = null;
-      let maxUpdatedAt = 0;
+      let maxUpdatedAt = lastSyncTime;
       const verifiedCollections: string[] = [];
 
-      const categories: { key: keyof typeof loadedState; collection: string }[] = [
+      const categories: { key: string; collection: string }[] = [
         { key: 'trucks', collection: 'trucks' },
         { key: 'drivers', collection: 'drivers' },
         { key: 'offices', collection: 'offices' },
@@ -165,9 +215,10 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
       const fetchPromises = categories.map(async (cat) => {
         try {
-          const docs = await appwrite.listFleetDocuments(databaseId(), cat.collection, orgId());
+          const docs = await wrapAbort(appwrite.listFleetDocuments(databaseId(), cat.collection, orgId(), extraQueries), signal);
           verifiedCollections.push(cat.collection);
           
+          const updatedCollection = [...(loadedState[cat.key] || [])];
           for (const doc of docs) {
             if (doc.updatedAt) {
               const docTime = new Date(doc.updatedAt).getTime();
@@ -175,16 +226,29 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
                 maxUpdatedAt = docTime;
               }
             }
+            const parsedRecord = appwrite.reconstructRecord(doc);
+            const idx = updatedCollection.findIndex(x => x.id === doc.$id);
+            if (parsedRecord.deletedAt) {
+              if (idx > -1) updatedCollection.splice(idx, 1);
+            } else {
+              const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
+              if (idx > -1) {
+                updatedCollection[idx] = nextRecord;
+              } else {
+                updatedCollection.push(nextRecord);
+              }
+            }
           }
-          loadedState[cat.key] = docs;
+          loadedState[cat.key] = updatedCollection;
         } catch (catErr: any) {
+          if (catErr.message === 'Aborted') throw catErr;
           console.warn(`Failed to fetch/parse documents for collection ${cat.collection}:`, catErr.message);
         }
       });
 
       const loadRightsPromise = (async () => {
         try {
-          const allConfigs = await appwrite.listGlobalConfigs(databaseId());
+          const allConfigs = await wrapAbort(appwrite.listGlobalConfigs(databaseId()), signal);
           userRightsData = { userRightsList: [], organizationProfiles: [] };
           for (const doc of allConfigs) {
             try {
@@ -217,6 +281,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
       if (maxUpdatedAt > 0) {
         loadedState.exportDate = maxUpdatedAt;
+        localStorage.setItem('appwrite_last_sync_time', String(maxUpdatedAt));
       }
 
       // Load state into local UI
@@ -231,6 +296,10 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
         }
       }
     } catch (err: any) {
+      if (err.message === 'Aborted') {
+        console.log('Appwrite DB loading: Sync request cancelled (aborted).');
+        return;
+      }
       console.error('Appwrite DB loading() failure:', err);
       if (!quiet) {
         setErrorMsg(
@@ -240,7 +309,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
         );
       }
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && !signal.aborted) setLoading(false);
     }
   };
 
@@ -251,7 +320,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     const performInitialSync = async () => {
       try {
         console.log("Appwrite DB: Performing initial query sync on load...");
-        await handlePullFromDB(true);
+        await handlePullFromDB(true, true);
       } catch (err: any) {
         console.warn("Appwrite initial pull skipped, using local master state:", err.message);
       } finally {
@@ -263,6 +332,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     };
 
     performInitialSync();
+        if (window.navigator.onLine) { appwrite.flushSyncQueue(showNotification); }
   });
 
   // Listen for app gained focus (app returned from background/memory) to trigger checks
@@ -270,7 +340,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     const handleResume = () => {
       if (isConfigured) {
         console.log("App gained focus/returned from background, performing silent configuration sync...");
-        handlePullFromDB(true);
+        handlePullFromDB(true, true);
       }
     };
 

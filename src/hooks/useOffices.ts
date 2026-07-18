@@ -1,4 +1,5 @@
-import { createSignal, createMemo, createEffect } from 'solid-js';
+import { createMemo, createEffect } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { Office, TripEntry } from '../types';
 import { migrateOffices } from '../lib/migrations';
 import { getOfficeDiff } from '../utils/diffUtils';
@@ -13,7 +14,7 @@ interface UseOfficesParams {
 }
 
 export function useOffices({ orgId, trips, showNotification, logAction }: UseOfficesParams) {
-  const [offices, setOffices] = createSignal<Office[]>((() => {
+  const [offices, setOffices] = createStore<Office[]>((() => {
     try {
       const stored = localStorage.getItem('ttt_offices');
       return stored ? migrateOffices(JSON.parse(stored)) : [];
@@ -26,24 +27,24 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
   createEffect(() => {
     db.offices.toArray().then(cached => {
       if (cached && cached.length > 0) {
-        setOffices(cached);
+        setOffices(reconcile(cached));
       }
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
-    const list = offices();
+    const list = [...offices];
     db.offices.clear().then(() => db.offices.bulkPut(list));
   });
 
   const saveOffices = (newOffices: Office[]) => {
-    setOffices(newOffices);
+    setOffices(reconcile(newOffices));
     localStorage.setItem('ttt_offices', JSON.stringify(newOffices));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
-  const orgOffices = createMemo(() => orgId === 'org_backend' ? offices() : offices().filter(o => o.organizationId === orgId));
+  const orgOffices = createMemo(() => orgId === 'org_backend' ? offices : offices.filter(o => o.organizationId === orgId));
 
   const addOffice = async (officeInput: Omit<Office, 'id'>) => {
     const isDup = orgOffices().some(o => o.officeName.toLowerCase().trim() === officeInput.officeName.toLowerCase().trim());
@@ -64,13 +65,13 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
       }
     }
 
-    saveOffices([...offices(), n]);
+    saveOffices([...offices, n]);
     logAction('Created', 'Office', n.officeName, `Opened trading office branch at ${n.officeName} (${n.city || 'N/A'})`);
     showNotification(`Office branch ${n.officeName} created.`);
   };
 
   const updateOffice = async (updated: Office) => {
-    const oldOffice = offices().find(o => o.id === updated.id);
+    const oldOffice = offices.find(o => o.id === updated.id);
     const merged: Office = oldOffice ? { ...oldOffice, ...updated } : updated;
 
     if (isAppwriteConfigured()) {
@@ -84,7 +85,7 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
       }
     }
 
-    const next = offices().map(o => o.id === updated.id ? merged : o);
+    const next = offices.map(o => o.id === updated.id ? merged : o);
     saveOffices(next);
 
     const diff = oldOffice ? getOfficeDiff(oldOffice, merged) : `Updated branch details or manager settings`;
@@ -95,7 +96,7 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
   };
 
   const deleteOffice = async (id: string) => {
-    const off = offices().find(o => o.id === id);
+    const off = offices.find(o => o.id === id);
     const orgTrips = orgId === 'org_backend' ? trips() : trips().filter(t => t.organizationId === orgId);
     const inUse = orgTrips.some(tr => tr.subTrips?.some(st => st.officeName === off?.officeName));
     if (inUse) {
@@ -114,7 +115,7 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
       }
     }
 
-    const next = offices().filter(o => o.id !== id);
+    const next = offices.filter(o => o.id !== id);
     saveOffices(next);
 
     if (off) {
@@ -123,5 +124,5 @@ export function useOffices({ orgId, trips, showNotification, logAction }: UseOff
     showNotification(`Office location removed.`);
   };
 
-  return { get offices() { return offices(); }, setOffices, get orgOffices() { return orgOffices(); }, saveOffices, addOffice, updateOffice, deleteOffice };
+  return { get offices() { return offices; }, setOffices, get orgOffices() { return orgOffices(); }, saveOffices, addOffice, updateOffice, deleteOffice };
 }
