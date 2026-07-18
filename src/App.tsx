@@ -1,4 +1,4 @@
-import { createSignal, createEffect, lazy, Suspense, onMount, createMemo, untrack, batch } from 'solid-js';
+import { createSignal, createEffect, lazy, Suspense, onMount, onCleanup, createMemo, untrack, batch } from 'solid-js';
 
 import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile, TruckRequest, createRecord, mutateRecord, SupportTicket } from './types';
 import LoginScreen from './components/LoginScreen';
@@ -51,6 +51,10 @@ import versionData from './version.json';
 const APP_VERSION = versionData.version;
 
 import { useAuditLogs } from './hooks/useAuditLogs';
+import { useSupportTicketsState } from './hooks/useSupportTicketsState';
+import { useTruckHandlers } from './hooks/useTruckHandlers';
+import { useBackendSync } from './hooks/useBackendSync';
+import { useUserManagement, reconcileOrganizationProfiles } from './hooks/useUserManagement';
 import {
   migrateTripsIfNecessary,
   migrateUserPermissions,
@@ -91,91 +95,7 @@ const getUserInitials = (user: any) => {
   return initials.slice(0, 2) || name.slice(0, 2).toUpperCase();
 };
 
-const reconcileOrganizationProfiles = (
-  rights: UserPermission[],
-  currentProfiles: OrganizationProfile[],
-  knownNames: { [orgId: string]: string } = {}
-): OrganizationProfile[] => {
-  let profiles = [...currentProfiles];
 
-  if (isAppwriteConfigured()) {
-    profiles = profiles.filter(p => p.organizationId !== 'org_default');
-  }
-
-  // Find all unique organizationIds in rights (excluding org_backend)
-  const orgIds = Array.from(new Set(rights.map(r => r.organizationId).filter(Boolean)))
-    .filter(orgId => orgId !== 'org_backend' && (!isAppwriteConfigured() || orgId !== 'org_default'));
-
-  // Filter profiles to only keep those that have at least one active user permission in rights.
-  // This prevents resurrection of organization profiles whose corresponding users have been deleted.
-  profiles = profiles.filter(p => orgIds.includes(p.organizationId));
-
-  for (const orgId of orgIds) {
-    const existing = profiles.find(p => p.organizationId === orgId);
-    if (!existing) {
-      // Find owner (role === 'Admin')
-      const adminUser = rights.find(r => r.organizationId === orgId && r.role === 'Admin') || rights.find(r => r.organizationId === orgId);
-      if (adminUser) {
-        let displayName = knownNames[orgId];
-        if (!displayName) {
-          const cleanSlug = orgId.replace(/^org_/, '').replace(/_[a-z0-9]{4}$/, '');
-          displayName = cleanSlug.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Sakthi Logistics';
-
-          // Check if the displayName is just a raw alphanumeric ID/code and make it human-readable!
-          const isHexOrAlphanumericId = /^[a-f0-9]{15,40}$/i.test(displayName) || /^[a-z0-9]{15,40}$/i.test(displayName);
-          if (isHexOrAlphanumericId) {
-            // Construct a nice human-readable name based on the admin's name or email
-            const ownerName = adminUser.name || '';
-            if (ownerName && ownerName.trim().length > 0 && !ownerName.includes('@')) {
-              displayName = `${ownerName.trim()}'s Fleet`;
-            } else {
-              const emailPrefix = adminUser.email.split('@')[0];
-              const cleanPrefix = emailPrefix.replace(/[._-]/g, ' ').split(' ').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-              displayName = `${cleanPrefix} Logistics`;
-            }
-          }
-        }
-
-        profiles.push({
-          organizationId: orgId,
-          organizationName: displayName,
-          ownerEmail: adminUser.email,
-          status: 'Active',
-          maxTrucksAllowed: 2,
-          truckRequests: [],
-          brokeragePolicy: 'DriverBears'
-        });
-      }
-    } else {
-      // Sync owner email if it changed or is missing
-      const adminUser = rights.find(r => r.organizationId === orgId && r.role === 'Admin') || rights.find(r => r.organizationId === orgId);
-      if (adminUser) {
-        if (existing.ownerEmail !== adminUser.email) {
-          existing.ownerEmail = adminUser.email;
-        }
-
-        if (knownNames[orgId]) {
-          existing.organizationName = knownNames[orgId];
-        } else {
-          // Also fix organizationName if it is a raw ID string!
-          const isHexOrAlphanumericId = /^[a-f0-9]{15,40}$/i.test(existing.organizationName) || /^[a-z0-9]{15,40}$/i.test(existing.organizationName);
-          if (isHexOrAlphanumericId) {
-            const ownerName = adminUser.name || '';
-            if (ownerName && ownerName.trim().length > 0 && !ownerName.includes('@')) {
-              existing.organizationName = `${ownerName.trim()}'s Fleet`;
-            } else {
-              const emailPrefix = adminUser.email.split('@')[0];
-              const cleanPrefix = emailPrefix.replace(/[._-]/g, ' ').split(' ').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-              existing.organizationName = `${cleanPrefix} Logistics`;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return profiles;
-};
 
 export default function App() {
   return (
@@ -277,6 +197,7 @@ function AppContent(): any {
   const disconnectReason = auth.disconnectReason;
   const setDisconnectReason = auth.setDisconnectReason;
   const reconcileUserSession = auth.reconcileUserSession;
+  const currentUserId = () => currentUser()?.$id || currentUser()?.email || 'system';
 
   const tripsCtx = useTripsContext();
   const trucksCtx = useTrucksContext();
@@ -493,7 +414,7 @@ function AppContent(): any {
   };
 
   // Authentication check and cloud permission sync on startup
-  createEffect(() => {
+  onMount(() => {
     const initAuth = async () => {
       try {
         const loginMethod = localStorage.getItem('ttt_login_method');
@@ -596,63 +517,7 @@ function AppContent(): any {
     }
   };
 
-  const handleVerifyPhonePePayment = async (txnId: string, truckNo: string) => {
-    try {
-      showNotification("Verifying PhonePe payment status...");
-      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
 
-      const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
-      const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
-      const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
-      const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || '';
-
-      const queryParams = new URLSearchParams({
-        truckNo,
-        organizationId: (currentUserRights()?.organizationId) || 'org_default',
-        duration,
-        customerName: currentUser()?.name || '',
-        customerEmail: currentUser()?.email || '',
-        customerPhone: currentUser()?.phone || '',
-        existingTruckId,
-        truckPayload: JSON.stringify(tempPayloadObj)
-      });
-
-      const response = await fetch(`${serverUrl}/api/payment/status/${txnId}?${queryParams.toString()}`);
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        localStorage.removeItem('ttt_temp_payment_payload');
-        localStorage.removeItem('ttt_temp_payment_duration');
-        localStorage.removeItem('ttt_temp_payment_truck_id');
-
-        showNotification(`Payment verified! Truck ${truckNo} is now Active.`);
-
-        if (data.expiryDate && tempPayloadObj) {
-          const targetId = existingTruckId || ('tr_' + Date.now());
-          setTrucks(prev => {
-            const next = prev.map(t => t.id === targetId ? {
-              ...t,
-              ...tempPayloadObj,
-              isApproved: true,
-              requestStatus: 'Approved' as const,
-              status: 'Active' as const,
-              registrationExpiryDate: data.expiryDate
-            } : t);
-            localStorage.setItem('ttt_trucks', JSON.stringify(next));
-            return next;
-          });
-        }
-      } else {
-        alert(`Payment Verification Failed: ${data.message || 'Transaction was not successful'}`);
-      }
-
-    } catch (err: any) {
-      console.error('Verify Payment Error:', err);
-      alert(`Error verifying payment: ${err.message}`);
-    } finally {
-      window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-    }
-  };
 
   createEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -715,442 +580,7 @@ function AppContent(): any {
 
 
 
-  const checkUserApproval = (email: string): { approved: boolean; orgId: string; registered: boolean } => {
-    const match = userRightsList().find(ur => ur.email.toLowerCase().trim() === email.toLowerCase().trim());
-    if (match) {
-      return { approved: match.isApproved, orgId: match.organizationId, registered: true };
-    }
-    return { approved: false, orgId: '', registered: false };
-  };
 
-
-
-  const sendWhatsAppOTP = async (phone: string) => {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-
-    let gatewayHost = window.location.hostname;
-    let gatewayProtocol = window.location.protocol;
-    let useSubpath = false;
-
-    const appwriteEndpoint = import.meta.env.VITE_APPWRITE_ENDPOINT || '';
-    if (appwriteEndpoint.includes('//')) {
-      gatewayHost = appwriteEndpoint.split('//')[1].split('/')[0].split(':')[0];
-      gatewayProtocol = appwriteEndpoint.split('//')[0];
-      useSubpath = true;
-    }
-
-    const gatewayUrl = useSubpath
-      ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/send-otp`
-      : `${gatewayProtocol}//${gatewayHost}:8000/send-otp`;
-    console.info(`[WhatsAppOTP] Requesting delivery of OTP: ${otp} to ${phone} via ${gatewayUrl}`);
-
-    const response = await fetch(gatewayUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        apiKey: 'ft_92hf83hdkw9812hskd',
-        phone: cleanPhone,
-        code: otp
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to dispatch WhatsApp OTP.');
-    }
-
-    setWhatsappOtpCode(otp);
-    setWhatsappOtpPhone(phone);
-    sessionStorage.setItem('whatsapp_otp_code', otp);
-    sessionStorage.setItem('whatsapp_otp_phone', phone);
-    return otp;
-  };
-
-  const handlePhoneUpdateSubmit = async (e: Event) => {
-    e.preventDefault();
-    const target = e.target as any;
-    const newPhone = target.newPhone.value.trim();
-    const currentPassword = isAppwriteConfigured() ? target.currentPassword.value : '';
-
-    const phoneRegex = /^\+[1-9]\d{6,14}$/;
-    if (!phoneRegex.test(newPhone)) {
-      showNotification("Invalid phone number format. Must start with '+' and follow E.164 (e.g. +919876543210).");
-      return;
-    }
-
-    try {
-      if (isAppwriteConfigured()) {
-        await appwrite.updatePhone(newPhone, currentPassword);
-
-        // Fetch fresh user object to get the updated phone and verification status from Appwrite Auth
-        const freshUser = await appwrite.getCurrentUser();
-        if (freshUser) {
-          await reconcileSession(freshUser);
-        }
-
-        const email = (currentUser().email || '').toLowerCase().trim();
-        const updated = userRightsList().map(ur =>
-          ur.email.toLowerCase().trim() === email ? { ...ur, phone: newPhone, isPhoneVerified: freshUser?.phoneVerification === true } : ur
-        );
-        setUserRightsList(updated);
-        localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-        await pushPermissionsToCloud(updated);
-
-        if (freshUser?.phoneVerification === true) {
-          showNotification("Mobile number updated and automatically verified!");
-        } else {
-          await sendWhatsAppOTP(newPhone);
-          setVerificationOtpSent(true);
-          showNotification("Mobile number saved and verification OTP sent successfully via WhatsApp!");
-        }
-      } else {
-        const email = (currentUser().email || '').toLowerCase().trim();
-        const updated = userRightsList().map(ur =>
-          ur.email.toLowerCase().trim() === email ? { ...ur, phone: newPhone } : ur
-        );
-        setUserRightsList(updated);
-        localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-        setVerificationOtpSent(true);
-        showNotification("Mobile number saved and verification OTP sent successfully!");
-      }
-
-      setPhoneTimer(120);
-      setShowPhoneUpdateModal(false);
-    } catch (err: any) {
-      console.error(err);
-      showNotification(`Failed to update mobile number: ${err.message || err}`);
-    }
-  };
-
-  const handleRegisterUserPermissions = async (name: string, email: string, phone: string, orgId: string, orgName?: string, dryRun = false): Promise<{ approved: boolean; orgId: string; error?: string }> => {
-    const trimmedEmail = email.trim().toLowerCase();
-    const trimmedOrgId = orgId.trim();
-    const trimmedOrgName = (orgName || '').trim();
-
-    // 1. Pull the absolute latest cloud configs first to ensure we merge and do not overwrite existing users/orgs.
-    let activeRights = userRightsList();
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const data = await organizationService.fetchAllGlobalConfigs(databaseId);
-        if (data && data.userRightsList && Array.isArray(data.userRightsList)) {
-          const cloudRights = migrateUserPermissions(data.userRightsList);
-          setUserRightsList(cloudRights);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(cloudRights));
-          activeRights = cloudRights;
-        } else {
-          // Fresh/empty cloud database - clear active permissions
-          setUserRightsList([]);
-          localStorage.setItem('ttt_user_rights', JSON.stringify([]));
-          activeRights = [];
-        }
-      } catch (e) {
-        console.warn("Could not load latest cloud snapshot during registration validation/init:", e);
-      }
-    }
-
-    // 1b. Check duplicate email to prevent creating multiple organizations under the same email
-    const existingMatch = activeRights.find(ur => ur.email.toLowerCase().trim() === trimmedEmail);
-    if (existingMatch && existingMatch.organizationId && existingMatch.organizationId !== 'org_default') {
-      return {
-        approved: false,
-        orgId: '',
-        error: `Email address "${email}" is already associated with organization "${existingMatch.organizationId}". Please log in instead.`
-      };
-    }
-
-    // 1c. Check duplicate mobile number to prevent creating orphan user accounts
-    const cleanPhone = phone.trim().replace(/[^0-9+]/g, '');
-    const phoneMatch = activeRights.find(ur => (ur.phone || '').trim().replace(/[^0-9+]/g, '') === cleanPhone);
-    if (phoneMatch && cleanPhone) {
-      return {
-        approved: false,
-        orgId: '',
-        error: `Mobile number "${phone}" is already registered with another user account. Please check and choose a different number.`
-      };
-    }
-
-    let targetOrgId = trimmedOrgId;
-
-    if (trimmedOrgName.toLowerCase() === 'org_backend') {
-      targetOrgId = 'org_backend';
-    } else if (trimmedOrgId === 'JOIN_REQUEST') {
-      let activeProfiles = organizationProfiles();
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const data = await organizationService.fetchAllGlobalConfigs(databaseId);
-          if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
-            activeProfiles = data.organizationProfiles;
-          }
-        } catch (e) {
-          console.warn("Could not load latest profiles during join match:", e);
-        }
-      }
-
-      const matchedProfile = activeProfiles.find(p =>
-        p.organizationName.toLowerCase().trim() === trimmedOrgName.toLowerCase() ||
-        p.organizationId.toLowerCase().trim() === trimmedOrgName.toLowerCase()
-      );
-      if (!matchedProfile) {
-        return { approved: false, orgId: '', error: `No organization named "${trimmedOrgName}" was found. Please check spelling or contact Admin.` };
-      }
-      targetOrgId = matchedProfile.organizationId;
-    } else if (trimmedOrgId === '') {
-      let activeProfiles = organizationProfiles();
-      if (isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const data = await organizationService.fetchAllGlobalConfigs(databaseId);
-          if (data && data.organizationProfiles && Array.isArray(data.organizationProfiles)) {
-            activeProfiles = data.organizationProfiles;
-          }
-        } catch (e) {
-          console.warn("Could not load latest profiles during creation match:", e);
-        }
-      }
-
-      const nameExists = activeProfiles.some(p => p.organizationName.toLowerCase().trim() === trimmedOrgName.toLowerCase());
-      if (nameExists) {
-        return { approved: false, orgId: '', error: `Organization name "${trimmedOrgName}" is already registered. Please choose a different unique name.` };
-      }
-    }
-
-    if (targetOrgId) {
-      const isBackendOrg = targetOrgId === 'org_backend';
-      const backendOrgHasUsers = activeRights.some(ur => ur.organizationId === 'org_backend');
-      const orgIsValid = true; /* activeRights.some(ur => ur.organizationId === targetOrgId)
-        || targetOrgId === 'org_default'
-        || isBackendOrg */;
-
-      if (!orgIsValid) {
-        return { approved: false, orgId: '', error: 'The specified Organization does not exist. Please check and try again.' };
-      }
-
-      const isApproved = isBackendOrg ? !backendOrgHasUsers : false;
-      const targetRole = isBackendOrg ? 'SuperAdmin' : 'Custom';
-
-      if (dryRun) {
-        return {
-          approved: isApproved,
-          orgId: targetOrgId
-        };
-      }
-
-
-
-      const newPerm: UserPermission = {
-        id: 'ur_' + Date.now(),
-        email: trimmedEmail,
-        name: name.trim(),
-        phone: phone.trim(),
-        isEmailVerified: false,
-        isPhoneVerified: false,
-        role: targetRole as any,
-        organizationId: targetOrgId,
-        isApproved: isApproved,
-        canViewTrips: isBackendOrg, canEditTrips: isBackendOrg, canDeleteTrips: isBackendOrg,
-        canViewTyres: isBackendOrg, canEditTyres: isBackendOrg, canDeleteTyres: isBackendOrg,
-        canViewTrucks: isBackendOrg, canEditTrucks: isBackendOrg, canDeleteTrucks: isBackendOrg,
-        canViewDrivers: isBackendOrg, canEditDrivers: isBackendOrg, canDeleteDrivers: isBackendOrg,
-        canViewOffices: isBackendOrg, canEditOffices: isBackendOrg, canDeleteOffices: isBackendOrg,
-        canViewAccounts: isBackendOrg, canEditAccounts: isBackendOrg, canDeleteAccounts: isBackendOrg,
-        canViewExpenses: isBackendOrg, canEditExpenses: isBackendOrg, canDeleteExpenses: isBackendOrg
-      };
-      const updatedList = activeRights.some(ur => ur.email.toLowerCase().trim() === trimmedEmail)
-        ? activeRights.map(ur => ur.email.toLowerCase().trim() === trimmedEmail ? newPerm : ur)
-        : [...activeRights, newPerm];
-      saveUserRightsList(updatedList);
-
-      const reconciled = reconcileOrganizationProfiles(
-        updatedList, organizationProfiles(),
-        trimmedOrgName && targetOrgId ? { [targetOrgId]: trimmedOrgName } : {}
-      );
-      await saveOrganizationProfiles(reconciled);
-
-      await pushPermissionsToCloud(updatedList, trimmedEmail);
-      return { approved: isApproved, orgId: targetOrgId };
-    } else {
-      let finalOrgId = '';
-      const cleanSlug = trimmedOrgName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-      const uniqueSuffix = Math.random().toString(36).substring(2, 6);
-      const localSlug = `org_${cleanSlug || 'company'}_${uniqueSuffix}`;
-
-      if (dryRun) {
-        return { approved: true, orgId: '' };
-      }
-
-      if (isAppwriteConfigured()) {
-        try {
-          const teamId = await appwrite.createTeam(trimmedOrgName);
-          if (teamId) {
-            finalOrgId = teamId;
-            console.info(`Created Appwrite Team "${trimmedOrgName}" with ID: ${teamId}`);
-          } else {
-            return {
-              approved: false,
-              orgId: '',
-              error: 'Failed to create your organization team in Appwrite. Please verify your connection.'
-            };
-          }
-        } catch (e: any) {
-          console.error('Appwrite createTeam failed:', e);
-          return {
-            approved: false,
-            orgId: '',
-            error: `Failed to create Organization Team in Appwrite: ${e.message || e}`
-          };
-        }
-      } else {
-        finalOrgId = localSlug;
-      }
-
-      const newPerm: UserPermission = {
-        id: 'ur_' + Date.now(),
-        email: trimmedEmail,
-        name: name.trim(),
-        phone: phone.trim(),
-        isEmailVerified: false,
-        isPhoneVerified: false,
-        role: 'Admin',
-        organizationId: finalOrgId,
-        isApproved: true,
-        canViewTrips: true, canEditTrips: true, canDeleteTrips: true,
-        canViewTyres: true, canEditTyres: true, canDeleteTyres: true,
-        canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: true,
-        canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: true,
-        canViewOffices: true, canEditOffices: true, canDeleteOffices: true,
-        canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: true,
-        canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: true
-      };
-      const updatedList = activeRights.some(ur => ur.email.toLowerCase().trim() === trimmedEmail)
-        ? activeRights.map(ur => ur.email.toLowerCase().trim() === trimmedEmail ? newPerm : ur)
-        : [...activeRights, newPerm];
-      saveUserRightsList(updatedList);
-
-      const reconciled = reconcileOrganizationProfiles(
-        updatedList, organizationProfiles(),
-        { [finalOrgId]: trimmedOrgName }
-      );
-      await saveOrganizationProfiles(reconciled);
-
-      const newOrgProfile = reconciled.find(p => p.organizationId === finalOrgId);
-      if (newOrgProfile && isAppwriteConfigured()) {
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const docId = appwrite.getOrgDocId(finalOrgId);
-          await appwrite.saveGlobalConfig(databaseId, docId, newOrgProfile);
-          console.log('Directly saved new organization profile to Appwrite:', finalOrgId);
-        } catch (e) {
-          console.error("Could not save new organization profile directly to Appwrite:", e);
-        }
-      }
-
-      await pushPermissionsToCloud(updatedList, trimmedEmail);
-      return { approved: true, orgId: finalOrgId };
-    }
-  };
-
-  const handleRequestToJoinOrganization = async (newOrgId: string): Promise<{ success: boolean; error?: string }> => {
-    if (!currentUser()) return { success: false, error: 'No active session found.' };
-    const trimmedOrgId = newOrgId.trim();
-    const email = (currentUser().email || '').toLowerCase().trim();
-
-    if (!trimmedOrgId) {
-      return { success: false, error: 'Please enter a valid Organization ID.' };
-    }
-
-    let activeRights = userRightsList();
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-        const data = await organizationService.fetchAllGlobalConfigs(databaseId);
-        if (data && data.userRightsList && Array.isArray(data.userRightsList)) {
-          const cloudRights = migrateUserPermissions(data.userRightsList);
-          setUserRightsList(cloudRights);
-          localStorage.setItem('ttt_user_rights', JSON.stringify(cloudRights));
-          activeRights = cloudRights;
-        }
-      } catch (e) {
-        console.warn("Could not load latest cloud snapshot during organization change:", e);
-      }
-    }
-
-    const isBackendOrg = trimmedOrgId === 'org_backend';
-    const backendOrgHasUsers = activeRights.some(ur => ur.organizationId === 'org_backend');
-    const orgIsValid = activeRights.some(ur => ur.organizationId === trimmedOrgId)
-      || trimmedOrgId === 'org_default'
-      || isBackendOrg;
-
-    if (!orgIsValid) {
-      return { success: false, error: 'The specified Organization ID does not exist. Please check and try again.' };
-    }
-
-    let updatedList: UserPermission[] = [];
-    const existingMatch = activeRights.find(ur => ur.email.toLowerCase().trim() === email);
-
-    const isApproved = isBackendOrg ? !backendOrgHasUsers : false;
-    const targetRole = isBackendOrg ? 'SuperAdmin' : 'Custom';
-
-    if (existingMatch) {
-      if (existingMatch.organizationId && existingMatch.organizationId !== trimmedOrgId && isAppwriteConfigured()) {
-        try {
-          console.info(`User leaving old Appwrite team: ${existingMatch.organizationId}`);
-          await appwrite.leaveTeam(existingMatch.organizationId);
-        } catch (leaveErr) {
-          console.warn("Failed to automatically leave old Appwrite team:", leaveErr);
-        }
-      }
-
-      const updatedMatch: UserPermission = {
-        ...existingMatch,
-        organizationId: trimmedOrgId,
-        isApproved: isApproved,
-        role: targetRole as any,
-        canViewTrips: isBackendOrg, canEditTrips: isBackendOrg, canDeleteTrips: isBackendOrg,
-        canViewTyres: isBackendOrg, canEditTyres: isBackendOrg, canDeleteTyres: isBackendOrg,
-        canViewTrucks: isBackendOrg, canEditTrucks: isBackendOrg, canDeleteTrucks: isBackendOrg,
-        canViewDrivers: isBackendOrg, canEditDrivers: isBackendOrg, canDeleteDrivers: isBackendOrg,
-        canViewOffices: isBackendOrg, canEditOffices: isBackendOrg, canDeleteOffices: isBackendOrg,
-        canViewAccounts: isBackendOrg, canEditAccounts: isBackendOrg, canDeleteAccounts: isBackendOrg,
-        canViewExpenses: isBackendOrg, canEditExpenses: isBackendOrg, canDeleteExpenses: isBackendOrg
-      };
-      updatedList = activeRights.map(ur =>
-        ur.email.toLowerCase().trim() === email ? updatedMatch : ur
-      );
-    } else {
-      const newPerm: UserPermission = {
-        id: 'ur_' + Date.now(),
-        email,
-        name: currentUser().name || email,
-        role: targetRole as any,
-        organizationId: trimmedOrgId,
-        isApproved: isApproved,
-        canViewTrips: isBackendOrg, canEditTrips: isBackendOrg, canDeleteTrips: isBackendOrg,
-        canViewTyres: isBackendOrg, canEditTyres: isBackendOrg, canDeleteTyres: isBackendOrg,
-        canViewTrucks: isBackendOrg, canEditTrucks: isBackendOrg, canDeleteTrucks: isBackendOrg,
-        canViewDrivers: isBackendOrg, canEditDrivers: isBackendOrg, canDeleteDrivers: isBackendOrg,
-        canViewOffices: isBackendOrg, canEditOffices: isBackendOrg, canDeleteOffices: isBackendOrg,
-        canViewAccounts: isBackendOrg, canEditAccounts: isBackendOrg, canDeleteAccounts: isBackendOrg,
-        canViewExpenses: isBackendOrg, canEditExpenses: isBackendOrg, canDeleteExpenses: isBackendOrg
-      };
-      updatedList = [...activeRights, newPerm];
-    }
-
-    saveUserRightsList(updatedList);
-
-    const reconciled = reconcileOrganizationProfiles(updatedList, organizationProfiles());
-    await saveOrganizationProfiles(reconciled);
-
-    await pushPermissionsToCloud(updatedList, email);
-
-    // Refresh local rights state
-    await reconcileSession(currentUser());
-    return { success: true };
-  };
 
   const handleUpdateProfile = async (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string) => {
     try {
@@ -1301,19 +731,100 @@ function AppContent(): any {
   const handleClearAuditLogs = auditLogsHook.handleClearAuditLogs;
   const saveAuditLogs = setAuditLogs;
 
-  // Support Tickets State
-  const [supportTickets, setSupportTickets] = createSignal<SupportTicket[]>(
-    (() => {
-      try {
-        const stored = localStorage.getItem('ttt_support_tickets');
-        return stored ? JSON.parse(stored) : [];
-      } catch {
-        return [];
-      }
-    })()
+
+
+  const {
+    handleVerifyPhonePePayment,
+    handleBackendUpdateTruck,
+    handleAddTruckRequest,
+    handleProcessTruckPayment
+  } = useTruckHandlers(
+    trucks,
+    setTrucks,
+    orgTrucks,
+    organizationProfiles,
+    saveOrganizationProfiles,
+    orgAccounts,
+    addExpense,
+    payments,
+    savePayments,
+    currentUserOrgId,
+    currentUser,
+    currentUserRights,
+    currentUserId(),
+    touchLastModified,
+    logAction,
+    showNotification
   );
 
-  const [activeTicketId, setActiveTicketId] = createSignal<string | null>(null);
+  const {
+    supportTickets,
+    setSupportTickets,
+    activeTicketId,
+    setActiveTicketId,
+    saveSupportTickets,
+    handleCreateSupportTicket,
+    handleSendSupportTicketMessage,
+    handleInitiateRefund,
+    getClientUnreadTicketsCount,
+    getAgentUnreadTicketsCount
+  } = useSupportTicketsState(
+    currentUserOrgId,
+    currentUser,
+    currentUserRights,
+    userRightsList,
+    currentUserId,
+    showNotification,
+    logAction,
+    payments,
+    savePayments,
+    trucks,
+    setTrucks
+  );
+
+  useBackendSync(
+    currentUser,
+    currentUserOrgId,
+    currentUserRights,
+    setTrucks,
+    setTrips,
+    setDrivers,
+    setOffices,
+    setAccounts,
+    setExpenses,
+    setTyres,
+    setAuditLogs,
+    setSupportTickets,
+    userRightsList,
+    setUserRightsList,
+    organizationProfiles,
+    setOrganizationProfiles
+  );
+
+  const {
+    checkUserApproval,
+    sendWhatsAppOTP,
+    handlePhoneUpdateSubmit,
+    handleRegisterUserPermissions,
+    handleRequestToJoinOrganization
+  } = useUserManagement(
+    currentUser,
+    userRightsList,
+    setUserRightsList,
+    organizationProfiles,
+    setOrganizationProfiles,
+    saveOrganizationProfiles,
+    pushPermissionsToCloud,
+    reconcileSession,
+    showNotification,
+    setVerificationOtpSent,
+    setPhoneTimer,
+    setShowPhoneUpdateModal,
+    setWhatsappOtpCode,
+    setWhatsappOtpPhone
+  );
+
+
 
   const [appUpdateConfig, setAppUpdateConfig] = createSignal<{
     version: string;
@@ -1461,12 +972,12 @@ function AppContent(): any {
     touchStartYRef = null;
   };
 
-  createEffect(() => {
+  onMount(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    onCleanup(() => window.removeEventListener('resize', handleResize));
   });
 
   // Native back button intercept using Capacitor App plugin
@@ -1517,7 +1028,7 @@ function AppContent(): any {
   });
 
   // Listen for native back button to dismiss modals
-  createEffect(() => {
+  onMount(() => {
     const handleBackPress = (e: Event) => {
       let closedSomething = false;
       if (profileModalOpen()) {
@@ -1546,7 +1057,7 @@ function AppContent(): any {
       }
     };
     window.addEventListener('app-back-press', handleBackPress);
-    return () => window.removeEventListener('app-back-press', handleBackPress);
+    onCleanup(() => window.removeEventListener('app-back-press', handleBackPress));
   });
 
   const renderAppUpdateModal = () => (
@@ -1582,7 +1093,7 @@ function AppContent(): any {
     return false;
   };
 
-  createEffect(() => {
+  onMount(() => {
     const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
     const fetchAppVersion = async () => {
@@ -1626,13 +1137,13 @@ function AppContent(): any {
     // 3. Periodic check (every 3 minutes) while app is open
     const interval = setInterval(fetchAppVersion, 3 * 60 * 1000);
 
-    return () => {
+    onCleanup(() => {
       window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('resume', handleResume);
       window.removeEventListener('focus', handleResume);
       clearInterval(interval);
-    };
+    });
   });
 
 
@@ -1655,333 +1166,7 @@ function AppContent(): any {
     }
   };
 
-  const saveSupportTickets = (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
-    const nextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
 
-    // Find modified or new tickets to sync to Appwrite
-    const changedTickets = nextTickets.filter(t => {
-      const existing = supportTickets().find(x => x.id === t.id);
-      return !existing || JSON.stringify(existing) !== JSON.stringify(t);
-    });
-
-    // Find deleted tickets
-    const deletedTickets = supportTickets().filter(t => !nextTickets.some(x => x.id === t.id));
-
-    setSupportTickets(nextTickets);
-    localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
-
-    if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-      if (changedTickets.length > 0) {
-        changedTickets.forEach(async (t) => {
-          try {
-            await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId, t);
-          } catch (err) {
-            console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err);
-          }
-        });
-      }
-
-      if (deletedTickets.length > 0) {
-        deletedTickets.forEach(async (t) => {
-          try {
-            await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
-          } catch (err) {
-            console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
-          }
-        });
-      }
-    }
-  };
-
-  const handleInitiateRefund = async (orgId: string, truckNo: string, paymentRecord: any) => {
-    try {
-      showNotification("Initiating refund via PhonePe gateway...");
-
-      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
-      const response = await fetch(`${serverUrl}/api/payment/refund`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          originalTransactionId: paymentRecord.transactionId,
-          amount: paymentRecord.amount
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Refund request failed');
-      }
-
-      const refundId = data.refundId || ('REF' + Date.now());
-
-      // Update payment record in local state & storage
-      const nextPayments = payments().map(p => {
-        if (p.id === paymentRecord.id) {
-          return {
-            ...p,
-            status: 'Refunded',
-            refundId,
-            refundStatus: 'Initiated',
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return p;
-      });
-      savePayments(nextPayments);
-
-      // Also save to Appwrite if configured
-      if (isAppwriteConfigured()) {
-        try {
-          await appwrite.saveFleetDocument('fleet_db', 'payments', paymentRecord.id, orgId, {
-            ...paymentRecord,
-            status: 'Refunded',
-            refundId,
-            refundStatus: 'Initiated',
-            updatedAt: new Date().toISOString()
-          });
-        } catch (err) {
-          console.error("Failed to sync refunded payment to Appwrite:", err);
-        }
-      }
-
-      // Reset the truck's subscription expiry (set to yesterday / expired, request status as Rejected, status as Inactive)
-      const targetTruck = trucks.find(t => t.truckNo.toUpperCase() === truckNo.toUpperCase() && t.organizationId === orgId);
-      if (targetTruck) {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-        const updatedTruck = {
-          ...targetTruck,
-          registrationExpiryDate: yesterdayStr,
-          status: 'Inactive' as const,
-          requestStatus: 'Rejected' as const,
-          isApproved: false,
-          updatedAt: new Date().toISOString()
-        };
-
-        setTrucks(prev => {
-          const next = prev.map(t => t.id === targetTruck.id ? updatedTruck : t);
-          localStorage.setItem('ttt_trucks', JSON.stringify(next));
-          return next;
-        });
-
-        if (isAppwriteConfigured()) {
-          try {
-            await appwrite.saveFleetDocument('fleet_db', 'trucks', targetTruck.id, orgId, updatedTruck);
-          } catch (err) {
-            console.error("Failed to sync deactivated truck to Appwrite:", err);
-          }
-        }
-      }
-
-      // Auto-raise Billing Support Ticket
-      const ticketId = 'tkt_' + Date.now();
-      const ticketNo = 'TKT-' + Math.floor(100000 + Math.random() * 900000);
-      const ticketTitle = `Refund Processed for Truck ${truckNo}`;
-      const ticketDescription = `A refund of ₹${paymentRecord.amount} has been initiated for the subscription of truck ${truckNo}. Refund Transaction ID: ${refundId}. The truck has been deactivated.`;
-
-      const initialMessage = {
-        id: `msg-${Date.now()}`,
-        sender: 'Agent' as const,
-        senderName: 'Billing Team',
-        senderEmail: 'billing@lorryguru.com',
-        content: ticketDescription,
-        timestamp: new Date().toISOString(),
-      };
-
-      const newTicket: SupportTicket = {
-        id: ticketId,
-        ticketNo,
-        organizationId: orgId,
-        requesterName: paymentRecord.customerName || 'Organization Owner',
-        requesterEmail: paymentRecord.customerEmail || '',
-        requesterPhone: paymentRecord.customerPhone || '',
-        category: 'Billing',
-        title: ticketTitle,
-        description: ticketDescription,
-        status: 'Open',
-        assignedTeam: 'Billing',
-        messages: [initialMessage],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const nextTickets = [newTicket, ...supportTickets()];
-      saveSupportTickets(nextTickets);
-
-      logAction('Created', 'SupportTicket', newTicket.ticketNo, `Auto-raised refund billing ticket: ${ticketTitle}`, orgId);
-      showNotification(`Refund initiated successfully. Refund ID: ${refundId}`);
-    } catch (err: any) {
-      console.error("Refund processing error:", err);
-      alert(`Refund Error: ${err.message}`);
-    }
-  };
-
-  const handleCreateSupportTicket = async (
-    category: 'Technical' | 'Billing' | 'General',
-    title: string,
-    description: string,
-    attachmentFile?: File
-  ) => {
-    let attachmentUrl = '';
-    let attachmentName = '';
-    const ticketId = 'tkt_' + Date.now();
-
-    if (attachmentFile && isAppwriteConfigured()) {
-      try {
-        const customName = `ticket_attach_${ticketId}_initial`;
-        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
-        attachmentName = attachmentFile.name;
-      } catch (err) {
-        console.error('Failed to upload initial attachment:', err);
-      }
-    }
-
-    const initialMessage = attachmentFile ? {
-      id: `msg-${Date.now()}`,
-      sender: 'User' as const,
-      senderName: currentUser()?.name || currentUser()?.email || 'User',
-      senderEmail: currentUser()?.email || '',
-      content: description,
-      timestamp: new Date().toISOString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    } : null;
-
-    const newTicket = createRecord<SupportTicket>({
-      id: ticketId,
-      ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
-      organizationId: currentUserOrgId() || '',
-      requesterName: currentUser()?.name || currentUser()?.email || 'Unknown User',
-      requesterEmail: currentUser()?.email || '',
-      requesterPhone: currentUserRights()?.phone || '',
-      category,
-      title,
-      description,
-      status: 'Open',
-      assignedTeam: category,
-      messages: initialMessage ? [initialMessage] : [],
-    }, currentUserId);
-
-    const nextTickets = [newTicket, ...supportTickets()];
-    saveSupportTickets(nextTickets);
-    logAction('Created', 'SupportTicket', newTicket.ticketNo, `Raised support ticket: ${title}`);
-    showNotification(`Support ticket #${newTicket.ticketNo} raised successfully.`);
-  };
-
-  const getClientUnreadTicketsCount = () => {
-    const myTickets = supportTickets().filter(st => currentUserOrgId() === 'org_backend' || st.organizationId === currentUserOrgId());
-    let totalUnread = 0;
-    myTickets.forEach(t => {
-      if (t.status === 'Closed') return;
-      const msgs = t.messages || [];
-      if (msgs.length === 0) return;
-      const lastReadMsgId = localStorage.getItem(`ttt_tkt_read_${t.id}`);
-      if (!lastReadMsgId) {
-        const agentMsgsCount = msgs.filter(m => m.sender === 'Agent').length;
-        if (agentMsgsCount > 0) totalUnread++;
-      } else {
-        const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
-        const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'Agent').length;
-        if (unreadCount > 0) totalUnread++;
-      }
-    });
-    return totalUnread;
-  };
-
-  const getAgentUnreadTicketsCount = () => {
-    const myRights = userRightsList().find(u => u.email === currentUser()?.email);
-    const mySupportRoles = Array.isArray(myRights?.supportRole)
-      ? myRights.supportRole
-      : (typeof myRights?.supportRole === 'string' && myRights.supportRole !== 'None' && myRights.supportRole !== ''
-        ? [myRights.supportRole]
-        : []);
-    const isSuperAdmin = myRights?.role === 'SuperAdmin';
-
-    const filtered = supportTickets().filter(t => {
-      if (isSuperAdmin) return true;
-      return mySupportRoles.includes(t.assignedTeam as any);
-    });
-
-    let totalUnread = 0;
-    filtered.forEach(t => {
-      if (t.status === 'Closed') return;
-      const msgs = t.messages || [];
-      const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
-
-      if (msgs.length === 0) {
-        if (!lastReadMsgId) totalUnread++;
-      } else {
-        if (!lastReadMsgId) {
-          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
-          if (userMsgsCount > 0 || msgs.length > 0) totalUnread++;
-        } else if (lastReadMsgId === 'read') {
-          const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
-          if (userMsgsCount > 0) totalUnread++;
-        } else {
-          const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
-          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
-          if (unreadCount > 0) totalUnread++;
-        }
-      }
-    });
-    return totalUnread;
-  };
-
-
-  const handleSendSupportTicketMessage = async (
-    ticketId: string,
-    content: string,
-    attachmentFile?: File
-  ) => {
-    let attachmentUrl = '';
-    let attachmentName = '';
-
-    if (attachmentFile && isAppwriteConfigured()) {
-      try {
-        const customName = `ticket_attach_${ticketId}_${Date.now()}`;
-        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
-        attachmentName = attachmentFile.name;
-      } catch (err) {
-        console.error('Failed to upload attachment:', err);
-      }
-    }
-
-    const myRights = userRightsList().find(u => u.email === currentUser()?.email);
-    const isSupportAgent = currentUserOrgId() === 'org_backend' || myRights?.role === 'SuperAdmin';
-
-    const newMessage = {
-      id: `msg-${Date.now()}`,
-      sender: (isSupportAgent ? 'Agent' : 'User') as 'User' | 'Agent',
-      senderName: currentUser()?.name || currentUser()?.email || 'User',
-      senderEmail: currentUser()?.email || '',
-      content,
-      timestamp: new Date().toISOString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    };
-
-    const nextTickets = supportTickets().map(t => {
-      if (t.id === ticketId) {
-        const updated = mutateRecord<SupportTicket>(t, {
-          status: t.status === 'Closed' ? ('Open' as const) : t.status,
-          messages: [...(t.messages || []), newMessage],
-        }, currentUserId);
-        return updated;
-      }
-      return t;
-    });
-
-    saveSupportTickets(nextTickets);
-    logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
-  };
-
-  const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
 
   const [dashboardTrips, setDashboardTrips] = createSignal<TripEntry[]>([]);
   const [dashboardExpenses, setDashboardExpenses] = createSignal<ExpenseEntry[]>([]);
@@ -2121,7 +1306,7 @@ function AppContent(): any {
   const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = createSignal(false);
 
   // Listen for Alt+V shortcut to toggle Voice Assistant
-  createEffect(() => {
+  onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
@@ -2129,7 +1314,7 @@ function AppContent(): any {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    onCleanup(() => window.removeEventListener('keydown', handleKeyDown));
   });
 
 
@@ -2392,7 +1577,7 @@ function AppContent(): any {
         status: 'Active' as const,
         registrationExpiryDate: expiryStr,
         currentKM: (existingTruck.currentKM !== undefined && existingTruck.currentKM !== null && existingTruck.currentKM !== 0) ? existingTruck.currentKM : (requestItem?.currentKM || 0)
-      }, currentUserId);
+      }, currentUserId());
     } else {
       updatedTruck = createRecord<Truck>({
         id: truckId,
@@ -2406,7 +1591,7 @@ function AppContent(): any {
         model: requestItem?.model,
         type: requestItem?.type,
         currentKM: requestItem?.currentKM || 0
-      }, currentUserId);
+      }, currentUserId());
     }
 
     setTrucks(prev => {
@@ -2465,7 +1650,7 @@ function AppContent(): any {
           isApproved: false,
           requestStatus: 'Rejected' as const,
           status: 'Inactive' as const
-        }, currentUserId);
+        }, currentUserId());
       } else {
         rejectedTruckObj = createRecord<Truck>({
           id: truckId,
@@ -2478,7 +1663,7 @@ function AppContent(): any {
           model: reqItem?.model,
           type: reqItem?.type,
           currentKM: reqItem?.currentKM || 0
-        }, currentUserId);
+        }, currentUserId());
       }
 
       setTrucks(prev => {
@@ -2528,286 +1713,6 @@ function AppContent(): any {
 
     logAction('Rejected', 'Truck', truckNoToReject || orgId, 'Truck registration request rejected by system administrator.', orgId);
     showNotification(`✗ Truck request rejected for Org ${orgId}.`);
-  };
-
-  const handleBackendUpdateTruck = async (targetOrgId: string, updatedTruck: Truck) => {
-    const startTime = performance.now();
-    console.log(`[Timer] Start updating truck ${updatedTruck.truckNo} at ${new Date().toISOString()}`);
-
-    const oldTruck = trucks.find(t => t.id === updatedTruck.id);
-    const mutatedTruck = oldTruck
-      ? mutateRecord(oldTruck, updatedTruck, currentUserId)
-      : createRecord<Truck>({ ...updatedTruck, organizationId: targetOrgId } as any, currentUserId);
-
-    setTrucks(prev => {
-      const next = prev.map(t => t.id === mutatedTruck.id ? mutatedTruck : t);
-      localStorage.setItem('ttt_trucks', JSON.stringify(next));
-      return next;
-    });
-    console.log(`[Timer] Local state updated in ${(performance.now() - startTime).toFixed(1)}ms`);
-
-    if (isAppwriteConfigured()) {
-      try {
-        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-        const saveStart = performance.now();
-        console.log(`[Timer] Pushing truck document update to Appwrite proxy...`);
-        await appwrite.saveFleetDocument(databaseId, 'trucks', mutatedTruck.id, targetOrgId, mutatedTruck);
-        console.log(`[Timer] Appwrite proxy save completed in ${(performance.now() - saveStart).toFixed(1)}ms`);
-
-        const auditStart = performance.now();
-        const userEmail = currentUser() ? (currentUser().email || currentUser().name || 'SuperAdmin') : 'SuperAdmin';
-        const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-        const newAuditLog: AuditLog = {
-          id: logId,
-          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          user: userEmail,
-          action: 'Edited',
-          category: 'Truck',
-          reference: updatedTruck.truckNo.toUpperCase(),
-          details: `Compliance parameters or status updated by admin. Status: ${updatedTruck.status}`,
-          organizationId: targetOrgId
-        };
-        await appwrite.saveFleetDocument(databaseId, 'audit_logs', logId, targetOrgId, newAuditLog);
-        console.log(`[Timer] Audit log saved in ${(performance.now() - auditStart).toFixed(1)}ms`);
-      } catch (err: any) {
-        console.error("Backend failed to push remote truck updates to database:", err);
-        alert(`Error pushing truck updates to organization database: ${err.message}`);
-      }
-    }
-
-    logAction('Edited', 'Truck', updatedTruck.truckNo, `Super Admin modified remote truck details for Org ${targetOrgId}. Status: ${updatedTruck.status}`, targetOrgId);
-    showNotification(`Updated truck ${updatedTruck.truckNo} details.`);
-    console.log(`[Timer] Total disable operation took ${(performance.now() - startTime).toFixed(1)}ms`);
-  };
-
-  const handleAddTruckRequest = async (truckPayload: Omit<Truck, 'id'>) => {
-    const existingRejectedTruck = orgTrucks.find(t =>
-      t.truckNo.toUpperCase().trim() === truckPayload.truckNo.toUpperCase().trim() &&
-      t.requestStatus === 'Rejected'
-    );
-
-    const isDup = orgTrucks.some(t =>
-      t.truckNo.toUpperCase().trim() === truckPayload.truckNo.toUpperCase().trim() &&
-      t.requestStatus !== 'Rejected'
-    );
-
-    if (isDup) {
-      alert("Truck Number is already registered or has a pending request in this organization.");
-      return;
-    }
-
-    const d = new Date();
-    d.setFullYear(d.getFullYear() + 1);
-    const expiryStr = d.toISOString().split('T')[0];
-
-    let targetTruckId: string;
-    let newTruckObj: Truck;
-
-    if (existingRejectedTruck) {
-      targetTruckId = existingRejectedTruck.id;
-      newTruckObj = mutateRecord(existingRejectedTruck, {
-        ...truckPayload,
-        isApproved: false,
-        requestStatus: 'Rejected' as const,
-        status: 'Inactive' as const,
-        registrationExpiryDate: expiryStr
-      }, currentUserId);
-      setTrucks(prev => {
-        const next = prev.map(t => t.id === targetTruckId ? newTruckObj : t);
-        localStorage.setItem('ttt_trucks', JSON.stringify(next));
-        return next;
-      });
-    } else {
-      targetTruckId = (truckPayload as any).id || 'tr_' + Date.now();
-      newTruckObj = createRecord<Truck>({
-        ...truckPayload,
-        id: targetTruckId,
-        organizationId: currentUserOrgId(),
-        isApproved: false,
-        requestStatus: 'Rejected' as const,
-        status: 'Inactive' as const,
-        registrationExpiryDate: expiryStr
-      }, currentUserId);
-      setTrucks(prev => {
-        const next = [...prev, newTruckObj];
-        localStorage.setItem('ttt_trucks', JSON.stringify(next));
-        return next;
-      });
-    }
-
-    touchLastModified();
-    logAction('Created', 'Truck', truckPayload.truckNo, `Added unsubscribed vehicle to fleet database.`);
-  };
-
-  const handleProcessTruckPayment = async (
-    truckPayload: Omit<Truck, 'id'>,
-    paymentDetails: {
-      transactionId: string;
-      amount: number;
-      duration: string;
-      planName: string;
-      customerName: string;
-      customerEmail: string;
-      customerPhone: string;
-      paymentDate: string;
-      status: string;
-      paymentMethod?: string;
-    },
-    existingTruckId?: string | null
-  ) => {
-    const d = new Date();
-    const durationStr = paymentDetails.duration;
-    if (durationStr === '1 Month') {
-      d.setMonth(d.getMonth() + 1);
-    } else if (durationStr === '3 Months') {
-      d.setMonth(d.getMonth() + 3);
-    } else if (durationStr === '6 Months') {
-      d.setMonth(d.getMonth() + 6);
-    } else {
-      d.setFullYear(d.getFullYear() + 1); // Default 1 Year
-    }
-    const expiryStr = d.toISOString().split('T')[0];
-
-    let targetTruckId = existingTruckId || ('tr_' + Date.now());
-    let newTruckObj: Truck;
-
-    const existingTruck = trucks.find(t => t.id === targetTruckId);
-    if (existingTruck) {
-      newTruckObj = mutateRecord(existingTruck, {
-        ...truckPayload,
-        isApproved: true,
-        requestStatus: 'Approved' as const,
-        status: 'Active' as const,
-        registrationExpiryDate: expiryStr
-      }, currentUserId);
-      setTrucks(prev => {
-        const next = prev.map(t => t.id === targetTruckId ? newTruckObj : t);
-        localStorage.setItem('ttt_trucks', JSON.stringify(next));
-        return next;
-      });
-    } else {
-      newTruckObj = createRecord<Truck>({
-        ...truckPayload,
-        id: targetTruckId,
-        organizationId: currentUserOrgId(),
-        isApproved: true,
-        requestStatus: 'Approved' as const,
-        status: 'Active' as const,
-        registrationExpiryDate: expiryStr
-      }, currentUserId);
-      setTrucks(prev => {
-        const next = [...prev, newTruckObj];
-        localStorage.setItem('ttt_trucks', JSON.stringify(next));
-        return next;
-      });
-    }
-
-    touchLastModified();
-
-    const requestItem: TruckRequest = {
-      id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-      truckNo: truckPayload.truckNo.toUpperCase(),
-      requestedAt: new Date().toISOString().substring(0, 10),
-      status: 'Approved',
-      make: truckPayload.make,
-      model: truckPayload.model,
-      type: truckPayload.type,
-      currentKM: truckPayload.currentKM
-    };
-
-    const nextProfiles = organizationProfiles().map(p => {
-      if (p.organizationId === currentUserOrgId()) {
-        const cleanedRequests = (p.truckRequests || []).filter(
-          r => r.truckNo.toUpperCase() !== truckPayload.truckNo.toUpperCase()
-        );
-        return {
-          ...p,
-          truckRequests: [...cleanedRequests, requestItem]
-        };
-      }
-      return p;
-    });
-
-    try {
-      await saveOrganizationProfiles(nextProfiles);
-    } catch (err) {
-      console.warn("Failed to update organization profiles truck requests, continuing...", err);
-    }
-
-    // Map payment method to account
-    const activeAccounts = orgAccounts.filter(a => a.status === 'Active');
-    let matchedAccount = activeAccounts.find(a => {
-      if (paymentDetails.paymentMethod === 'upi') {
-        return a.type === 'Digital Wallets';
-      } else if (paymentDetails.paymentMethod === 'card' || paymentDetails.paymentMethod === 'netbanking') {
-        return a.type === 'Bank';
-      }
-      return false;
-    });
-
-    if (!matchedAccount) {
-      matchedAccount = activeAccounts.find(a =>
-        paymentDetails.paymentMethod === 'upi' ? a.type === 'Digital Wallets' : a.type === 'Bank'
-      ) || activeAccounts[0];
-    }
-
-    const paymentModeName = matchedAccount
-      ? matchedAccount.accountName
-      : (paymentDetails.paymentMethod === 'upi' ? 'Digital Wallets' : 'Bank');
-
-    // Auto-register expense
-    try {
-      await addExpense({
-        truckNo: truckPayload.truckNo.toUpperCase(),
-        expenseType: 'Temporary',
-        shopName: 'Lorry Guru Technologies',
-        amount: paymentDetails.amount,
-        paymentMode: paymentModeName,
-        date: new Date().toISOString().split('T')[0],
-        status: 'Paid',
-        notes: `Subscription payment (${paymentDetails.duration}) for truck ${truckPayload.truckNo.toUpperCase()}. Transaction ID: ${paymentDetails.transactionId}. Mode: ${paymentDetails.paymentMethod || 'PhonePe'}`
-      });
-    } catch (expErr) {
-      console.error("Failed to auto-log payment as expense:", expErr);
-    }
-
-    const paymentRecord = {
-      id: 'pay_' + Date.now(),
-      organizationId: currentUserOrgId(),
-      truckNo: truckPayload.truckNo.toUpperCase(),
-      amount: paymentDetails.amount,
-      transactionId: paymentDetails.transactionId,
-      paymentDate: paymentDetails.paymentDate,
-      duration: paymentDetails.duration,
-      status: paymentDetails.status,
-      customerEmail: paymentDetails.customerEmail,
-      customerName: paymentDetails.customerName,
-      customerPhone: paymentDetails.customerPhone,
-      paymentMethod: paymentDetails.paymentMethod || 'upi',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const nextPayments = [paymentRecord, ...payments()];
-    savePayments(nextPayments);
-
-    if (isAppwriteConfigured()) {
-      try {
-        await appwrite.saveFleetDocument(
-          'fleet_db',
-          'payments',
-          paymentRecord.id,
-          currentUserOrgId(),
-          paymentRecord
-        );
-      } catch (err) {
-        console.error("Failed to save payment record in Appwrite:", err);
-      }
-    }
-
-    logAction('Created', 'Truck', truckPayload.truckNo, `Paid ₹${paymentDetails.amount} via PhonePe. Auto-approved and validity extended to ${expiryStr}`);
-    showNotification(`Truck ${truckPayload.truckNo} successfully activated! Validity extended to ${expiryStr}.`);
   };
 
   // Reconcile pending trucks if approved in global profiles.
@@ -2874,500 +1779,7 @@ function AppContent(): any {
   const realtimeIsSuperAdmin = createMemo(() => !!currentUserRights()?.isSuperAdmin);
 
   // Real-time synchronization for Super Admin
-  createEffect(() => {
-    const userEmail = currentUser()?.email;
-    const connectedOrgId = realtimeOrgId();     // reconnect only when org changes
-    const isSuper = realtimeIsSuperAdmin();     // reconnect only when role changes
-    if (!userEmail || !isAppwriteConfigured()) return;
-    if (!isSuper) return;
 
-    return untrack(() => {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-
-      const reloadBackendData = async () => {
-        try {
-          const orgFleetData: { [orgId: string]: any } = {};
-          let userRightsData: any = null;
-
-          const categories: { key: string; collection: string }[] = [
-            { key: 'trucks', collection: 'trucks' },
-            { key: 'drivers', collection: 'drivers' },
-            { key: 'offices', collection: 'offices' },
-            { key: 'accounts', collection: 'accounts' },
-            { key: 'trips', collection: 'trips' },
-            { key: 'expenses', collection: 'expenses' },
-            { key: 'tyres', collection: 'tyres' },
-            { key: 'auditLogs', collection: 'audit_logs' },
-            { key: 'supportTickets', collection: 'support_tickets' }
-          ];
-
-          const fetchPromises = categories.map(async (cat) => {
-            try {
-              const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, 'org_backend');
-              for (const doc of docs) {
-                const orgId = doc.organizationId;
-                if (!orgId || orgId === 'global' || orgId === 'org_backend') continue;
-
-                if (!orgFleetData[orgId]) {
-                  orgFleetData[orgId] = {
-                    trucks: [],
-                    drivers: [],
-                    offices: [],
-                    accounts: [],
-                    trips: [],
-                    expenses: [],
-                    tyres: [],
-                    auditLogs: [],
-                    supportTickets: []
-                  };
-                }
-
-                const record = appwrite.reconstructRecord(doc);
-                if (record) {
-                  orgFleetData[orgId][cat.key].push(record);
-                }
-              }
-            } catch (catErr: any) {
-              console.warn(`Failed to fetch backend documents for ${cat.collection}:`, catErr.message);
-            }
-          });
-
-          const loadRightsPromise = (async () => {
-            try {
-              userRightsData = await organizationService.fetchAllGlobalConfigs(databaseId);
-            } catch (e) {
-              console.warn('Failed to load global rights config for backend reload:', e);
-            }
-          })();
-
-          await Promise.all([...fetchPromises, loadRightsPromise]);
-
-          // 1. Update user rights & organization profiles
-          if (userRightsData) {
-            if (userRightsData.userRightsList && Array.isArray(userRightsData.userRightsList)) {
-              const cloudRights = migrateUserPermissions(userRightsData.userRightsList);
-              setUserRightsList(cloudRights);
-              localStorage.setItem('ttt_user_rights', JSON.stringify(cloudRights));
-            }
-            if (userRightsData.organizationProfiles && Array.isArray(userRightsData.organizationProfiles)) {
-              setOrganizationProfiles(userRightsData.organizationProfiles);
-              localStorage.setItem('ttt_organization_profiles', JSON.stringify(userRightsData.organizationProfiles));
-            }
-            if (userRightsData.appUpdateConfig) {
-              setAppUpdateConfig(userRightsData.appUpdateConfig);
-              localStorage.setItem('ttt_app_update_config', JSON.stringify(userRightsData.appUpdateConfig));
-            }
-          }
-
-          // 2. Update states
-          const currentProfiles = userRightsData?.organizationProfiles || organizationProfiles();
-
-          // Self-healing: Automatically clean up orphaned requests from user_rights_snapshot when a vehicle is deleted
-          let profilesChanged = false;
-          const cleanedProfiles = currentProfiles.map(profile => {
-            if (profile.organizationId === 'org_backend') return profile;
-
-            const orgData = orgFleetData[profile.organizationId];
-            if (!orgData) return profile;
-
-            const orgTrucksCloud = orgData.trucks || [];
-            const currentRequests = profile.truckRequests || [];
-
-            const nextRequests = currentRequests.filter(req => {
-              const truckExists = orgTrucksCloud.some(
-                (t: any) => t.truckNo.toUpperCase() === req.truckNo.toUpperCase()
-              );
-              if (truckExists) return true;
-
-              // Grace period: do not delete newly created requests (less than 60 seconds old)
-              // to allow asynchronous DB writes and replication to complete.
-              const reqTimestampMatch = req.id.match(/^req_(\d+)/);
-              const isNewRequest = reqTimestampMatch
-                ? (Date.now() - Number(reqTimestampMatch[1]) < 60000)
-                : false;
-
-              if (isNewRequest) {
-                return true;
-              }
-
-              if (req.status === 'Pending' || req.status === 'Rejected') {
-                console.info(`Self-Healing: Removing orphaned ${req.status} request for truck ${req.truckNo} in org ${profile.organizationId} because the vehicle registry record was deleted.`);
-                profilesChanged = true;
-                return false;
-              }
-              return true;
-            });
-
-            if (nextRequests.length !== currentRequests.length) {
-              return {
-                ...profile,
-                truckRequests: nextRequests
-              };
-            }
-            return profile;
-          });
-
-          if (profilesChanged) {
-            await saveOrganizationProfiles(cleanedProfiles);
-          }
-
-          batch(() => {
-            setTrucks(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.trucks && Array.isArray(orgData.trucks)) {
-                  updated = [
-                    ...updated.filter(t => t.organizationId !== orgId),
-                    ...migrateTrucks(orgData.trucks).map(t => ({ ...t, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_trucks', JSON.stringify(updated));
-              return updated;
-            });
-
-            setTrips(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.trips && Array.isArray(orgData.trips)) {
-                  updated = [
-                    ...updated.filter(t => t.organizationId !== orgId),
-                    ...migrateTrips(migrateTripsIfNecessary(orgData.trips)).map(t => ({ ...t, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_trips', JSON.stringify(updated));
-              return updated;
-            });
-
-            setDrivers(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.drivers && Array.isArray(orgData.drivers)) {
-                  updated = [
-                    ...updated.filter(d => d.organizationId !== orgId),
-                    ...migrateDrivers(orgData.drivers).map(d => ({ ...d, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_drivers', JSON.stringify(updated));
-              return updated;
-            });
-
-            setOffices(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.offices && Array.isArray(orgData.offices)) {
-                  updated = [
-                    ...updated.filter(o => o.organizationId !== orgId),
-                    ...migrateOffices(orgData.offices).map(o => ({ ...o, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_offices', JSON.stringify(updated));
-              return updated;
-            });
-
-            setAccounts(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.accounts && Array.isArray(orgData.accounts)) {
-                  updated = [
-                    ...updated.filter(a => a.organizationId !== orgId),
-                    ...migrateAccounts(orgData.accounts).map(a => ({ ...a, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_accounts', JSON.stringify(updated));
-              return updated;
-            });
-
-            setExpenses(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.expenses && Array.isArray(orgData.expenses)) {
-                  updated = [
-                    ...updated.filter(e => e.organizationId !== orgId),
-                    ...migrateExpenses(orgData.expenses).map(e => ({ ...e, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_expenses', JSON.stringify(updated));
-              return updated;
-            });
-
-            setTyres(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.tyres && Array.isArray(orgData.tyres)) {
-                  updated = [
-                    ...updated.filter(ty => ty.organizationId !== orgId),
-                    ...migrateTyres(orgData.tyres).map(ty => ({ ...ty, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_tyres', JSON.stringify(updated));
-              return updated;
-            });
-
-            setAuditLogs(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.auditLogs && Array.isArray(orgData.auditLogs)) {
-                  updated = [
-                    ...updated.filter(l => l.organizationId !== orgId),
-                    ...migrateAuditLogs(orgData.auditLogs).map(l => ({ ...l, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
-              return updated;
-            });
-
-            setSupportTickets(prev => {
-              let updated = [...prev];
-              for (const orgId in orgFleetData) {
-                const orgData = orgFleetData[orgId];
-                if (orgData.supportTickets && Array.isArray(orgData.supportTickets)) {
-                  updated = [
-                    ...updated.filter(t => t.organizationId !== orgId),
-                    ...orgData.supportTickets.map(t => ({ ...t, organizationId: orgId }))
-                  ];
-                }
-              }
-              localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
-              return updated;
-            });
-          }); // end batch — single reactive flush for all 9 collections
-
-        } catch (err) {
-          console.warn("Backend live data sync failed:", err);
-        }
-      };
-
-      // Initial load
-      reloadBackendData();
-
-      // Subscribe to realtime database document events
-      let unsubscribe: any = null;
-      let destroyed = false;
-      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-      let reconnectDelay = 5000;
-      const MAX_DELAY = 60000;
-
-      const teardown = () => {
-        if (unsubscribe) {
-          try {
-            if (typeof unsubscribe === 'function') {
-              unsubscribe();
-            } else {
-              const subAny = unsubscribe as any;
-              if (typeof subAny.close === 'function') {
-                subAny.close();
-              } else if (typeof subAny.unsubscribe === 'function') {
-                subAny.unsubscribe();
-              }
-            }
-          } catch (_) { /* ignore close-state errors */ }
-          unsubscribe = null;
-        }
-      };
-
-      const scheduleReconnect = () => {
-        if (destroyed) return;
-        reconnectTimer = setTimeout(() => {
-          if (!destroyed) setupRealtime();
-        }, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
-      };
-
-      const setupRealtime = async () => {
-        if (destroyed) return;
-        teardown();
-        try {
-          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          // Connect to Fastify realtime gateway server
-          const wsHost = window.location.host;
-          const gatewayUrl = `${wsProtocol}//${wsHost}/realtime?orgId=${connectedOrgId}&email=${userEmail}&isSuperAdmin=${isSuper}`;
-
-          const socket = new WebSocket(gatewayUrl);
-          unsubscribe = {
-            close: () => socket.close()
-          };
-
-          socket.onopen = () => {
-            console.log("WebSocket connection established with Fastify Realtime Gateway.");
-            reconnectDelay = 1000; // Reset backoff
-          };
-
-          socket.onmessage = (msg) => {
-            try {
-              const event = JSON.parse(msg.data);
-              const payload = event.payload;
-              if (!payload) return;
-
-              // --- Event Router ---
-              // Parse the collection name from the Appwrite event string:
-              // Format: databases.{dbId}.collections.{collectionId}.documents.{docId}.{type}
-              const rawEvents: string[] = event.events || [];
-              const eventStr = rawEvents[0] || '';
-              const parts = eventStr.split('.');
-              const collection = (parts.length >= 5 && parts[2] === 'collections') ? parts[3] : null;
-              const isDelete = rawEvents.some((e: string) => e.endsWith('.delete'));
-
-              console.log(`[Realtime] ${collection ?? 'unknown'} ${isDelete ? 'delete' : 'upsert'}`);
-
-              // Helper: upsert a single reconstructed record into a store
-              const upsert = <T extends { id: string; organizationId?: string }>(prev: T[], rec: T): T[] => {
-                const exists = prev.some(x => x.id === rec.id);
-                return exists ? prev.map(x => x.id === rec.id ? rec : x) : [...prev, rec];
-              };
-
-              switch (collection) {
-                case 'trucks': {
-                  if (isDelete) {
-                    setTrucks(prev => prev.filter(t => t.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setTrucks(prev => upsert(prev, { ...migrateTrucks([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'trips': {
-                  if (isDelete) {
-                    setTrips(prev => prev.filter(t => t.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setTrips(prev => upsert(prev, { ...migrateTrips(migrateTripsIfNecessary([rec]))[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'drivers': {
-                  if (isDelete) {
-                    setDrivers(prev => prev.filter(d => d.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setDrivers(prev => upsert(prev, { ...migrateDrivers([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'offices': {
-                  if (isDelete) {
-                    setOffices(prev => prev.filter(o => o.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setOffices(prev => upsert(prev, { ...migrateOffices([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'accounts': {
-                  if (isDelete) {
-                    setAccounts(prev => prev.filter(a => a.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setAccounts(prev => upsert(prev, { ...migrateAccounts([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'expenses': {
-                  if (isDelete) {
-                    setExpenses(prev => prev.filter(e => e.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setExpenses(prev => upsert(prev, { ...migrateExpenses([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'tyres': {
-                  if (isDelete) {
-                    setTyres(prev => prev.filter(ty => ty.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setTyres(prev => upsert(prev, { ...migrateTyres([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'audit_logs': {
-                  if (isDelete) {
-                    setAuditLogs(prev => prev.filter(l => l.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setAuditLogs(prev => upsert(prev, { ...migrateAuditLogs([rec])[0], organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'support_tickets': {
-                  if (isDelete) {
-                    setSupportTickets(prev => prev.filter(t => t.id !== payload.$id));
-                  } else {
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) setSupportTickets(prev => upsert(prev, { ...rec, organizationId: rec.organizationId }));
-                  }
-                  break;
-                }
-                case 'global_configs': {
-                  // global_configs holds org profiles, user rights, and app config
-                  const key: string = payload.key || '';
-                  if (key.startsWith('prf_')) {
-                    // Org profile changed — upsert immediately
-                    const rec = appwrite.reconstructRecord(payload);
-                    if (rec) {
-                      const prev = organizationProfiles();
-                      const next = prev.some(p => p.organizationId === rec.organizationId)
-                        ? prev.map(p => p.organizationId === rec.organizationId ? rec : p)
-                        : [...prev, rec];
-                      setOrganizationProfiles(next);
-                      localStorage.setItem('ttt_organization_profiles', JSON.stringify(next));
-                    }
-                  } else {
-                    // User rights or app config changed — full reload for safety
-                    reloadBackendData();
-                  }
-                  break;
-                }
-                default:
-                  // Unknown collection — fall back to full reload
-                  console.log(`[Realtime] Unknown collection "${collection}", falling back to full reload`);
-                  reloadBackendData();
-                  break;
-              }
-            } catch (err: any) {
-              console.warn("Failed to parse realtime event message:", err.message);
-            }
-          };
-
-          socket.onclose = () => {
-            if (!destroyed) {
-              console.warn("Fastify Realtime Gateway socket closed. Scheduling reconnect...");
-              scheduleReconnect();
-            }
-          };
-
-          socket.onerror = (err) => {
-            console.error("Fastify Realtime Gateway socket error:", err);
-            socket.close();
-          };
-        } catch (e: any) {
-          console.warn("Realtime socket setup failed:", e);
-        }
-      };
-
-      setupRealtime();
-
-      return () => {
-        destroyed = true;
-        teardown();
-      };
-    });
-  });
 
 
 
@@ -3412,7 +1824,7 @@ function AppContent(): any {
         date: serviceDate,
         notes: notes,
         organizationId: orgId,
-      }, currentUserId);
+      }, currentUserId());
       newExpenses.push(partsExp);
     }
 
@@ -3431,7 +1843,7 @@ function AppContent(): any {
         date: serviceDate,
         notes: notes,
         organizationId: orgId,
-      }, currentUserId);
+      }, currentUserId());
       newExpenses.push(labourExp);
     }
 
@@ -3458,7 +1870,7 @@ function AppContent(): any {
     if (kmField) {
       const truck = trucks.find(t => t.id === truckId);
       if (truck) {
-        const updatedTruck = mutateRecord(truck, { [kmField]: newMilestoneKM }, currentUserId);
+        const updatedTruck = mutateRecord(truck, { [kmField]: newMilestoneKM }, currentUserId());
         const next = trucks.map(t => t.id === truckId ? updatedTruck : t);
         saveTrucks(next);
         if (isAppwriteConfigured()) {

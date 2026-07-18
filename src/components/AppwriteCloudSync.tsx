@@ -1,7 +1,6 @@
-import { Query } from 'appwrite';
 import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
-
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { SyncService, wrapAbort } from '../services/SyncService';
 import {
   Cloud,
   CheckCircle,
@@ -60,98 +59,50 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
   const [successMsg, setSuccessMsg] = createSignal<string | null>(null);
   const [showGuide, setShowGuide] = createSignal(false);
 
-  // Custom user-adjustable database properties
   const [databaseId, setDatabaseId] = createSignal(localStorage.getItem('appwrite_database_id') || 'fleet_db');
   const [collectionId, setCollectionId] = createSignal(localStorage.getItem('appwrite_collection_id') || 'fleet_records');
 
   const [realtimeConnected, setRealtimeConnected] = createSignal(true);
   const [isOnline, setIsOnline] = createSignal(true);
+  const [initialPullDone, setInitialPullDone] = createSignal(false);
 
-  // Monitor hardware/browser network connectivity status
-  createEffect(() => {
+  let activeAbortController: AbortController | null = null;
+  let allowedCollectionsRef = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets'];
+
+  const orgId = () => currentUserOrgId() || 'org_default';
+
+  // 1. Monitor network status
+  onMount(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      if (props.onConnectionChange) props.onConnectionChange(true);
-      // Flush offline writes queue when connection is restored
+      if (onConnectionChange) onConnectionChange(true);
       appwrite.flushSyncQueue(showNotification);
     };
     const handleOffline = () => {
       setIsOnline(false);
-      if (props.onConnectionChange) props.onConnectionChange(false, 'offline');
+      if (onConnectionChange) onConnectionChange(false, 'offline');
     };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Initial check
-    if (!window.navigator.onLine && props.onConnectionChange) {
-      props.onConnectionChange(false, 'offline');
+    if (!window.navigator.onLine && onConnectionChange) {
+      onConnectionChange(false, 'offline');
     }
 
-    return () => {
+    onCleanup(() => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-    };
-  });
-
-  const orgId = () => currentUserOrgId() || 'org_default';
-
-  // Refs for tracking local states and syncing baselines
-  let currentLocalStateRef: any;
-  createEffect(() => {
-    currentLocalStateRef = props.currentLocalState;
-  });
-
-  // Keep callback refs fresh so the WebSocket closure always calls the latest version
-  let onLoadCloudStateRef: any;
-  createEffect(() => { onLoadCloudStateRef = props.onLoadCloudState; });
-  let showNotificationRef: any;
-  createEffect(() => { showNotificationRef = props.showNotification; });
-  let logActionRef: any;
-  createEffect(() => { logActionRef = props.logAction; });
-  let activeTicketIdRef: any;
-  createEffect(() => { activeTicketIdRef = props.activeTicketId ? props.activeTicketId() : null; });
-
-  const [initialPullDone, setInitialPullDone] = createSignal(false);
-  let isSyncing: any;
-
-  createEffect(() => {
-    localStorage.setItem('appwrite_database_id', databaseId());
-  });
-
-  createEffect(() => {
-    localStorage.setItem('appwrite_collection_id', collectionId());
-  });
-
-  let allowedCollectionsRef = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets'];
-
-  let activeAbortController: AbortController | null = null;
-
-  const wrapAbort = <T,>(promise: Promise<T>, signal: AbortSignal): Promise<T> => {
-    return new Promise((resolve, reject) => {
-      const onAbort = () => reject(new Error('Aborted'));
-      if (signal.aborted) return onAbort();
-      signal.addEventListener('abort', onAbort);
-      promise.then(
-        (res) => {
-          signal.removeEventListener('abort', onAbort);
-          resolve(res);
-        },
-        (err) => {
-          signal.removeEventListener('abort', onAbort);
-          reject(err);
-        }
-      );
     });
-  };
+  });
 
-  // Initial pull from Appwrite Database (incremental by default on auto-triggers)
+  // Save Configs to localStorage
+  createEffect(() => localStorage.setItem('appwrite_database_id', databaseId()));
+  createEffect(() => localStorage.setItem('appwrite_collection_id', collectionId()));
+
+  // 2. Pull State from DB
   const handlePullFromDB = async (quiet = false, incremental = false) => {
     if (!isConfigured) return;
-    
-    // Abort any active in-flight sync request
-    if (activeAbortController) {
-      activeAbortController.abort();
-    }
+    if (activeAbortController) activeAbortController.abort();
     activeAbortController = new AbortController();
     const signal = activeAbortController.signal;
 
@@ -162,582 +113,295 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     }
 
     try {
-      if (!quiet) {
-        console.log(`Appwrite DB: Fetching fleet documents (${incremental ? 'incremental' : 'full'})...`);
-      }
-
-      const lastSyncTime = incremental ? Number(localStorage.getItem('appwrite_last_sync_time') || '0') : 0;
-      const extraQueries: string[] = [];
-      if (lastSyncTime > 0) {
-        extraQueries.push(Query.greaterThan('$updatedAt', new Date(lastSyncTime).toISOString()));
-      }
-
-      // Reconstruct the full state structure
-      const currentState = currentLocalStateRef || {
-        trucks: [],
-        drivers: [],
-        offices: [],
-        accounts: [],
-        trips: [],
-        expenses: [],
-        tyres: [],
-        auditLogs: [],
-        supportTickets: []
-      };
-
-      const loadedState: any = {
-        trucks: [...(currentState.trucks || [])],
-        drivers: [...(currentState.drivers || [])],
-        offices: [...(currentState.offices || [])],
-        accounts: [...(currentState.accounts || [])],
-        trips: [...(currentState.trips || [])],
-        expenses: [...(currentState.expenses || [])],
-        tyres: [...(currentState.tyres || [])],
-        auditLogs: [...(currentState.auditLogs || [])],
-        supportTickets: [...(currentState.supportTickets || [])]
-      };
-
-      let userRightsData: any = null;
-      let maxUpdatedAt = lastSyncTime;
-      const verifiedCollections: string[] = [];
-
-      const categories: { key: string; collection: string }[] = [
-        { key: 'trucks', collection: 'trucks' },
-        { key: 'drivers', collection: 'drivers' },
-        { key: 'offices', collection: 'offices' },
-        { key: 'accounts', collection: 'accounts' },
-        { key: 'trips', collection: 'trips' },
-        { key: 'expenses', collection: 'expenses' },
-        { key: 'tyres', collection: 'tyres' },
-        { key: 'auditLogs', collection: 'audit_logs' },
-        { key: 'supportTickets', collection: 'support_tickets' }
-      ];
-
-      const fetchPromises = categories.map(async (cat) => {
-        try {
-          const docs = await wrapAbort(appwrite.listFleetDocuments(databaseId(), cat.collection, orgId(), extraQueries), signal);
-          verifiedCollections.push(cat.collection);
-          
-          const updatedCollection = [...(loadedState[cat.key] || [])];
-          for (const doc of docs) {
-            if (doc.updatedAt) {
-              const docTime = new Date(doc.updatedAt).getTime();
-              if (docTime > maxUpdatedAt) {
-                maxUpdatedAt = docTime;
-              }
-            }
-            const parsedRecord = appwrite.reconstructRecord(doc);
-            const idx = updatedCollection.findIndex(x => x.id === doc.$id);
-            if (parsedRecord.deletedAt) {
-              if (idx > -1) updatedCollection.splice(idx, 1);
-            } else {
-              const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
-              if (idx > -1) {
-                updatedCollection[idx] = nextRecord;
-              } else {
-                updatedCollection.push(nextRecord);
-              }
-            }
-          }
-          loadedState[cat.key] = updatedCollection;
-        } catch (catErr: any) {
-          if (catErr.message === 'Aborted') throw catErr;
-          console.warn(`Failed to fetch/parse documents for collection ${cat.collection}:`, catErr.message);
-        }
-      });
-
-      const loadRightsPromise = (async () => {
-        try {
-          const allConfigs = await wrapAbort(appwrite.listGlobalConfigs(databaseId()), signal);
-          userRightsData = { userRightsList: [], organizationProfiles: [] };
-          for (const doc of allConfigs) {
-            try {
-              const parsed = JSON.parse(doc.data);
-              const keyVal = doc.key || doc.$id || '';
-              if (keyVal.startsWith('usr_')) {
-                userRightsData.userRightsList.push(parsed);
-              } else if (keyVal.startsWith('prf_')) {
-                if (parsed && parsed.organizationId) {
-                  userRightsData.organizationProfiles.push(parsed);
-                }
-              } else if (keyVal === 'cfg_app_version') {
-                localStorage.setItem('ttt_app_update_config', doc.data);
-                if (typeof window !== 'undefined' && window.dispatchEvent) {
-                  window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsed }));
-                }
-              }
-            } catch (e) {
-              console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to load global rights config:', e);
-        }
-      })();
-
-      await Promise.all([...fetchPromises, loadRightsPromise]);
-
-      allowedCollectionsRef = verifiedCollections;
-
-      if (maxUpdatedAt > 0) {
-        loadedState.exportDate = maxUpdatedAt;
-        localStorage.setItem('appwrite_last_sync_time', String(maxUpdatedAt));
-      }
-
-      // Load state into local UI
-      const didChange = onLoadCloudState(loadedState, userRightsData, quiet);
+      const res = await SyncService.pullFromDB(databaseId(), orgId(), props.currentLocalState, incremental, signal);
+      allowedCollectionsRef = res.verifiedCollections;
+      const didChange = onLoadCloudState(res.loadedState, res.userRightsData, quiet);
 
       if (!quiet) {
         setSuccessMsg('Active registers successfully loaded from Appwrite Database!');
-        if (didChange) {
-          showNotification('Active buffers synchronized with Appwrite Database.');
-        } else {
-          showNotification('Appwrite Database: Already up to date.');
-        }
+        showNotification(didChange ? 'Active buffers synchronized with Appwrite Database.' : 'Appwrite Database: Already up to date.');
       }
     } catch (err: any) {
-      if (err.message === 'Aborted') {
-        console.log('Appwrite DB loading: Sync request cancelled (aborted).');
-        return;
-      }
+      if (err.message === 'Aborted') return;
       console.error('Appwrite DB loading() failure:', err);
       if (!quiet) {
-        setErrorMsg(
-          `Database retrieval failed: ${err.message || 'Unknown error'}. \n\n` +
-          `Tip: Make sure you have run the bootstrapping script to create the database schemas:\n` +
-          `  node scripts/bootstrap-db.js`
-        );
+        setErrorMsg(`Database retrieval failed: ${err.message || 'Unknown error'}. \n\nBootstrap: node scripts/bootstrap-db.js`);
       }
     } finally {
       if (!quiet && !signal.aborted) setLoading(false);
     }
   };
 
-  // Perform initial pull on launch
-  createEffect(() => {
-    if (!isConfigured || initialPullDone()) return;
-
-    const performInitialSync = async () => {
-      try {
-        console.log("Appwrite DB: Performing initial query sync on load...");
-        await handlePullFromDB(true, true);
-      } catch (err: any) {
-        console.warn("Appwrite initial pull skipped, using local master state:", err.message);
-      } finally {
+  // 3. Initial pull and visibility listeners
+  onMount(() => {
+    if (isConfigured && !initialPullDone()) {
+      handlePullFromDB(true, true).finally(() => {
         setInitialPullDone(true);
-        if (onInitialSyncComplete) {
-          onInitialSyncComplete(true);
-        }
+        if (onInitialSyncComplete) onInitialSyncComplete(true);
+      });
+      if (window.navigator.onLine) {
+        appwrite.flushSyncQueue(showNotification);
       }
-    };
+    }
 
-    performInitialSync();
-        if (window.navigator.onLine) { appwrite.flushSyncQueue(showNotification); }
-  });
-
-  // Listen for app gained focus (app returned from background/memory) to trigger checks
-  createEffect(() => {
     const handleResume = () => {
       if (isConfigured) {
-        console.log("App gained focus/returned from background, performing silent configuration sync...");
         handlePullFromDB(true, true);
       }
     };
-
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        handleResume();
-      }
+      if (document.visibilityState === 'visible') handleResume();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('resume', handleResume);
     window.addEventListener('focus', handleResume);
 
-    return () => {
+    onCleanup(() => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('resume', handleResume);
       window.removeEventListener('focus', handleResume);
-    };
+    });
   });
 
-  // Real-Time Web Socket subscription using Appwrite real-time channel
-  // Auto-reconnects with exponential backoff when the socket drops.
+  // 4. Real-time web socket listener (Gateway Integration)
   createEffect(() => {
     if (!isConfigured || !initialPullDone()) {
       setRealtimeConnected(false);
       return;
     }
 
-
-
     let unsubscribe: any = null;
-    let destroyed = false;          // set true on createEffect cleanup
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
-    let reconnectDelay = 5000;      // start at 5s, cap at 60s
+    let destroyed = false;
+    let reconnectTimer: any = null;
+    let healthCheckInterval: any = null;
+    let reconnectDelay = 5000;
     const MAX_DELAY = 60000;
-    let disconnectCount = 0;
 
     const teardown = () => {
       if (unsubscribe) {
         try {
-          if (typeof unsubscribe === 'function') {
-            unsubscribe();
-          } else {
-            const subAny = unsubscribe as any;
-            if (typeof subAny.close === 'function') {
-              subAny.close();
-            } else if (typeof subAny.unsubscribe === 'function') {
-              subAny.unsubscribe();
-            }
-          }
-        } catch (_) { /* ignore close-state errors */ }
+          if (typeof unsubscribe === 'function') unsubscribe();
+          else unsubscribe.close?.();
+        } catch (_) {}
         unsubscribe = null;
       }
-      if (healthCheckInterval) {
-        clearInterval(healthCheckInterval);
-        healthCheckInterval = null;
-      }
+      if (healthCheckInterval) clearInterval(healthCheckInterval);
     };
 
     const scheduleReconnect = () => {
       if (destroyed) return;
       setRealtimeConnected(false);
       if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
-      console.info(`Appwrite socket: reconnecting in ${reconnectDelay / 1000}s...`);
       reconnectTimer = setTimeout(() => {
         if (!destroyed) setupRealtime();
       }, reconnectDelay);
-      // Exponential backoff capped at MAX_DELAY
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
     };
 
     const setupRealtime = async () => {
       if (destroyed) return;
-      teardown(); // clean up any previous socket first
-
+      teardown();
       try {
         await appwrite.initSession();
-        const client = appwrite.getClient();
-
         const baseList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets']
           .filter(col => allowedCollectionsRef.includes(col));
 
-        // 1. Verify access permissions on each collection dynamically before subscribing
         const verifiedCols: string[] = [];
         await Promise.all(baseList.map(async (col) => {
           try {
             await appwrite.listFleetDocuments(databaseId(), col, orgId());
             verifiedCols.push(col);
-          } catch (_) {
-            // Collection is missing or unauthorized
-          }
+          } catch (_) {}
         }));
 
         if (orgId() === 'org_backend') {
           try {
             await appwrite.listGlobalConfigs(databaseId());
             verifiedCols.push('global_configs');
-          } catch (_) { }
+          } catch (_) {}
         } else {
           verifiedCols.push('global_configs');
         }
 
-        const colList = verifiedCols;
-
-        if (colList.length === 0) {
-          console.warn("Appwrite socket: No allowed collections to subscribe to. Realtime connection bypassed.");
+        if (verifiedCols.length === 0) {
           setRealtimeConnected(false);
           return;
         }
-        const channels = colList.map(col => `databases.${databaseId()}.collections.${col}.documents`);
 
-        console.log(`Appwrite socket: Subscribing to authorized channels:`, channels);
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime?orgId=${orgId()}&email=${currentUserEmail() || ''}&isSuperAdmin=${isAdmin() || false}`;
+        const socket = new WebSocket(gatewayUrl);
+        unsubscribe = { close: () => socket.close() };
 
-        try {
-          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const wsHost = window.location.host;
-          const gatewayUrl = `${wsProtocol}//${wsHost}/realtime?orgId=${orgId()}&email=${currentUserEmail() || ''}&isSuperAdmin=${isAdmin() || false}`;
+        socket.onopen = () => {
+          setRealtimeConnected(true);
+          if (onConnectionChange) onConnectionChange(true);
+        };
 
-          console.log(`Connecting to Fastify Realtime Gateway: ${gatewayUrl}`);
-          const socket = new WebSocket(gatewayUrl);
-          unsubscribe = {
-            close: () => socket.close()
-          };
+        socket.onmessage = (msg) => {
+          try {
+            const response = JSON.parse(msg.data);
+            const doc = response.payload;
+            if (!doc) return;
 
-          socket.onopen = () => {
-            console.log('Realtime Gateway: Socket pipeline established.');
-            setRealtimeConnected(true);
-            if (props.onConnectionChange) props.onConnectionChange(true);
-          };
+            const eventCollectionId = doc.$collectionId || doc.collectionId || '';
+            const eventType = response.events[0] || '';
 
-          socket.onmessage = (msg) => {
-            try {
-              const response = JSON.parse(msg.data);
-              const doc = response.payload;
-              if (!doc) return;
+            if (eventCollectionId !== 'global_configs' && orgId() !== 'org_backend' && doc.organizationId !== orgId()) {
+              return;
+            }
 
-              const eventCollectionId = doc.$collectionId || doc.collectionId || '';
-              const eventType = response.events[0] || '';
-
-              // Check if document belongs to this organization (or global configs)
-              if (eventCollectionId !== 'global_configs' && orgId() !== 'org_backend' && doc.organizationId !== orgId()) {
-                return;
-              }
-
-              console.log(`Realtime Gateway event: ${eventType} on doc ${doc.$id} in ${eventCollectionId}`);
-
-              if (eventCollectionId === 'global_configs') {
-                try {
-                  const storedRights = localStorage.getItem('ttt_user_rights');
-                  const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-                  let localRights = storedRights ? JSON.parse(storedRights) : [];
-                  let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-
-                  if (eventType.endsWith('.delete')) {
-                    if (doc.$id.startsWith('usr_')) {
-                      localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
-                    } else if (doc.$id.startsWith('prf_')) {
-                      const orgIdVal = doc.$id.replace('prf_', '');
-                      localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgIdVal);
-                    } else if (doc.$id === 'cfg_app_version') {
-                      localStorage.removeItem('ttt_app_update_config');
-                    }
-                  } else {
-                    const parsedItem = JSON.parse(doc.data);
-                    const keyVal = doc.$id || doc.key || '';
-                    if (keyVal.startsWith('usr_')) {
-                      const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
-                      if (idx > -1) { localRights[idx] = parsedItem; } else { localRights.push(parsedItem); }
-                    } else if (keyVal.startsWith('prf_')) {
-                      if (parsedItem && parsedItem.organizationId) {
-                        const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
-                        if (idx > -1) { localProfiles[idx] = parsedItem; } else { localProfiles.push(parsedItem); }
-                      }
-                    } else if (keyVal === 'cfg_app_version') {
-                      localStorage.setItem('ttt_app_update_config', doc.data);
-                      if (typeof window !== 'undefined' && window.dispatchEvent) {
-                        window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsedItem }));
-                      }
-                    }
-                  }
-                  onLoadCloudStateRef({}, { userRightsList: localRights, organizationProfiles: localProfiles }, true);
-                } catch (e) {
-                  console.warn('Failed to parse realtime global config:', e);
-                }
-                return;
-              }
-
-              let key: 'trucks' | 'drivers' | 'offices' | 'accounts' | 'trips' | 'expenses' | 'tyres' | 'auditLogs' | 'supportTickets' | null = null;
-              if (eventCollectionId === 'trucks') key = 'trucks';
-              else if (eventCollectionId === 'drivers') key = 'drivers';
-              else if (eventCollectionId === 'offices') key = 'offices';
-              else if (eventCollectionId === 'accounts') key = 'accounts';
-              else if (eventCollectionId === 'trips') key = 'trips';
-              else if (eventCollectionId === 'expenses') key = 'expenses';
-              else if (eventCollectionId === 'tyres') key = 'tyres';
-              else if (eventCollectionId === 'audit_logs') key = 'auditLogs';
-              else if (eventCollectionId === 'support_tickets') key = 'supportTickets';
-
-              if (!key) return;
-
-              const currentState = currentLocalStateRef;
-              const currentCollection = currentState[key] || [];
-              let updatedCollection = [...currentCollection];
+            if (eventCollectionId === 'global_configs') {
+              const storedRights = localStorage.getItem('ttt_user_rights');
+              const storedProfiles = localStorage.getItem('ttt_organization_profiles');
+              let localRights = storedRights ? JSON.parse(storedRights) : [];
+              let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
 
               if (eventType.endsWith('.delete')) {
-                updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+                if (doc.$id.startsWith('usr_')) {
+                  localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
+                } else if (doc.$id.startsWith('prf_')) {
+                  const orgIdVal = doc.$id.replace('prf_', '');
+                  localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgIdVal);
+                } else if (doc.$id === 'cfg_app_version') {
+                  localStorage.removeItem('ttt_app_update_config');
+                }
               } else {
-                try {
-                  const parsedRecord = appwrite.reconstructRecord(doc);
-                  const cloudVersion = parsedRecord.version ?? 1;
-                  const cloudUpdatedBy = parsedRecord.updatedBy ?? '';
+                const parsedItem = JSON.parse(doc.data);
+                const keyVal = doc.$id || '';
+                if (keyVal.startsWith('usr_')) {
+                  const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
+                  if (idx > -1) localRights[idx] = parsedItem; else localRights.push(parsedItem);
+                } else if (keyVal.startsWith('prf_')) {
+                  if (parsedItem && parsedItem.organizationId) {
+                    const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
+                    if (idx > -1) localProfiles[idx] = parsedItem; else localProfiles.push(parsedItem);
+                  }
+                } else if (keyVal === 'cfg_app_version') {
+                  localStorage.setItem('ttt_app_update_config', doc.data);
+                  window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsedItem }));
+                }
+              }
+              onLoadCloudState({}, { userRightsList: localRights, organizationProfiles: localProfiles }, true);
+              return;
+            }
 
-                  const localRecordIndex = updatedCollection.findIndex(x => x.id === doc.$id);
-                  const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
-                  const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
+            let key: any = null;
+            if (eventCollectionId === 'trucks') key = 'trucks';
+            else if (eventCollectionId === 'drivers') key = 'drivers';
+            else if (eventCollectionId === 'offices') key = 'offices';
+            else if (eventCollectionId === 'accounts') key = 'accounts';
+            else if (eventCollectionId === 'trips') key = 'trips';
+            else if (eventCollectionId === 'expenses') key = 'expenses';
+            else if (eventCollectionId === 'tyres') key = 'tyres';
+            else if (eventCollectionId === 'audit_logs') key = 'auditLogs';
+            else if (eventCollectionId === 'support_tickets') key = 'supportTickets';
 
-                  if (cloudVersion > localVersion) {
-                    if (parsedRecord.deletedAt) {
-                      updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+            if (!key) return;
+
+            const currentCollection = props.currentLocalState[key] || [];
+            let updatedCollection = [...currentCollection];
+
+            if (eventType.endsWith('.delete')) {
+              updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+            } else {
+              const parsedRecord = appwrite.reconstructRecord(doc);
+              const cloudVersion = parsedRecord.version ?? 1;
+              const cloudUpdatedBy = parsedRecord.updatedBy ?? '';
+
+              const localRecordIndex = updatedCollection.findIndex(x => x.id === doc.$id);
+              const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
+              const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
+
+              if (cloudVersion > localVersion) {
+                if (parsedRecord.deletedAt) {
+                  updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+                } else {
+                  const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
+                  if (orgId() === 'org_backend' && key === 'supportTickets') {
+                    if (localRecordIndex === -1) {
+                      if (parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
+                        showNotification(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
+                      }
                     } else {
-                      const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
-
-                      if (orgId() === 'org_backend' && key === 'supportTickets') {
-                        if (localRecordIndex === -1) {
-                          if (parsedRecord.id !== activeTicketIdRef) {
-                            showNotificationRef(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
-                          }
-                        } else {
-                          const oldMsgsCount = localRecord?.messages?.length || 0;
-                          const newMsgs = parsedRecord.messages || [];
-                          if (newMsgs.length > oldMsgsCount) {
-                            const lastMsg = newMsgs[newMsgs.length - 1];
-                            if (lastMsg && lastMsg.sender === 'User') {
-                              if (parsedRecord.id !== activeTicketIdRef) {
-                                showNotificationRef(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
-                              }
-                            }
-                          }
+                      const oldMsgsCount = localRecord?.messages?.length || 0;
+                      const newMsgs = parsedRecord.messages || [];
+                      if (newMsgs.length > oldMsgsCount) {
+                        const lastMsg = newMsgs[newMsgs.length - 1];
+                        if (lastMsg && lastMsg.sender === 'User' && parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
+                          showNotification(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
                         }
                       }
-
-                      if (localRecordIndex > -1) {
-                        updatedCollection[localRecordIndex] = nextRecord;
-                      } else {
-                        updatedCollection.push(nextRecord);
-                      }
-                    }
-                  } else if (cloudVersion === localVersion) {
-                    if (cloudUpdatedBy === currentUserId() && localRecord?.syncState === 'pending') {
-                      if (localRecord.deletedAt) {
-                        updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
-                      } else {
-                        localRecord.syncState = 'synced';
-                      }
-                    } else if (cloudUpdatedBy !== currentUserId() && localRecord?.syncState === 'pending') {
-                      console.warn(`Conflict detected for document ${doc.$id}. Same version ${cloudVersion} but updated by user: ${cloudUpdatedBy}`);
-                      localRecord.syncState = 'conflict';
                     }
                   }
-                } catch (e) {
-                  console.warn('Failed to parse realtime data payload:', e);
-                  return;
+                  if (localRecordIndex > -1) updatedCollection[localRecordIndex] = nextRecord; else updatedCollection.push(nextRecord);
+                }
+              } else if (cloudVersion === localVersion) {
+                if (cloudUpdatedBy === currentUserId() && localRecord?.syncState === 'pending') {
+                  if (localRecord.deletedAt) updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
+                  else localRecord.syncState = 'synced';
+                } else if (cloudUpdatedBy !== currentUserId() && localRecord?.syncState === 'pending') {
+                  localRecord.syncState = 'conflict';
                 }
               }
-
-              onLoadCloudStateRef({ [key]: updatedCollection }, null, true);
-            } catch (err: any) {
-              console.warn("Failed to parse realtime event message:", err.message);
             }
-          };
+            onLoadCloudState({ [key]: updatedCollection }, null, true);
+          } catch (err: any) {
+            console.warn("Realtime parse error:", err.message);
+          }
+        };
 
-          socket.onclose = () => {
-            if (!destroyed) {
-              console.warn("Realtime Gateway socket closed. Scheduling reconnect...");
-              setRealtimeConnected(false);
-              if (props.onConnectionChange) props.onConnectionChange(false);
-              scheduleReconnect();
-            }
-          };
+        socket.onclose = () => {
+          if (!destroyed) {
+            setRealtimeConnected(false);
+            if (onConnectionChange) onConnectionChange(false);
+            scheduleReconnect();
+          }
+        };
 
-          socket.onerror = (err) => {
-            console.error("Realtime Gateway socket error:", err);
-            socket.close();
-          };
+        socket.onerror = () => socket.close();
 
-          // Health-check: ping the socket every 25s and dynamically update UI connection state
-          healthCheckInterval = setInterval(() => {
-            if (destroyed) { if (healthCheckInterval) clearInterval(healthCheckInterval); return; }
-            try {
-              if (socket) {
-                const isConnected = socket.readyState === WebSocket.OPEN;
-                setRealtimeConnected(isConnected);
-                if (props.onConnectionChange) props.onConnectionChange(isConnected, isConnected ? undefined : 'realtime_lost');
-                
-                if (isConnected) {
-                  // Keep-alive ping frame
-                  socket.send(JSON.stringify({ type: 'ping' }));
-                }
-              } else {
-                setRealtimeConnected(false);
-                if (props.onConnectionChange) props.onConnectionChange(false, 'realtime_lost');
-              }
-            } catch (_) { /* ignore */ }
-          }, 25000);
+        healthCheckInterval = setInterval(() => {
+          if (destroyed) return;
+          try {
+            const isConnected = socket.readyState === WebSocket.OPEN;
+            setRealtimeConnected(isConnected);
+            if (onConnectionChange) onConnectionChange(isConnected, isConnected ? undefined : 'realtime_lost');
+            if (isConnected) socket.send(JSON.stringify({ type: 'ping' }));
+          } catch (_) {}
+        }, 25000);
 
-        } catch (wsErr) {
-          console.warn("Failed to connect to gateway socket:", wsErr);
-        }
-      } catch (err: any) {
-        if (!err?.message?.includes('CLOSING') && !err?.message?.includes('CLOSED')) {
-          console.warn('Realtime socket setup failed:', err?.message);
-        }
+      } catch (wsErr) {
+        console.warn("Gateway error:", wsErr);
       }
     };
 
     setupRealtime();
 
-    return () => {
+    onCleanup(() => {
       destroyed = true;
       teardown();
-    };
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    });
   });
 
-
   const handleManualPushToDB = async () => {
-
-    if (!isConfigured) {
-      setErrorMsg('Appwrite variables are missing.');
-      return;
-    }
-
+    if (!isConfigured) return;
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
-    isSyncing = true;
-
-    const currentState = currentLocalStateRef;
-
-    const categories: { key: keyof typeof currentState; collection: string }[] = [
-      { key: 'trucks', collection: 'trucks' },
-      { key: 'drivers', collection: 'drivers' },
-      { key: 'offices', collection: 'offices' },
-      { key: 'accounts', collection: 'accounts' },
-      { key: 'trips', collection: 'trips' },
-      { key: 'expenses', collection: 'expenses' },
-      { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' },
-      { key: 'supportTickets', collection: 'support_tickets' }
-    ];
 
     try {
-      console.log('Appwrite DB: Starting full migration push...');
-      let totalRecords = 0;
-
-      for (const cat of categories) {
-        const list = (currentState[cat.key] || []).filter(x => x.organizationId === orgId());
-        totalRecords += list.length;
-
-        for (const item of list) {
-          await appwrite.saveFleetDocument(databaseId(), cat.collection, item.id, orgId(), item);
-        }
-      }
-
-      // Also save permissions individually to global_configs
-      const storedRights = localStorage.getItem('ttt_user_rights');
-      const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-      const userRightsList = storedRights ? JSON.parse(storedRights) : [];
-      const organizationProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-
-      for (const ur of userRightsList) {
-        const docId = appwrite.getEmailDocId(ur.email);
-        await appwrite.saveGlobalConfig(databaseId(), docId, ur);
-        totalRecords += 1;
-      }
-
-      for (const prof of organizationProfiles) {
-        const docId = appwrite.getOrgDocId(prof.organizationId);
-        await appwrite.saveGlobalConfig(databaseId(), docId, prof);
-        totalRecords += 1;
-      }
-
-
-
-      setSuccessMsg(`Successfully uploaded ${totalRecords} records to Appwrite Database!`);
-      logActionRef('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId()}" with 9 separate collections.`);
+      const pushedCount = await SyncService.pushAllLocalToDB(databaseId(), orgId(), props.currentLocalState);
+      setSuccessMsg(`Successfully uploaded ${pushedCount} records to Appwrite Database!`);
+      logAction('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId()}".`);
       showNotification('Success: Appwrite Database synced.');
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(
-        `Failed to sync with Database: ${err.message || 'Unknown error'}. \n\n` +
-        `Tip: Verify that you ran the schema bootstrapping script:\n` +
-        `  node scripts/bootstrap-db.js`
-      );
+      setErrorMsg(`Failed to sync: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
-      isSyncing = false;
     }
   };
 
@@ -745,163 +409,99 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
   return (
     <div class="relative inline-block text-left">
-      {/* Mini connection status bar */}
       <button
         id="btn-appwrite-sync-trigger"
         onClick={() => setIsOpen(!isOpen())}
-        title={isConfigured ? (realtimeConnected() ? "Cloud Synchronization Active & Connected" : "Cloud Synchronization Active (Reconnecting)") : "Offline Local Database Mode"}
-        class={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${isConfigured
-          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
-          : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
-          }`}
+        class={`p-2 rounded-lg border transition duration-150 relative cursor-pointer flex items-center justify-center shrink-0 ${
+          !isOnline()
+            ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20'
+            : !realtimeConnected()
+            ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+            : 'bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20'
+        }`}
+        title={
+          !isOnline()
+            ? 'Device Offline (Cloud Sync Paused)'
+            : !realtimeConnected()
+            ? 'Realtime Gateway Offline (Reconnecting...)'
+            : 'Realtime Sync Active'
+        }
       >
-        <Database class={`w-3.5 h-3.5 ${realtimeConnected() ? 'animate-pulse text-emerald-400' : ''}`} />
-        <span>Appwrite DB: {isConfigured ? realtimeConnected() ? 'Live' : 'Connected' : 'Offline'}</span>
+        <Cloud class="w-4 h-4" />
+        <span class={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full border border-white dark:border-slate-900 ${
+          !isOnline() ? 'bg-rose-500' : !realtimeConnected() ? 'bg-amber-500' : 'bg-green-500'
+        }`} />
       </button>
 
       {isOpen() && (
-        <div id="appwrite-sync-popup" class="absolute right-0 mt-2 w-80 md:w-96 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-fade-in text-xs">
-          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <div class="flex items-center gap-1.5">
-              <Database class="w-4 h-4 text-emerald-400" />
-              <span class="font-bold text-sm tracking-tight text-white font-sans">Appwrite Database Sync</span>
-            </div>
+        <div class="origin-top-right absolute right-0 mt-2 w-72 md:w-80 rounded-xl shadow-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 z-50 p-4 space-y-4 animate-fade-in text-left font-sans">
+          <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Database class="w-3.5 h-3.5 text-blue-500" />
+              Cloud Configuration
+            </span>
             <button
               onClick={() => setIsOpen(false)}
-              class="text-slate-400 hover:text-white font-bold p-1 text-xs"
+              class="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
             >
               ✕
             </button>
           </div>
 
-          <div class="space-y-2">
-            <div class="flex justify-between items-center bg-slate-950 p-2 rounded-lg border border-slate-850">
-              <span class="text-slate-400">Database ID:</span>
-              <span class="font-mono text-[10px] text-slate-300 font-bold">
-                {databaseId()}
-              </span>
+          <div class="space-y-3.5">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Database ID</label>
+              <input
+                type="text"
+                value={databaseId()}
+                onInput={(e) => setDatabaseId(e.currentTarget.value)}
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+              />
             </div>
-            <div class="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
-              <span class="text-slate-400">Structure:</span>
-              <span class="text-[10px] text-emerald-400 font-bold">
-                Multi-Collection (9 tables)
-              </span>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Collection ID</label>
+              <input
+                type="text"
+                value={collectionId()}
+                onInput={(e) => setCollectionId(e.currentTarget.value)}
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+              />
             </div>
-            <div class="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
-              <span class="text-slate-400">Endpoint:</span>
-              <span class="font-mono text-[10px] text-slate-400 max-w-[180px] truncate" title={import.meta.env.VITE_APPWRITE_ENDPOINT}>
-                {import.meta.env.VITE_APPWRITE_ENDPOINT}
-              </span>
+
+            <div class="pt-1 flex flex-col gap-2">
+              <button
+                onClick={() => handlePullFromDB(false, false)}
+                disabled={loading()}
+                class="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-xs font-bold transition duration-150 disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                {loading() ? <Loader class="w-3.5 h-3.5 animate-spin" /> : <RefreshCw class="w-3.5 h-3.5" />}
+                <span>Fetch from Cloud</span>
+              </button>
+
+              {isAdmin() && (
+                <button
+                  onClick={handleManualPushToDB}
+                  disabled={loading()}
+                  class="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition duration-150 border border-slate-200 dark:border-slate-800 disabled:opacity-50 cursor-pointer"
+                >
+                  <Cloud class="w-3.5 h-3.5 text-blue-500" />
+                  <span>Push Local State to Cloud</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {isConfigured ? (
-            <div class="space-y-3">
-              {/* Connection Status panel */}
-              <div class="bg-slate-955 p-3 rounded-lg border border-slate-850 space-y-1.5 text-left">
-                <p class="font-bold text-[10px] text-slate-200">Database Sync Pipeline Active</p>
-                <p class="text-[9px] text-slate-450 leading-normal">
-                  All local ledger updates (trips, trucks, expenses) are saved to row-level documents instantly.
-                </p>
-                <div class="flex items-center gap-1.5 text-[9px] text-emerald-400 bg-emerald-500/5 px-2 py-1.5 rounded border border-emerald-500/10 mt-2">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>{realtimeConnected() ? "Realtime Socket Streams Active" : "Connecting realtime pipeline..."}</span>
-                </div>
-              </div>
-
-              {isAdmin() && (
-                <div class="space-y-3 border-t border-slate-850 pt-2">
-                  <div class="grid grid-cols-1 gap-2">
-                    <div>
-                      <label class="block text-[9px] text-slate-500 uppercase font-bold mb-1">Database ID</label>
-                      <input
-                        type="text"
-                        value={databaseId()}
-                        onChange={(e) => setDatabaseId(e.target.value)}
-                        class="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
-                      />
-                    </div>
-                    </div>
-
-                  <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      id="btn-appwrite-push"
-                      disabled={loading()}
-                      onClick={handleManualPushToDB}
-                      class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                      title="Upload all local states to database (overwrites existing documents)"
-                    >
-                      {loading() ? <Loader class="w-3.5 h-3.5 animate-spin" /> : <RefreshCw class="w-3.5 h-3.5" />}
-                      Sync To DB
-                    </button>
-                    <button
-                      id="btn-appwrite-pull"
-                      disabled={loading()}
-                      onClick={() => handlePullFromDB(false)}
-                      class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                      title="Fetch documents from Database and overwrite local state buffers"
-                    >
-                      {loading() ? <Loader class="w-3.5 h-3.5 animate-spin" /> : <Cloud class="w-3.5 h-3.5" />}
-                      Pull From DB
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {errorMsg() && (
-                <div class="bg-red-950/40 border border-red-500/20 p-2.5 rounded-lg text-red-200 text-[10px] leading-relaxed whitespace-pre-wrap animate-shake text-left">
-                  <div class="flex gap-1.5 items-start">
-                    <AlertCircle class="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <span>{errorMsg()}</span>
-                  </div>
-                </div>
-              )}
-
-              {successMsg() && (
-                <div class="bg-emerald-950/40 border border-emerald-500/20 p-2.5 rounded-lg text-emerald-200 text-[10px] leading-relaxed text-left">
-                  <div class="flex gap-1.5 items-start">
-                    <CheckCircle class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                    <span>{successMsg()}</span>
-                  </div>
-                </div>
-              )}
-
-              <div class="text-center pt-1 border-t border-slate-850">
-                <button
-                  onClick={() => setShowGuide(!showGuide())}
-                  class="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[10px] underline cursor-pointer"
-                >
-                  <HelpCircle class="w-3 h-3" />
-                  {showGuide() ? 'Hide Set Up Instructions' : 'How to set up Appwrite Database?'}
-                </button>
-              </div>
-
-              {showGuide() && (
-                <div class="bg-slate-955/80 p-3 rounded-lg border border-slate-850 space-y-2 text-slate-400 text-[10px] leading-normal text-left">
-                  <p class="font-bold text-slate-200">How to bootstrap database schemas automatically:</p>
-                  <ol class="list-decimal list-inside space-y-1 pl-1 text-slate-300">
-                    <li>Create an API key in Appwrite Console (Project Settings -&gt; API Keys) with <code class="bg-slate-950 px-1 py-0.5 rounded text-blue-400 font-mono text-[9px]">databases.write</code> scope.</li>
-                    <li>Open your terminal and run the setup script:
-                      <pre class="bg-slate-950 p-1.5 rounded font-mono text-[9px] text-emerald-400 mt-1 select-all">node scripts/bootstrap-db.js</pre>
-                    </li>
-                    <li>Follow the prompt to enter your API key, and it will configure the Database and Collections automatically!</li>
-                  </ol>
-                </div>
-              )}
+          {errorMsg() && (
+            <div class="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex gap-2.5 text-xs text-red-655 dark:text-red-400 max-h-40 overflow-y-auto">
+              <AlertCircle class="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+              <p class="whitespace-pre-line leading-relaxed font-medium">{errorMsg()}</p>
             </div>
-          ) : (
-            <div class="bg-amber-950/40 border border-amber-500/20 p-3 rounded-lg space-y-2 text-amber-250 text-left">
-              <div class="flex gap-1.5 items-start">
-                <AlertCircle class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                <span class="font-bold">Appwrite parameters are missing!</span>
-              </div>
-              <p class="leading-relaxed text-[10px] text-slate-300">
-                Ensure environment variables are configured in secrets:
-              </p>
-              <div class="bg-slate-950 font-mono p-2 text-[9px] rounded text-slate-400 space-y-1">
-                <div>VITE_APPWRITE_PROJECT_ID="your_project_id"</div>
-                <div>VITE_APPWRITE_ENDPOINT="your_endpoint"</div>
-              </div>
+          )}
+
+          {successMsg() && (
+            <div class="p-3 bg-green-500/10 border border-green-500/25 rounded-xl flex gap-2.5 text-xs text-green-655 dark:text-green-400">
+              <CheckCircle class="w-4 h-4 shrink-0 text-green-500 mt-0.5" />
+              <p class="leading-relaxed font-medium">{successMsg()}</p>
             </div>
           )}
         </div>
