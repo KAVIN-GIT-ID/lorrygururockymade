@@ -1,6 +1,6 @@
-import { createSignal, createEffect, lazy, Suspense, onMount, onCleanup, createMemo, untrack, batch } from 'solid-js';
+import { createSignal, createEffect, lazy, Suspense, onMount, onCleanup, createMemo, untrack } from 'solid-js';
 
-import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile, TruckRequest, createRecord, mutateRecord, SupportTicket } from './types';
+import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile, createRecord, mutateRecord } from './types';
 import LoginScreen from './components/LoginScreen';
 import LandingPage from './components/LandingPage';
 import logo from './logo.png';
@@ -27,9 +27,7 @@ import { useAccountsContext } from './context/AccountContext';
 import { useTyresContext } from './context/TyreContext';
 import { OrganizationProvider, useOrganizations } from './context/OrganizationContext';
 import { useNotifications } from './context/NotificationContext';
-import { useCountdown } from './hooks/useCountdown';
 import { migrationService } from './services/migrationService';
-import { organizationService } from './services/organizationService';
 import { cloudSyncService } from './services/cloudSyncService';
 
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -54,29 +52,17 @@ import { useAuditLogsContext } from './context/AuditLogContext';
 import { useSupportTicketsState } from './hooks/useSupportTicketsState';
 import { useTruckHandlers } from './hooks/useTruckHandlers';
 import { useBackendSync } from './hooks/useBackendSync';
-import { useUserManagement, reconcileOrganizationProfiles } from './hooks/useUserManagement';
-import { useModalWizardState } from './hooks/useModalWizardState';
-import { useAuthHandlers } from './hooks/useAuthHandlers';
 import { useConfirmAction } from './hooks/useConfirmAction';
-import { useNavigationState } from './hooks/useNavigationState';
 import { useCapacitorListeners } from './hooks/useCapacitorListeners';
-import { useAdminActions } from './hooks/useAdminActions';
-import { useBackupRestore } from './hooks/useBackupRestore';
 import { useAppUpdate } from './hooks/useAppUpdate';
-import {
-  migrateTripsIfNecessary,
-  migrateUserPermissions,
-  migrateTrucks,
-  migrateDrivers,
-  migrateOffices,
-  migrateAccounts,
-  migrateTrips,
-  migrateExpenses,
-  migrateTyres,
-  migrateAuditLogs
-} from './lib/migrations';
+import { useBackupRestore } from './hooks/useBackupRestore';
 
-
+import { SettingsManager, useSettings } from './managers/SettingsManager';
+import { DialogManager, useDialogs } from './managers/DialogManager';
+import { NavigationManager, useNavigation } from './managers/NavigationManager';
+import { NotificationManager } from './managers/NotificationManager';
+import { OrganizationManager, useOrganizationManager } from './managers/OrganizationManager';
+import { AuthManager, useAuthManager } from './managers/AuthManager';
 
 import {
   CheckCircle,
@@ -103,8 +89,6 @@ const getUserInitials = (user: any) => {
   return initials.slice(0, 2) || name.slice(0, 2).toUpperCase();
 };
 
-
-
 export default function App() {
   return (
     <AuthProvider>
@@ -120,7 +104,13 @@ export default function App() {
                         <AccountProvider>
                           <TyreProvider>
                             <AuditLogProvider>
-                              <AppContent />
+                              <SettingsManager>
+                                <DialogManager>
+                                  <NavigationManager>
+                                    <AppContentWrapper />
+                                  </NavigationManager>
+                                </DialogManager>
+                              </SettingsManager>
                             </AuditLogProvider>
                           </TyreProvider>
                         </AccountProvider>
@@ -137,7 +127,31 @@ export default function App() {
   );
 }
 
-function AppContent(): any {
+function AppContentWrapper() {
+  const nav = useNavigation();
+  const perm = usePermissions();
+  const currentUserOrgId = () => perm.currentUserRights()?.organizationId || '';
+  const hasUsersTabAccess = () => currentUserOrgId() === 'org_backend' ? !!perm.currentUserRights().canViewBackendTeam : !!perm.currentUserRights().isAdmin;
+
+  function touchLastModified() {
+    if (currentUserOrgId() !== 'org_backend') {
+      localStorage.setItem('ttt_last_modified_at', Date.now().toString());
+    }
+    sessionStorage.setItem('ttt_recent_action_at', Date.now().toString());
+  }
+
+  return (
+    <OrganizationManager activeTab={nav.activeTab} hasUsersTabAccess={hasUsersTabAccess}>
+      <AuthManager touchLastModified={touchLastModified}>
+        <NotificationManager>
+          <AppContent touchLastModified={touchLastModified} />
+        </NotificationManager>
+      </AuthManager>
+    </OrganizationManager>
+  );
+}
+
+function AppContent(props: { touchLastModified: () => void }): any {
   const createReactiveArrayWrapper = <T,>(getter: () => T[]): T[] => {
     return new Proxy([] as any, {
       get(target, prop) {
@@ -157,6 +171,119 @@ function AppContent(): any {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Retrieve states/methods from Scoped Managers
+  const nav = useNavigation();
+  const dialogs = useDialogs();
+  const settings = useSettings();
+  const orgManager = useOrganizationManager();
+  const authManager = useAuthManager();
+  const notifications = useNotifications();
+
+  // Map to local-like names for backward compatibility and minimal churn
+  const activeTab = nav.activeTab;
+  const setActiveTab = nav.setActiveTab;
+  const isMobileMenuOpen = nav.isMobileMenuOpen;
+  const setIsMobileMenuOpen = nav.setIsMobileMenuOpen;
+  const selectTab = nav.selectTab;
+  const activeMonth = nav.activeMonth;
+  const setActiveMonth = nav.setActiveMonth;
+  const activeYear = nav.activeYear;
+  const setActiveYear = nav.setActiveYear;
+  const isMobile = nav.isMobile;
+  const setIsMobile = nav.setIsMobile;
+  const mobileTab = nav.mobileTab;
+  const setMobileTab = nav.setMobileTab;
+  const registrySubTab = nav.registrySubTab;
+  const setRegistrySubTab = nav.setRegistrySubTab;
+  const fabOpened = nav.fabOpened;
+  const setFabOpened = nav.setFabOpened;
+  const autoOpenFormTab = nav.autoOpenFormTab;
+  const setAutoOpenFormTab = nav.setAutoOpenFormTab;
+  const triggerOpenAddForm = nav.triggerOpenAddForm;
+
+  const profileModalOpen = dialogs.profileModalOpen;
+  const setProfileModalOpen = dialogs.setProfileModalOpen;
+  const profileActiveTab = dialogs.profileActiveTab;
+  const setProfileActiveTab = dialogs.setProfileActiveTab;
+  const profileDropdownOpen = dialogs.profileDropdownOpen;
+  const setProfileDropdownOpen = dialogs.setProfileDropdownOpen;
+  const bookingModalOpen = dialogs.bookingModalOpen;
+  const setBookingModalOpen = dialogs.setBookingModalOpen;
+  const editingTrip = dialogs.editingTrip;
+  const setEditingTrip = dialogs.setEditingTrip;
+  const isVoiceAssistantOpen = dialogs.isVoiceAssistantOpen;
+  const setIsVoiceAssistantOpen = dialogs.setIsVoiceAssistantOpen;
+  const showPhoneUpdateModal = dialogs.showPhoneUpdateModal;
+  const setShowPhoneUpdateModal = dialogs.setShowPhoneUpdateModal;
+
+  const theme = settings.theme;
+  const setTheme = settings.setTheme;
+  const userVoiceLang = settings.userVoiceLang;
+  const setUserVoiceLang = settings.setUserVoiceLang;
+  const profileVoiceLang = settings.profileVoiceLang;
+  const setProfileVoiceLang = settings.setProfileVoiceLang;
+
+  const organizationProfiles = orgManager.organizationProfiles;
+  const setOrganizationProfiles = orgManager.setOrganizationProfiles;
+  const saveOrganizationProfiles = orgManager.saveOrganizationProfiles;
+  const teamMembers = orgManager.teamMembers;
+  const loadingTeamMembers = orgManager.loadingTeamMembers;
+  const handleUpdateOrgProfile = orgManager.handleUpdateOrgProfile;
+  const handleUpdateOrgStatus = orgManager.handleUpdateOrgStatus;
+  const handleUpdateOrgLimit = orgManager.handleUpdateOrgLimit;
+  const handleApproveTruckRequest = orgManager.handleApproveTruckRequest;
+  const handleRejectTruckRequest = orgManager.handleRejectTruckRequest;
+  const saveUserRightsListWithSync = orgManager.saveUserRightsListWithSync;
+  const orgUserRights = orgManager.orgUserRights;
+  const currentOrgProfileMemo = orgManager.currentOrgProfile;
+
+  const verificationOtpSent = authManager.verificationOtpSent;
+  const setVerificationOtpSent = authManager.setVerificationOtpSent;
+  const whatsappOtpCode = authManager.whatsappOtpCode;
+  const setWhatsappOtpCode = authManager.setWhatsappOtpCode;
+  const whatsappOtpPhone = authManager.whatsappOtpPhone;
+  const setWhatsappOtpPhone = authManager.setWhatsappOtpPhone;
+  const emailVerificationSuccess = authManager.emailVerificationSuccess;
+  const setEmailVerificationSuccess = authManager.setEmailVerificationSuccess;
+  const emailVerificationError = authManager.emailVerificationError;
+  const setEmailVerificationError = authManager.setEmailVerificationError;
+  const handleLogout = authManager.handleLogout;
+  const handleUpdateProfile = authManager.handleUpdateProfile;
+  const checkUserApproval = authManager.checkUserApproval;
+  const sendWhatsAppOTP = authManager.sendWhatsAppOTP;
+  const handlePhoneUpdateSubmit = authManager.handlePhoneUpdateSubmit;
+  const handleRegisterUserPermissions = authManager.handleRegisterUserPermissions;
+  const handleRequestToJoinOrganization = authManager.handleRequestToJoinOrganization;
+  const reconcileSession = authManager.reconcileSession;
+  const emailTimer = authManager.emailTimer;
+  const setEmailTimer = authManager.setEmailTimer;
+  const phoneTimer = authManager.phoneTimer;
+  const setPhoneTimer = authManager.setPhoneTimer;
+  const mobileWizardTimer = authManager.mobileWizardTimer;
+  const setMobileWizardTimer = authManager.setMobileWizardTimer;
+  const mobileWizardOpen = authManager.mobileWizardOpen;
+  const setMobileWizardOpen = authManager.setMobileWizardOpen;
+  const mobileWizardStep = authManager.mobileWizardStep;
+  const setMobileWizardStep = authManager.setMobileWizardStep;
+  const mobileWizardCode = authManager.mobileWizardCode;
+  const setMobileWizardCode = authManager.setMobileWizardCode;
+  const mobileWizardNewPhone = authManager.mobileWizardNewPhone;
+  const setMobileWizardNewPhone = authManager.setMobileWizardNewPhone;
+  const mobileWizardPassword = authManager.mobileWizardPassword;
+  const setMobileWizardPassword = authManager.setMobileWizardPassword;
+  const mobileWizardError = authManager.mobileWizardError;
+  const setMobileWizardError = authManager.setMobileWizardError;
+  const mobileWizardGeneratedOtp = authManager.mobileWizardGeneratedOtp;
+  const setMobileWizardGeneratedOtp = authManager.setMobileWizardGeneratedOtp;
+  const setup2FAOpen = authManager.setup2FAOpen;
+  const setSetup2FAOpen = authManager.setSetup2FAOpen;
+  const setup2FASecret = authManager.setup2FASecret;
+  const setSetup2FASecret = authManager.setSetup2FASecret;
+  const disable2FAOpen = authManager.disable2FAOpen;
+  const setDisable2FAOpen = authManager.setDisable2FAOpen;
+  const resetPasswordState = authManager.resetPasswordState;
+  const setResetPasswordState = authManager.setResetPasswordState;
+
   // Retrieve global states/methods from Contexts
   const perm = usePermissions();
   const userRightsList = perm.userRightsList;
@@ -167,29 +294,13 @@ function AppContent(): any {
   const handleDeletePermission = perm.deletePermission;
   const pushPermissionsToCloud = perm.pushPermissions;
 
-  const orgs = useOrganizations();
-  const organizationProfiles = orgs.organizationProfiles;
-  const setOrganizationProfiles = orgs.setOrganizationProfiles;
-  const saveOrganizationProfiles = orgs.saveProfiles;
-
-  const [profileModalOpen, setProfileModalOpen] = createSignal(false);
-  const [profileActiveTab, setProfileActiveTab] = createSignal<'SETTINGS' | 'SUPPORT'>('SETTINGS');
-  const [profileDropdownOpen, setProfileDropdownOpen] = createSignal(false);
-
-  const notifications = useNotifications();
   const toastMessage = () => notifications.toastMessage();
   const showNotification = notifications.showNotification;
   const notificationOpen = () => notifications.notificationOpen();
   const setNotificationOpen = notifications.setNotificationOpen;
   const lastReadNotificationTime = () => notifications.lastReadNotificationTime();
   const updateLastReadNotificationTime = notifications.updateLastReadNotificationTime;
-  const notificationRef = () => notifications.notificationRef();
   const setNotificationRef = notifications.setNotificationRef;
-
-  const [verificationOtpSent, setVerificationOtpSent] = createSignal(false);
-  const [whatsappOtpCode, setWhatsappOtpCode] = createSignal<string | null>(null);
-  const [whatsappOtpPhone, setWhatsappOtpPhone] = createSignal<string | null>(null);
-  const [showPhoneUpdateModal, setShowPhoneUpdateModal] = createSignal(false);
 
   const auth = useAuth();
   const currentUser = auth.currentUser;
@@ -202,7 +313,6 @@ function AppContent(): any {
   const setIsOnline = auth.setIsOnline;
   const disconnectReason = auth.disconnectReason;
   const setDisconnectReason = auth.setDisconnectReason;
-  const reconcileUserSession = auth.reconcileUserSession;
   const currentUserId = () => currentUser()?.$id || currentUser()?.email || 'system';
 
   const tripsCtx = useTripsContext();
@@ -269,38 +379,7 @@ function AppContent(): any {
   const updateTruck = trucksCtx.updateTruck;
   const deleteTruck = trucksCtx.deleteTruck;
 
-  const modalWizard = useModalWizardState();
-  const emailTimer = modalWizard.emailTimer;
-  const setEmailTimer = modalWizard.setEmailTimer;
-  const phoneTimer = modalWizard.phoneTimer;
-  const setPhoneTimer = modalWizard.setPhoneTimer;
-  const mobileWizardTimer = modalWizard.mobileWizardTimer;
-  const setMobileWizardTimer = modalWizard.setMobileWizardTimer;
-  const mobileWizardOpen = modalWizard.mobileWizardOpen;
-  const setMobileWizardOpen = modalWizard.setMobileWizardOpen;
-  const mobileWizardStep = modalWizard.mobileWizardStep;
-  const setMobileWizardStep = modalWizard.setMobileWizardStep;
-  const mobileWizardCode = modalWizard.mobileWizardCode;
-  const setMobileWizardCode = modalWizard.setMobileWizardCode;
-  const mobileWizardNewPhone = modalWizard.mobileWizardNewPhone;
-  const setMobileWizardNewPhone = modalWizard.setMobileWizardNewPhone;
-  const mobileWizardPassword = modalWizard.mobileWizardPassword;
-  const setMobileWizardPassword = modalWizard.setMobileWizardPassword;
-  const mobileWizardError = modalWizard.mobileWizardError;
-  const setMobileWizardError = modalWizard.setMobileWizardError;
-  const mobileWizardGeneratedOtp = modalWizard.mobileWizardGeneratedOtp;
-  const setMobileWizardGeneratedOtp = modalWizard.setMobileWizardGeneratedOtp;
-  const setup2FAOpen = modalWizard.setup2FAOpen;
-  const setSetup2FAOpen = modalWizard.setSetup2FAOpen;
-  const setup2FASecret = modalWizard.setup2FASecret;
-  const setSetup2FASecret = modalWizard.setSetup2FASecret;
-  const disable2FAOpen = modalWizard.disable2FAOpen;
-  const setDisable2FAOpen = modalWizard.setDisable2FAOpen;
-  const resetPasswordState = modalWizard.resetPasswordState;
-  const setResetPasswordState = modalWizard.setResetPasswordState;
-
   let profileDropdownRef: HTMLDivElement | undefined;
-  let verifiedTxns: any;
   let prevTabIdxRef = 0;
 
   onMount(() => {
@@ -314,22 +393,6 @@ function AppContent(): any {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   });
-
-  const [activeMonth, setActiveMonth] = createSignal(String(new Date().getMonth() + 1).padStart(2, '0'));
-  const [activeYear, setActiveYear] = createSignal(String(new Date().getFullYear()));
-
-
-  const [theme, setTheme] = createSignal<'light' | 'dark'>((localStorage.getItem('ttt_theme') as 'light' | 'dark') || 'light');
-
-  onMount(() => {
-    if (theme() === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  });
-
-
 
   // Payments State
   const [payments, setPayments] = createSignal<any[]>(
@@ -348,152 +411,16 @@ function AppContent(): any {
     localStorage.setItem('ttt_payments', JSON.stringify(nextPayments));
   };
 
-  // Voice language state
-  const [userVoiceLang, setUserVoiceLang] = createSignal<string>('en-IN');
-  const [profileVoiceLang, setProfileVoiceLang] = createSignal<string>('en-IN');
-
-  // Load user's default voice language preference from localStorage
-  createEffect(() => {
-    if (currentUser()) {
-      const email = (currentUser().email || '').toLowerCase().trim();
-      const storedLang = localStorage.getItem(`ttt_voice_lang_${email}`) || 'en-IN';
-      setUserVoiceLang(storedLang);
-    } else {
-      setUserVoiceLang('en-IN');
-    }
-  });
-
-
-
-  const saveUserRightsList = (nextList: UserPermission[]) => {
-    setUserRightsList(nextList);
-    localStorage.setItem('ttt_user_rights', JSON.stringify(nextList));
-  };
-
-  const reconcileSession = async (user: any, freshRightsList?: UserPermission[]) => {
-    return reconcileUserSession(
-      user,
-      freshRightsList || userRightsList(),
-      setUserRightsList, organizationProfiles(),
-      setOrganizationProfiles,
-      (orgId) => migrationService.migrateLocalDataToOrg(orgId, {
-        setTrucks,
-        setDrivers,
-        setOffices,
-        setAccounts,
-        setTrips,
-        setExpenses,
-        setTyres,
-        setAuditLogs,
-        touchLastModified
-      })
-    );
-  };
-
-  // Authentication check and cloud permission sync on startup
-  onMount(() => {
-    const initAuth = async () => {
-      try {
-        const loginMethod = localStorage.getItem('ttt_login_method');
-        if (loginMethod === 'mock') {
-          const storedMock = localStorage.getItem('ttt_mock_user');
-          if (storedMock) {
-            const user = JSON.parse(storedMock);
-            await reconcileSession(user);
-          } else {
-            setCurrentUser(null);
-          }
-          setInitialPullDone(true);
-        } else if (loginMethod === 'appwrite' && isAppwriteConfigured()) {
-          const user = await appwrite.getCurrentUser();
-          if (user) {
-            await reconcileSession(user);
-          } else {
-            setCurrentUser(null);
-            setInitialPullDone(true);
-          }
-        } else {
-          setCurrentUser(null);
-          setInitialPullDone(true);
-        }
-      } catch (err) {
-        console.error('initAuth error caught:', err);
-        setInitialPullDone(true);
-      } finally {
-        setLoadingUser(false);
-      }
-    };
-    initAuth();
-  });
-
-  // Synchronize location.pathname with view and tab state
-  createEffect(() => {
-    const path = location.pathname;
-    const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
-
-    // Auth guarding
-    if (!currentUser() && !loadingUser()) {
-      if (path.startsWith('/console')) {
-        navigate('/login');
-      } else if (path !== '/' && path !== '/login' && !publicLegalPaths.includes(path)) {
-        navigate('/');
-      }
-      return;
-    }
-
-    if (currentUser() && !loadingUser()) {
-      if (path === '/' || path === '/login') {
-        navigate('/console/dashboard');
-        return;
-      }
-      if (publicLegalPaths.includes(path)) {
-        return;
-      }
-
-      const subpath = path.replace('/console/', '').toUpperCase();
-      const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND', 'BILLING'];
-      if (validTabs.includes(subpath)) {
-        setActiveTab(subpath as any);
-      } else if (path === '/console') {
-        navigate('/console/dashboard');
-      }
-    }
-  });
-
-  const handleUpdateOrgProfile = async (updatedProfile: OrganizationProfile) => {
-    const nextProfiles = organizationProfiles().map(p =>
-      p.organizationId === updatedProfile.organizationId ? updatedProfile : p
-    );
-    await saveOrganizationProfiles(nextProfiles);
-  };
-
   const currentUserOrgId = createMemo(() => currentUserRights()?.organizationId || '');
   const hasUsersTabAccess = createMemo(() => currentUserOrgId() === 'org_backend' ? !!currentUserRights().canViewBackendTeam : !!currentUserRights().isAdmin);
 
-
-
-  // Navigation / Tabs State
-  const [activeTab, setActiveTab] = createSignal<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND' | 'BILLING'>('DASHBOARD');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = createSignal(false);
-
-  const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND' | 'BILLING') => {
-    setActiveTab(tab);
-    navigate(`/console/${tab.toLowerCase()}`);
-    setIsMobileMenuOpen(false);
-  };
-
   // Live Appwrite team membership list (fetched when admin opens USERS tab)
-  const [teamMembers, setTeamMembers] = createSignal<any[]>([]);
-  const [loadingTeamMembers, setLoadingTeamMembers] = createSignal(false);
+  const [teamMembersList, setTeamMembersList] = createSignal<any[]>([]);
 
   // Fetch live Appwrite memberships whenever admin opens the USERS panel
   createEffect(() => {
     if (activeTab() === 'USERS' && hasUsersTabAccess() && currentUserOrgId() && isAppwriteConfigured()) {
-      setLoadingTeamMembers(true);
-      appwrite.getTeamMemberships(currentUserOrgId())
-        .then(members => setTeamMembers(members))
-        .catch(err => console.warn('Could not fetch team memberships:', err))
-        .finally(() => setLoadingTeamMembers(false));
+      orgManager.teamMembers();
     }
   });
 
@@ -535,9 +462,6 @@ function AppContent(): any {
   const setAuditLogs = auditLogsCtx.saveAuditLogs;
   const logAction = auditLogsCtx.logAction;
   const handleClearAuditLogs = auditLogsCtx.handleClearAuditLogs;
-  const saveAuditLogs = setAuditLogs;
-
-
 
   const {
     handleVerifyPhonePePayment,
@@ -558,7 +482,7 @@ function AppContent(): any {
     currentUser,
     currentUserRights,
     currentUserId(),
-    touchLastModified,
+    props.touchLastModified,
     logAction,
     showNotification
   );
@@ -620,32 +544,6 @@ function AppContent(): any {
   } = useConfirmAction();
 
   const {
-    isMobile,
-    setIsMobile,
-    mobileTab,
-    setMobileTab,
-    registrySubTab,
-    setRegistrySubTab,
-    fabOpened,
-    setFabOpened,
-    autoOpenFormTab,
-    setAutoOpenFormTab,
-    triggerOpenAddForm
-  } = useNavigationState();
-
-  const {
-    handleUpdateOrgStatus,
-    handleUpdateOrgLimit,
-    handleApproveTruckRequest,
-    handleRejectTruckRequest
-  } = useAdminActions({
-    organizationProfiles,
-    saveOrganizationProfiles,
-    showNotification,
-    logAction
-  });
-
-  const {
     handleTriggerDownloadBackup,
     handleUploadBackupChange,
     triggerClearAllLocalData
@@ -684,74 +582,12 @@ function AppContent(): any {
     setShowPhoneUpdateModal
   });
 
-  const {
-    handleEmailVerificationRedirect,
-    handleLogout,
-    handleUpdateProfile,
-    emailVerificationError,
-    emailVerificationSuccess,
-    setEmailVerificationSuccess,
-    setEmailVerificationError
-  } = useAuthHandlers(
-    currentUser,
-    setCurrentUser,
-    userRightsList,
-    setUserRightsList,
-    organizationProfiles,
-    setOrganizationProfiles,
-    saveOrganizationProfiles,
-    setTrucks,
-    setDrivers,
-    setOffices,
-    setAccounts,
-    setTrips,
-    setExpenses,
-    setTyres,
-    setAuditLogs,
-    showNotification,
-    navigate,
-    setLoadingUser,
-    logAction,
-    setResetPasswordState,
-    reconcileSession,
-    currentUserRights,
-    pushPermissionsToCloud,
-    setUserVoiceLang,
-    setProfileModalOpen
-  );
-
-  const {
-    checkUserApproval,
-    sendWhatsAppOTP,
-    handlePhoneUpdateSubmit,
-    handleRegisterUserPermissions,
-    handleRequestToJoinOrganization
-  } = useUserManagement(
-    currentUser,
-    userRightsList,
-    setUserRightsList,
-    organizationProfiles,
-    setOrganizationProfiles,
-    saveOrganizationProfiles,
-    pushPermissionsToCloud,
-    reconcileSession,
-    showNotification,
-    setVerificationOtpSent,
-    setPhoneTimer,
-    setShowPhoneUpdateModal,
-    setWhatsappOtpCode,
-    setWhatsappOtpPhone
-  );
-
-
-
   const [dashboardTrips, setDashboardTrips] = createSignal<TripEntry[]>([]);
   const [dashboardExpenses, setDashboardExpenses] = createSignal<ExpenseEntry[]>([]);
 
   async function loadDashboardData(month: string, year: string) {
     const orgId = currentUserOrgId() || 'org_default';
 
-    // Filter by organization and ensure deleted records are excluded
     const activeTrips = (orgId === 'org_backend' ? trips : trips.filter(t => t.organizationId === orgId))
       .filter(t => !t.deletedAt);
     const activeExpenses = (orgId === 'org_backend' ? expenses : expenses.filter(e => e.organizationId === orgId))
@@ -772,11 +608,8 @@ function AppContent(): any {
     loadDashboardData(activeMonth(), activeYear());
   });
 
-
-
   const approvedOrgTrucks = createReactiveArrayWrapper(createMemo<Truck[]>(() => orgTrucks.filter(t => t.isApproved !== false)));
-  const orgUserRights = createMemo(() => userRightsList().filter(u => u.organizationId === (currentUserRights()?.organizationId || '')));
-  const currentOrgProfileMemo = createMemo<OrganizationProfile | undefined>(() => organizationProfiles().find(p => p.organizationId === (currentUserRights()?.organizationId || '')));
+
   const currentOrgProfile = new Proxy({} as any, {
     get(target, prop) {
       const profile = currentOrgProfileMemo();
@@ -807,7 +640,6 @@ function AppContent(): any {
 
     if (currentUserRights().isSuperAdmin) return true;
 
-    // Check if this log specifically concerns the current logged-in user (e.g. their permissions or approval status changed)
     if (currentUserEmail) {
       const ref = (logUserOrReference || '').toLowerCase().trim();
       const det = (logDetails || '').toLowerCase().trim();
@@ -877,38 +709,6 @@ function AppContent(): any {
       : orgTrips.filter(t => t.status === 'In Progress' || t.status === 'Pending').length;
   });
 
-  // Form modal controller states
-  const [bookingModalOpen, setBookingModalOpen] = createSignal(false);
-  const [editingTrip, setEditingTrip] = createSignal<TripEntry | null>(null);
-  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = createSignal(false);
-
-  // Listen for Alt+V shortcut to toggle Voice Assistant
-  onMount(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && e.key.toLowerCase() === 'v') {
-        e.preventDefault();
-        setIsVoiceAssistantOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => window.removeEventListener('keydown', handleKeyDown));
-  });
-
-
-
-  function touchLastModified() {
-    if (currentUserOrgId() !== 'org_backend') {
-      localStorage.setItem('ttt_last_modified_at', Date.now().toString());
-    }
-    sessionStorage.setItem('ttt_recent_action_at', Date.now().toString());
-  }
-
-  async function pushFleetSnapshotNow() {
-    touchLastModified();
-  }
-
-
-
   createEffect(() => {
     if (trucks.length === 0) return;
     const todayStr = new Date().toISOString().split('T')[0];
@@ -929,7 +729,7 @@ function AppContent(): any {
   let hasHealedRef: any;
 
   createEffect(() => {
-    if (!initialPullDone || trips.length === 0 || hasHealedRef) return;
+    if (!initialPullDone() || trips.length === 0 || hasHealedRef) return;
     hasHealedRef = true;
 
     let changed = false;
@@ -990,13 +790,6 @@ function AppContent(): any {
       saveTrips(nextTrips);
     }
   });
-
-
-
-  const saveUserRightsListWithSync = (newList: UserPermission[]) => {
-    saveUserRightsList(newList);
-    pushPermissionsToCloud(newList);
-  };
 
   const onLoadCloudState = (parsed: any, userRightsData?: any, quiet = false): boolean => {
     const orgId = currentUserRights()?.organizationId || 'org_default';
@@ -1073,31 +866,23 @@ function AppContent(): any {
     }
 
     if (result.shouldTouchLastModified) {
-      touchLastModified();
+      props.touchLastModified();
     }
 
     return result.hasRelevantChanges;
   };
 
-
-
-
-
   // Reconcile pending trucks if approved in global profiles.
-  // NOTE: only tracks organizationProfiles() and currentUserRights() — NOT trucks.
-  // Trucks are read inside untrack() to avoid a self-triggering loop:
-  //   setTrucks(approved) → trucks signal changes → this effect re-runs → setTrucks again → ...
   createEffect(() => {
     const orgId = currentUserRights()?.organizationId;
     if (!orgId) return;
-    if (!initialPullDone) {
+    if (!initialPullDone()) {
       console.log('Appwrite Auto-Sync: Blocking truck reconciliation until initial cloud sync completes.');
       return;
     }
     const currentOrgProfile = organizationProfiles().find(p => p.organizationId === orgId);
     if (!currentOrgProfile) return;
 
-    // Read trucks snapshot WITHOUT tracking the signal so setTrucks doesn't re-trigger this effect
     const currentTrucks = untrack(() => [...trucks]);
 
     let trucksUpdated = false;
@@ -1133,38 +918,17 @@ function AppContent(): any {
         localStorage.setItem('ttt_trucks', JSON.stringify(updatedTrucks));
         showNotification(`A pending truck request has been approved by the backend team!`);
         logAction('Created', 'Truck', 'ApprovalSync', `Truck activated automatically via backend activation approval.`);
-        touchLastModified();
+        props.touchLastModified();
       };
       saveToBackendAndLocal();
     }
   });
 
-
-  // Focused memos — track ONLY the values that determine WebSocket connection params.
-  // A permission change (e.g. canEditBackend) will NOT reconnect the socket,
-  // only an orgId or isSuperAdmin change will.
-  const realtimeOrgId = createMemo(() => currentUserRights()?.organizationId ?? '');
-  const realtimeIsSuperAdmin = createMemo(() => !!currentUserRights()?.isSuperAdmin);
-
-  // Real-time synchronization for Super Admin
-
-
-
-
-
-
-
-
-
-
-  // --- SERVICE DONE HANDLER ---
-  // Creates up to 2 expense entries (parts + labour) and advances the truck's next-due KM milestone
   const handleServiceDone = async (payload: import('./types').ServiceDonePayload) => {
     const { serviceType, serviceDate, truckId, truckNo, newMilestoneKM, notes, partsExpense, labourExpense } = payload;
     const orgId = currentUserOrgId();
     const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
-    // Map service type → truck field key
     const kmFieldMap: Record<string, string> = {
       'Engine Oil': 'engineOilKM',
       'Crown Oil': 'crownOilKM',
@@ -1177,7 +941,6 @@ function AppContent(): any {
 
     const newExpenses: import('./types').ExpenseEntry[] = [];
 
-    // 1. Parts Purchase expense
     if (partsExpense.amount > 0) {
       const partsExp = createRecord<import('./types').ExpenseEntry>({
         id: 'exp_svc_parts_' + Date.now(),
@@ -1196,7 +959,6 @@ function AppContent(): any {
       newExpenses.push(partsExp);
     }
 
-    // 2. Mechanical Labour expense
     if (labourExpense.amount > 0) {
       const labourExp = createRecord<import('./types').ExpenseEntry>({
         id: 'exp_svc_labour_' + Date.now() + '_1',
@@ -1215,7 +977,6 @@ function AppContent(): any {
       newExpenses.push(labourExp);
     }
 
-    // 3. Save expenses locally + to Appwrite
     if (newExpenses.length > 0) {
       const nextExpenses = [...expenses, ...newExpenses];
       saveExpenses(nextExpenses);
@@ -1234,7 +995,6 @@ function AppContent(): any {
       });
     }
 
-    // 4. Advance truck milestone KM
     if (kmField) {
       const truck = trucks.find(t => t.id === truckId);
       if (truck) {
@@ -1256,9 +1016,6 @@ function AppContent(): any {
     showNotification(`${serviceType} service recorded for ${truckNo}${totalCost > 0 ? ` — ₹${totalCost.toLocaleString()} logged to expense ledger` : ''}.`);
   };
 
-
-
-  // --- TRIP ENTRIES CRUD SYSTEM ---
   const handlePostTripEntry = async (entryInput: Omit<TripEntry, 'id'>) => {
     await postTripEntry(entryInput, editingTrip());
     setEditingTrip(null);
@@ -1269,7 +1026,75 @@ function AppContent(): any {
     setBookingModalOpen(true);
   };
 
-  // --- BACKUP RESTORE SYSTEM ---
+  // Authentication check and cloud permission sync on startup
+  onMount(() => {
+    const initAuth = async () => {
+      try {
+        const loginMethod = localStorage.getItem('ttt_login_method');
+        if (loginMethod === 'mock') {
+          const storedMock = localStorage.getItem('ttt_mock_user');
+          if (storedMock) {
+            const user = JSON.parse(storedMock);
+            await reconcileSession(user);
+          } else {
+            setCurrentUser(null);
+          }
+          setInitialPullDone(true);
+        } else if (loginMethod === 'appwrite' && isAppwriteConfigured()) {
+          const user = await appwrite.getCurrentUser();
+          if (user) {
+            await reconcileSession(user);
+          } else {
+            setCurrentUser(null);
+            setInitialPullDone(true);
+          }
+        } else {
+          setCurrentUser(null);
+          setInitialPullDone(true);
+        }
+      } catch (err) {
+        console.error('initAuth error caught:', err);
+        setInitialPullDone(true);
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+    initAuth();
+  });
+
+  // Synchronize location.pathname with view and tab state
+  createEffect(() => {
+    const path = location.pathname;
+    const publicLegalPaths = ['/terms', '/privacy', '/refunds', '/refund-policy'];
+
+    if (!currentUser() && !loadingUser()) {
+      if (path.startsWith('/console')) {
+        navigate('/login');
+      } else if (path !== '/' && path !== '/login' && !publicLegalPaths.includes(path)) {
+        navigate('/');
+      }
+      return;
+    }
+
+    if (currentUser() && !loadingUser()) {
+      if (path === '/' || path === '/login') {
+        navigate('/console/dashboard');
+        return;
+      }
+      if (publicLegalPaths.includes(path)) {
+        return;
+      }
+
+      const subpath = path.replace('/console/', '').toUpperCase();
+      const validTabs = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND', 'BILLING'];
+      if (validTabs.includes(subpath)) {
+        setActiveTab(subpath as any);
+      } else if (path === '/console') {
+        navigate('/console/dashboard');
+      }
+    }
+  });
+
   return () => {
     if (emailVerificationSuccess()) {
       return (
@@ -1429,9 +1254,9 @@ function AppContent(): any {
             reconcileSession={reconcileSession as any}
             showNotification={showNotification}
             toastMessage={toastMessage()}
-            emailTimer={emailTimer}
+            emailTimer={emailTimer()}
             setEmailTimer={setEmailTimer}
-            phoneTimer={phoneTimer}
+            phoneTimer={phoneTimer()}
             setPhoneTimer={setPhoneTimer}
             verificationOtpSent={verificationOtpSent()}
             setVerificationOtpSent={setVerificationOtpSent}
@@ -1439,7 +1264,9 @@ function AppContent(): any {
             setShowPhoneUpdateModal={setShowPhoneUpdateModal}
             whatsappOtpCode={whatsappOtpCode()}
             setWhatsappOtpCode={setWhatsappOtpCode}
-            sendWhatsAppOTP={sendWhatsAppOTP as any}
+            sendWhatsAppOTP={async (phone) => {
+              await sendWhatsAppOTP(phone);
+            }}
             handlePhoneUpdateSubmit={handlePhoneUpdateSubmit}
             handleLogout={handleLogout}
             setLoadingUser={setLoadingUser}
@@ -1529,8 +1356,6 @@ function AppContent(): any {
         </>
       );
     }
-
-
 
     const handleCyanClick = () => {
       if (currentUserRights().isAdmin) {
@@ -1631,7 +1456,6 @@ function AppContent(): any {
     return (
       <div class="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
 
-        {/* GLOBAL TOAST BANNER */}
         {toastMessage() && (
           <div id="toast-notify" class="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
             <CheckCircle class="w-4 h-4 text-white" />
@@ -1639,7 +1463,6 @@ function AppContent(): any {
           </div>
         )}
 
-        {/* Sidebar Navigation */}
         <AppSidebar
           logo={logo}
           isMobileMenuOpen={isMobileMenuOpen()}
@@ -1659,9 +1482,7 @@ function AppContent(): any {
           setProfileModalOpen={setProfileModalOpen}
         />
 
-        {/* Main Content Area */}
         <main class="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
-          {/* Header */}
           <AppHeader
             activeTab={activeTab()}
             orgTrips={orgTrips}
