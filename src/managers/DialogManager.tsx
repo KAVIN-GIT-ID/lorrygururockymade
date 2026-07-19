@@ -31,6 +31,7 @@ export function DialogManager(props: { children: any }) {
 
   // Listen for Alt+V shortcut to toggle Voice Assistant
   onMount(() => {
+    console.log("DialogManager mounted");
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();

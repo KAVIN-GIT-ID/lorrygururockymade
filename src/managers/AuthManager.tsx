@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, Accessor } from 'solid-js';
+import { onMount, createContext, useContext, createSignal, Accessor } from 'solid-js';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useOrganizations } from '../context/OrganizationContext';
@@ -72,6 +72,9 @@ interface AuthManagerContextType {
 const AuthManagerContext = createContext<AuthManagerContextType | undefined>(undefined);
 
 export function AuthManager(props: { children: any; touchLastModified: () => void }) {
+  onMount(() => {
+    console.log("AuthManager mounted");
+  });
   const navigate = useNavigate();
   const auth = useAuth();
   const perm = usePermissions();

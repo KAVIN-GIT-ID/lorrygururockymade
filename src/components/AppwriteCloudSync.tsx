@@ -73,6 +73,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
   // 1. Monitor network status
   onMount(() => {
+    console.log("CloudSyncManager mounted");
     const handleOnline = () => {
       setIsOnline(true);
       if (onConnectionChange) onConnectionChange(true);

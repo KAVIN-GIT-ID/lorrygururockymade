@@ -1,5 +1,4 @@
-import { lazy, Suspense } from 'solid-js';
-import { mergeProps } from 'solid-js';
+import { onMount, lazy, Suspense, mergeProps } from 'solid-js';
 import { useTripsContext } from '../context/TripContext';
 import { useTrucksContext } from '../context/TruckContext';
 import { useDriversContext } from '../context/DriverContext';
@@ -22,12 +21,12 @@ const MonthlyReport = lazy(() => import('./MonthlyReport'));
 const AuditLogView = lazy(() => import('./AuditLogView'));
 const TyreMaster = lazy(() => import('./TyreMaster'));
 const BillingHistory = lazy(() => import('./BillingHistory'));
+const UserAccessControl = lazy(() => import('./UserAccessControl'));
 
 const isMobileTarget = import.meta.env.VITE_BUILD_TARGET === 'mobile';
 const BackendDashboard = isMobileTarget
   ? () => null
   : lazy(() => import('./BackendDashboard'));
-const UserAccessControl = lazy(() => import('./UserAccessControl'));
 
 const LoadingTab = () => (
   <div class="flex items-center justify-center p-12 h-64">
@@ -127,6 +126,9 @@ interface DesktopViewportProps {
 }
 
 export default function DesktopViewport(rawProps: DesktopViewportProps) {
+  onMount(() => {
+    console.log("DesktopViewport mounted");
+  });
   const tripsCtx = useTripsContext();
   const trucksCtx = useTrucksContext();
   const driversCtx = useDriversContext();
@@ -212,25 +214,28 @@ export default function DesktopViewport(rawProps: DesktopViewportProps) {
         )}
 
         {/* TAB RENDERING CONTROLS */}
-        {props.activeTab() === 'DASHBOARD' && (
-          <Dashboard
-            trips={props.dashboardTrips()}
-            allTrips={props.orgTrips}
-            trucks={props.approvedOrgTrucks}
-            offices={props.orgOffices}
-            accounts={props.orgAccounts}
-            currentUserRights={props.currentUserRights()}
-            activeMonth={props.activeMonth()}
-            activeYear={props.activeYear()}
-            setActiveMonth={props.setActiveMonth}
-            setActiveYear={props.setActiveYear}
-            orgProfile={props.currentOrgProfile}
-            expenses={props.orgExpenses}
-            onAddExpense={props.addExpense}
-            onUpdateTruck={props.updateTruck}
-            onSaveTrips={props.saveTrips}
-          />
-        )}
+        {props.activeTab() === 'DASHBOARD' && (() => {
+          console.log("Dashboard route entered");
+          return (
+            <Dashboard
+              trips={props.dashboardTrips()}
+              allTrips={props.orgTrips}
+              trucks={props.approvedOrgTrucks}
+              offices={props.orgOffices}
+              accounts={props.orgAccounts}
+              currentUserRights={props.currentUserRights()}
+              activeMonth={props.activeMonth()}
+              activeYear={props.activeYear()}
+              setActiveMonth={props.setActiveMonth}
+              setActiveYear={props.setActiveYear}
+              orgProfile={props.currentOrgProfile}
+              expenses={props.orgExpenses}
+              onAddExpense={props.addExpense}
+              onUpdateTruck={props.updateTruck}
+              onSaveTrips={props.saveTrips}
+            />
+          );
+        })()}
 
         {props.activeTab() === 'TRIPS' && props.currentUserRights().canViewTrips && (
           <TripList

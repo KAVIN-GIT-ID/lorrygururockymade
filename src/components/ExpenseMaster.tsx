@@ -56,23 +56,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     get canDeleteExpenses() { return permissionCtx.currentUserRights().canDeleteExpenses; },
     get organizationId() { return permissionCtx.currentUserOrgId(); }
   });
-  const {
-    expenses,
-    trucks,
-    drivers,
-    onAddExpense,
-    onUpdateExpense,
-    onDeleteExpense,
-    confirmAction,
-    canViewExpenses,
-    canEditExpenses,
-    canDeleteExpenses,
-    organizationId,
-    autoOpenAdd,
-    onAutoOpenCleared,
-    orgProfile,
-    accounts
-  } = props;
+  
 
 
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
@@ -80,11 +64,11 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);
 
   createEffect(() => {
-    if (autoOpenAdd) {
+    if (props.autoOpenAdd) {
       resetForm();
       setShowForm(true);
-      if (onAutoOpenCleared) {
-        onAutoOpenCleared();
+      if (props.onAutoOpenCleared) {
+        props.onAutoOpenCleared();
       }
     }
   });
@@ -114,23 +98,23 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
   const allExpenseTypes = Array.from(new Set([
     ...standardTypes,
-    ...(orgProfile?.customExpenseTypes || [])
+    ...(props.orgProfile?.customExpenseTypes || [])
   ]));
 
-  const existingShops = Array.from(new Set(expenses.map(e => e.shopName).filter(Boolean)));
+  const existingShops = Array.from(new Set(props.expenses.map(e => e.shopName).filter(Boolean)));
   const allShops = Array.from(new Set([
-    ...(orgProfile?.shopNames || []),
+    ...(props.orgProfile?.shopNames || []),
     ...existingShops
   ]));
 
-  const truckOptions = trucks.map(tk => {
+  const truckOptions = props.trucks.map(tk => {
     const todayStr = new Date().toISOString().substring(0, 10);
     const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
     const isAdminDisabled = tk.status === 'Admin Disabled';
     const isNotApproved = tk.isApproved === false || tk.requestStatus === 'Rejected';
     const isBlocked = isExpired || isAdminDisabled || isNotApproved;
     const isSelected = isEditing() && (() => {
-      const orig = expenses.find(e => e.id === isEditing());
+      const orig = props.expenses.find(e => e.id === isEditing());
       return orig && orig.truckNo === tk.truckNo;
     })();
 
@@ -181,9 +165,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     }
 
     const todayStr = new Date().toISOString().substring(0, 10);
-    const selectedTruck = trucks.find(t => t.truckNo === truckNo());
+    const selectedTruck = props.trucks.find(t => t.truckNo === truckNo());
     const isUnchangedEdit = isEditing() && (() => {
-      const orig = expenses.find(e => e.id === isEditing());
+      const orig = props.expenses.find(e => e.id === isEditing());
       return orig && orig.truckNo === truckNo();
     })();
     if (selectedTruck && !isUnchangedEdit) {
@@ -212,12 +196,12 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     };
 
     if (isEditing()) {
-      onUpdateExpense({
+      props.onUpdateExpense({
         id: isEditing(),
         ...payload
       });
     } else {
-      onAddExpense(payload);
+      props.onAddExpense(payload);
     }
 
     resetForm();
@@ -259,7 +243,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
   // Offline / local logic
   createEffect(() => {
     if (!online) {
-      const filtered = expenses.filter(exp => {
+      const filtered = props.expenses.filter(exp => {
         const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
                               exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
         const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
@@ -282,7 +266,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
         setLoading(true);
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
+          const orgId = props.organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
 
           const res = await appwrite.queryExpenses(
             databaseId,
@@ -308,7 +292,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
           setDisplayedExpenses(mapped);
           setTotalCount(res.total || 0);
         } catch (err) {
-          console.error("Failed to query expenses from Appwrite:", err);
+          console.error("Failed to query props.expenses from Appwrite:", err);
         } finally {
           setLoading(false);
         }
@@ -322,7 +306,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     }
   });
 
-  const totalExpenseSum = (online ? displayedExpenses() : expenses.filter(exp => {
+  const totalExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
     const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
                           exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
@@ -332,7 +316,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
   })).reduce((sum, item) => sum + item.amount, 0);
 
-  const pendingExpenseSum = (online ? displayedExpenses() : expenses.filter(exp => {
+  const pendingExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
     const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
                           exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
@@ -342,7 +326,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
   })).filter(e => e.status === 'Pending').reduce((sum, item) => sum + item.amount, 0);
 
-  const paidExpenseSum = (online ? displayedExpenses() : expenses.filter(exp => {
+  const paidExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
     const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
                           exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
@@ -352,7 +336,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
   })).filter(e => e.status === 'Paid' || e.status === 'Settled').reduce((sum, item) => sum + item.amount, 0);
 
-  const uniqueExpenseTypes = Array.from(new Set(expenses.map(e => e.expenseType).filter(Boolean)));
+  const uniqueExpenseTypes = Array.from(new Set(props.expenses.map(e => e.expenseType).filter(Boolean)));
 
   return (
     <div id="expense-master-panel" class="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in font-sans">
@@ -365,10 +349,10 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
             <span>Voucher & Expenses Ledger</span>
             {loading() && <span class="inline-block w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>}
           </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Register, manage, and monitor general shop and temporary truck maintenance expenses.</p>
+          <p class="text-xs text-slate-500 mt-0.5">Register, manage, and monitor general shop and temporary truck maintenance props.expenses.</p>
         </div>
         
-        {canEditExpenses && (
+        {props.canEditExpenses && (
           <button
             id="btn-toggle-expense-form"
             onClick={() => {
@@ -512,7 +496,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                     setAccountType(val);
                     if (val === 'Driver') {
                       setPaymentMode('');
-                      setSelectedDriverName(drivers[0]?.driverName || '');
+                      setSelectedDriverName(props.drivers[0]?.driverName || '');
                     } else {
                       setSelectedDriverName('');
                       setPaymentMode('Cash/General');
@@ -538,7 +522,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                     <option value="Cash/General">Cash/General State</option>
                     <option value="Axis">Axis Office</option>
                     <option value="HDFC">HDFC General</option>
-                    {accounts.map(acct => (
+                    {props.accounts.map(acct => (
                       <option  value={acct.accountName}>{acct.accountName} Ledger</option>
                     ))}
                   </select>
@@ -554,7 +538,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                     class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
                   >
                     <option value="">-- Select Driver --</option>
-                    {drivers.map(drv => (
+                    {props.drivers.map(drv => (
                       <option  value={drv.driverName}>{drv.driverName}</option>
                     ))}
                   </select>
@@ -630,7 +614,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
             class="w-full bg-white border border-slate-205 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
           >
             <option value="">By Truck Filter (All)</option>
-            {trucks.map(tk => (
+            {props.trucks.map(tk => (
               <option  value={tk.truckNo}>{tk.truckNo}</option>
             ))}
           </select>
@@ -765,7 +749,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                     <div class="flex justify-end gap-1.5">
                       <button
                          title="Edit Expense"
-                         disabled={!canEditExpenses}
+                         disabled={!props.canEditExpenses}
                          onClick={() => startEdit(exp)}
                          class="p-1 px-2 border border-slate-200 rounded text-slate-600 hover:text-indigo-600 hover:border-indigo-300 bg-white shadow-3xs cursor-pointer active:scale-95 duration-100 flex items-center gap-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -773,8 +757,8 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                       </button>
                       <button
                         title="Delete Expense"
-                        disabled={!canDeleteExpenses}
-                        onClick={() => onDeleteExpense(exp.id)}
+                        disabled={!props.canDeleteExpenses}
+                        onClick={() => props.onDeleteExpense(exp.id)}
                         class="p-1 px-2 border border-rose-100 hover:bg-rose-50 text-rose-600 rounded hover:text-rose-800 bg-white shadow-3xs cursor-pointer active:scale-95 duration-100 flex items-center gap-1 text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Trash2 class="w-2.5 h-2.5" /> Delete
@@ -857,7 +841,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                   }`}>
                     <button
                       type="button"
-                      disabled={!canEditExpenses}
+                      disabled={!props.canEditExpenses}
                       onClick={() => {
                         startEdit(exp);
                         setActiveSpeedDialId(null);
@@ -869,10 +853,10 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
                     </button>
                     <button
                       type="button"
-                      disabled={!canDeleteExpenses}
+                      disabled={!props.canDeleteExpenses}
                       onClick={() => {
                         if (confirm(`Are you sure you want to delete this expense record of ₹${exp.amount}?`)) {
-                          onDeleteExpense(exp.id);
+                          props.onDeleteExpense(exp.id);
                         }
                         setActiveSpeedDialId(null);
                       }}

@@ -50,17 +50,17 @@ export default function ProfileSupportTickets({
   let chatEndRef: HTMLDivElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
 
-  const selectedTicket = tickets.find((t) => t.id === selectedTicketId());
+  const selectedTicket = () => tickets.find((t) => t.id === selectedTicketId());
 
   // Mark selected ticket as read for the user
   createEffect(() => {
-    if (selectedTicket) {
-      const msgs = selectedTicket.messages || [];
+    if (selectedTicket()) {
+      const msgs = selectedTicket().messages || [];
       if (msgs.length > 0) {
         const lastMsg = msgs[msgs.length - 1];
-        localStorage.setItem(`ttt_tkt_read_${selectedTicket.id}`, lastMsg.id);
+        localStorage.setItem(`ttt_tkt_read_${selectedTicket().id}`, lastMsg.id);
       } else {
-        localStorage.setItem(`ttt_tkt_read_${selectedTicket.id}`, 'read');
+        localStorage.setItem(`ttt_tkt_read_${selectedTicket().id}`, 'read');
       }
     }
   });
@@ -88,10 +88,10 @@ export default function ProfileSupportTickets({
 
   // Pre-resolve secure file URLs for attachments in the current ticket
   createEffect(() => {
-    if (!selectedTicket) return;
+    if (!selectedTicket()) return;
     const newUrls = { ...resolvedUrls() };
     let changed = false;
-    const messages = Array.isArray(selectedTicket.messages) ? selectedTicket.messages : [];
+    const messages = Array.isArray(selectedTicket().messages) ? selectedTicket().messages : [];
     for (const msg of messages) {
       if (msg.attachmentUrl && !newUrls[msg.id]) {
         // Check if attachmentUrl is a file ID (does not start with http)
@@ -352,35 +352,35 @@ export default function ProfileSupportTickets({
 
       {/* RIGHT SIDEBAR: Chat Pane */}
       <div class="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35 overflow-hidden">
-        {selectedTicket ? (
+        {selectedTicket() ? (
           <>
             {/* Header */}
             <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center shadow-3xs">
               <div>
                 <div class="flex items-center gap-2">
                   <h4 class="font-bold text-slate-800 dark:text-slate-200 text-xs font-mono">
-                    #{selectedTicket.ticketNo}
+                    #{selectedTicket().ticketNo}
                   </h4>
                   <span class="text-slate-450 dark:text-slate-555 text-xs">•</span>
                   <span class="font-semibold text-xs text-slate-700 dark:text-slate-350">
-                    {selectedTicket.title}
+                    {selectedTicket().title}
                   </span>
                 </div>
                 <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                  Category: <span class="font-bold">{selectedTicket.category}</span> | Raised by {selectedTicket.requesterName}
+                  Category: <span class="font-bold">{selectedTicket().category}</span> | Raised by {selectedTicket().requesterName}
                 </p>
               </div>
               <div class="flex items-center gap-2">
                 <span
                   class={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                    selectedTicket.status === 'Open'
+                    selectedTicket().status === 'Open'
                       ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30'
-                      : selectedTicket.status === 'In Progress'
+                      : selectedTicket().status === 'In Progress'
                       ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30'
                       : 'bg-slate-100 text-slate-600 dark:bg-slate-800'
                   }`}
                 >
-                  {selectedTicket.status}
+                  {selectedTicket().status}
                 </span>
               </div>
             </div>
@@ -390,10 +390,10 @@ export default function ProfileSupportTickets({
               {/* Requester original issue details */}
               <div class="p-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-300 shadow-3xs text-left animate-fade-in">
                 <span class="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Issue Details</span>
-                <p class="whitespace-pre-line leading-relaxed font-sans">{selectedTicket.description}</p>
+                <p class="whitespace-pre-line leading-relaxed font-sans">{selectedTicket().description}</p>
               </div>
 
-              {selectedTicket.messages?.map((msg) => {
+              {selectedTicket().messages?.map((msg) => {
                 const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
                 const isUser = msg.sender === 'User';
                 
@@ -466,7 +466,7 @@ export default function ProfileSupportTickets({
             </div>
 
             {/* Message Input Panel */}
-            {selectedTicket.status !== 'Closed' ? (
+            {selectedTicket().status !== 'Closed' ? (
               <form onSubmit={handleSendChat} class="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-2 items-center">
                 <div class="relative flex-1">
                   <input

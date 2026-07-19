@@ -1,4 +1,4 @@
-import { createSignal, onMount, createEffect } from 'solid-js';
+import { createSignal, onMount, createEffect, createMemo } from 'solid-js';
 
 import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, importLegacyCargoExpenses, AuditLog, UserRights } from '../types';
 import {
@@ -78,6 +78,18 @@ export default function TripList({
   const [selectedStatuses, setSelectedStatuses] = createSignal<string[]>(['Pending', 'In Progress', 'Completed']);
   const [filterStartDate, setFilterStartDate] = createSignal('');
   const [filterEndDate, setFilterEndDate] = createSignal('');
+
+  const [displayLimit, setDisplayLimit] = createSignal(100);
+  const visibleTrips = createMemo(() => displayedTrips().slice(0, displayLimit()));
+
+  createEffect(() => {
+    search();
+    selectedTruck();
+    selectedStatuses();
+    filterStartDate();
+    filterEndDate();
+    setDisplayLimit(100);
+  });
 
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | undefined;
@@ -696,14 +708,14 @@ export default function TripList({
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 font-sans">
-              {displayedTrips().length === 0 ? (
+              {visibleTrips().length === 0 ? (
                 <tr>
                   <td colSpan={9} class="text-center py-16 text-slate-400 font-medium italic">
                     No active transport references matched your operational filters.
                   </td>
                 </tr>
               ) : (
-                displayedTrips().map((trip) => {
+                visibleTrips().map((trip) => {
                   const m = getTripMetrics(trip);
 
                   return (
@@ -907,12 +919,12 @@ export default function TripList({
 
       {/* MOBILE LIST CARD VIEW */}
       <div class="block md:hidden space-y-4">
-        {displayedTrips().length === 0 ? (
+        {visibleTrips().length === 0 ? (
           <div class="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
             No active transport references matched your operational filters.
           </div>
         ) : (
-          displayedTrips().map((trip) => {
+          visibleTrips().map((trip) => {
             const m = getTripMetrics(trip);
             return (
               <div

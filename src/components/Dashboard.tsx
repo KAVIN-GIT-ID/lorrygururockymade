@@ -25,25 +25,11 @@ interface DashboardProps {
   onSaveTrips?: (newTrips: TripEntry[]) => void;
 }
 
-export default function Dashboard({ 
-  trips: rawTrips, 
-  allTrips: rawAllTrips = rawTrips,
-  trucks, 
-  offices, 
-  accounts, 
-  currentUserRights,
-  activeMonth,
-  activeYear,
-  setActiveMonth,
-  setActiveYear,
-  orgProfile,
-  expenses = [],
-  onAddExpense,
-  onUpdateTruck,
-  onSaveTrips
-}: DashboardProps) {
-  const trips = rawTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
-  const allTrips = rawAllTrips.filter(t => t.status !== 'Deleted' && !t.deletedAt);
+export default function Dashboard(props: DashboardProps) {
+  const trips = createMemo(() => (props.trips || []).filter(t => t.status !== 'Deleted' && !t.deletedAt));
+  const allTrips = createMemo(() => (props.allTrips || props.trips || []).filter(t => t.status !== 'Deleted' && !t.deletedAt));
+  
+  
   const months = [
     { value: '01', label: 'January' },
     { value: '02', label: 'February' },
@@ -206,11 +192,11 @@ export default function Dashboard({
     isAdmin = true,
     canViewTrips = true,
     canViewExpenses = true,
-  } = currentUserRights || {};
+  } = props.currentUserRights || {};
 
-  // Pre-calculate metrics for all master trips
-  const metricsList = trips.map(t => getTripMetrics(t));
-  const allMetricsList = allTrips.map(t => getTripMetrics(t));
+  // Pre-calculate metrics for all master trips()
+  const metricsList = trips().map(t => getTripMetrics(t));
+  const allMetricsList = allTrips().map(t => getTripMetrics(t));
 
   const totalRental = metricsList.reduce((sum, m) => sum + m.income, 0);
   const totalExpenses = metricsList.reduce((sum, m) => sum + m.totalExpense, 0);
@@ -220,15 +206,15 @@ export default function Dashboard({
   const totalDiesel = metricsList.reduce((sum, m) => sum + m.dieselExpense, 0);
 
   // Status counts
-  const pendingCount = trips.filter(t => t.status === 'Pending').length;
-  const inProgressCount = trips.filter(t => t.status === 'In Progress').length;
-  const completedCount = trips.filter(t => t.status === 'Completed').length;
-  const paidCount = trips.filter(t => t.status === 'Settled').length;
+  const pendingCount = trips().filter(t => t.status === 'Pending').length;
+  const inProgressCount = trips().filter(t => t.status === 'In Progress').length;
+  const completedCount = trips().filter(t => t.status === 'Completed').length;
+  const paidCount = trips().filter(t => t.status === 'Settled').length;
 
 
 
-  // Filter trips with outstanding older than 10 days
-  const overdueTrips = allTrips.filter(t => {
+  // Filter trips() with outstanding older than 10 days
+  const overdueTrips = allTrips().filter(t => {
     const m = getTripMetrics(t);
     if (m.outstandingBalance <= 0) return false;
     const age = getOutstandingAge(t.endDate || t.startDate);
@@ -240,14 +226,14 @@ export default function Dashboard({
   // Let's obtain the Account Name mapping for easy readability
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
-    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    const fuelCard = props.orgProfile?.fuelCards?.find(fc => fc.id === id);
     if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
-    return accounts.find(a => a.id === id)?.accountName || id || 'N/A';
+    return props.accounts.find(a => a.id === id)?.accountName || id || 'N/A';
   };
 
-  // Group accounts receiving funds and sum up their collections
+  // Group props.accounts receiving funds and sum up their collections
   const accountFundsMap: { [key: string]: number } = {};
-  trips.forEach(t => {
+  trips().forEach(t => {
     (t.payments || []).forEach(p => {
       if (p.amount > 0 && p.receivedBy) {
         accountFundsMap[p.receivedBy] = (accountFundsMap[p.receivedBy] || 0) + Number(p.amount);
@@ -262,7 +248,7 @@ export default function Dashboard({
 
   // Group outstanding balance by Truck for risk mitigation
   const truckOutstandingMap: { [key: string]: number } = {};
-  allTrips.forEach(t => {
+  allTrips().forEach(t => {
     const m = getTripMetrics(t);
     const balAttr = m.outstandingBalance;
     if (balAttr > 0) {
@@ -277,7 +263,7 @@ export default function Dashboard({
 
   // Group outstanding balance by Office
   const officeOutstandingMap: { [key: string]: number } = {};
-  allTrips.forEach(t => {
+  allTrips().forEach(t => {
     const m = getTripMetrics(t);
     if (m.outstandingBalance > 0) {
       const segDetails: { office: string; balance: number }[] = [];
@@ -295,7 +281,7 @@ export default function Dashboard({
           }
         }
         if (!expenses || expenses.length === 0) {
-          expenses = importLegacyCargoExpenses(st, orgProfile);
+          expenses = importLegacyCargoExpenses(st, props.orgProfile);
         }
 
         expenses.forEach(exp => {
@@ -340,7 +326,7 @@ export default function Dashboard({
 
   // Detailed hover information per truck
   const getTruckHoverDetails = (tNo: string) => {
-    const truckTrips = allTrips.filter(t => t.truckNo === tNo);
+    const truckTrips = allTrips().filter(t => t.truckNo === tNo);
     let totalIncome = 0;
     let totalPaid = 0;
     let totalBalance = 0;
@@ -367,7 +353,7 @@ export default function Dashboard({
             }
           }
           if (!expenses || expenses.length === 0) {
-            expenses = importLegacyCargoExpenses(st, orgProfile);
+            expenses = importLegacyCargoExpenses(st, props.orgProfile);
           }
 
           expenses.forEach(exp => {
@@ -433,7 +419,7 @@ export default function Dashboard({
     const trucksUsed = new Set<string>();
     const detailsList: any[] = [];
 
-    allTrips.forEach(t => {
+    allTrips().forEach(t => {
       const m = getTripMetrics(t);
       if (m.outstandingBalance > 0) {
         const matchingSegs: { st: any; segDeductions: number; segOfficeBears: number; segPayments: number; segBalance: number }[] = [];
@@ -455,7 +441,7 @@ export default function Dashboard({
               }
             }
             if (!expenses || expenses.length === 0) {
-              expenses = importLegacyCargoExpenses(st, orgProfile);
+              expenses = importLegacyCargoExpenses(st, props.orgProfile);
             }
 
             expenses.forEach(exp => {
@@ -536,14 +522,14 @@ export default function Dashboard({
     const alerts: any[] = [];
     const anchor = new Date();
 
-    trucks.forEach(truck => {
+    props.trucks.forEach(truck => {
       if (truck.status !== 'Active') return;
       const currentKM = truck.currentKM || 0;
 
       // 1. Loan alerts
       const activeLoans = getTruckLoans(truck).filter(l => l.loanStatus !== 'Closed');
       activeLoans.forEach(loan => {
-        const stats = calculateSingleLoanStats(loan, truck.truckNo, expenses);
+        const stats = calculateSingleLoanStats(loan, truck.truckNo, props.expenses || []);
         if (stats && stats.nextDueDateStr !== 'Fully Settled') {
           const daysLeft = calculateDaysLeft(stats.nextDueDateStr, anchor);
           if (daysLeft !== null) {
@@ -573,12 +559,12 @@ export default function Dashboard({
 
       // 2. Service alerts
       const services = [
-        { name: 'Engine Oil Change', targetKM: truck.engineOilKM, interval: truck.engineOilIntervalKM || orgProfile?.engineOilIntervalKM || 15000 },
-        { name: 'Crown Oil', targetKM: truck.crownOilKM, interval: truck.crownOilIntervalKM || orgProfile?.crownOilIntervalKM || 40000 },
-        { name: 'Gear Box Oil', targetKM: truck.gearBoxOilKM, interval: truck.gearBoxOilIntervalKM || orgProfile?.gearBoxOilIntervalKM || 40000 },
-        { name: 'Radiator Service', targetKM: truck.radiatorKM, interval: truck.radiatorIntervalKM || orgProfile?.radiatorIntervalKM || 20000 },
-        { name: 'Pinpush Grease', targetKM: truck.pinpushKM, interval: truck.pinpushIntervalKM || orgProfile?.pinpushIntervalKM || 5000 },
-        { name: 'Wheel Grease', targetKM: truck.wheelGreaseKM, interval: truck.wheelGreaseIntervalKM || orgProfile?.wheelGreaseIntervalKM || 5000 }
+        { name: 'Engine Oil Change', targetKM: truck.engineOilKM, interval: truck.engineOilIntervalKM || props.orgProfile?.engineOilIntervalKM || 15000 },
+        { name: 'Crown Oil', targetKM: truck.crownOilKM, interval: truck.crownOilIntervalKM || props.orgProfile?.crownOilIntervalKM || 40000 },
+        { name: 'Gear Box Oil', targetKM: truck.gearBoxOilKM, interval: truck.gearBoxOilIntervalKM || props.orgProfile?.gearBoxOilIntervalKM || 40000 },
+        { name: 'Radiator Service', targetKM: truck.radiatorKM, interval: truck.radiatorIntervalKM || props.orgProfile?.radiatorIntervalKM || 20000 },
+        { name: 'Pinpush Grease', targetKM: truck.pinpushKM, interval: truck.pinpushIntervalKM || props.orgProfile?.pinpushIntervalKM || 5000 },
+        { name: 'Wheel Grease', targetKM: truck.wheelGreaseKM, interval: truck.wheelGreaseIntervalKM || props.orgProfile?.wheelGreaseIntervalKM || 5000 }
       ];
 
       services.forEach(service => {
@@ -602,13 +588,13 @@ export default function Dashboard({
 
       // 3. Document Expiry alerts
       const docs = [
-        { label: 'Insurance Expiry', date: truck.insuranceDate, warningDays: orgProfile?.insuranceWarningDays ?? 30 },
-        { label: 'Fitness Cert (FC)', date: truck.fcDate, warningDays: orgProfile?.fcWarningDays ?? 30 },
-        { label: 'Quarterly Tax (Q Tax)', date: truck.qTaxDate, warningDays: orgProfile?.qTaxWarningDays ?? 30 },
-        { label: 'Green Tax Cert', date: truck.greenTaxDate, warningDays: orgProfile?.greenTaxWarningDays ?? 30 },
-        { label: 'National Permit Tax', date: truck.npTaxDate, warningDays: orgProfile?.npTaxWarningDays ?? 30 },
-        { label: '5 Year Permit Date', date: truck.fiveYearPermitDate, warningDays: orgProfile?.fiveYearPermitWarningDays ?? 30 },
-        { label: 'Subscription Expiry', date: truck.registrationExpiryDate, warningDays: orgProfile?.subscriptionWarningDays ?? 30 }
+        { label: 'Insurance Expiry', date: truck.insuranceDate, warningDays: props.orgProfile?.insuranceWarningDays ?? 30 },
+        { label: 'Fitness Cert (FC)', date: truck.fcDate, warningDays: props.orgProfile?.fcWarningDays ?? 30 },
+        { label: 'Quarterly Tax (Q Tax)', date: truck.qTaxDate, warningDays: props.orgProfile?.qTaxWarningDays ?? 30 },
+        { label: 'Green Tax Cert', date: truck.greenTaxDate, warningDays: props.orgProfile?.greenTaxWarningDays ?? 30 },
+        { label: 'National Permit Tax', date: truck.npTaxDate, warningDays: props.orgProfile?.npTaxWarningDays ?? 30 },
+        { label: '5 Year Permit Date', date: truck.fiveYearPermitDate, warningDays: props.orgProfile?.fiveYearPermitWarningDays ?? 30 },
+        { label: 'Subscription Expiry', date: truck.registrationExpiryDate, warningDays: props.orgProfile?.subscriptionWarningDays ?? 30 }
       ];
 
       docs.forEach(doc => {
@@ -679,9 +665,9 @@ export default function Dashboard({
           <Calendar class="w-4 h-4 text-slate-450" />
           <select
             id="dashboard-month-select"
-            value={activeMonth}
-            disabled={activeYear === 'All Time'}
-            onChange={(e) => setActiveMonth(e.target.value)}
+            value={props.activeMonth}
+            disabled={props.activeYear === 'All Time'}
+            onChange={(e) => props.setActiveMonth(e.target.value)}
             class="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pr-4 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {months.map(m => (
@@ -690,8 +676,8 @@ export default function Dashboard({
           </select>
           <select
             id="dashboard-year-select"
-            value={activeYear}
-            onChange={(e) => setActiveYear(e.target.value)}
+            value={props.activeYear}
+            onChange={(e) => props.setActiveYear(e.target.value)}
             class="bg-transparent border-0 text-xs font-bold text-slate-700 focus:outline-none focus:ring-0 cursor-pointer pl-2 border-l border-slate-200"
           >
             {years.map(y => (
@@ -761,7 +747,7 @@ export default function Dashboard({
                     </div>
                   </div>
 
-                  {alert.type === 'loan' && currentUserRights?.canEditExpenses && (
+                  {alert.type === 'loan' && props.currentUserRights?.canEditExpenses && (
                     <button
                       type="button"
                       onClick={() => setPayEmiTarget(alert.metadata)}
@@ -771,7 +757,7 @@ export default function Dashboard({
                     </button>
                   )}
 
-                  {alert.type === 'document' && alert.metadata && currentUserRights?.canEditExpenses && (
+                  {alert.type === 'document' && alert.metadata && props.currentUserRights?.canEditExpenses && (
                     <button
                       type="button"
                       onClick={() => setPayTaxTarget(alert.metadata)}
@@ -795,7 +781,7 @@ export default function Dashboard({
             <div class="space-y-1">
               <span class="text-xs text-slate-500 font-bold block uppercase tracking-wider font-sans">Total Billed Income</span>
               <span class="text-xl md:text-2xl font-extrabold text-slate-900 font-sans tracking-tight leading-none">₹{totalRental.toLocaleString('en-IN')}</span>
-              <p class="text-[10px] text-slate-400 mt-1">From {trips.length} registered trips</p>
+              <p class="text-[10px] text-slate-400 mt-1">From {trips().length} registered trips()</p>
             </div>
             <div class="p-3 bg-blue-50 rounded-lg border border-blue-100 text-blue-600 shadow-3xs">
               <TrendingUp class="w-5 h-5" />
@@ -916,7 +902,7 @@ export default function Dashboard({
           <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
             <div>
               <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1 font-sans">Receipts by Accounts</h3>
-              <p class="text-xs text-slate-500 font-sans font-normal font-sans">Total advances & settlements received into operational accounts.</p>
+              <p class="text-xs text-slate-500 font-sans font-normal font-sans">Total advances & settlements received into operational props.accounts.</p>
             </div>
 
             <div class="my-4 divide-y divide-slate-100 overflow-y-auto max-h-[180px] pr-1 flex-1">
@@ -942,7 +928,7 @@ export default function Dashboard({
 
             <div class="text-[10px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2 mt-4 shadow-3xs font-sans">
               <Landmark class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-              <span>Map accounts to payments / advances received.</span>
+              <span>Map props.accounts to payments / advances received.</span>
             </div>
           </div>
 
@@ -1078,7 +1064,7 @@ export default function Dashboard({
                   </h3>
                 </div>
                 <p class="text-xs text-slate-500 mt-1">
-                  Active transport journal auditor flagging trips where outstanding brokerage balances exceed 10 days to maximize collection rates.
+                  Active transport journal auditor flagging trips() where outstanding brokerage balances exceed 10 days to maximize collection rates.
                 </p>
               </div>
 
@@ -1163,11 +1149,11 @@ export default function Dashboard({
           emiAmount={payEmiTarget().emiAmount}
           bankName={payEmiTarget().bankName}
           dueDateStr={payEmiTarget().dueDateStr}
-          accounts={accounts}
+          accounts={props.accounts}
           loanType={payEmiTarget().loanType}
           onConfirm={(paymentDate, accountId) => {
-            if (onAddExpense) {
-              onAddExpense({
+            if (props.onAddExpense) {
+              props.onAddExpense({
                 truckNo: payEmiTarget().truckNo,
                 expenseType: 'Loan EMI',
                 shopName: payEmiTarget().bankName,
@@ -1192,10 +1178,10 @@ export default function Dashboard({
           truckNo={payTaxTarget().truckNo}
           taxType={payTaxTarget().taxType}
           currentExpiryDate={payTaxTarget().currentExpiryDate}
-          accounts={accounts}
+          accounts={props.accounts}
           onConfirm={(paymentDate, amount, nextExpiryDate, accountId) => {
-            if (onAddExpense) {
-              onAddExpense({
+            if (props.onAddExpense) {
+              props.onAddExpense({
                 truckNo: payTaxTarget().truckNo,
                 expenseType: 'Scheduled',
                 shopName: 'RTO / Government Department',
@@ -1206,8 +1192,8 @@ export default function Dashboard({
                 notes: `${payTaxTarget().taxType} renewal payment. Next Expiry: ${nextExpiryDate}`,
               });
             }
-            if (onUpdateTruck) {
-              const truckToUpdate = trucks.find(t => t.id === payTaxTarget().truckId);
+            if (props.onUpdateTruck) {
+              const truckToUpdate = props.trucks.find(t => t.id === payTaxTarget().truckId);
               if (truckToUpdate) {
                 const updatedTruck = { ...truckToUpdate };
                 if (payTaxTarget().taxType === 'Insurance') {
@@ -1219,7 +1205,7 @@ export default function Dashboard({
                 } else if (payTaxTarget().taxType === '5 Year Permit') {
                   updatedTruck.fiveYearPermitDate = nextExpiryDate;
                 }
-                onUpdateTruck(updatedTruck);
+                props.onUpdateTruck(updatedTruck);
               }
             }
             alert(`${payTaxTarget().taxType} payment of ₹${amount.toLocaleString('en-IN')} for ${payTaxTarget().truckNo} recorded and expiry date updated successfully.`);
@@ -1370,13 +1356,13 @@ export default function Dashboard({
                           <span class="mx-1">|</span>
                           <span class="text-rose-400 font-bold">Bal: ₹{seg.balance.toLocaleString()}</span>
                         </div>
-                        {seg.balance > 0 && onSaveTrips && (
+                        {seg.balance > 0 && props.onSaveTrips && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setPayDate(new Date().toISOString().substring(0, 10));
-                              setPayAccount(accounts[0]?.id || '');
+                              setPayAccount(props.accounts[0]?.id || '');
                               setPayAmount(seg.balance);
                               setPayNotes(`Quick Pay: ${seg.office}`);
                               setQuickPayTarget({
@@ -1547,13 +1533,13 @@ export default function Dashboard({
                           <span class="mx-1">|</span>
                           <span class="text-rose-400 font-bold">Bal: ₹{seg.balance.toLocaleString()}</span>
                         </div>
-                        {seg.balance > 0 && onSaveTrips && (
+                        {seg.balance > 0 && props.onSaveTrips && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setPayDate(new Date().toISOString().substring(0, 10));
-                              setPayAccount(accounts[0]?.id || '');
+                              setPayAccount(props.accounts[0]?.id || '');
                               setPayAmount(seg.balance);
                               setPayNotes(`Quick Pay: ${hoveredOffice()}`);
                               setQuickPayTarget({
@@ -1638,10 +1624,10 @@ export default function Dashboard({
                   <option value="">-- Choose Account --</option>
                   <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                   <option value="Cash">Cash</option>
-                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === payAccount()).map(c => (
+                  {props.orgProfile?.fuelCards && props.orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === payAccount()).map(c => (
                     <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                   ))}
-                  {accounts.map(ac => (
+                  {props.accounts.map(ac => (
                     <option  value={ac.id}>{ac.accountName}</option>
                   ))}
                 </select>
@@ -1683,7 +1669,7 @@ export default function Dashboard({
               <button
                 type="button"
                 onClick={() => {
-                  if (!onSaveTrips || !allTrips) return;
+                  if (!props.onSaveTrips || !allTrips()) return;
                   const amt = Number(payAmount()) || 0;
                   if (amt <= 0) {
                     alert("Please enter a valid amount greater than 0.");
@@ -1703,7 +1689,7 @@ export default function Dashboard({
                     subTripId: quickPayTarget().subTripId
                   };
 
-                  const updatedTrips = allTrips.map(t => {
+                  const updatedTrips = allTrips().map(t => {
                     if (t.id === quickPayTarget().tripId) {
                       return {
                         ...t,
@@ -1713,7 +1699,7 @@ export default function Dashboard({
                     return t;
                   });
 
-                  onSaveTrips(updatedTrips);
+                  props.onSaveTrips(updatedTrips);
                   alert(`Payment of ₹${amt.toLocaleString('en-IN')} successfully registered.`);
                   setQuickPayTarget(null);
                 }}

@@ -1,4 +1,4 @@
-import { createSignal, lazy, Suspense, mergeProps } from 'solid-js';
+import { onMount, createSignal, lazy, Suspense, mergeProps } from 'solid-js';
 import { useTripsContext } from '../context/TripContext';
 import { useTrucksContext } from '../context/TruckContext';
 import { useDriversContext } from '../context/DriverContext';
@@ -9,11 +9,11 @@ import { useTyresContext } from '../context/TyreContext';
 import { useAuditLogsContext } from '../context/AuditLogContext';
 import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile } from '../types';
 import { CheckCircle, Bell, Sun, Moon, Plus, Loader, AlertCircle } from 'lucide-solid';
-
-import MobileHomeTab from './MobileHomeTab';
-import MobileAccountTab from './MobileAccountTab';
 import MobileBottomTabBar from './MobileBottomTabBar';
-import MobileOutstandingView from './MobileOutstandingView';
+
+const MobileHomeTab = lazy(() => import('./MobileHomeTab'));
+const MobileAccountTab = lazy(() => import('./MobileAccountTab'));
+const MobileOutstandingView = lazy(() => import('./MobileOutstandingView'));
 
 const TripList = lazy(() => import('./TripList'));
 const TruckMaster = lazy(() => import('./TruckMaster'));
@@ -108,6 +108,9 @@ interface MobileViewportProps {
 }
 
 export default function MobileViewport(rawProps: MobileViewportProps) {
+  onMount(() => {
+    console.log("MobileViewport mounted");
+  });
   const tripsCtx = useTripsContext();
   const trucksCtx = useTrucksContext();
   const driversCtx = useDriversContext();

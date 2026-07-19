@@ -1,27 +1,7 @@
 import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query, Permission, Role, Realtime } from 'appwrite';
 
-const cleanEnvVar = (val: string): string => {
-  if (!val) return '';
-  return val.trim().replace(/^['"]|['"]$/g, '');
-};
-
-const projectID = cleanEnvVar(import.meta.env.VITE_APPWRITE_PROJECT_ID || '');
-let endpoint = cleanEnvVar(import.meta.env.VITE_APPWRITE_ENDPOINT || '');
-
-if (endpoint.startsWith('/') && typeof window !== 'undefined') {
-  endpoint = window.location.origin + endpoint;
-}
-
-export const isAppwriteConfigured = () => {
-  return !!projectID && !!endpoint;
-};
-
-export const getAppOrigin = (): string => {
-  const envUrl = cleanEnvVar(import.meta.env.VITE_APP_URL || '');
-  if (envUrl) return envUrl;
-  if (typeof window !== 'undefined') return window.location.origin;
-  return 'http://localhost:3000';
-};
+import { projectID, endpoint, cleanEnvVar, isAppwriteConfigured, getAppOrigin } from './appwriteConfig';
+export { isAppwriteConfigured, getAppOrigin };
 
 export function compressImageIfNeeded(file: File): Promise<File> {
   return new Promise((resolve) => {

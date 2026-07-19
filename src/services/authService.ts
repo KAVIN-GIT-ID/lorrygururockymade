@@ -1,4 +1,5 @@
-import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { appwrite } from '../lib/appwrite';
+import { isAppwriteConfigured } from '../lib/appwriteConfig';
 import { storageService } from './storageService';
 import { UserPermission, OrganizationProfile } from '../types';
 import { migrateUserPermissions } from '../lib/migrations';

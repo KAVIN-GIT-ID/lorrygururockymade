@@ -4,7 +4,7 @@ import { permissionService } from '../services/permissionService';
 import { storageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { migrateUserPermissions } from '../lib/migrations';
-import { isAppwriteConfigured, appwrite } from '../lib/appwrite';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface PermissionContextType {
   userRightsList: () => UserPermission[];

@@ -29,6 +29,7 @@ export function SettingsManager(props: { children: any }) {
   };
 
   onMount(() => {
+    console.log("SettingsManager mounted");
     if (theme() === 'dark') {
       document.documentElement.classList.add('dark');
     } else {

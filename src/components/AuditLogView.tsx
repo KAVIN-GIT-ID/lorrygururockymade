@@ -217,7 +217,7 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction, organiz
 
   const totalItems = totalCount();
   const totalPages = Math.ceil(totalItems / pageSize()) || 1;
-  const paginatedLogs = displayedLogs();
+  const paginatedLogs = () => displayedLogs();
 
   const categories = ['ALL', 'Trip', 'Truck', 'Driver', 'Office', 'Account', 'Expense'];
   const actions = ['ALL', 'Created', 'Edited', 'Deleted', 'Approved', 'Rejected', 'Cloud'];
@@ -542,7 +542,7 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction, organiz
 
           {/* ── Mobile cards (< md) ── */}
           <div class="block md:hidden divide-y divide-slate-100">
-            {paginatedLogs.map((log) => (
+            {paginatedLogs().map((log) => (
               <div  class="p-4 space-y-2">
                 {/* Header row: action badge + timestamp */}
                 <div class="flex items-center justify-between">
@@ -622,7 +622,7 @@ export default function AuditLogView({ logs, onClearLogs, confirmAction, organiz
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                {paginatedLogs.map((log) => (
+                {paginatedLogs().map((log) => (
                   <tr  class="hover:bg-slate-50/50 transition">
                     <td class="py-3.5 px-6 pl-8 font-mono text-slate-450 text-[11px]">
                       {log.timestamp}

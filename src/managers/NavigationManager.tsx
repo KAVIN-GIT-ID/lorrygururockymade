@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, Accessor, Setter } from 'solid-js';
+import { onMount, createContext, useContext, createSignal, Accessor, Setter } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { useNavigationState } from '../hooks/useNavigationState';
 
@@ -28,6 +28,9 @@ interface NavigationContextType {
 const NavigationContext = createContext<NavigationContextType | undefined>(undefined);
 
 export function NavigationManager(props: { children: any }) {
+  onMount(() => {
+    console.log("NavigationManager mounted");
+  });
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = createSignal<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND' | 'BILLING'>('DASHBOARD');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = createSignal(false);

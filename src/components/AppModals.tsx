@@ -6,13 +6,13 @@ import { useExpensesContext } from '../context/ExpenseContext';
 import { useOfficesContext } from '../context/OfficeContext';
 import { useAccountsContext } from '../context/AccountContext';
 import { useTyresContext } from '../context/TyreContext';
-import ProfileModal from './ProfileModal';
-import MobileChangeWizardModal from './MobileChangeWizardModal';
-import Setup2FAModal from './Setup2FAModal';
-import Disable2FAModal from './Disable2FAModal';
-import ConfirmModal from './ConfirmModal';
 import { Truck, TripEntry, UserPermission, OrganizationProfile, SupportTicket } from '../types';
 
+const ProfileModal = lazy(() => import('./ProfileModal'));
+const MobileChangeWizardModal = lazy(() => import('./MobileChangeWizardModal'));
+const Setup2FAModal = lazy(() => import('./Setup2FAModal'));
+const Disable2FAModal = lazy(() => import('./Disable2FAModal'));
+const ConfirmModal = lazy(() => import('./ConfirmModal'));
 const TripForm = lazy(() => import('./TripForm'));
 const VoiceAssistant = lazy(() => import('./VoiceAssistant'));
 
@@ -105,7 +105,7 @@ export default function AppModals(rawProps: AppModalsProps) {
     handlePostTripEntry: (entry: Omit<TripEntry, 'id'>) => tripsCtx.postTripEntry(entry, rawProps.editingTrip())
   });
   return (
-    <>
+    <Suspense fallback={null}>
       {props.profileModalOpen() && (
         <ProfileModal
           isOpen={props.profileModalOpen()}
@@ -208,6 +208,6 @@ export default function AppModals(rawProps: AppModalsProps) {
           voiceLang={props.userVoiceLang()}
         />
       </Suspense>
-    </>
+    </Suspense>
   );
 }

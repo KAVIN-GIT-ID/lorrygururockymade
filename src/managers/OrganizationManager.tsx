@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, createEffect, createMemo, Accessor } from 'solid-js';
+import { onMount, createContext, useContext, createSignal, createEffect, createMemo, Accessor } from 'solid-js';
 import { useOrganizations } from '../context/OrganizationContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +27,9 @@ interface OrganizationContextType {
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
 
 export function OrganizationManager(props: { children: any; activeTab: () => string; hasUsersTabAccess: () => boolean }) {
+  onMount(() => {
+    console.log("OrganizationManager mounted");
+  });
   const { currentUser } = useAuth();
   const perm = usePermissions();
   const orgs = useOrganizations();
