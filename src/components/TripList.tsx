@@ -191,16 +191,60 @@ export default function TripList({
       if (typeof aVal === 'string') {
         aVal = aVal.toLowerCase();
         bVal = (bVal || '').toLowerCase();
+      }
+
+      if (aVal < bVal) return sortDirection() === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection() === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return [...filtered].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+
+      if (sortField() === 'tripNo') {
+        aVal = a.tripNo;
+        bVal = b.tripNo;
+      } else if (sortField() === 'truckNo') {
+        aVal = a.truckNo;
+        bVal = b.truckNo;
+      } else if (sortField() === 'filterStartDate') {
+        aVal = a.startDate;
+        bVal = b.startDate;
+      } else if (sortField() === 'status') {
+        aVal = a.status;
+        bVal = b.status;
+      } else {
+        const mA = metricsCache.get(a) || getTripMetrics(a);
+        const mB = metricsCache.get(b) || getTripMetrics(b);
+        metricsCache.set(a, mA);
+        metricsCache.set(b, mB);
+        
+        if (sortField() === 'income') {
+          aVal = mA.income;
+          bVal = mB.income;
+        } else if (sortField() === 'totalExpense') {
+          aVal = mA.totalExpense;
+          bVal = mB.totalExpense;
+        } else if (sortField() === 'profit') {
+          aVal = mA.profit;
+          bVal = mB.profit;
+        } else if (sortField() === 'outstandingBalance') {
+          aVal = mA.outstandingBalance;
+          bVal = mB.outstandingBalance;
         }
+      }
 
-        if (aVal < bVal) return sortDirection() === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortDirection() === 'asc' ? 1 : -1;
-        return 0;
-      });
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
+      }
 
-      return sorted;
-    }
-  }, [search, selectedTruck, selectedStatuses, filterStartDate, filterEndDate, sortField, sortDirection, trips, online]);
+      if (aVal < bVal) return sortDirection() === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection() === 'asc' ? 1 : -1;
+      return 0;
+    });
+  });
 
   // Update displayed trips when filter/sort results change
   createEffect(() => {
