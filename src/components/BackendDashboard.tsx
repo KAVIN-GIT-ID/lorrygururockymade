@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo, untrack } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo, untrack, For } from 'solid-js';
 
 import {
   OrganizationProfile,
@@ -2325,63 +2325,64 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                   No tickets in queue.
                 </div>
               ) : (
-                filteredTickets().map((t) => {
-                  const lastMsg = t.messages?.[t.messages.length - 1];
-                  const isSelected = selectedTicketId() === t.id;
-                  return (
-                    <button
-                      
-                      onClick={() => {
-                        setSelectedTicketId(t.id);
-                        setResolvedUrls({});
-                      }}
-                      class={`w-full text-left p-3 rounded-xl transition-all ${
-                        isSelected
-                          ? 'bg-purple-50/40 dark:bg-purple-950/30 border-l-4 border-purple-600'
-                          : 'hover:bg-slate-55 dark:hover:bg-slate-800/40 border-l-4 border-transparent'
-                      }`}
-                    >
-                      <div class="flex justify-between items-start mb-1">
-                        <span class="font-bold text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1.5 animate-none">
-                          #{t.ticketNo}
-                          {isTicketActiveLocked(t) && (
-                            <span class="text-amber-550 dark:text-amber-450 shrink-0" title={`Locked by ${t.lockedByName}`}>
-                              <Lock class="w-3 h-3 inline-block align-middle" />
-                            </span>
-                          )}
-                          {getAgentUnreadInfo(t).hasUnread && (
-                            <span class="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1 min-w-[14px] h-[14px] font-sans font-bold leading-none animate-pulse">
-                              {getAgentUnreadInfo(t).count}
-                            </span>
-                          )}
-                        </span>
-                        <span
-                          class={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                            t.status === 'Open'
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/40'
-                              : t.status === 'In Progress'
-                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-450 border border-amber-100 dark:border-amber-900/40'
-                              : 'bg-slate-100 text-slate-605 dark:bg-slate-800/70 dark:text-slate-400 border border-slate-202 dark:border-slate-700/60'
-                          }`}
-                        >
-                          {t.status}
-                        </span>
-                      </div>
-                      <div class="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
-                        {t.title}
-                      </div>
-                      <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                        {lastMsg ? lastMsg.content : t.description}
-                      </div>
-                      <div class="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
-                        <span class="bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded text-[9px] font-semibold">
-                          {t.category}
-                        </span>
-                        <span>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
-                      </div>
-                    </button>
-                  );
-                })
+                <For each={filteredTickets()}>
+                  {(t) => {
+                    const lastMsg = () => t.messages?.[t.messages.length - 1];
+                    const isSelected = () => selectedTicketId() === t.id;
+                    return (
+                      <button
+                        onClick={() => {
+                          setSelectedTicketId(t.id);
+                          setResolvedUrls({});
+                        }}
+                        class={`w-full text-left p-3 rounded-xl transition-all ${
+                          isSelected()
+                            ? 'bg-purple-50/40 dark:bg-purple-950/30 border-l-4 border-purple-600'
+                            : 'hover:bg-slate-55 dark:hover:bg-slate-800/40 border-l-4 border-transparent'
+                        }`}
+                      >
+                        <div class="flex justify-between items-start mb-1">
+                          <span class="font-bold text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1.5 animate-none">
+                            #{t.ticketNo}
+                            {isTicketActiveLocked(t) && (
+                              <span class="text-amber-550 dark:text-amber-450 shrink-0" title={`Locked by ${t.lockedByName}`}>
+                                <Lock class="w-3 h-3 inline-block align-middle" />
+                              </span>
+                            )}
+                            {getAgentUnreadInfo(t).hasUnread && (
+                              <span class="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1 min-w-[14px] h-[14px] font-sans font-bold leading-none animate-pulse">
+                                {getAgentUnreadInfo(t).count}
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            class={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                              t.status === 'Open'
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/40'
+                                : t.status === 'In Progress'
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-450 border border-amber-100 dark:border-amber-900/40'
+                                : 'bg-slate-100 text-slate-605 dark:bg-slate-800/70 dark:text-slate-400 border border-slate-202 dark:border-slate-700/60'
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                        </div>
+                        <div class="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
+                          {t.title}
+                        </div>
+                        <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                          {lastMsg() ? lastMsg()!.content : t.description}
+                        </div>
+                        <div class="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
+                          <span class="bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                            {t.category}
+                          </span>
+                          <span>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
               )}
             </div>
           </div>
@@ -2474,69 +2475,71 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                   </div>
                   {/* Chat Messages */}
                   <div class="flex-1 overflow-y-auto p-4 space-y-3">
-                    {ticket.messages?.map((msg) => {
-                      const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
-                      const isAgent = msg.sender === 'Agent';
+                    <For each={selectedTicket()?.messages || []}>
+                      {(msg) => {
+                        const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
+                        const isAgent = msg.sender === 'Agent';
 
-                      if (isSystem) {
+                        if (isSystem) {
+                          return (
+                            <div class="flex justify-center my-2">
+                              <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
+                                {msg.content}
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
-                          <div  class="flex justify-center my-2">
-                            <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
-                              {msg.content}
+                          <div class={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
+                            <div
+                              class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
+                                isAgent
+                                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-purple-500/10'
+                                  : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none shadow-xs'
+                              }`}
+                            >
+                              <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
+                                <span>{msg.senderName} ({msg.sender === 'Agent' ? 'Agent' : 'User'})</span>
+                                <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                              <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
+
+                              {msg.attachmentUrl && (
+                                <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
+                                  isAgent ? 'bg-purple-705 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
+                                }`}>
+                                  <div class="flex items-center gap-1.5 truncate">
+                                    <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                    <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
+                                  </div>
+                                  {resolvedUrls()[msg.id] ? (
+                                    <a
+                                      href={(() => {
+                                        const isFileId = !msg.attachmentUrl!.startsWith('http');
+                                        if (isFileId && isAppwriteConfigured()) {
+                                          return appwrite.getTicketFileDownload(msg.attachmentUrl!);
+                                        }
+                                        return resolvedUrls()[msg.id];
+                                      })()}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      download={msg.attachmentName || ''}
+                                      class={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isAgent ? 'text-white' : 'text-blue-600'}`}
+                                      title="Download attachment"
+                                    >
+                                      <Download class="w-3.5 h-3.5" />
+                                    </a>
+                                  ) : (
+                                    <Loader2 class="w-3 h-3 animate-spin opacity-60" />
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
-                      }
-
-                      return (
-                        <div  class={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
-                              isAgent
-                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-purple-500/10'
-                                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none shadow-xs'
-                            }`}
-                          >
-                            <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
-                              <span>{msg.senderName} ({msg.sender === 'Agent' ? 'Agent' : 'User'})</span>
-                              <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
-
-                            {msg.attachmentUrl && (
-                              <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                                isAgent ? 'bg-purple-705 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
-                              }`}>
-                                <div class="flex items-center gap-1.5 truncate">
-                                  <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
-                                  <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
-                                </div>
-                                {resolvedUrls()[msg.id] ? (
-                                  <a
-                                    href={(() => {
-                                      const isFileId = !msg.attachmentUrl!.startsWith('http');
-                                      if (isFileId && isAppwriteConfigured()) {
-                                        return appwrite.getTicketFileDownload(msg.attachmentUrl!);
-                                      }
-                                      return resolvedUrls()[msg.id];
-                                    })()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    download={msg.attachmentName || ''}
-                                    class={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isAgent ? 'text-white' : 'text-blue-600'}`}
-                                    title="Download attachment"
-                                  >
-                                    <Download class="w-3.5 h-3.5" />
-                                  </a>
-                                ) : (
-                                  <Loader2 class="w-3 h-3 animate-spin opacity-60" />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                      }}
+                    </For>
                     <div ref={chatEndRef} />
                   </div>
 

@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { SyncService, wrapAbort } from '../services/SyncService';
+import { SyncService, wrapAbort, SyncStateData } from '../services/SyncService';
 import { dbUnlocked } from '../services/cache';
 import {
   Cloud,
@@ -16,17 +16,7 @@ import {
 } from 'lucide-solid';
 
 interface AppwriteCloudSyncProps {
-  currentLocalState: {
-    trucks: any[];
-    drivers: any[];
-    offices: any[];
-    accounts: any[];
-    trips: any[];
-    expenses: any[];
-    tyres: any[];
-    auditLogs: any[];
-    supportTickets: any[];
-  };
+  currentLocalState: (() => SyncStateData) | SyncStateData;
   onLoadCloudState: (loadedState: any, userRightsData?: any, quiet?: boolean) => boolean;
   showNotification: (msg: string) => void;
   logAction: (action: string, model: string, identifier: string, description: string) => void;
@@ -43,6 +33,12 @@ interface AppwriteCloudSyncProps {
 export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
   const currentUserOrgId = () => props.currentUserOrgId();
   const currentUserEmail = () => props.currentUserEmail();
+
+  const getCurrentCollection = (key: string): any[] => {
+    const state = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+    const col = state ? state[key] : [];
+    return typeof col === 'function' ? col() : (Array.isArray(col) ? col : []);
+  };
   const currentUserId = () => props.currentUserId();
   const isAdmin = () => props.isAdmin();
   
@@ -115,7 +111,8 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     }
 
     try {
-      const res = await SyncService.pullFromDB(databaseId(), orgId(), props.currentLocalState, incremental, signal);
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const res = await SyncService.pullFromDB(databaseId(), orgId(), currentState, incremental, signal);
       allowedCollectionsRef = res.verifiedCollections;
       const didChange = onLoadCloudState(res.loadedState, res.userRightsData, quiet);
 
@@ -256,7 +253,16 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
             const eventCollectionId = doc.$collectionId || doc.collectionId || (eventStr.includes('.collections.') ? eventStr.split('.collections.')[1].split('.')[0] : '');
             const eventType = response.events[0] || '';
 
-            if (eventCollectionId !== 'global_configs' && orgId() !== 'org_backend' && doc.organizationId !== orgId()) {
+            const isSupportTicket = eventCollectionId === 'support_tickets';
+            const isGlobalConfig = eventCollectionId === 'global_configs';
+            const matchesOrg = orgId() === 'org_backend' ||
+              doc.organizationId === orgId() ||
+              doc.organizationId === 'org_default' ||
+              doc.organizationId === 'global' ||
+              !doc.organizationId ||
+              (isSupportTicket && doc.requesterEmail?.toLowerCase().trim() === currentUserEmail().toLowerCase().trim());
+
+            if (!isGlobalConfig && !isSupportTicket && !matchesOrg) {
               return;
             }
 
@@ -308,7 +314,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
 
             if (!key) return;
 
-            const currentCollection = props.currentLocalState[key] || [];
+            const currentCollection = getCurrentCollection(key);
             let updatedCollection = [...currentCollection];
 
             if (eventType.endsWith('.delete')) {
@@ -401,7 +407,8 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     setSuccessMsg(null);
 
     try {
-      const pushedCount = await SyncService.pushAllLocalToDB(databaseId(), orgId(), props.currentLocalState);
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const pushedCount = await SyncService.pushAllLocalToDB(databaseId(), orgId(), currentState);
       setSuccessMsg(`Successfully uploaded ${pushedCount} records to Appwrite Database!`);
       logAction('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId()}".`);
       showNotification('Success: Appwrite Database synced.');

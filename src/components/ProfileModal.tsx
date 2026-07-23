@@ -107,7 +107,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
             <span>Profile & Security</span>
           </button>
 
-          {!isBackendTeam && (
+          {!isBackendTeam() && (
             <button
               onClick={() => props.setProfileActiveTab('SUPPORT')}
               class={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${

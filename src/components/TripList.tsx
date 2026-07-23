@@ -84,15 +84,6 @@ export default function TripList({
   const [displayLimit, setDisplayLimit] = createSignal(100);
   const visibleTrips = createMemo(() => displayedTrips().slice(0, displayLimit()));
 
-  createEffect(() => {
-    search();
-    selectedTruck();
-    selectedStatuses();
-    filterStartDate();
-    filterEndDate();
-    setDisplayLimit(100);
-  });
-
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | undefined;
 
@@ -132,72 +123,74 @@ export default function TripList({
 
   const online = isAppwriteConfigured();
 
-  // Reset to page 1 when any filter changes
-  createEffect(() => {
-    setCurrentPage(1);
-  });
+  // Memoized filter and sort - computed only when dependencies change
+  const filteredAndSortedTrips = createMemo(() => {
+    if (online) return [];
 
-  // Offline / fallback local logic
-  createEffect(() => {
-    if (!online) {
-      const filtered = trips.filter(trip => {
-        if (!trip.tripNo || trip.tripNo.trim() === '') return false;
-        const matchesSearch = !search() ? true : (
-          trip.tripNo.toLowerCase().includes(search().toLowerCase()) ||
-          trip.truckNo.toLowerCase().includes(search().toLowerCase()) ||
-          trip.driverName.toLowerCase().includes(search().toLowerCase()) ||
-          (trip.notes && trip.notes.toLowerCase().includes(search().toLowerCase()))
-        );
+    const filtered = trips.filter(trip => {
+      if (!trip.tripNo || trip.tripNo.trim() === '') return false;
+      const matchesSearch = !search() ? true : (
+        trip.tripNo.toLowerCase().includes(search().toLowerCase()) ||
+        trip.truckNo.toLowerCase().includes(search().toLowerCase()) ||
+        trip.driverName.toLowerCase().includes(search().toLowerCase()) ||
+        (trip.notes && trip.notes.toLowerCase().includes(search().toLowerCase()))
+      );
 
-        const matchesTruck = !selectedTruck() ? true : trip.truckNo === selectedTruck();
-        const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
-        const matchesStatus = isDeleted
-          ? selectedStatuses().includes('Deleted')
-          : (selectedStatuses().length === 0 ? true : selectedStatuses().includes(((trip.status as string) === 'Paid' || (trip.status as string) === 'Pald') ? 'Settled' : trip.status));
+      const matchesTruck = !selectedTruck() ? true : trip.truckNo === selectedTruck();
+      const isDeleted = !!trip.deletedAt || trip.status === 'Deleted';
+      const matchesStatus = isDeleted
+        ? selectedStatuses().includes('Deleted')
+        : (selectedStatuses().length === 0 ? true : selectedStatuses().includes(((trip.status as string) === 'Paid' || (trip.status as string) === 'Pald') ? 'Settled' : trip.status));
 
-        const matchesStartDate = !filterStartDate() ? true : trip.startDate >= filterStartDate();
-        const matchesEndDate = !filterEndDate() ? true : trip.endDate <= filterEndDate();
+      const matchesStartDate = !filterStartDate() ? true : trip.startDate >= filterStartDate();
+      const matchesEndDate = !filterEndDate() ? true : trip.endDate <= filterEndDate();
 
-        return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
-      });
+      return matchesSearch && matchesTruck && matchesStatus && matchesStartDate && matchesEndDate;
+    });
 
-      const sorted = [...filtered].sort((a, b) => {
-        let aVal: any = '';
-        let bVal: any = '';
+    // Cache metrics to avoid recalculation during sort
+    const metricsCache = new Map<TripEntry, ReturnType<typeof getTripMetrics>>();
+    
+    return [...filtered].sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
 
-        if (sortField() === 'tripNo') {
-          aVal = a.tripNo;
-          bVal = b.tripNo;
-        } else if (sortField() === 'truckNo') {
-          aVal = a.truckNo;
-          bVal = b.truckNo;
-        } else if (sortField() === 'filterStartDate') {
-          aVal = a.startDate;
-          bVal = b.startDate;
-        } else if (sortField() === 'status') {
-          aVal = a.status;
-          bVal = b.status;
-        } else {
-          const mA = getTripMetrics(a);
-          const mB = getTripMetrics(b);
-          if (sortField() === 'income') {
-            aVal = mA.income;
-            bVal = mB.income;
-          } else if (sortField() === 'totalExpense') {
-            aVal = mA.totalExpense;
-            bVal = mB.totalExpense;
-          } else if (sortField() === 'profit') {
-            aVal = mA.profit;
-            bVal = mB.profit;
-          } else if (sortField() === 'outstandingBalance') {
-            aVal = mA.outstandingBalance;
-            bVal = mB.outstandingBalance;
-          }
+      if (sortField() === 'tripNo') {
+        aVal = a.tripNo;
+        bVal = b.tripNo;
+      } else if (sortField() === 'truckNo') {
+        aVal = a.truckNo;
+        bVal = b.truckNo;
+      } else if (sortField() === 'filterStartDate') {
+        aVal = a.startDate;
+        bVal = b.startDate;
+      } else if (sortField() === 'status') {
+        aVal = a.status;
+        bVal = b.status;
+      } else {
+        const mA = metricsCache.get(a) || getTripMetrics(a);
+        const mB = metricsCache.get(b) || getTripMetrics(b);
+        metricsCache.set(a, mA);
+        metricsCache.set(b, mB);
+        
+        if (sortField() === 'income') {
+          aVal = mA.income;
+          bVal = mB.income;
+        } else if (sortField() === 'totalExpense') {
+          aVal = mA.totalExpense;
+          bVal = mB.totalExpense;
+        } else if (sortField() === 'profit') {
+          aVal = mA.profit;
+          bVal = mB.profit;
+        } else if (sortField() === 'outstandingBalance') {
+          aVal = mA.outstandingBalance;
+          bVal = mB.outstandingBalance;
         }
+      }
 
-        if (typeof aVal === 'string') {
-          aVal = aVal.toLowerCase();
-          bVal = (bVal || '').toLowerCase();
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
         }
 
         if (aVal < bVal) return sortDirection() === 'asc' ? -1 : 1;
@@ -205,10 +198,17 @@ export default function TripList({
         return 0;
       });
 
-      setTotalCount(sorted.length);
-      const startIdx = (currentPage() - 1) * pageSize();
-      setDisplayedTrips(sorted.slice(startIdx, startIdx + pageSize()));
+      return sorted;
     }
+  }, [search, selectedTruck, selectedStatuses, filterStartDate, filterEndDate, sortField, sortDirection, trips, online]);
+
+  // Update displayed trips when filter/sort results change
+  createEffect(() => {
+    const sorted = filteredAndSortedTrips();
+    setTotalCount(sorted.length);
+    setCurrentPage(1);
+    const startIdx = 0;
+    setDisplayedTrips(sorted.slice(startIdx, startIdx + pageSize()));
   });
 
   // Online Appwrite logic

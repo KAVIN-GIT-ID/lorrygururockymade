@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
+import { createSignal, createEffect, createMemo, onMount, onCleanup, For } from 'solid-js';
 
 import { SupportTicket } from '../types';
 import ReportPreviewModal from './ReportPreviewModal';
@@ -310,48 +310,49 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
               No tickets raised yet.
             </div>
           ) : (
-            uniqueTickets().map((t) => {
-              const lastMsg = t.messages?.[t.messages.length - 1];
-              return (
-                <button
-                  
-                  onClick={() => setSelectedTicketId(t.id)}
-                  class={`w-full text-left p-3 rounded-xl transition-all ${
-                    selectedTicketId() === t.id
-                      ? 'bg-blue-50/70 dark:bg-blue-950/30 border-l-4 border-blue-600'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 border-l-4 border-transparent'
-                  }`}
-                >
-                  <div class="flex justify-between items-start mb-1">
-                    <span class="font-bold text-[10px] text-slate-400 dark:text-slate-555 font-mono flex items-center gap-1.5">
-                      #{t.ticketNo}
-                      {getUnreadInfo(t).hasUnread && (
-                        <span class="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
-                      )}
-                    </span>
-                    <span class={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                      t.status === 'Open' ? 'bg-emerald-50 text-emerald-600' :
-                      t.status === 'In Progress' ? 'bg-amber-50 text-amber-600 animate-pulse' :
-                      'bg-slate-100 text-slate-500'
-                    }`}>
-                      {t.status}
-                    </span>
-                  </div>
-                  <div class="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
-                    {t.title}
-                  </div>
-                  <div class="text-[10px] text-slate-400 dark:text-slate-555 truncate">
-                    {lastMsg ? lastMsg.content : t.description}
-                  </div>
-                  <div class="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
-                    <span class="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px] font-semibold">
-                      {t.category}
-                    </span>
-                    <span>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
-                  </div>
-                </button>
-              );
-            })
+            <For each={uniqueTickets()}>
+              {(t) => {
+                const lastMsg = () => t.messages?.[t.messages.length - 1];
+                return (
+                  <button
+                    onClick={() => setSelectedTicketId(t.id)}
+                    class={`w-full text-left p-3 rounded-xl transition-all ${
+                      selectedTicketId() === t.id
+                        ? 'bg-blue-50/70 dark:bg-blue-950/30 border-l-4 border-blue-600'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 border-l-4 border-transparent'
+                    }`}
+                  >
+                    <div class="flex justify-between items-start mb-1">
+                      <span class="font-bold text-[10px] text-slate-400 dark:text-slate-555 font-mono flex items-center gap-1.5">
+                        #{t.ticketNo}
+                        {getUnreadInfo(t).hasUnread && (
+                          <span class="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
+                        )}
+                      </span>
+                      <span class={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                        t.status === 'Open' ? 'bg-emerald-50 text-emerald-600' :
+                        t.status === 'In Progress' ? 'bg-amber-50 text-amber-600 animate-pulse' :
+                        'bg-slate-100 text-slate-500'
+                      }`}>
+                        {t.status}
+                      </span>
+                    </div>
+                    <div class="font-bold text-xs text-slate-800 dark:text-slate-200 truncate mb-1">
+                      {t.title}
+                    </div>
+                    <div class="text-[10px] text-slate-400 dark:text-slate-555 truncate">
+                      {lastMsg() ? lastMsg()!.content : t.description}
+                    </div>
+                    <div class="flex justify-between items-center mt-2 text-[9px] text-slate-400 font-medium">
+                      <span class="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                        {t.category}
+                      </span>
+                      <span>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
+                    </div>
+                  </button>
+                );
+              }}
+            </For>
           )}
         </div>
       </div>
@@ -399,75 +400,77 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
                 <p class="whitespace-pre-line leading-relaxed font-sans">{selectedTicket().description}</p>
               </div>
 
-              {selectedTicket().messages?.map((msg) => {
-                const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
-                const isUser = msg.sender === 'User';
-                
-                if (isSystem) {
+              <For each={selectedTicket()?.messages || []}>
+                {(msg) => {
+                  const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
+                  const isUser = msg.sender === 'User';
+                  
+                  if (isSystem) {
+                    return (
+                      <div class="flex justify-center my-2">
+                        <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
+                          {msg.content}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
-                    <div  class="flex justify-center my-2">
-                      <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
-                        {msg.content}
+                    <div class={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
+                          isUser
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-blue-500/10'
+                            : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none'
+                        }`}
+                      >
+                        <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
+                          <span class="flex items-center gap-1">
+                            {msg.senderName}
+                            {!isUser && (
+                              <span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
+                                Support Team
+                              </span>
+                            )}
+                          </span>
+                          <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
+
+                        {msg.attachmentUrl && (
+                          <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
+                            isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-slate-50 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-700/50 text-slate-700 dark:text-slate-350'
+                          }`}>
+                            <div class="flex items-center gap-1.5 truncate">
+                              <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
+                              <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
+                            </div>
+                            {resolvedUrls()[msg.id] ? (
+                              <a
+                                href={
+                                  (() => {
+                                    const isFileId = !msg.attachmentUrl.startsWith('http');
+                                    if (isFileId && isAppwriteConfigured()) {
+                                      return appwrite.getTicketFileDownload(msg.attachmentUrl);
+                                    }
+                                    return resolvedUrls()[msg.id];
+                                  })()
+                                }
+                                download=""
+                                class={`p-1 rounded hover:bg-black/10 transition ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}
+                              >
+                                <Download class="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              <span class="text-[8px] opacity-65">Resolving...</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
-                }
-
-                return (
-                  <div  class={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
-                        isUser
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-blue-500/10'
-                          : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none'
-                      }`}
-                    >
-                      <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
-                        <span class="flex items-center gap-1">
-                          {msg.senderName}
-                          {!isUser && (
-                            <span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider font-extrabold scale-90">
-                              Support Team
-                            </span>
-                          )}
-                        </span>
-                        <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
-
-                      {msg.attachmentUrl && (
-                        <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                          isUser ? 'bg-blue-700/60 border border-blue-600/40 text-blue-50' : 'bg-slate-50 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-700/50 text-slate-700 dark:text-slate-350'
-                        }`}>
-                          <div class="flex items-center gap-1.5 truncate">
-                            <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
-                            <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
-                          </div>
-                          {resolvedUrls()[msg.id] ? (
-                            <a
-                              href={
-                                (() => {
-                                  const isFileId = !msg.attachmentUrl.startsWith('http');
-                                  if (isFileId && isAppwriteConfigured()) {
-                                    return appwrite.getTicketFileDownload(msg.attachmentUrl);
-                                  }
-                                  return resolvedUrls()[msg.id];
-                                })()
-                              }
-                              download=""
-                              class={`p-1 rounded hover:bg-black/10 transition ${isUser ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}
-                            >
-                              <Download class="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <span class="text-[8px] opacity-65">Resolving...</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                }}
+              </For>
               <div ref={chatEndRef} />
             </div>
 

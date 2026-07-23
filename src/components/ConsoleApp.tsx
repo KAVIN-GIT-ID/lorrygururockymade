@@ -915,7 +915,7 @@ export default function ConsoleApp() {
 
         <div class="flex-1 overflow-y-auto min-h-0 relative">
           <AppwriteCloudSync
-            currentLocalState={{
+            currentLocalState={() => ({
               trucks,
               drivers,
               offices,
@@ -925,7 +925,7 @@ export default function ConsoleApp() {
               tyres,
               auditLogs,
               supportTickets: supportTickets()
-            }}
+            })}
             onLoadCloudState={onLoadCloudState}
             showNotification={showNotification}
             logAction={logAction}
