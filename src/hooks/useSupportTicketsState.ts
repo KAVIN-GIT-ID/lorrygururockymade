@@ -69,7 +69,7 @@ export function useSupportTicketsState(
       return !existing || JSON.stringify(existing) !== JSON.stringify(t);
     });
 
-    console.log('[SupportTicketSync Debug] saveSupportTickets called! Total tickets:', nextTickets.length, 'Changed tickets:', changedTickets.map(t => ({ id: t.id, lockedByEmail: t.lockedByEmail })));
+    console.log('[CHAT SYNC] saveSupportTickets: Total tickets:', nextTickets.length, 'Changed:', changedTickets.length);
 
     const deletedTickets = supportTickets().filter(t => !nextTickets.some(x => x.id === t.id));
 
@@ -80,21 +80,30 @@ export function useSupportTicketsState(
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
       if (changedTickets.length > 0) {
-        await Promise.all(changedTickets.map(async (t) => {
-          try {
-            await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
-          } catch (err: any) {
-            console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err.message, err.serverStack || err);
-          }
-        }));
+        console.log('[CHAT SYNC] Starting Appwrite sync for', changedTickets.length, 'tickets');
+        try {
+          await Promise.all(changedTickets.map(async (t) => {
+            try {
+              console.log('[CHAT SYNC] Saving ticket to Appwrite:', { id: t.id, msgCount: t.messages?.length, orgId: t.organizationId });
+              await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
+              console.log('[CHAT SYNC] Successfully saved ticket:', t.id);
+            } catch (err: any) {
+              console.error(`[CHAT SYNC] Failed to sync support ticket ${t.id} to Appwrite:`, err.message);
+            }
+          }));
+          console.log('[CHAT SYNC] All ticket saves completed');
+        } catch (err) {
+          console.error('[CHAT SYNC] Promise.all error:', err);
+        }
       }
 
       if (deletedTickets.length > 0) {
+        console.log('[CHAT SYNC] Deleting', deletedTickets.length, 'tickets from Appwrite');
         await Promise.all(deletedTickets.map(async (t) => {
           try {
             await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
           } catch (err) {
-            console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
+            console.error(`[CHAT SYNC] Failed to delete support ticket ${t.id} from Appwrite:`, err);
           }
         }));
       }
@@ -369,18 +378,23 @@ export function useSupportTicketsState(
       attachmentName: attachmentName || undefined,
     };
 
+    console.log('[CHAT SYNC] Sending message:', { ticketId, sender: newMessage.sender, content, senderEmail: newMessage.senderEmail });
+
     const nextTickets = supportTickets().map(t => {
       if (t.id === ticketId) {
         const updated = mutateRecord<SupportTicket>(t, {
           status: t.status === 'Closed' ? ('Open' as const) : t.status,
           messages: [...(t.messages || []), newMessage],
         }, currentUserId());
+        console.log('[CHAT SYNC] Updated ticket with new message. Total messages:', updated.messages?.length);
         return updated;
       }
       return t;
     });
 
+    console.log('[CHAT SYNC] Calling saveSupportTickets for sync...');
     await saveSupportTickets(nextTickets);
+    console.log('[CHAT SYNC] saveSupportTickets completed, message should be synced to Appwrite');
     logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
   };
 

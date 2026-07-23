@@ -329,6 +329,10 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
               const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
               const isSupportTicketUpdate = key === 'supportTickets';
 
+              if (isSupportTicketUpdate) {
+                console.log('[CHAT SYNC] Realtime support ticket update received:', { ticketId: doc.$id, cloudVersion, localVersion, msgCount: parsedRecord.messages?.length });
+              }
+
               if (cloudVersion > localVersion || isSupportTicketUpdate) {
                 if (parsedRecord.deletedAt) {
                   updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
@@ -336,6 +340,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
                   const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
                   if (isSupportTicketUpdate) {
                     if (localRecordIndex === -1) {
+                      console.log('[CHAT SYNC] New support ticket received via realtime:', doc.$id);
                       if (parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
                         showNotification(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
                       }
@@ -343,6 +348,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
                       const oldMsgsCount = localRecord?.messages?.length || 0;
                       const newMsgs = parsedRecord.messages || [];
                       if (newMsgs.length > oldMsgsCount) {
+                        console.log('[CHAT SYNC] New messages received via realtime:', { ticketId: doc.$id, oldCount: oldMsgsCount, newCount: newMsgs.length });
                         const lastMsg = newMsgs[newMsgs.length - 1];
                         if (lastMsg && lastMsg.sender === 'User' && parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
                           showNotification(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
@@ -366,6 +372,9 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
                   localRecord.syncState = 'conflict';
                 }
               }
+            }
+            if (key === 'supportTickets') {
+              console.log('[CHAT SYNC] Applying realtime update to supportTickets, new count:', updatedCollection.length);
             }
             onLoadCloudState({ [key]: updatedCollection }, null, true);
           } catch (err: any) {
