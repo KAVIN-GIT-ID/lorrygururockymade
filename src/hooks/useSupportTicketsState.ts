@@ -55,7 +55,7 @@ export function useSupportTicketsState(
     onCleanup(() => window.removeEventListener('storage', handleStorageChange));
   });
 
-  const saveSupportTickets = (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
+  const saveSupportTickets = async (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
     const rawNextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
 
     const ticketMap = new Map<string, SupportTicket>();
@@ -80,23 +80,23 @@ export function useSupportTicketsState(
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
       if (changedTickets.length > 0) {
-        changedTickets.forEach(async (t) => {
+        await Promise.all(changedTickets.map(async (t) => {
           try {
             await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
           } catch (err: any) {
             console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err.message, err.serverStack || err);
           }
-        });
+        }));
       }
 
       if (deletedTickets.length > 0) {
-        deletedTickets.forEach(async (t) => {
+        await Promise.all(deletedTickets.map(async (t) => {
           try {
             await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
           } catch (err) {
             console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
           }
-        });
+        }));
       }
     }
   };
@@ -216,7 +216,7 @@ export function useSupportTicketsState(
       };
 
       const nextTickets = [newTicket, ...supportTickets()];
-      saveSupportTickets(nextTickets);
+      await saveSupportTickets(nextTickets);
 
       logAction('Created', 'SupportTicket', newTicket.ticketNo, `Auto-raised refund billing ticket: ${ticketTitle}`, orgId);
       showNotification(`Refund initiated successfully. Refund ID: ${refundId}`);
@@ -273,7 +273,7 @@ export function useSupportTicketsState(
     }, currentUserId());
 
     const nextTickets = [newTicket, ...supportTickets()];
-    saveSupportTickets(nextTickets);
+    await saveSupportTickets(nextTickets);
     logAction('Created', 'SupportTicket', newTicket.ticketNo, `Raised support ticket: ${title}`);
     showNotification(`Support ticket #${newTicket.ticketNo} raised successfully.`);
   };
@@ -380,7 +380,7 @@ export function useSupportTicketsState(
       return t;
     });
 
-    saveSupportTickets(nextTickets);
+    await saveSupportTickets(nextTickets);
     logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
   };
 

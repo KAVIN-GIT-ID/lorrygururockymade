@@ -327,13 +327,14 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
               const localRecordIndex = updatedCollection.findIndex(x => x.id === doc.$id);
               const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
               const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
+              const isSupportTicketUpdate = key === 'supportTickets';
 
-              if (cloudVersion > localVersion || key === 'supportTickets') {
+              if (cloudVersion > localVersion || isSupportTicketUpdate) {
                 if (parsedRecord.deletedAt) {
                   updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
                 } else {
                   const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
-                  if (orgId() === 'org_backend' && key === 'supportTickets') {
+                  if (isSupportTicketUpdate) {
                     if (localRecordIndex === -1) {
                       if (parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
                         showNotification(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
@@ -345,13 +346,19 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
                         const lastMsg = newMsgs[newMsgs.length - 1];
                         if (lastMsg && lastMsg.sender === 'User' && parsedRecord.id !== (props.activeTicketId ? props.activeTicketId() : null)) {
                           showNotification(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
+                        } else if (lastMsg && lastMsg.sender === 'Agent') {
+                          showNotification(`New agent response on Ticket #${parsedRecord.ticketNo}`);
                         }
                       }
                     }
                   }
-                  if (localRecordIndex > -1) updatedCollection[localRecordIndex] = nextRecord; else updatedCollection.push(nextRecord);
+                  if (localRecordIndex > -1) {
+                    updatedCollection[localRecordIndex] = nextRecord;
+                  } else {
+                    updatedCollection.push(nextRecord);
+                  }
                 }
-              } else if (cloudVersion === localVersion) {
+              } else if (cloudVersion === localVersion && !isSupportTicketUpdate) {
                 if (cloudUpdatedBy === currentUserId() && localRecord?.syncState === 'pending') {
                   if (localRecord.deletedAt) updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
                   else localRecord.syncState = 'synced';
