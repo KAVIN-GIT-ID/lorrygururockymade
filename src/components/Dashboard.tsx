@@ -195,33 +195,31 @@ export default function Dashboard(props: DashboardProps) {
   } = props.currentUserRights || {};
 
   // Pre-calculate metrics for all master trips()
-  const metricsList = trips().map(t => getTripMetrics(t));
-  const allMetricsList = allTrips().map(t => getTripMetrics(t));
+  const metricsList = createMemo(() => trips().map(t => getTripMetrics(t)));
+  const allMetricsList = createMemo(() => allTrips().map(t => getTripMetrics(t)));
 
-  const totalRental = metricsList.reduce((sum, m) => sum + m.income, 0);
-  const totalExpenses = metricsList.reduce((sum, m) => sum + m.totalExpense, 0);
-  const totalAdvances = metricsList.reduce((sum, m) => sum + m.paymentsReceived, 0);
-  const totalOutstanding = allMetricsList.reduce((sum, m) => sum + m.outstandingBalance, 0);
-  const totalProfit = metricsList.reduce((sum, m) => sum + m.profit, 0);
-  const totalDiesel = metricsList.reduce((sum, m) => sum + m.dieselExpense, 0);
+  const totalRental = createMemo(() => metricsList().reduce((sum, m) => sum + m.income, 0));
+  const totalExpenses = createMemo(() => metricsList().reduce((sum, m) => sum + m.totalExpense, 0));
+  const totalAdvances = createMemo(() => metricsList().reduce((sum, m) => sum + m.paymentsReceived, 0));
+  const totalOutstanding = createMemo(() => allMetricsList().reduce((sum, m) => sum + m.outstandingBalance, 0));
+  const totalProfit = createMemo(() => metricsList().reduce((sum, m) => sum + m.profit, 0));
+  const totalDiesel = createMemo(() => metricsList().reduce((sum, m) => sum + m.dieselExpense, 0));
 
   // Status counts
-  const pendingCount = trips().filter(t => t.status === 'Pending').length;
-  const inProgressCount = trips().filter(t => t.status === 'In Progress').length;
-  const completedCount = trips().filter(t => t.status === 'Completed').length;
-  const paidCount = trips().filter(t => t.status === 'Settled').length;
-
-
+  const pendingCount = createMemo(() => trips().filter(t => t.status === 'Pending').length);
+  const inProgressCount = createMemo(() => trips().filter(t => t.status === 'In Progress').length);
+  const completedCount = createMemo(() => trips().filter(t => t.status === 'Completed').length);
+  const paidCount = createMemo(() => trips().filter(t => t.status === 'Settled').length);
 
   // Filter trips() with outstanding older than 10 days
-  const overdueTrips = allTrips().filter(t => {
+  const overdueTrips = createMemo(() => allTrips().filter(t => {
     const m = getTripMetrics(t);
     if (m.outstandingBalance <= 0) return false;
     const age = getOutstandingAge(t.endDate || t.startDate);
     return age > 10;
-  });
+  }));
 
-  const overdueCount = overdueTrips.length;
+  const overdueCount = createMemo(() => overdueTrips().length);
 
   // Let's obtain the Account Name mapping for easy readability
   const getAccountName = (id: string) => {
@@ -232,97 +230,100 @@ export default function Dashboard(props: DashboardProps) {
   };
 
   // Group props.accounts receiving funds and sum up their collections
-  const accountFundsMap: { [key: string]: number } = {};
-  trips().forEach(t => {
-    (t.payments || []).forEach(p => {
-      if (p.amount > 0 && p.receivedBy) {
-        accountFundsMap[p.receivedBy] = (accountFundsMap[p.receivedBy] || 0) + Number(p.amount);
-      }
+  const fundsByAccount = createMemo(() => {
+    const accountFundsMap: { [key: string]: number } = {};
+    trips().forEach(t => {
+      (t.payments || []).forEach(p => {
+        if (p.amount > 0 && p.receivedBy) {
+          accountFundsMap[p.receivedBy] = (accountFundsMap[p.receivedBy] || 0) + Number(p.amount);
+        }
+      });
     });
+    return Object.entries(accountFundsMap).map(([id, amount]) => ({
+      accountName: getAccountName(id),
+      amount
+    })).sort((a, b) => b.amount - a.amount);
   });
-
-  const fundsByAccount = Object.entries(accountFundsMap).map(([id, amount]) => ({
-    accountName: getAccountName(id),
-    amount
-  })).sort((a, b) => b.amount - a.amount);
 
   // Group outstanding balance by Truck for risk mitigation
-  const truckOutstandingMap: { [key: string]: number } = {};
-  allTrips().forEach(t => {
-    const m = getTripMetrics(t);
-    const balAttr = m.outstandingBalance;
-    if (balAttr > 0) {
-      truckOutstandingMap[t.truckNo] = (truckOutstandingMap[t.truckNo] || 0) + balAttr;
-    }
+  const topOutstandingTrucks = createMemo(() => {
+    const truckOutstandingMap: { [key: string]: number } = {};
+    allTrips().forEach(t => {
+      const m = getTripMetrics(t);
+      const balAttr = m.outstandingBalance;
+      if (balAttr > 0) {
+        truckOutstandingMap[t.truckNo] = (truckOutstandingMap[t.truckNo] || 0) + balAttr;
+      }
+    });
+    return Object.entries(truckOutstandingMap).map(([truckNo, amount]) => ({
+      truckNo,
+      amount
+    })).sort((a, b) => b.amount - a.amount);
   });
-
-  const topOutstandingTrucks = Object.entries(truckOutstandingMap).map(([truckNo, amount]) => ({
-    truckNo,
-    amount
-  })).sort((a, b) => b.amount - a.amount);
 
   // Group outstanding balance by Office
-  const officeOutstandingMap: { [key: string]: number } = {};
-  allTrips().forEach(t => {
-    const m = getTripMetrics(t);
-    if (m.outstandingBalance > 0) {
-      const segDetails: { office: string; balance: number }[] = [];
-      const subTrips = t.subTrips || [];
-      subTrips.forEach(st => {
-        let segDeductions = 0;
-        let segOfficeBears = 0;
+  const topOutstandingOffices = createMemo(() => {
+    const officeOutstandingMap: { [key: string]: number } = {};
+    allTrips().forEach(t => {
+      const m = getTripMetrics(t);
+      if (m.outstandingBalance > 0) {
+        const segDetails: { office: string; balance: number }[] = [];
+        const subTrips = t.subTrips || [];
+        subTrips.forEach(st => {
+          let segDeductions = 0;
+          let segOfficeBears = 0;
 
-        let expenses = st.cargoExpenses;
-        if (typeof expenses === 'string') {
-          try {
-            expenses = JSON.parse(expenses);
-          } catch {
-            expenses = [];
+          let expenses = st.cargoExpenses;
+          if (typeof expenses === 'string') {
+            try {
+              expenses = JSON.parse(expenses);
+            } catch {
+              expenses = [];
+            }
           }
-        }
-        if (!expenses || expenses.length === 0) {
-          expenses = importLegacyCargoExpenses(st, props.orgProfile);
-        }
+          if (!expenses || expenses.length === 0) {
+            expenses = importLegacyCargoExpenses(st, props.orgProfile);
+          }
 
-        expenses.forEach(exp => {
-          const amt = Number(exp.amount) || 0;
-          if (exp.deductedFrom === 'OrgRental') {
-            segDeductions += amt;
-          }
-          if (exp.bears === 'Office') {
-            segOfficeBears += amt;
-          }
+          expenses.forEach(exp => {
+            const amt = Number(exp.amount) || 0;
+            if (exp.deductedFrom === 'OrgRental') {
+              segDeductions += amt;
+            }
+            if (exp.bears === 'Office') {
+              segOfficeBears += amt;
+            }
+          });
+
+          const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+          const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
+
+          segDetails.push({
+            office: st.officeName || 'Indirect/General',
+            balance: segBalance
+          });
         });
 
-        const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
-        const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
+        const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+        if (unassignedPayments > 0 && segDetails.length > 0) {
+          const share = Math.round(unassignedPayments / segDetails.length);
+          segDetails.forEach(item => {
+            item.balance = Math.max(0, item.balance - share);
+          });
+        }
 
-        segDetails.push({
-          office: st.officeName || 'Indirect/General',
-          balance: segBalance
-        });
-      });
-
-      const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
-      if (unassignedPayments > 0 && segDetails.length > 0) {
-        const share = Math.round(unassignedPayments / segDetails.length);
         segDetails.forEach(item => {
-          item.balance = Math.max(0, item.balance - share);
+          if (item.balance > 0) {
+            officeOutstandingMap[item.office] = (officeOutstandingMap[item.office] || 0) + item.balance;
+          }
         });
       }
-
-      segDetails.forEach(item => {
-        if (item.balance > 0) {
-          officeOutstandingMap[item.office] = (officeOutstandingMap[item.office] || 0) + item.balance;
-        }
-      });
-    }
+    });
+    return Object.entries(officeOutstandingMap).map(([officeName, amount]) => ({
+      officeName,
+      amount
+    })).sort((a, b) => b.amount - a.amount);
   });
-
-  const topOutstandingOffices = Object.entries(officeOutstandingMap).map(([officeName, amount]) => ({
-    officeName,
-    amount
-  })).sort((a, b) => b.amount - a.amount);
 
   // Detailed hover information per truck
   const getTruckHoverDetails = (tNo: string) => {
@@ -512,11 +513,11 @@ export default function Dashboard(props: DashboardProps) {
   };
 
   // Calculations for beautiful visual progress rings
-  const recoveryRate = totalRental > 0 
-    ? Math.round((totalAdvances / totalRental) * 100) 
+  const recoveryRate = () => totalRental() > 0 
+    ? Math.round((totalAdvances() / totalRental()) * 100) 
     : 100;
 
-  const validRecoveryRate = isNaN(recoveryRate) ? 0 : Math.min(100, Math.max(0, recoveryRate));
+  const validRecoveryRate = () => isNaN(recoveryRate()) ? 0 : Math.min(100, Math.max(0, recoveryRate()));
 
   const combinedAlerts = createMemo(() => {
     const alerts: any[] = [];
@@ -780,7 +781,7 @@ export default function Dashboard(props: DashboardProps) {
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md duration-200">
             <div class="space-y-1">
               <span class="text-xs text-slate-500 font-bold block uppercase tracking-wider font-sans">Total Billed Income</span>
-              <span class="text-xl md:text-2xl font-extrabold text-slate-900 font-sans tracking-tight leading-none">₹{totalRental.toLocaleString('en-IN')}</span>
+              <span class="text-xl md:text-2xl font-extrabold text-slate-900 font-sans tracking-tight leading-none">₹{totalRental().toLocaleString('en-IN')}</span>
               <p class="text-[10px] text-slate-400 mt-1">From {trips().length} registered trips()</p>
             </div>
             <div class="p-3 bg-blue-50 rounded-lg border border-blue-100 text-blue-600 shadow-3xs">
@@ -792,7 +793,7 @@ export default function Dashboard(props: DashboardProps) {
         {/* OUTSTANDING BALANCES */}
         {canViewTrips && (
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md duration-200 relative overflow-hidden">
-            {overdueCount > 0 && (
+            {overdueCount() > 0 && (
               <div class="absolute top-0 right-0">
                 <span class="bg-red-600 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-bl-lg uppercase tracking-wider animate-pulse inline-block">
                   Aged Debt Alert
@@ -802,18 +803,18 @@ export default function Dashboard(props: DashboardProps) {
             <div class="space-y-1 flex-1">
               <span class="text-xs text-slate-500 font-bold block uppercase tracking-wider font-sans">Total Outstanding</span>
               <div class="flex items-baseline gap-2 flex-wrap">
-                <span class={`text-xl md:text-2xl font-extrabold font-sans tracking-tight leading-none ${totalOutstanding > 0 ? 'text-red-705 text-red-600 font-bold' : 'text-emerald-600'}`}>
-                  ₹{totalOutstanding.toLocaleString('en-IN')}
+                <span class={`text-xl md:text-2xl font-extrabold font-sans tracking-tight leading-none ${totalOutstanding() > 0 ? 'text-red-705 text-red-600 font-bold' : 'text-emerald-600'}`}>
+                  ₹{totalOutstanding().toLocaleString('en-IN')}
                 </span>
-                {overdueCount > 0 && (
+                {overdueCount() > 0 && (
                   <span class="inline-flex items-center gap-1 bg-red-50 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-100 animate-pulse">
-                    {overdueCount} Overdue
+                    {overdueCount()} Overdue
                   </span>
                 )}
               </div>
               <p class="text-[10px] text-slate-400 mt-1">Collectable from broker sheets</p>
             </div>
-            <div class={`p-3 rounded-lg border shadow-3xs shrink-0 ${totalOutstanding > 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+            <div class={`p-3 rounded-lg border shadow-3xs shrink-0 ${totalOutstanding() > 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
               <AlertCircle class="w-5 h-5" />
             </div>
           </div>
@@ -824,8 +825,8 @@ export default function Dashboard(props: DashboardProps) {
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md duration-200">
             <div class="space-y-1">
               <span class="text-xs text-slate-500 font-bold block uppercase tracking-wider font-sans">Operational Expenses</span>
-              <span class="text-xl md:text-2xl font-extrabold text-slate-905 font-sans tracking-tight leading-none text-red-600">₹{totalExpenses.toLocaleString('en-IN')}</span>
-              <p class="text-[10px] text-slate-405 mt-1">₹{totalDiesel.toLocaleString('en-IN')} spent on Diesel</p>
+              <span class="text-xl md:text-2xl font-extrabold text-slate-905 font-sans tracking-tight leading-none text-red-600">₹{totalExpenses().toLocaleString('en-IN')}</span>
+              <p class="text-[10px] text-slate-405 mt-1">₹{totalDiesel().toLocaleString('en-IN')} spent on Diesel</p>
             </div>
             <div class="p-3 bg-amber-50 rounded-lg border border-amber-100 text-amber-600 shadow-3xs">
               <BadgeCent class="w-5 h-5" />
@@ -838,10 +839,10 @@ export default function Dashboard(props: DashboardProps) {
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md duration-200">
             <div class="space-y-1">
               <span class="text-xs text-slate-500 font-bold block uppercase tracking-wider font-sans">Net Adjusted Profit</span>
-              <span class={`text-xl md:text-2xl font-extrabold font-sans tracking-tight leading-none ${totalProfit >= 0 ? 'text-emerald-700' : 'text-red-705 text-red-600 font-bold'}`}>
-                ₹{totalProfit.toLocaleString('en-IN')}
+              <span class={`text-xl md:text-2xl font-extrabold font-sans tracking-tight leading-none ${totalProfit() >= 0 ? 'text-emerald-700' : 'text-red-705 text-red-600 font-bold'}`}>
+                ₹{totalProfit().toLocaleString('en-IN')}
               </span>
-              <p class="text-[10px] text-slate-400 mt-1">Margin: {totalRental > 0 ? Math.round((totalProfit / totalRental) * 100) : 0}% of Income</p>
+              <p class="text-[10px] text-slate-400 mt-1">Margin: {totalRental() > 0 ? Math.round((totalProfit() / totalRental()) * 100) : 0}% of Income</p>
             </div>
             <div class="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-emerald-600 shadow-3xs">
               <DollarSign class="w-5 h-5" />
@@ -872,12 +873,12 @@ export default function Dashboard(props: DashboardProps) {
                   stroke="#10b981" 
                   stroke-width="10" 
                   stroke-dasharray={`${2 * Math.PI * 40}`}
-                  stroke-dashoffset={`${2 * Math.PI * 40 * (1 - validRecoveryRate / 100)}`}
+                  stroke-dashoffset={`${2 * Math.PI * 40 * (1 - validRecoveryRate() / 100)}`}
                   class="transition-all duration-1000 ease-out"
                 />
               </svg>
               <div class="absolute inset-0 flex flex-col items-center justify-center">
-                <span class="text-2xl font-extrabold text-slate-900 font-sans tracking-tight">{validRecoveryRate}%</span>
+                <span class="text-2xl font-extrabold text-slate-900 font-sans tracking-tight">{validRecoveryRate()}%</span>
                 <span class="text-[9px] text-slate-400 uppercase font-bold">Incomings Received</span>
               </div>
             </div>
@@ -885,15 +886,15 @@ export default function Dashboard(props: DashboardProps) {
             <div class="space-y-2 text-xs border-t border-slate-100 pt-4 font-sans">
               <div class="flex justify-between text-slate-600 font-semibold">
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>Customer Payments Received</span>
-                <span class="font-mono text-slate-900 font-bold">₹{totalAdvances.toLocaleString('en-IN')}</span>
+                <span class="font-mono text-slate-900 font-bold">₹{totalAdvances().toLocaleString('en-IN')}</span>
               </div>
               <div class="flex justify-between text-slate-600 font-semibold">
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>Collectable Outstandings</span>
-                <span class="font-mono text-slate-900 font-bold">₹{totalOutstanding.toLocaleString('en-IN')}</span>
+                <span class="font-mono text-slate-900 font-bold">₹{totalOutstanding().toLocaleString('en-IN')}</span>
               </div>
               <div class="flex justify-between text-slate-600 font-semibold">
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>Expenses Billed</span>
-                <span class="font-mono text-slate-900 font-bold">₹{totalExpenses.toLocaleString('en-IN')}</span>
+                <span class="font-mono text-slate-900 font-bold">₹{totalExpenses().toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
@@ -906,11 +907,11 @@ export default function Dashboard(props: DashboardProps) {
             </div>
 
             <div class="my-4 divide-y divide-slate-100 overflow-y-auto max-h-[180px] pr-1 flex-1">
-              {fundsByAccount.length === 0 ? (
+              {fundsByAccount().length === 0 ? (
                 <p class="text-center py-12 text-xs text-slate-400 italic font-sans font-sans font-normal">No customer receipts logged yet.</p>
               ) : (
-                fundsByAccount.map(({ accountName, amount }) => {
-                  const pct = totalAdvances > 0 ? Math.round((amount / totalAdvances) * 100) : 0;
+                fundsByAccount().map(({ accountName, amount }) => {
+                  const pct = totalAdvances() > 0 ? Math.round((amount / totalAdvances()) * 100) : 0;
                   return (
                     <div  class="py-2.5 flex items-center justify-between gap-4 font-sans">
                       <span class="text-xs font-semibold text-slate-700 truncate max-w-[150px]">{accountName}</span>
@@ -971,10 +972,10 @@ export default function Dashboard(props: DashboardProps) {
 
             <div class="my-4 divide-y divide-slate-100 overflow-y-auto max-h-[180px] pr-1 flex-1">
               {outstandingTab() === 'office' ? (
-                topOutstandingOffices.length === 0 ? (
+                topOutstandingOffices().length === 0 ? (
                   <p class="text-center py-12 text-xs text-emerald-600 italic font-medium font-sans">Excellent! All office balances are fully settled.</p>
                 ) : (
-                  topOutstandingOffices.map(({ officeName, amount }) => (
+                  topOutstandingOffices().map(({ officeName, amount }) => (
                     <div 
                        
                       class="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
@@ -992,10 +993,10 @@ export default function Dashboard(props: DashboardProps) {
                   ))
                 )
               ) : (
-                topOutstandingTrucks.length === 0 ? (
+                topOutstandingTrucks().length === 0 ? (
                   <p class="text-center py-12 text-xs text-emerald-600 italic font-medium font-sans">Excellent! All truck balances are fully settled.</p>
                 ) : (
-                  topOutstandingTrucks.map(({ truckNo, amount }) => (
+                  topOutstandingTrucks().map(({ truckNo, amount }) => (
                     <div 
                        
                       class="py-2.5 flex items-center justify-between gap-4 font-sans hover:bg-slate-50 px-2 rounded-lg transition duration-150 cursor-pointer"
@@ -1035,19 +1036,19 @@ export default function Dashboard(props: DashboardProps) {
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             <div class="bg-white border border-slate-200 p-4 rounded-xl text-center shadow-2xs font-sans">
               <span class="text-[10px] text-slate-400 uppercase font-bold font-sans">Pending Advances</span>
-              <p class="text-lg font-bold text-slate-800 mt-1 font-mono">{pendingCount}</p>
+              <p class="text-lg font-bold text-slate-800 mt-1 font-mono">{pendingCount()}</p>
             </div>
             <div class="bg-white border border-slate-200 p-4 rounded-xl text-center shadow-2xs font-sans">
               <span class="text-[10px] text-slate-400 uppercase font-bold">Active Transitions</span>
-              <p class="text-lg font-bold text-amber-600 mt-1 font-mono">{inProgressCount}</p>
+              <p class="text-lg font-bold text-amber-600 mt-1 font-mono">{inProgressCount()}</p>
             </div>
             <div class="bg-white border border-slate-200 p-4 rounded-xl text-center shadow-2xs font-sans">
               <span class="text-[10px] text-slate-400 uppercase font-bold">Delivered Goods</span>
-              <p class="text-lg font-bold text-blue-600 mt-1 font-mono">{completedCount}</p>
+              <p class="text-lg font-bold text-blue-600 mt-1 font-mono">{completedCount()}</p>
             </div>
             <div class="bg-white border border-slate-200 p-4 rounded-xl text-center shadow-2xs font-sans">
               <span class="text-[10px] text-slate-400 uppercase font-bold">Settled Trips</span>
-              <p class="text-lg font-bold text-emerald-600 mt-1 font-mono">{paidCount}</p>
+              <p class="text-lg font-bold text-emerald-600 mt-1 font-mono">{paidCount()}</p>
             </div>
           </div>
 
@@ -1070,7 +1071,7 @@ export default function Dashboard(props: DashboardProps) {
 
             </div>
 
-            {overdueCount === 0 ? (
+            {overdueCount() === 0 ? (
               <div class="border border-dashed border-slate-200 rounded-xl p-8 py-10 text-center bg-slate-50/50">
                 <CheckCircle2 class="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                 <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Perfect Collection Health</h4>
@@ -1094,7 +1095,7 @@ export default function Dashboard(props: DashboardProps) {
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-semibold text-slate-700">
-                    {overdueTrips.map(trip => {
+                    {overdueTrips().map(trip => {
                       const m = getTripMetrics(trip);
                       const age = getOutstandingAge(trip.endDate || trip.startDate);
                       const completionDate = trip.endDate || trip.startDate || 'N/A';

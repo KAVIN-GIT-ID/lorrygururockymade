@@ -25,10 +25,10 @@ export function useTruckHandlers(
       showNotification("Verifying PhonePe payment status...");
       const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
 
-      const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
+      const tempPayloadStr = sessionStorage.getItem('ttt_temp_payment_payload');
       const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
-      const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
-      const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || '';
+      const duration = sessionStorage.getItem('ttt_temp_payment_duration') || '1 Year';
+      const existingTruckId = sessionStorage.getItem('ttt_temp_payment_truck_id') || '';
 
       const queryParams = new URLSearchParams({
         truckNo,
@@ -41,13 +41,16 @@ export function useTruckHandlers(
         truckPayload: JSON.stringify(tempPayloadObj)
       });
 
-      const response = await fetch(`${serverUrl}/api/payment/status/${txnId}?${queryParams.toString()}`);
+      const jwt = await appwrite.createSessionJwt();
+      const response = await fetch(`${serverUrl}/api/payment/status/${txnId}?${queryParams.toString()}`, {
+        headers: { Authorization: `Bearer ${jwt}` }
+      });
       const data = await response.json();
 
       if (response.ok && data.success) {
-        localStorage.removeItem('ttt_temp_payment_payload');
-        localStorage.removeItem('ttt_temp_payment_duration');
-        localStorage.removeItem('ttt_temp_payment_truck_id');
+        sessionStorage.removeItem('ttt_temp_payment_payload');
+        sessionStorage.removeItem('ttt_temp_payment_duration');
+        sessionStorage.removeItem('ttt_temp_payment_truck_id');
 
         showNotification(`Payment verified! Truck ${truckNo} is now Active.`);
 

@@ -1,6 +1,7 @@
 import { createSignal, createEffect } from 'solid-js';
 
 import { X, CreditCard, Shield, Smartphone, Landmark, CheckCircle, ArrowRight, Loader2, Sparkles, Building2, User, Mail, Phone, ArrowLeft } from 'lucide-solid';
+import { appwrite } from '../lib/appwrite';
 
 interface PhonePePaymentModalProps {
   isOpen: boolean;
@@ -87,10 +88,10 @@ export default function PhonePePaymentModal({
       const verify = async () => {
         try {
           const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
-          const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
+          const tempPayloadStr = sessionStorage.getItem('ttt_temp_payment_payload');
           const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
-          const duration = localStorage.getItem('ttt_temp_payment_duration') || '1 Year';
-          const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || '';
+          const duration = sessionStorage.getItem('ttt_temp_payment_duration') || '1 Year';
+          const existingTruckId = sessionStorage.getItem('ttt_temp_payment_truck_id') || '';
 
           const queryParams = new URLSearchParams({
             truckNo,
@@ -103,7 +104,10 @@ export default function PhonePePaymentModal({
             truckPayload: JSON.stringify(tempPayloadObj)
           });
 
-          const response = await fetch(`${serverUrl}/api/payment/status/${initialTxnId}?${queryParams.toString()}`);
+          const jwt = await appwrite.createSessionJwt();
+          const response = await fetch(`${serverUrl}/api/payment/status/${initialTxnId}?${queryParams.toString()}`, {
+            headers: { Authorization: `Bearer ${jwt}` }
+          });
           const data = await response.json();
 
           if (response.ok && data.success) {
@@ -220,14 +224,16 @@ export default function PhonePePaymentModal({
     setFormErrors({});
     setStep('processing');
     setProcessingStatus('Connecting to PhonePe secure gateway...');
-    localStorage.setItem('ttt_temp_payment_duration', selectedPlan().duration);
+    sessionStorage.setItem('ttt_temp_payment_duration', selectedPlan().duration);
 
     try {
       const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const jwt = await appwrite.createSessionJwt();
       const res = await fetch(`${serverUrl}/api/payment/initiate`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwt}`
         },
         body: JSON.stringify({
           truckNo,

@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo, untrack } from 'solid-js';
 
 import {
   OrganizationProfile,
@@ -48,8 +48,13 @@ import {
   CheckCircle,
   Loader2,
   Lock,
-  Unlock
+  Unlock,
+  Globe,
+  Users,
+  RefreshCw,
+  BarChart2
 } from 'lucide-solid';
+import { fetchVisitorStats, VisitorStatsResponse } from '../lib/visitorTracker';
 
 const renderChangelog = (notes: string) => {
   if (!notes) return <p class="italic text-slate-400">No details provided.</p>;
@@ -381,7 +386,6 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     onSaveUserRightsList,
     onSaveOrganizationProfiles,
     onSaveSupportTickets,
-    currentUser,
     activeTicketId,
     onSetActiveTicketId,
     payments = [],
@@ -390,7 +394,8 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     onSaveAppUpdateConfig
   } = props;
 
-  const myRights = createMemo(() => userRightsList().find(u => u.email === currentUser?.email));
+  const currentUser = () => typeof props.currentUser === 'function' ? (props.currentUser as any)() : props.currentUser;
+  const myRights = createMemo(() => userRightsList().find(u => u.email?.toLowerCase().trim() === currentUser()?.email?.toLowerCase().trim()));
   const mySupportRoles = createMemo(() => {
     const rights = myRights();
     return Array.isArray(rights?.supportRole)
@@ -403,7 +408,26 @@ export default function BackendDashboard(props: BackendDashboardProps) {
   const myCanTransfer = createMemo(() => myRights()?.canTransferTickets || false);
   const isSuperAdmin = createMemo(() => myRights()?.role === 'SuperAdmin');
 
-  const [activeSubTab, setActiveSubTab] = createSignal<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA' | 'TICKETS' | 'SYSTEM' | 'UPDATES'>((() => {
+  const [visitorStats, setVisitorStats] = createSignal<VisitorStatsResponse | null>(null);
+  const [isLoadingVisitorStats, setIsLoadingVisitorStats] = createSignal(false);
+  const [selectedTrafficMonth, setSelectedTrafficMonth] = createSignal<string>(new Date().toISOString().substring(0, 7));
+
+  const loadVisitorStats = async (month?: string) => {
+    setIsLoadingVisitorStats(true);
+    const targetMonth = month || selectedTrafficMonth();
+    const res = await fetchVisitorStats(targetMonth);
+    setVisitorStats(res);
+    if (res?.selectedMonth) {
+      setSelectedTrafficMonth(res.selectedMonth);
+    }
+    setIsLoadingVisitorStats(false);
+  };
+
+  onMount(() => {
+    loadVisitorStats();
+  });
+
+  const [activeSubTab, setActiveSubTab] = createSignal<'ORGANIZATIONS' | 'REQUESTS' | 'RAW_DATA' | 'TICKETS' | 'SYSTEM' | 'UPDATES' | 'TRAFFIC'>((() => {
     if (canViewBackend() !== false) return 'ORGANIZATIONS';
     if (canViewTruckRequests() !== false) return 'REQUESTS';
     if (canViewDatabaseConsole() !== false) return 'RAW_DATA';
@@ -418,6 +442,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
       if (tab === 'RAW_DATA') return !!canViewDatabaseConsole();
       if (tab === 'TICKETS') return !!(isSuperAdmin() || (myRights()?.canViewTickets && hasSupportRole()));
       if (tab === 'UPDATES') return isSuperAdmin();
+      if (tab === 'TRAFFIC') return isSuperAdmin() || !!canViewBackend();
       return false;
     };
 
@@ -526,15 +551,52 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
   // Keep latest refs to prevent stale closure capturing
   let currentUserRef: any;
-  createEffect(() => { currentUserRef = currentUser; });
+  createEffect(() => { currentUserRef = currentUser(); });
 
   let supportTicketsRef: any;
-  createEffect(() => { supportTicketsRef = supportTickets; });
+  createEffect(() => { supportTicketsRef = supportTickets(); });
 
   let onSaveSupportTicketsRef: any;
   createEffect(() => { onSaveSupportTicketsRef = onSaveSupportTickets; });
 
   let lockedTicketIdRef: string | null | undefined;
+
+  // Helper to check if a ticket lock is currently active and not expired (expires after 5 minutes)
+  const isTicketActiveLocked = (t: SupportTicket): boolean => {
+    if (!t.lockedByEmail) return false;
+    if (!t.lockedByAt) return true;
+    const elapsed = Date.now() - new Date(t.lockedByAt).getTime();
+    return elapsed < 5 * 60 * 1000; // 5 minutes lock TTL
+  };
+
+  // Automatically release ALL locks held by current user on any ticket other than the currently selected ticket when selectedTicketId changes
+  createEffect(() => {
+    const currentSelectedId = selectedTicketId();
+    const email = (currentUser()?.email || 'agent@support.com').toLowerCase().trim();
+    if (!onSaveSupportTickets) return;
+
+    const tickets = untrack(() => supportTickets());
+    const staleLockedTickets = tickets.filter(t => 
+      t.id !== currentSelectedId && 
+      t.lockedByEmail?.toLowerCase().trim() === email
+    );
+
+    if (staleLockedTickets.length > 0) {
+      console.log('[SupportTicket Lock Debug] Releasing stale locks held by current user on other tickets:', staleLockedTickets.map(t => t.ticketNo));
+      const nextTickets = tickets.map(t => {
+        if (t.id !== currentSelectedId && t.lockedByEmail?.toLowerCase().trim() === email) {
+          return mutateRecord(t, {
+            ...t,
+            lockedByName: undefined,
+            lockedByEmail: undefined,
+            lockedByAt: undefined
+          }, email);
+        }
+        return t;
+      });
+      onSaveSupportTickets(nextTickets);
+    }
+  });
 
   // Release lock on unmount or ticket change
   createEffect(() => {
@@ -544,7 +606,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
         const tickets = supportTicketsRef;
         const ticketId = lockedTicketIdRef;
         const ticket = tickets.find(t => t.id === ticketId);
-        if (ticket && ticket.lockedByEmail === email) {
+        if (ticket && ticket.lockedByEmail?.toLowerCase().trim() === email.toLowerCase().trim()) {
           const nextTickets = tickets.map(t => {
             if (t.id === ticketId) {
               const updated = {
@@ -565,11 +627,19 @@ export default function BackendDashboard(props: BackendDashboardProps) {
   });
 
   const handleFocusInput = () => {
-    const email = currentUser?.email || 'agent@support.com';
-    const name = currentUser?.name || currentUser?.email || 'Support Agent';
+    const email = (currentUser()?.email || 'agent@support.com').toLowerCase().trim();
+    const name = currentUser()?.name || currentUser()?.email || 'Support Agent';
     if (selectedTicketId() && onSaveSupportTickets) {
       const ticket = supportTickets().find(t => t.id === selectedTicketId());
-      if (ticket && (!ticket.lockedByEmail || ticket.lockedByEmail === email)) {
+      if (!ticket) return;
+
+      // If already locked by the current user and active, do NOT re-save/re-render DOM!
+      if (ticket.lockedByEmail?.toLowerCase().trim() === email && isTicketActiveLocked(ticket)) {
+        return;
+      }
+
+      if (!isTicketActiveLocked(ticket) || ticket.lockedByEmail?.toLowerCase().trim() === email) {
+        console.log('[SupportTicket Lock Debug] Locking ticket on focus:', selectedTicketId(), 'to:', email);
         lockedTicketIdRef = selectedTicketId();
         const nextTickets = supportTickets().map(t => {
           if (t.id === selectedTicketId()) {
@@ -589,36 +659,19 @@ export default function BackendDashboard(props: BackendDashboardProps) {
   };
 
   const handleBlurInput = () => {
-    const email = currentUser?.email || 'agent@support.com';
-    if (selectedTicketId() && onSaveSupportTickets) {
-      const ticket = supportTickets().find(t => t.id === selectedTicketId());
-      if (ticket && ticket.lockedByEmail === email) {
-        lockedTicketIdRef = null;
-        const nextTickets = supportTickets().map(t => {
-          if (t.id === selectedTicketId()) {
-            const updated = {
-              ...t,
-              lockedByName: undefined,
-              lockedByEmail: undefined,
-              lockedByAt: undefined
-            };
-            return mutateRecord(t, updated, email);
-          }
-          return t;
-        });
-        onSaveSupportTickets(nextTickets);
-      }
-    }
+    // Soft blur - do not trigger state mutations on blur to preserve text input DOM focus stability.
+    // Stale locks are automatically swept when switching tickets or unmounting.
   };
 
   // Release lock on tab/window close
   createEffect(() => {
     const handleBeforeUnload = () => {
       const email = currentUserRef?.email || 'agent@support.com';
+      console.log('[SupportTicket Lock Debug] handleBeforeUnload releasing lock for ticket:', selectedTicketId(), 'by:', email);
       if (selectedTicketId() && onSaveSupportTicketsRef) {
         const tickets = supportTicketsRef;
         const ticket = tickets.find(t => t.id === selectedTicketId());
-        if (ticket && ticket.lockedByEmail === email) {
+        if (ticket && ticket.lockedByEmail?.toLowerCase().trim() === email.toLowerCase().trim()) {
           const nextTickets = tickets.map(t => {
             if (t.id === selectedTicketId()) {
               const updated = {
@@ -644,7 +697,8 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
   const handleForceUnlock = (ticketId: string) => {
     if (!onSaveSupportTickets) return;
-    const email = currentUser?.email || 'agent@support.com';
+    const email = currentUser()?.email || 'agent@support.com';
+    console.log('[SupportTicket Lock Debug] handleForceUnlock called for ticket:', ticketId, 'by:', email);
     const nextTickets = supportTickets().map(t => {
       if (t.id === ticketId) {
         const updated = {
@@ -735,7 +789,12 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
   // Scroll to bottom of chat when messages change
   createEffect(() => {
-    chatEndRef?.scrollIntoView({ behavior: 'smooth' });
+    const ticket = selectedTicket();
+    if (ticket) {
+      const _len = (ticket.messages || []).length;
+      const _id = ticket.id;
+      chatEndRef?.scrollIntoView({ behavior: 'smooth' });
+    }
   });
 
   // Pre-resolve file URLs for attachments in the current ticket
@@ -767,8 +826,8 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     const oldTeam = ticket.assignedTeam;
     if (oldTeam === newTeam) return;
 
-    const agentName = currentUser?.name || currentUser?.email || 'Support Agent';
-    const agentEmail = currentUser?.email || 'agent@support.com';
+    const agentName = currentUser()?.name || currentUser()?.email || 'Support Agent';
+    const agentEmail = currentUser()?.email || 'agent@support.com';
     const systemMessage: TicketMessage = {
       id: `msg-sys-${Date.now()}`,
       sender: 'Agent',
@@ -804,7 +863,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
   const handleUpdateTicketStatus = (ticketId: string, newStatus: 'Open' | 'In Progress' | 'Closed') => {
     if (!onSaveSupportTickets) return;
-    const agentEmail = currentUser?.email || 'agent@support.com';
+    const agentEmail = currentUser()?.email || 'agent@support.com';
     const nextTickets = supportTickets().map(t => {
       if (t.id === ticketId) {
         const updated = {
@@ -841,8 +900,8 @@ export default function BackendDashboard(props: BackendDashboardProps) {
       const newMessage = {
         id: `msg-${Date.now()}`,
         sender: 'Agent' as const,
-        senderName: currentUser?.name || currentUser?.email || 'Support Agent',
-        senderEmail: currentUser?.email || 'agent@support.com',
+        senderName: currentUser()?.name || currentUser()?.email || 'Support Agent',
+        senderEmail: currentUser()?.email || 'agent@support.com',
         content: chatInput(),
         timestamp: new Date().toISOString(),
         attachmentUrl: attachmentUrl || undefined,
@@ -856,7 +915,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
             status: t.status === 'Open' ? ('In Progress' as const) : t.status,
             messages: [...(t.messages || []), newMessage],
           };
-          return mutateRecord(t, updated, currentUser?.email || 'agent');
+          return mutateRecord(t, updated, currentUser()?.email || 'agent');
         }
         return t;
       });
@@ -872,11 +931,20 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     }
   };
 
-  const filteredTickets = createMemo(() => supportTickets().filter(t => {
-    if (isSuperAdmin()) return true;
-    if (!myRights()?.canViewTickets) return false;
-    return mySupportRoles().includes(t.assignedTeam as any);
-  }));
+  const filteredTickets = createMemo(() => {
+    const list = supportTickets().filter(t => {
+      if (isSuperAdmin()) return true;
+      if (!myRights()?.canViewTickets) return false;
+      return mySupportRoles().includes(t.assignedTeam as any);
+    });
+    const seen = new Set<string>();
+    return list.filter((t) => {
+      if (!t || !t.id) return false;
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  });
 
   const handleJsonChange = (val: string) => {
     setJsonEditorContent(val);
@@ -1276,6 +1344,21 @@ export default function BackendDashboard(props: BackendDashboardProps) {
             >
               <Download class="w-4 h-4" />
               <span>App Updates</span>
+            </button>
+          )}
+          {(isSuperAdmin() || canViewBackend() !== false) && (
+            <button
+              onClick={() => {
+                setActiveSubTab('TRAFFIC');
+                loadVisitorStats();
+              }}
+              class={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer relative ${activeSubTab() === 'TRAFFIC'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-450 hover:text-slate-205'
+                }`}
+            >
+              <Globe class="w-4 h-4" />
+              <span>Site Traffic</span>
             </button>
           )}
         </div>
@@ -2261,7 +2344,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                       <div class="flex justify-between items-start mb-1">
                         <span class="font-bold text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1.5 animate-none">
                           #{t.ticketNo}
-                          {t.lockedByEmail && (
+                          {isTicketActiveLocked(t) && (
                             <span class="text-amber-550 dark:text-amber-450 shrink-0" title={`Locked by ${t.lockedByName}`}>
                               <Lock class="w-3 h-3 inline-block align-middle" />
                             </span>
@@ -2307,7 +2390,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
           <div class="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35">
             {selectedTicket() ? (() => {
               const ticket = selectedTicket()!;
-              const isLockedByOther = !!(ticket.lockedByEmail && ticket.lockedByEmail !== currentUser?.email);
+              const isLockedByOther = !!(isTicketActiveLocked(ticket) && ticket.lockedByEmail.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim());
               return (
                 <>
                   {/* Header */}
@@ -2509,7 +2592,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                       <input
                         type="text"
                         value={chatInput()}
-                        onChange={(e) => setChatInput(e.target.value)}
+                        onInput={(e) => setChatInput(e.currentTarget.value)}
                         onFocus={handleFocusInput}
                         onBlur={handleBlurInput}
                         disabled={isSending() || isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
@@ -2615,6 +2698,211 @@ export default function BackendDashboard(props: BackendDashboardProps) {
               onSaveAppUpdateConfig={onSaveAppUpdateConfig}
               currentUser={currentUser}
             />
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT: SITE TRAFFIC & UNIQUE VISITORS */}
+      {activeSubTab() === 'TRAFFIC' && (
+        <div class="space-y-6">
+          {/* Header Card with Month Selector */}
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <Globe class="w-5 h-5 text-purple-400" />
+                <h3 class="text-base font-extrabold text-slate-100 uppercase tracking-wide">Cloudflare Edge Unique Visitor Tracking</h3>
+              </div>
+              <p class="text-xs text-slate-400">Real-time edge unique visitor analytics tracked via Cloudflare Pages Functions & KV namespace bindings.</p>
+            </div>
+            
+            <div class="flex items-center gap-3 self-stretch sm:self-auto">
+              <div class="flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-1.5">
+                <Calendar class="w-4 h-4 text-purple-400 shrink-0" />
+                <select
+                  value={selectedTrafficMonth()}
+                  onChange={(e) => {
+                    const newMonth = e.currentTarget.value;
+                    setSelectedTrafficMonth(newMonth);
+                    loadVisitorStats(newMonth);
+                  }}
+                  class="bg-transparent text-xs font-bold font-mono text-white outline-none cursor-pointer"
+                >
+                  {(visitorStats()?.availableMonths || [new Date().toISOString().substring(0, 7)]).map(m => (
+                    <option value={m} class="bg-slate-900 text-white font-mono">
+                      Month: {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => loadVisitorStats()}
+                disabled={isLoadingVisitorStats()}
+                class="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer shrink-0"
+              >
+                <RefreshCw class={`w-4 h-4 ${isLoadingVisitorStats() ? 'animate-spin' : ''}`} />
+                <span>{isLoadingVisitorStats() ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Today's Unique Visitors */}
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
+              <div class="flex justify-between items-center text-slate-400">
+                <span class="text-xs font-bold uppercase tracking-wider">Today's Unique Visitors</span>
+                <Users class="w-4 h-4 text-emerald-400" />
+              </div>
+              <div class="text-3xl font-black text-white">
+                {isLoadingVisitorStats() ? '...' : (visitorStats()?.stats?.todayUniqueVisitors ?? 0)}
+              </div>
+              <p class="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                <CheckCircle class="w-3 h-3" />
+                Edge verified unique IP/user-agent hashes today
+              </p>
+            </div>
+
+            {/* Selected Month Unique Visitors */}
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
+              <div class="flex justify-between items-center text-slate-400">
+                <span class="text-xs font-bold uppercase tracking-wider">Monthly Unique Visitors</span>
+                <BarChart2 class="w-4 h-4 text-purple-400" />
+              </div>
+              <div class="text-3xl font-black text-white">
+                {isLoadingVisitorStats() ? '...' : (visitorStats()?.stats?.monthUniqueVisitors ?? 0)}
+              </div>
+              <p class="text-[11px] text-purple-400 font-medium flex items-center gap-1">
+                <Calendar class="w-3 h-3" />
+                Unique visits in {selectedTrafficMonth()}
+              </p>
+            </div>
+
+            {/* Cloudflare Edge Status */}
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
+              <div class="flex justify-between items-center text-slate-400">
+                <span class="text-xs font-bold uppercase tracking-wider">Cloudflare Edge Storage</span>
+                <Database class="w-4 h-4 text-sky-400" />
+              </div>
+              <div class="flex items-center gap-2">
+                <span class={`inline-block w-3 h-3 rounded-full ${visitorStats()?.kvConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span class="text-sm font-bold text-white">
+                  {visitorStats()?.kvConfigured ? 'Cloudflare KV Active' : 'Fallback / Dev Mode'}
+                </span>
+              </div>
+              <p class="text-[11px] text-slate-400 font-medium">
+                {visitorStats()?.kvConfigured
+                  ? 'Cloudflare KV binding (VISITOR_KV) connected & storing visitor hashes.'
+                  : 'Wrangler KV binding pending deployment. Serving simulated/local stats.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Daily Breakdown for Selected Month */}
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <BarChart2 class="w-4 h-4 text-purple-400" />
+                <span>Daily Traffic Breakdown ({selectedTrafficMonth()})</span>
+              </h4>
+            </div>
+
+            {(!visitorStats()?.stats?.dailyBreakdown || Object.keys(visitorStats()!.stats.dailyBreakdown).length === 0) ? (
+              <div class="p-8 text-center text-slate-400 text-xs italic bg-slate-950/40 rounded-xl border border-slate-800">
+                No daily visitor logs recorded for {selectedTrafficMonth()}.
+              </div>
+            ) : (
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                  <thead class="bg-slate-950/60 text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th class="py-3 px-4">Date</th>
+                      <th class="py-3 px-4">Unique Visitors</th>
+                      <th class="py-3 px-4">Daily Share</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60">
+                    {Object.entries(visitorStats()!.stats.dailyBreakdown)
+                      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+                      .map(([dateStr, count]) => {
+                        const monthlyTotal = visitorStats()?.stats?.monthUniqueVisitors || 1;
+                        const percentage = Math.round((Number(count) / monthlyTotal) * 100);
+                        return (
+                          <tr class="hover:bg-slate-850/40 transition-colors">
+                            <td class="py-3 px-4 font-mono font-bold text-white flex items-center gap-2">
+                              <Calendar class="w-3.5 h-3.5 text-purple-400" />
+                              <span>{dateStr}</span>
+                            </td>
+                            <td class="py-3 px-4 font-bold text-white">{String(count)}</td>
+                            <td class="py-3 px-4">
+                              <div class="flex items-center gap-3">
+                                <div class="w-32 bg-slate-800 rounded-full h-2 overflow-hidden">
+                                  <div class="bg-purple-500 h-full rounded-full" style={{ width: `${percentage}%` }} />
+                                </div>
+                                <span class="text-xs font-mono text-slate-400">{percentage}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Country Distribution Table */}
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Globe class="w-4 h-4 text-purple-400" />
+                <span>Geographic Traffic Distribution (Today)</span>
+              </h4>
+              <span class="text-xs text-slate-400 font-mono">Date: {visitorStats()?.today || new Date().toISOString().split('T')[0]}</span>
+            </div>
+
+            {(!visitorStats()?.stats?.countries || Object.keys(visitorStats()!.stats.countries).length === 0) ? (
+              <div class="p-8 text-center text-slate-400 text-xs italic bg-slate-950/40 rounded-xl border border-slate-800">
+                No visitor geography logs recorded yet today.
+              </div>
+            ) : (
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                  <thead class="bg-slate-950/60 text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th class="py-3 px-4">Country Code</th>
+                      <th class="py-3 px-4">Unique Visitors</th>
+                      <th class="py-3 px-4">Traffic Share</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60">
+                    {Object.entries(visitorStats()!.stats.countries).map(([countryCode, count]) => {
+                      const totalToday = visitorStats()?.stats?.todayUniqueVisitors || 1;
+                      const percentage = Math.round((Number(count) / totalToday) * 100);
+                      return (
+                        <tr class="hover:bg-slate-850/40 transition-colors">
+                          <td class="py-3 px-4 font-mono font-bold text-white flex items-center gap-2">
+                            <span class="px-2 py-0.5 bg-slate-800 text-slate-200 rounded text-[11px] font-mono">
+                              {countryCode}
+                            </span>
+                          </td>
+                          <td class="py-3 px-4 font-bold text-white">{String(count)}</td>
+                          <td class="py-3 px-4">
+                            <div class="flex items-center gap-3">
+                              <div class="w-32 bg-slate-800 rounded-full h-2 overflow-hidden">
+                                <div class="bg-purple-500 h-full rounded-full" style={{ width: `${percentage}%` }} />
+                              </div>
+                              <span class="text-xs font-mono text-slate-400">{percentage}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

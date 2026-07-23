@@ -8,18 +8,25 @@ import { visualizer } from 'rollup-plugin-visualizer';
 import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig(() => {
+  const analyzeBundle = process.env.ANALYZE === 'true';
   return {
     plugins: [
       solid(),
       tailwindcss(),
-      cloudflare(),
+      // Only load cloudflare plugin if explicitly requested (prevents miniflare Windows EPERM HMR crashes)
+      ...(process.env.USE_CLOUDFLARE === 'true' ? [cloudflare()] : []),
       basicSsl(),
-      visualizer({
-        filename: 'dist/stats.html',
+      // Keep the analyzer out of production builds. Generate it explicitly
+      // with `ANALYZE=true npm run build` when investigating bundle size.
+      ...(analyzeBundle ? [visualizer({
+        filename: 'stats.html',
         gzipSize: true,
         brotliSize: true,
-      }),
+      })] : []),
     ],
+    optimizeDeps: {
+      entries: ['index.html', 'track.html']
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

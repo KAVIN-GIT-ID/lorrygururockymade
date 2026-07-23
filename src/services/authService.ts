@@ -5,6 +5,7 @@ import { UserPermission, OrganizationProfile } from '../types';
 import { migrateUserPermissions } from '../lib/migrations';
 import { organizationService } from './organizationService';
 import { permissionService } from './permissionService';
+import { db } from './cache';
 
 export const authService = {
   async handleLogout(currentUserEmail: string | undefined): Promise<void> {
@@ -20,6 +21,7 @@ export const authService = {
     try {
       localStorage.clear();
       sessionStorage.clear();
+      await db.clearAllCaches();
     } catch (storageErr) {
       console.warn("Failed to clear local/session storage on logout:", storageErr);
     }

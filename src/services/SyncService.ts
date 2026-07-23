@@ -42,7 +42,12 @@ export const SyncService = {
   ) {
     if (!isAppwriteConfigured()) throw new Error('Appwrite not configured');
 
-    const lastSyncTime = incremental ? Number(localStorage.getItem('appwrite_last_sync_time') || '0') : 0;
+    // If the local IndexedDB cache is completely empty for key collections, force a full sync
+    // to repopulate the cache, even if incremental sync was requested.
+    const isLocalCacheEmpty = !currentLocalState.trucks?.length && !currentLocalState.trips?.length;
+    const lastSyncTime = (incremental && !isLocalCacheEmpty) 
+      ? Number(localStorage.getItem('appwrite_last_sync_time') || '0') 
+      : 0;
     const extraQueries: string[] = [];
     if (lastSyncTime > 0) {
       extraQueries.push(Query.greaterThan('$updatedAt', new Date(lastSyncTime).toISOString()));

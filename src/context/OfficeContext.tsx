@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Office } from '../types';
 import { migrateOffices } from '../lib/migrations';
 import { getOfficeDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useTripsContext } from './TripContext';
@@ -25,26 +25,19 @@ export function OfficeProvider(props: { children: JSX.Element }) {
   const { showNotification } = useNotifications();
   const { orgTrips } = useTripsContext();
 
-  const initialOffices = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_offices');
-      return stored ? migrateOffices(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [officesStore, setOfficesStore] = createStore<Office[]>(initialOffices);
+  const [officesStore, setOfficesStore] = createStore<Office[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.offices.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setOfficesStore(cached);
-      }
+      setOfficesStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...officesStore];
     db.offices.clear().then(() => db.offices.bulkPut(list));
   });
@@ -52,7 +45,6 @@ export function OfficeProvider(props: { children: JSX.Element }) {
   const saveOffices = (newOffices: Office[] | ((prev: Office[]) => Office[])) => {
     const next = typeof newOffices === 'function' ? newOffices(officesStore) : newOffices;
     setOfficesStore(next);
-    localStorage.setItem('ttt_offices', JSON.stringify(newOffices));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

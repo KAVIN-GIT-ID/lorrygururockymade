@@ -6,8 +6,6 @@ import {
   Truck as TruckIcon,
   Bell,
   Mic,
-  Sun,
-  Moon,
   Trash2,
   Download,
   Upload,
@@ -18,7 +16,7 @@ import {
   LogOut
 } from 'lucide-solid';
 import { UserPermission, TripEntry, Truck, Office, Account, Driver, ExpenseEntry, Tyre, AuditLog, SupportTicket, UserRights } from '../types';
-import AppwriteCloudSync from './AppwriteCloudSync';
+
 
 interface AppHeaderProps {
   activeTab: string;
@@ -91,8 +89,6 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
   const currentUserOrgId = () => props.currentUserOrgId;
   const currentUser = () => props.currentUser;
   const cyanCount = () => props.cyanCount;
-  const theme = () => props.theme;
-  const setTheme = props.setTheme;
   const handleCyanClick = props.handleCyanClick;
   const notificationOpen = () => props.notificationOpen;
   const setNotificationOpen = props.setNotificationOpen;
@@ -105,6 +101,7 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
   const showNotification = props.showNotification;
   const getUserInitials = props.getUserInitials;
   const isBackendTeam = () => props.isBackendTeam;
+  const isLight = () => props.theme === 'light';
   const hasUsersTabAccess = () => props.hasUsersTabAccess;
   const setProfileActiveTab = props.setProfileActiveTab;
   const setProfileModalOpen = props.setProfileModalOpen;
@@ -281,14 +278,16 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
         {/* THEME TOGGLE */}
         <button
           onClick={() => {
-            const nextTheme = theme() === 'light' ? 'dark' : 'light';
-            setTheme(nextTheme);
+            const nextTheme = isLight() ? 'dark' : 'light';
+            props.setTheme(nextTheme);
             localStorage.setItem('ttt_theme', nextTheme);
           }}
           class="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center shrink-0"
-          title={`Switch to ${theme() === 'light' ? 'Dark' : 'Light'} Mode`}
+          title={`Switch to ${isLight() ? 'Dark' : 'Light'} Mode`}
         >
-          {theme() === 'light' ? <Moon class="w-4 h-4" /> : <Sun class="w-4 h-4" />}
+          <span aria-hidden="true" class="text-base leading-none">
+            {isLight() ? '◐' : '☀'}
+          </span>
         </button>
 
         {/* USER PROFILE INITIALS AVATAR */}

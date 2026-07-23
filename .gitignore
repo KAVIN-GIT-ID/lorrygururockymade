@@ -22,9 +22,6 @@ backups/
 # Docs folder — contains server credentials and sensitive restore guides
 docs/
 
-# Server repository files
-server/
-
 # Auto-generated app version file
 src/version.json
 

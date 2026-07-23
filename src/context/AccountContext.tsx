@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Account } from '../types';
 import { migrateAccounts } from '../lib/migrations';
 import { getAccountDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useTripsContext } from './TripContext';
@@ -25,26 +25,19 @@ export function AccountProvider(props: { children: JSX.Element }) {
   const { showNotification } = useNotifications();
   const { orgTrips } = useTripsContext();
 
-  const initialAccounts = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_accounts');
-      return stored ? migrateAccounts(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [accountsStore, setAccountsStore] = createStore<Account[]>(initialAccounts);
+  const [accountsStore, setAccountsStore] = createStore<Account[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.accounts.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setAccountsStore(cached);
-      }
+      setAccountsStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...accountsStore];
     db.accounts.clear().then(() => db.accounts.bulkPut(list));
   });
@@ -52,7 +45,6 @@ export function AccountProvider(props: { children: JSX.Element }) {
   const saveAccounts = (newAccounts: Account[] | ((prev: Account[]) => Account[])) => {
     const next = typeof newAccounts === 'function' ? newAccounts(accountsStore) : newAccounts;
     setAccountsStore(next);
-    localStorage.setItem('ttt_accounts', JSON.stringify(newAccounts));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

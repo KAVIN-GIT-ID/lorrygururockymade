@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { ExpenseEntry, createRecord, mutateRecord } from '../types';
 import { migrateExpenses } from '../lib/migrations';
 import { getExpenseDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -25,26 +25,19 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
   const { currentUserOrgId } = usePermissions();
   const { showNotification } = useNotifications();
 
-  const initialExpenses = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_expenses');
-      return stored ? migrateExpenses(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [expensesStore, setExpensesStore] = createStore<ExpenseEntry[]>(initialExpenses);
+  const [expensesStore, setExpensesStore] = createStore<ExpenseEntry[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.expenses.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setExpensesStore(cached);
-      }
+      setExpensesStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...expensesStore];
     db.expenses.clear().then(() => db.expenses.bulkPut(list));
   });
@@ -52,7 +45,6 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
   const saveExpenses = (newExpenses: ExpenseEntry[] | ((prev: ExpenseEntry[]) => ExpenseEntry[])) => {
     const next = typeof newExpenses === 'function' ? newExpenses(expensesStore) : newExpenses;
     setExpensesStore(next);
-    localStorage.setItem('ttt_expenses', JSON.stringify(newExpenses));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

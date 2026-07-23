@@ -1,10 +1,16 @@
 import Dexie, { type Table } from 'dexie';
+import { createSignal } from 'solid-js';
 import { Truck, Driver, Office, Account, TripEntry, ExpenseEntry, Tyre, AuditLog, SupportTicket, OrganizationProfile } from '../types';
+import { cryptoService } from './cryptoService';
 
 export interface SyncMetaData {
   id: string; // key name e.g., 'lastSyncTimestamp', 'lastSyncUserId'
   value: any;
 }
+
+// Reactive signal to track database unlock status
+const [dbUnlocked, setDbUnlocked] = createSignal(false);
+export { dbUnlocked, setDbUnlocked };
 
 export class FleetDatabase extends Dexie {
   trucks!: Table<Truck, string>;
@@ -34,6 +40,84 @@ export class FleetDatabase extends Dexie {
       organizationProfiles: 'organizationId, status',
       syncMetadata: 'id'
     });
+
+    // Helper to check if a table is encrypted
+    const encryptableTables = [
+      'trucks', 'drivers', 'offices', 'accounts',
+      'trips', 'expenses', 'tyres', 'auditLogs',
+      'supportTickets', 'organizationProfiles'
+    ];
+
+    // Intercept data mapping using hooks
+    encryptableTables.forEach(tableName => {
+      const table = this.table(tableName);
+
+      // Hook called when reading from DB
+      table.hook('reading', (obj) => {
+        if (!obj || !obj._encrypted) return obj;
+        if (!cryptoService.hasKey()) {
+          // If locked, return a placeholder or empty object to avoid crashes
+          return { id: obj.id, organizationId: obj.organizationId || 'locked', _locked: true };
+        }
+        try {
+          const decryptedJson = cryptoService.decryptSync(obj._encrypted);
+          const decryptedObj = JSON.parse(decryptedJson);
+          return decryptedObj;
+        } catch (e) {
+          console.error(`Failed to decrypt record in table ${tableName}:`, e);
+          return { id: obj.id, _error: true };
+        }
+      });
+
+      // Hook called when creating/updating in DB
+      table.hook('creating', (primKey, obj) => {
+        if (!cryptoService.hasKey()) {
+          // Fallback to storing raw if no key is set yet (e.g. initial setup)
+          return;
+        }
+        try {
+          const encrypted = cryptoService.encryptSync(JSON.stringify(obj));
+          // We must keep the primary key and indexing fields unencrypted so Dexie can query
+          const stored: any = { _encrypted: encrypted };
+          if (obj.id) stored.id = obj.id;
+          if (obj.organizationId) stored.organizationId = obj.organizationId;
+          if (obj.truckNo) stored.truckNo = obj.truckNo;
+          if (obj.driverName) stored.driverName = obj.driverName;
+          if (obj.status) stored.status = obj.status;
+          if (obj.startDate) stored.startDate = obj.startDate;
+          if (obj.date) stored.date = obj.date;
+          if (obj.tyreNo) stored.tyreNo = obj.tyreNo;
+          if (obj.ticketNo) stored.ticketNo = obj.ticketNo;
+          if (obj.timestamp) stored.timestamp = obj.timestamp;
+          return stored;
+        } catch (e) {
+          console.error(`Failed to encrypt record for table ${tableName}:`, e);
+        }
+      });
+
+      table.hook('updating', (mods, primKey, obj) => {
+        if (!cryptoService.hasKey()) return;
+        try {
+          // Combine mods into obj to encrypt the full updated object
+          const fullObj = { ...obj, ...mods };
+          const encrypted = cryptoService.encryptSync(JSON.stringify(fullObj));
+          const stored: any = { _encrypted: encrypted };
+          if (fullObj.id) stored.id = fullObj.id;
+          if (fullObj.organizationId) stored.organizationId = fullObj.organizationId;
+          if (fullObj.truckNo) stored.truckNo = fullObj.truckNo;
+          if (fullObj.driverName) stored.driverName = fullObj.driverName;
+          if (fullObj.status) stored.status = fullObj.status;
+          if (fullObj.startDate) stored.startDate = fullObj.startDate;
+          if (fullObj.date) stored.date = fullObj.date;
+          if (fullObj.tyreNo) stored.tyreNo = fullObj.tyreNo;
+          if (fullObj.ticketNo) stored.ticketNo = fullObj.ticketNo;
+          if (fullObj.timestamp) stored.timestamp = fullObj.timestamp;
+          return stored;
+        } catch (e) {
+          console.error(`Failed to encrypt updated record for table ${tableName}:`, e);
+        }
+      });
+    });
   }
 
   // Clear all local caches on logout or reset
@@ -57,6 +141,25 @@ export class FleetDatabase extends Dexie {
         this.syncMetadata.clear()
       ]);
     });
+
+    // Clear legacy localStorage cache keys to prevent data leaking/stale views
+    const legacyKeys = [
+      'ttt_trucks',
+      'ttt_drivers',
+      'ttt_offices',
+      'ttt_accounts',
+      'ttt_trips',
+      'ttt_expenses',
+      'ttt_tyres',
+      'fleet_audit_logs',
+      'ttt_support_tickets',
+      'ttt_last_modified_at',
+      'appwrite_last_sync_time'
+    ];
+    legacyKeys.forEach(k => localStorage.removeItem(k));
+
+    cryptoService.clearKey();
+    setDbUnlocked(false);
   }
 }
 

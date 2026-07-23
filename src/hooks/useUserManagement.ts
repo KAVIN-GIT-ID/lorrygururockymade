@@ -82,7 +82,7 @@ export function useUserManagement(
     const gatewayUrl = useSubpath
       ? `${gatewayProtocol}//${gatewayHost}/whatsapp-gateway/send-otp`
       : `${gatewayProtocol}//${gatewayHost}:8000/send-otp`;
-    console.info(`[WhatsAppOTP] Requesting delivery of OTP: ${otp} to ${phone} via ${gatewayUrl}`);
+    console.info(`[WhatsAppOTP] Requesting OTP delivery to ${phone} via ${gatewayUrl}`);
 
     const response = await fetch(gatewayUrl, {
       method: 'POST',
@@ -103,8 +103,6 @@ export function useUserManagement(
 
     setWhatsappOtpCode(otp);
     setWhatsappOtpPhone(phone);
-    sessionStorage.setItem('whatsapp_otp_code', otp);
-    sessionStorage.setItem('whatsapp_otp_phone', phone);
     return otp;
   };
 

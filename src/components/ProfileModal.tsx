@@ -1,4 +1,4 @@
-import { Suspense, lazy, Component, createSignal, onMount } from 'solid-js';
+import { Suspense, lazy, Component, createSignal, createMemo, onMount } from 'solid-js';
 import { User, MessageSquare } from 'lucide-solid';
 import ProfileSettings from './ProfileSettings';
 import { useAuth } from '../context/AuthContext';
@@ -18,8 +18,8 @@ interface ProfileModalProps {
   onEnable2FAClick: () => void;
   onDisable2FAClick: () => void;
   getClientUnreadTicketsCount: () => number;
-  supportTickets: SupportTicket[];
-  payments: any[];
+  supportTickets: SupportTicket[] | (() => SupportTicket[]);
+  payments: any[] | (() => any[]);
   handleCreateSupportTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   handleSendSupportTicketMessage: (ticketId: string, content: string, attachmentFile?: File) => Promise<void>;
   handleUpdateProfile: (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string) => Promise<void>;
@@ -42,7 +42,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
   const currentUser = auth.currentUser;
   const currentUserRights = perm.currentUserRights;
   const organizationProfiles = orgs.organizationProfiles;
-  const currentUserOrgId = perm.currentUserOrgId();
+  const currentUserOrgId = () => perm.currentUserOrgId() || '';
 
   // Local Form Inputs
   const [profileName, setProfileName] = createSignal('');
@@ -77,7 +77,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
     }
   });
 
-  const isBackendTeam = currentUserOrgId === 'org_backend' || currentUserRights()?.isSuperAdmin;
+  const isBackendTeam = () => currentUserOrgId() === 'org_backend' || !!currentUserRights()?.isSuperAdmin;
 
   return (
     <div class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
@@ -194,11 +194,15 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
             ) : (
               <Suspense fallback={<LoadingTab />}>
                 <ProfileSupportTickets
-                  tickets={props.supportTickets.filter(st => currentUserOrgId === 'org_backend' || st.organizationId === currentUserOrgId)}
+                  tickets={createMemo(() => {
+                    const raw = typeof props.supportTickets === 'function' ? props.supportTickets() : (props.supportTickets || []);
+                    const orgId = currentUserOrgId();
+                    return raw.filter(st => orgId === 'org_backend' || st.organizationId === orgId || st.organizationId === 'org_default' || !st.organizationId);
+                  })}
                   onCreateTicket={props.handleCreateSupportTicket}
                   onSendMessage={props.handleSendSupportTicketMessage}
-                  isBackendTeam={currentUserOrgId === 'org_backend' || currentUserRights()?.isSuperAdmin}
-                  payments={props.payments}
+                  isBackendTeam={currentUserOrgId() === 'org_backend' || !!currentUserRights()?.isSuperAdmin}
+                  payments={typeof props.payments === 'function' ? props.payments() : (props.payments || [])}
                   orgName={profileOrgName()}
                   gstNo={profileGst()}
                   panNo={profilePan()}

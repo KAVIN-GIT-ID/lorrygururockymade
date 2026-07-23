@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 
 import { SupportTicket } from '../types';
 import ReportPreviewModal from './ReportPreviewModal';
@@ -6,7 +6,7 @@ import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { MessageSquare, Plus, Paperclip, Send, X, FileText, Download, CheckCircle, Loader2 } from 'lucide-solid';
 
 interface ProfileSupportTicketsProps {
-  tickets: SupportTicket[];
+  tickets: SupportTicket[] | (() => SupportTicket[]);
   onCreateTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
   onSendMessage: (ticketId: string, content: string, attachmentFile?: File) => Promise<void>;
   isBackendTeam?: boolean;
@@ -17,17 +17,7 @@ interface ProfileSupportTicketsProps {
   address: string;
 }
 
-export default function ProfileSupportTickets({
-  tickets,
-  onCreateTicket,
-  onSendMessage,
-  isBackendTeam = false,
-  payments = [],
-  orgName = '',
-  gstNo = '',
-  panNo = '',
-  address = ''
-}: ProfileSupportTicketsProps) {
+export default function ProfileSupportTickets(props: ProfileSupportTicketsProps) {
   const [selectedTicketId, setSelectedTicketId] = createSignal<string | null>(null);
   const [previewHtml, setPreviewHtml] = createSignal<string | null>(null);
   const [previewTitle, setPreviewTitle] = createSignal<string>('');
@@ -50,7 +40,18 @@ export default function ProfileSupportTickets({
   let chatEndRef: HTMLDivElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
 
-  const selectedTicket = () => tickets.find((t) => t.id === selectedTicketId());
+  const uniqueTickets = createMemo(() => {
+    const seen = new Set<string>();
+    const raw = typeof props.tickets === 'function' ? props.tickets() : (props.tickets || []);
+    return raw.filter((t) => {
+      if (!t || !t.id) return false;
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  });
+
+  const selectedTicket = createMemo(() => uniqueTickets().find((t) => t.id === selectedTicketId()));
 
   // Mark selected ticket as read for the user
   createEffect(() => {
@@ -83,7 +84,12 @@ export default function ProfileSupportTickets({
 
   // Scroll to bottom of chat when messages change
   createEffect(() => {
-    chatEndRef?.scrollIntoView({ behavior: 'smooth' });
+    const ticket = selectedTicket();
+    if (ticket) {
+      const _len = (ticket.messages || []).length;
+      const _id = ticket.id;
+      chatEndRef?.scrollIntoView({ behavior: 'smooth' });
+    }
   });
 
   // Pre-resolve secure file URLs for attachments in the current ticket
@@ -120,7 +126,7 @@ export default function ProfileSupportTickets({
 
     setIsCreating(true);
     try {
-      await onCreateTicket(category(), title(), description(), createFile() || undefined);
+      await props.onCreateTicket(category(), title(), description(), createFile() || undefined);
       setTitle('');
       setDescription('');
       setCategory('General');
@@ -139,7 +145,7 @@ export default function ProfileSupportTickets({
 
     setIsSending(true);
     try {
-      await onSendMessage(selectedTicketId(), chatInput(), chatFile() || undefined);
+      await props.onSendMessage(selectedTicketId(), chatInput(), chatFile() || undefined);
       setChatInput('');
       setChatFile(null);
       if (fileInputRef) fileInputRef.value = '';
@@ -160,16 +166,16 @@ export default function ProfileSupportTickets({
     const htmlContent = `
       <html>
         <head>
-          <title()>Tax Invoice - ${invoiceNo}</title()>
+          <title>Tax Invoice - ${invoiceNo}</title>
           <style>
             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 40px; line-height: 1.5; }
             .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, .05); font-size: 14px; }
             .invoice-header { display: flex; justify-content: space-between; border-bottom: 2px solid #5f259f; padding-bottom: 20px; margin-bottom: 20px; }
             .vendor-details h2 { margin: 0; color: #5f259f; font-size: 24px; font-weight: 800; }
             .vendor-details p { margin: 4px 0; font-size: 12px; color: #666; }
-            .invoice-title() { text-align: right; }
-            .invoice-title() h1 { margin: 0; font-size: 22px; color: #333; font-weight: 800; text-transform: uppercase; }
-            .invoice-title() p { margin: 4px 0; font-size: 12px; color: #666; font-family: monospace; }
+            .invoice-title { text-align: right; }
+            .invoice-title h1 { margin: 0; font-size: 22px; color: #333; font-weight: 800; text-transform: uppercase; }
+            .invoice-title p { margin: 4px 0; font-size: 12px; color: #666; font-family: monospace; }
             .invoice-details { display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 13px; }
             .bill-to h3 { margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: #888; letter-spacing: 1px; }
             .bill-to p { margin: 4px 0; font-weight: 600; }
@@ -196,7 +202,7 @@ export default function ProfileSupportTickets({
                 <p>Salem, Tamil Nadu, 637501</p>
                 <p>GSTIN: 33AAFCL8686P1Z4 | PAN: AAFCL8686P</p>
               </div>
-              <div class="invoice-title()">
+              <div class="invoice-title">
                 <h1>Tax Invoice</h1>
                 <p>No: ${invoiceNo}</p>
                 <div class="paid-badge">Paid</div>
@@ -206,10 +212,10 @@ export default function ProfileSupportTickets({
             <div class="invoice-details">
               <div class="bill-to">
                 <h3>Billed To</h3>
-                <p>${orgName || 'Lorry Owner'}</p>
-                <span>Address: ${address || 'Not Provided'}</span>
-                <span>GSTIN: ${gstNo || 'Not Provided'}</span>
-                <span>PAN: ${panNo || 'Not Provided'}</span>
+                <p>${props.orgName || 'Lorry Owner'}</p>
+                <span>Address: ${props.address || 'Not Provided'}</span>
+                <span>GSTIN: ${props.gstNo || 'Not Provided'}</span>
+                <span>PAN: ${props.panNo || 'Not Provided'}</span>
               </div>
               <div class="invoice-info">
                 <p><strong>Invoice Date:</strong> ${new Date(payment.paymentDate).toLocaleDateString()}</p>
@@ -288,7 +294,7 @@ export default function ProfileSupportTickets({
             <MessageSquare class="w-4 h-4 text-blue-600" />
             Support Help Desk
           </h4>
-          {activeTab() === 'TICKETS' && !isBackendTeam && (
+          {activeTab() === 'TICKETS' && !props.isBackendTeam && (
             <button
               onClick={() => setShowCreateModal(true)}
               class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1.5 rounded-lg text-[10px] transition shadow-xs cursor-pointer"
@@ -299,12 +305,12 @@ export default function ProfileSupportTickets({
         </div>
 
         <div class="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-2">
-          {tickets.length === 0 ? (
+          {uniqueTickets().length === 0 ? (
             <div class="p-8 text-center text-slate-400 dark:text-slate-550 text-xs italic">
               No tickets raised yet.
             </div>
           ) : (
-            tickets.map((t) => {
+            uniqueTickets().map((t) => {
               const lastMsg = t.messages?.[t.messages.length - 1];
               return (
                 <button
@@ -317,7 +323,7 @@ export default function ProfileSupportTickets({
                   }`}
                 >
                   <div class="flex justify-between items-start mb-1">
-                    <span class="font-bold text-[10px] text-slate-400 dark:text-slate-505 font-mono flex items-center gap-1.5">
+                    <span class="font-bold text-[10px] text-slate-400 dark:text-slate-555 font-mono flex items-center gap-1.5">
                       #{t.ticketNo}
                       {getUnreadInfo(t).hasUnread && (
                         <span class="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
@@ -473,7 +479,7 @@ export default function ProfileSupportTickets({
                     type="text"
                     placeholder="Type your reply here..."
                     value={chatInput()}
-                    onChange={(e) => setChatInput(e.target.value)}
+                    onInput={(e) => setChatInput(e.currentTarget.value)}
                     class="w-full h-10 pl-3 pr-24 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-semibold"
                   />
                   
@@ -562,7 +568,7 @@ export default function ProfileSupportTickets({
                   type="text"
                   placeholder="Summarize the issue (e.g. Sync errors on trip mileage)"
                   value={title()}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onInput={(e) => setTitle(e.currentTarget.value)}
                   required
                   class="w-full bg-slate-50 dark:bg-slate-950 text-slate-805 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 font-semibold"
                 />
@@ -574,7 +580,7 @@ export default function ProfileSupportTickets({
                   rows={4}
                   placeholder="Describe the issue in details so we can troubleshoot..."
                   value={description()}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onInput={(e) => setDescription(e.currentTarget.value)}
                   required
                   class="w-full bg-slate-50 dark:bg-slate-950 text-slate-805 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 font-medium resize-none"
                 />

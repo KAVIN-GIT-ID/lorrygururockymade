@@ -1,9 +1,9 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Tyre, TyreMovementLog } from '../types';
 import { migrateTyres } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useExpensesContext } from './ExpenseContext';
@@ -31,26 +31,19 @@ export function TyreProvider(props: { children: JSX.Element }) {
   const { showNotification } = useNotifications();
   const { expenses, saveExpenses } = useExpensesContext();
 
-  const initialTyres = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_tyres');
-      return stored ? migrateTyres(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [tyresStore, setTyresStore] = createStore<Tyre[]>(initialTyres);
+  const [tyresStore, setTyresStore] = createStore<Tyre[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.tyres.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setTyresStore(cached);
-      }
+      setTyresStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...tyresStore];
     db.tyres.clear().then(() => db.tyres.bulkPut(list));
   });
@@ -58,7 +51,6 @@ export function TyreProvider(props: { children: JSX.Element }) {
   const saveTyres = (newTyres: Tyre[] | ((prev: Tyre[]) => Tyre[])) => {
     const next = typeof newTyres === 'function' ? newTyres(tyresStore) : newTyres;
     setTyresStore(next);
-    localStorage.setItem('ttt_tyres', JSON.stringify(newTyres));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

@@ -1,4 +1,4 @@
-import { createSignal, Accessor } from 'solid-js';
+import { createSignal, Accessor, onMount, onCleanup, createEffect } from 'solid-js';
 import { SupportTicket, createRecord, mutateRecord } from '../types';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
@@ -15,26 +15,61 @@ export function useSupportTicketsState(
   trucks: any[],
   setTrucks: (updater: (prev: any[]) => any[]) => void
 ) {
-  const [supportTickets, setSupportTickets] = createSignal<SupportTicket[]>(
-    (() => {
-      try {
-        const stored = localStorage.getItem('ttt_support_tickets');
-        return stored ? JSON.parse(stored) : [];
-      } catch {
-        return [];
+  const [supportTickets, setSupportTickets] = createSignal<SupportTicket[]>((() => {
+    try {
+      const stored = localStorage.getItem('ttt_support_tickets');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, SupportTicket>();
+          parsed.forEach(t => { if (t && t.id) map.set(t.id, t); });
+          return Array.from(map.values());
+        }
       }
-    })()
-  );
+    } catch (e) {
+      console.error('Failed to parse ttt_support_tickets from localStorage:', e);
+    }
+    return [];
+  })());
 
   const [activeTicketId, setActiveTicketId] = createSignal<string | null>(null);
 
+  createEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'ttt_support_tickets' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            const map = new Map<string, SupportTicket>();
+            parsed.forEach(t => { if (t && t.id) map.set(t.id, t); });
+            const unique = Array.from(map.values());
+            console.log('[SupportTicketSync Debug] Storage event received! Updating local tickets signal count:', unique.length);
+            setSupportTickets(unique);
+          }
+        } catch (err) {
+          console.error('Failed to parse storage event ttt_support_tickets:', err);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    onCleanup(() => window.removeEventListener('storage', handleStorageChange));
+  });
+
   const saveSupportTickets = (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
-    const nextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
+    const rawNextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
+
+    const ticketMap = new Map<string, SupportTicket>();
+    rawNextTickets.forEach(t => {
+      if (t && t.id) ticketMap.set(t.id, t);
+    });
+    const nextTickets = Array.from(ticketMap.values());
 
     const changedTickets = nextTickets.filter(t => {
       const existing = supportTickets().find(x => x.id === t.id);
       return !existing || JSON.stringify(existing) !== JSON.stringify(t);
     });
+
+    console.log('[SupportTicketSync Debug] saveSupportTickets called! Total tickets:', nextTickets.length, 'Changed tickets:', changedTickets.map(t => ({ id: t.id, lockedByEmail: t.lockedByEmail })));
 
     const deletedTickets = supportTickets().filter(t => !nextTickets.some(x => x.id === t.id));
 
@@ -47,9 +82,9 @@ export function useSupportTicketsState(
       if (changedTickets.length > 0) {
         changedTickets.forEach(async (t) => {
           try {
-            await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId, t);
-          } catch (err) {
-            console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err);
+            await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
+          } catch (err: any) {
+            console.error(`Failed to sync support ticket ${t.id} to Appwrite:`, err.message, err.serverStack || err);
           }
         });
       }
@@ -71,10 +106,12 @@ export function useSupportTicketsState(
       showNotification("Initiating refund via PhonePe gateway...");
 
       const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const jwt = await appwrite.createSessionJwt();
       const response = await fetch(`${serverUrl}/api/payment/refund`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwt}`
         },
         body: JSON.stringify({
           originalTransactionId: paymentRecord.transactionId,

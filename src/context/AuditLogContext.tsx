@@ -1,9 +1,9 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { AuditLog } from '../types';
 import { migrateAuditLogs } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -29,36 +29,27 @@ export function AuditLogProvider(props: { children: JSX.Element }) {
   const { currentUserOrgId } = usePermissions();
   const { showNotification } = useNotifications();
 
-  const initialAuditLogs = (() => {
-    try {
-      const saved = localStorage.getItem('fleet_audit_logs');
-      if (saved) return migrateAuditLogs(JSON.parse(saved));
-      return [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [auditLogsStore, setAuditLogsStore] = createStore<AuditLog[]>(initialAuditLogs);
+  const [auditLogsStore, setAuditLogsStore] = createStore<AuditLog[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   // Load from Dexie cache on start
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.auditLogs.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setAuditLogsStore(reconcile(cached));
-      }
+      setAuditLogsStore(reconcile(cached || []));
+      setLoadedFromDB(true);
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...auditLogsStore];
     db.auditLogs.clear().then(() => db.auditLogs.bulkPut(list));
   });
 
   const saveAuditLogs = (newLogs: AuditLog[]) => {
     setAuditLogsStore(reconcile(newLogs));
-    localStorage.setItem('fleet_audit_logs', JSON.stringify(newLogs));
   };
 
   const orgAuditLogs = createMemo(() => {

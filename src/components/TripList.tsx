@@ -72,6 +72,8 @@ export default function TripList({
       el.removeEventListener('wheel', handleWheel);
     };
   });
+  const [displayedTrips, setDisplayedTrips] = createSignal<TripEntry[]>([]);
+
   // Filters state
   const [search, setSearch] = createSignal('');
   const [selectedTruck, setSelectedTruck] = createSignal('');
@@ -113,7 +115,6 @@ export default function TripList({
   // Pagination & Display states
   const [currentPage, setCurrentPage] = createSignal(1);
   const [pageSize, setPageSize] = createSignal(10);
-  const [displayedTrips, setDisplayedTrips] = createSignal<TripEntry[]>([]);
   const [totalCount, setTotalCount] = createSignal(0);
   const [loading, setLoading] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);

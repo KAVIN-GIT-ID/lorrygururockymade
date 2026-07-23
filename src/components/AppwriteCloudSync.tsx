@@ -1,6 +1,7 @@
 import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { SyncService, wrapAbort } from '../services/SyncService';
+import { dbUnlocked } from '../services/cache';
 import {
   Cloud,
   CheckCircle,
@@ -134,7 +135,8 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
   };
 
   // 3. Initial pull and visibility listeners
-  onMount(() => {
+  createEffect(() => {
+    if (!dbUnlocked()) return;
     if (isConfigured && !initialPullDone()) {
       handlePullFromDB(true, true).finally(() => {
         setInitialPullDone(true);
@@ -144,9 +146,11 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
         appwrite.flushSyncQueue(showNotification);
       }
     }
+  });
 
+  onMount(() => {
     const handleResume = () => {
-      if (isConfigured) {
+      if (isConfigured && dbUnlocked()) {
         handlePullFromDB(true, true);
       }
     };
@@ -231,11 +235,13 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
         }
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime?orgId=${orgId()}&email=${currentUserEmail() || ''}&isSuperAdmin=${isAdmin() || false}`;
+        const jwt = await appwrite.createSessionJwt();
+        const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime`;
         const socket = new WebSocket(gatewayUrl);
         unsubscribe = { close: () => socket.close() };
 
         socket.onopen = () => {
+          socket.send(JSON.stringify({ type: 'authenticate', jwt }));
           setRealtimeConnected(true);
           if (onConnectionChange) onConnectionChange(true);
         };
@@ -246,7 +252,8 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
             const doc = response.payload;
             if (!doc) return;
 
-            const eventCollectionId = doc.$collectionId || doc.collectionId || '';
+            const eventStr = (response.events && response.events[0]) ? response.events[0] : '';
+            const eventCollectionId = doc.$collectionId || doc.collectionId || (eventStr.includes('.collections.') ? eventStr.split('.collections.')[1].split('.')[0] : '');
             const eventType = response.events[0] || '';
 
             if (eventCollectionId !== 'global_configs' && orgId() !== 'org_backend' && doc.organizationId !== orgId()) {
@@ -315,7 +322,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
               const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
               const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
 
-              if (cloudVersion > localVersion) {
+              if (cloudVersion > localVersion || key === 'supportTickets') {
                 if (parsedRecord.deletedAt) {
                   updatedCollection = updatedCollection.filter(x => x.id !== doc.$id);
                 } else {

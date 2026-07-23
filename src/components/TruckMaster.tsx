@@ -296,9 +296,9 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     const txnId = params.get('txnId');
     const queryTruckNo = params.get('truckNo');
     if (txnId && queryTruckNo) {
-      const tempPayloadStr = localStorage.getItem('ttt_temp_payment_payload');
+      const tempPayloadStr = sessionStorage.getItem('ttt_temp_payment_payload');
       const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;
-      const existingTruckId = localStorage.getItem('ttt_temp_payment_truck_id') || null;
+      const existingTruckId = sessionStorage.getItem('ttt_temp_payment_truck_id') || null;
 
       if (tempPayloadObj) {
         setPhonePePayload(tempPayloadObj);
@@ -660,8 +660,8 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
       const isUnapproved = editingTruckObj && editingTruckObj.isApproved === false;
 
       if ((isExpired || isRejected || isUnapproved) && onProcessTruckPayment) {
-        localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
-        localStorage.setItem('ttt_temp_payment_truck_id', isEditing() || '');
+        sessionStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
+        sessionStorage.setItem('ttt_temp_payment_truck_id', isEditing() || '');
         setPhonePePayload(truckPayload);
         setPhonePeTruckNo(truckPayload.truckNo);
         setPhonePeEditingId(isEditing());
@@ -683,8 +683,8 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
       
       if (limitReached) {
         // Save temp payment details in localStorage
-        localStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
-        localStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
+        sessionStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
+        sessionStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
 
         // Save truck as rejected (unsubscribed/inactive) in list first
         if (onAddTruckRequest) {

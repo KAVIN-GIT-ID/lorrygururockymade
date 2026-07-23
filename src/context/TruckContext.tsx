@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Truck, createRecord, mutateRecord } from '../types';
 import { migrateTrucks } from '../lib/migrations';
 import { getTruckDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -33,26 +33,19 @@ export function TruckProvider(props: { children: JSX.Element }) {
   const { organizationProfiles, saveProfiles } = useOrganizations();
   const { orgTrips } = useTripsContext();
 
-  const initialTrucks = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_trucks');
-      return stored ? migrateTrucks(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [trucksStore, setTrucksStore] = createStore<Truck[]>(initialTrucks);
+  const [trucksStore, setTrucksStore] = createStore<Truck[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.trucks.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setTrucksStore(cached);
-      }
+      setTrucksStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...trucksStore];
     db.trucks.clear().then(() => db.trucks.bulkPut(list));
   });
@@ -60,7 +53,6 @@ export function TruckProvider(props: { children: JSX.Element }) {
   const saveTrucks = (newTrucks: Truck[] | ((prev: Truck[]) => Truck[])) => {
     const next = typeof newTrucks === 'function' ? newTrucks(trucksStore) : newTrucks;
     setTrucksStore(next);
-    localStorage.setItem('ttt_trucks', JSON.stringify(newTrucks));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

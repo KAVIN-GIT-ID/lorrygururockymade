@@ -1,4 +1,4 @@
-import { createSignal, createEffect, lazy, Suspense, onMount, onCleanup, createMemo, untrack } from 'solid-js';
+import { createSignal, createEffect, lazy, Suspense, onMount, onCleanup, createMemo, untrack, batch } from 'solid-js';
 import { useNavigate, useLocation } from '@solidjs/router';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-solid';
 
@@ -40,16 +40,18 @@ import { useBackupRestore } from '../hooks/useBackupRestore';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { db } from '../services/cache';
+import { SyncService } from '../services/SyncService';
 import logo from '../logo.png';
 import versionData from '../version.json';
 const APP_VERSION = versionData.version;
 
-const AppSidebar = lazy(() => import('./AppSidebar'));
-const AppHeader = lazy(() => import('./AppHeader'));
-const DesktopViewport = lazy(() => import('./DesktopViewport'));
-const MobileViewport = lazy(() => import('./MobileViewport'));
-const AppwriteCloudSync = lazy(() => import('./AppwriteCloudSync'));
-const AppModals = lazy(() => import('./AppModals'));
+import AppSidebar from './AppSidebar';
+import AppHeader from './AppHeader';
+import DesktopViewport from './DesktopViewport';
+import MobileViewport from './MobileViewport';
+import AppwriteCloudSync from './AppwriteCloudSync';
+import AppModals from './AppModals';
 
 const LoadingTab = () => (
   <div class="flex items-center justify-center p-12 h-64">
@@ -71,25 +73,7 @@ const getUserInitials = (user: any) => {
 };
 
 export function ConsoleAppWrapper() {
-  return (
-    <TripProvider>
-      <TruckProvider>
-        <DriverProvider>
-          <ExpenseProvider>
-            <OfficeProvider>
-              <AccountProvider>
-                <TyreProvider>
-                  <AuditLogProvider>
-                    <ConsoleApp />
-                  </AuditLogProvider>
-                </TyreProvider>
-              </AccountProvider>
-            </OfficeProvider>
-          </ExpenseProvider>
-        </DriverProvider>
-      </TruckProvider>
-    </TripProvider>
-  );
+  return <ConsoleApp />;
 }
 
 export default function ConsoleApp() {
@@ -538,6 +522,89 @@ export default function ConsoleApp() {
     return didChange;
   };
 
+  onMount(() => {
+    const handleKeyUnlocked = async () => {
+      console.log('[Encryption Key Entered] Key unlocked! Clearing existing memory/cache and fetching fresh dataset...');
+
+      try {
+        await Promise.all([
+          db.trucks.clear(),
+          db.drivers.clear(),
+          db.offices.clear(),
+          db.accounts.clear(),
+          db.trips.clear(),
+          db.expenses.clear(),
+          db.tyres.clear(),
+          db.auditLogs.clear(),
+          db.supportTickets.clear(),
+          db.organizationProfiles.clear(),
+          db.syncMetadata.clear()
+        ]);
+      } catch (err) {
+        console.warn('Dexie DB clear warning on key unlock:', err);
+      }
+
+      const cacheKeys = [
+        'ttt_trucks',
+        'ttt_drivers',
+        'ttt_offices',
+        'ttt_accounts',
+        'ttt_trips',
+        'ttt_expenses',
+        'ttt_tyres',
+        'fleet_audit_logs',
+        'ttt_support_tickets',
+        'appwrite_last_sync_time'
+      ];
+      cacheKeys.forEach(k => localStorage.removeItem(k));
+
+      batch(() => {
+        setTrucks([]);
+        setDrivers([]);
+        setOffices([]);
+        setAccounts([]);
+        setTrips([]);
+        setExpenses([]);
+        setTyres([]);
+        setAuditLogs([]);
+        setSupportTickets([]);
+      });
+
+      if (isAppwriteConfigured()) {
+        try {
+          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+          const orgId = currentUserOrgId() || 'org_default';
+
+          const emptyLocalState = {
+            trucks: [],
+            drivers: [],
+            offices: [],
+            accounts: [],
+            trips: [],
+            expenses: [],
+            tyres: [],
+            auditLogs: [],
+            supportTickets: []
+          };
+
+          const controller = new AbortController();
+          const res = await SyncService.pullFromDB(databaseId, orgId, emptyLocalState, false, controller.signal);
+
+          if (res && res.loadedState) {
+            onLoadCloudState(res.loadedState, res.userRightsData, true);
+            console.log('[Encryption Key Entered] Fresh decrypted data fetched and loaded successfully!');
+            showNotification('Encryption Key Entered: Memory wiped & fresh data updated.');
+          }
+        } catch (err) {
+          console.warn('[Encryption Key Entered] Cloud fetch failed after key unlock:', err);
+        }
+      }
+    };
+
+    window.addEventListener('ttt:storage-unlocked', handleKeyUnlocked);
+    onCleanup(() => window.removeEventListener('ttt:storage-unlocked', handleKeyUnlocked));
+  });
+
   const {
     confirmAction,
     confirmModal,
@@ -812,7 +879,7 @@ export default function ConsoleApp() {
           profileDropdownOpen={profileDropdownOpen()}
           setProfileDropdownOpen={setProfileDropdownOpen}
           notificationRef={setNotificationRef}
-          profileDropdownRef={profileDropdownRef}
+          profileDropdownRef={(el) => { profileDropdownRef = el; }}
           hasUnreadNotifications={hasUnreadNotifications()}
           updateLastReadNotificationTime={updateLastReadNotificationTime}
           showNotification={showNotification}

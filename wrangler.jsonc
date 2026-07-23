@@ -10,5 +10,11 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "VISITOR_KV",
+      "id": "visitor_kv_namespace_id"
+    }
   ]
 }

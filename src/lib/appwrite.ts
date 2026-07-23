@@ -93,6 +93,7 @@ class AppwriteService {
   private teams: Teams;
   private realtime: Realtime;
   private sessionPromise: Promise<any> | null = null;
+  private lastConnectionAlertAt = 0;
 
   constructor() {
     this.client = new Client();
@@ -260,6 +261,7 @@ class AppwriteService {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite is not configured.');
     }
+    this.requireWriteConnection();
     await this.initSession();
     try {
       // Compress image files before uploading
@@ -299,6 +301,7 @@ class AppwriteService {
     if (!isAppwriteConfigured()) {
       throw new Error('Appwrite is not configured.');
     }
+    this.requireWriteConnection();
     await this.initSession();
     try {
       let fileToUpload = await compressImageIfNeeded(file);
@@ -400,6 +403,7 @@ class AppwriteService {
 
   async deleteFile(fileId: string): Promise<boolean> {
     if (!isAppwriteConfigured() || !fileId) return false;
+    this.requireWriteConnection();
     await this.initSession();
     try {
       await this.storage.deleteFile(this.getBucketId(), fileId);
@@ -710,15 +714,39 @@ class AppwriteService {
     }
   }
 
+  private connectionRequiredError(): Error {
+    const message = 'You are offline or the cloud database cannot be reached. Viewing saved data is available, but creating, editing, or deleting records requires an online connection.';
+    // A write can be initiated outside the visible ConsoleApp (for example by a
+    // delayed handler), so enforce and communicate this at the service boundary.
+    if (typeof window !== 'undefined' && Date.now() - this.lastConnectionAlertAt > 1500) {
+      this.lastConnectionAlertAt = Date.now();
+      window.alert(message);
+    }
+    return new Error(message);
+  }
+
+  private requireWriteConnection(): void {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw this.connectionRequiredError();
+    }
+    if (isAppwriteConfigured() && !this.isRealtimeConnected()) {
+      throw this.connectionRequiredError();
+    }
+  }
+
+  async createSessionJwt(): Promise<string> {
+    await this.initSession();
+    const jwtResult = await this.account.createJWT();
+    return jwtResult.jwt;
+  }
+
   private async proxyRequest(path: string, body: any): Promise<any> {
     if (!this.isRealtimeConnected()) {
       throw new Error('Backend system down, please try again later. Save only when online.');
     }
-    await this.initSession();
     let jwtToken = '';
     try {
-      const jwtResult = await this.account.createJWT();
-      jwtToken = jwtResult.jwt;
+      jwtToken = await this.createSessionJwt();
     } catch (err: any) {
       console.warn("Could not generate session JWT for database proxy request:", err);
       throw new Error("Session expired or authentication failed. Please re-login.");
@@ -739,7 +767,11 @@ class AppwriteService {
 
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error || `Proxy request to ${path} failed with status ${response.status}`);
+      const errObj = new Error(data.error || `Proxy request to ${path} failed with status ${response.status}`);
+      if (data.stack) {
+        (errObj as any).serverStack = data.stack;
+      }
+      throw errObj;
     }
     return data;
   }
@@ -748,20 +780,13 @@ class AppwriteService {
    * Save a single document (upsert) to Appwrite Database via secure proxy.
    */
   async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any, bypassQueue = false): Promise<string> {
-    if (!bypassQueue && !this.isRealtimeConnected()) {
-      this.addToSyncQueue({ type: 'save', dbId, collectionId, docId, orgId, dataObj });
-      return docId;
-    }
+    this.requireWriteConnection();
     try {
       const res = await this.proxyRequest('/api/database/save', { dbId, collectionId, docId, orgId, dataObj });
       return res.docId;
     } catch (err: any) {
-      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
-        throw err;
-      }
-      if (!bypassQueue) {
-        this.addToSyncQueue({ type: 'save', dbId, collectionId, docId, orgId, dataObj });
-        return docId;
+      if (err instanceof TypeError || /network|fetch|backend system down/i.test(err.message || '')) {
+        throw this.connectionRequiredError();
       }
       throw err;
     }
@@ -771,20 +796,13 @@ class AppwriteService {
    * Delete a single document from Appwrite Database via secure proxy.
    */
   async deleteFleetDocument(dbId: string, collectionId: string, docId: string, bypassQueue = false): Promise<boolean> {
-    if (!bypassQueue && !this.isRealtimeConnected()) {
-      this.addToSyncQueue({ type: 'delete', dbId, collectionId, docId });
-      return true;
-    }
+    this.requireWriteConnection();
     try {
       const res = await this.proxyRequest('/api/database/delete', { dbId, collectionId, docId });
       return !!res.success;
     } catch (err: any) {
-      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
-        throw err;
-      }
-      if (!bypassQueue) {
-        this.addToSyncQueue({ type: 'delete', dbId, collectionId, docId });
-        return true;
+      if (err instanceof TypeError || /network|fetch|backend system down/i.test(err.message || '')) {
+        throw this.connectionRequiredError();
       }
       throw err;
     }
@@ -831,10 +849,7 @@ class AppwriteService {
    * Delete a global configuration document by key from Appwrite Database via secure proxy.
    */
   async deleteGlobalConfig(dbId: string, key: string, bypassQueue = false): Promise<boolean> {
-    if (!bypassQueue && !this.isRealtimeConnected()) {
-      this.addToSyncQueue({ type: 'delete_global', dbId, docId: key });
-      return true;
-    }
+    this.requireWriteConnection();
     try {
       const res = await this.proxyRequest('/api/database/delete', {
         dbId,
@@ -843,12 +858,8 @@ class AppwriteService {
       });
       return !!res.success;
     } catch (err: any) {
-      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
-        throw err;
-      }
-      if (!bypassQueue) {
-        this.addToSyncQueue({ type: 'delete_global', dbId, docId: key });
-        return true;
+      if (err instanceof TypeError || /network|fetch|backend system down/i.test(err.message || '')) {
+        throw this.connectionRequiredError();
       }
       throw err;
     }
@@ -878,10 +889,7 @@ class AppwriteService {
    * Save a global configuration document by key to Appwrite Database via secure proxy.
    */
   async saveGlobalConfig(dbId: string, key: string, payload: any, bypassQueue = false): Promise<string> {
-    if (!bypassQueue && !this.isRealtimeConnected()) {
-      this.addToSyncQueue({ type: 'save_global', dbId, docId: key, dataObj: payload });
-      return key;
-    }
+    this.requireWriteConnection();
     try {
       const res = await this.proxyRequest('/api/database/save', {
         dbId,
@@ -892,12 +900,8 @@ class AppwriteService {
       });
       return res.docId;
     } catch (err: any) {
-      if (err.message.includes('Session expired') || err.message.includes('authentication failed')) {
-        throw err;
-      }
-      if (!bypassQueue) {
-        this.addToSyncQueue({ type: 'save_global', dbId, docId: key, dataObj: payload });
-        return key;
+      if (err instanceof TypeError || /network|fetch|backend system down/i.test(err.message || '')) {
+        throw this.connectionRequiredError();
       }
       throw err;
     }
@@ -909,6 +913,7 @@ class AppwriteService {
    * to allow them to scale if they want to.
    */
   async createDatabaseDocument(dbId: string, collectionId: string, data: any, documentId: string = ID.unique()) {
+    this.requireWriteConnection();
     await this.initSession();
     return await this.databases.createDocument(dbId, collectionId, documentId, data);
   }
@@ -919,11 +924,13 @@ class AppwriteService {
   }
 
   async updateDatabaseDocument(dbId: string, collectionId: string, documentId: string, data: any) {
+    this.requireWriteConnection();
     await this.initSession();
     return await this.databases.updateDocument(dbId, collectionId, documentId, data);
   }
 
   async deleteDatabaseDocument(dbId: string, collectionId: string, documentId: string) {
+    this.requireWriteConnection();
     await this.initSession();
     return await this.databases.deleteDocument(dbId, collectionId, documentId);
   }
@@ -937,6 +944,7 @@ class AppwriteService {
   async createTeam(displayName: string, customId?: string): Promise<string> {
     if (!isAppwriteConfigured()) return '';
     try {
+      this.requireWriteConnection();
       const team = await this.teams.create(customId || ID.unique(), displayName);
       return team.$id;
     } catch (err: any) {
@@ -1007,6 +1015,7 @@ class AppwriteService {
   async inviteToTeam(teamId: string, email: string, name: string): Promise<any> {
     if (!isAppwriteConfigured()) return null;
     try {
+      this.requireWriteConnection();
       const redirectUrl = getAppOrigin();
       return await this.teams.createMembership(teamId, ['member'], email, undefined, undefined, redirectUrl, name);
     } catch (err: any) {
@@ -1023,6 +1032,7 @@ class AppwriteService {
   async removeMembership(teamId: string, email: string): Promise<boolean> {
     if (!isAppwriteConfigured()) return false;
     try {
+      this.requireWriteConnection();
       const list = await this.teams.listMemberships(teamId);
       const match = list.memberships.find(m => 
         (m.userEmail && m.userEmail.toLowerCase() === email.toLowerCase()) ||
@@ -1042,6 +1052,7 @@ class AppwriteService {
   async leaveTeam(teamId: string): Promise<boolean> {
     if (!isAppwriteConfigured()) return false;
     try {
+      this.requireWriteConnection();
       const user = await this.account.get();
       if (!user) return false;
       const list = await this.teams.listMemberships(teamId);
@@ -1719,49 +1730,16 @@ class AppwriteService {
   }
 
   addToSyncQueue(item: Omit<QueueItem, 'id' | 'timestamp'>) {
-    const queue = this.getSyncQueue();
-    const newItem: QueueItem = {
-      ...item,
-      id: Math.random().toString(36).substring(2, 11),
-      timestamp: Date.now()
-    };
-    queue.push(newItem);
-    this.saveSyncQueue(queue);
-    console.log('Appwrite offline queue: added item:', newItem);
+    // Offline mutation queuing is deliberately disabled: this app is view-only
+    // while disconnected. Keep this method only for compatibility with callers.
+    throw this.connectionRequiredError();
   }
 
   async flushSyncQueue(showNotification?: (msg: string) => void): Promise<void> {
-    if (!this.isRealtimeConnected()) return;
     const queue = this.getSyncQueue();
-    if (queue.length === 0) return;
-
-    console.log(`Appwrite queue: starting flush of ${queue.length} items...\n`);
-    const failed: QueueItem[] = [];
-
-    for (const item of queue) {
-      try {
-        if (item.type === 'save' && item.collectionId && item.orgId) {
-          await this.saveFleetDocument(item.dbId, item.collectionId, item.docId, item.orgId, item.dataObj, true);
-        } else if (item.type === 'delete' && item.collectionId) {
-          await this.deleteFleetDocument(item.dbId, item.collectionId, item.docId, true);
-        } else if (item.type === 'save_global') {
-          await this.saveGlobalConfig(item.dbId, item.docId, item.dataObj, true);
-        } else if (item.type === 'delete_global') {
-          await this.deleteGlobalConfig(item.dbId, item.docId, true);
-        }
-      } catch (err: any) {
-        console.warn(`Appwrite queue: failed to sync item ${item.id}, retaining in queue:`, err.message);
-        failed.push(item);
-      }
-    }
-
-    this.saveSyncQueue(failed);
-    const syncedCount = queue.length - failed.length;
-    if (syncedCount > 0) {
-      console.log(`Appwrite queue: successfully synced ${syncedCount} offline operations.`);
-      if (showNotification) {
-        showNotification(`Synced ${syncedCount} offline updates to cloud.`);
-      }
+    if (queue.length > 0) {
+      localStorage.removeItem('ttt_offline_sync_queue');
+      console.warn(`Discarded ${queue.length} legacy offline write(s); offline mode is view-only.`);
     }
   }
 

@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
 import { getTripDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -26,44 +26,32 @@ export function TripProvider(props: { children: JSX.Element }) {
   const { showNotification } = useNotifications();
   const { organizationProfiles } = useOrganizations();
 
-  const initialTrips = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_trips');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const migrated = migrateTrips(migrateTripsIfNecessary(parsed));
-        localStorage.setItem('ttt_trips', JSON.stringify(migrated));
-        return migrated;
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [tripsStore, setTripsStore] = createStore<TripEntry[]>(initialTrips);
+  const [tripsStore, setTripsStore] = createStore<TripEntry[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   // Load from Dexie cache on start
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.trips.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setTripsStore(cached);
-      }
+      setTripsStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   // Sync back to Dexie cache reactively
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...tripsStore];
     db.trips.clear().then(() => db.trips.bulkPut(list));
   });
 
-  const saveTrips = (newTrips: TripEntry[]) => {
+  const saveTrips = (newTrips: TripEntry[] | ((prev: TripEntry[]) => TripEntry[])) => {
+    const list = typeof newTrips === 'function' ? newTrips(tripsStore) : newTrips;
     // Sync to Appwrite if configured
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const orgId = currentUserOrgId() || 'org_default';
-      newTrips.forEach(async (newT) => {
+      list.forEach(async (newT) => {
         if (newT.syncState === 'synced') return;
         const oldT = tripsStore.find(t => t.id === newT.id);
         if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
@@ -80,8 +68,7 @@ export function TripProvider(props: { children: JSX.Element }) {
       });
     }
 
-    setTripsStore(newTrips);
-    localStorage.setItem('ttt_trips', JSON.stringify(newTrips));
+    setTripsStore(list);
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 

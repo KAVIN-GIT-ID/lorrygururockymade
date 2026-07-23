@@ -1,7 +1,9 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, onMount } from 'solid-js';
 
 import { UserRights, OrganizationProfile } from '../types';
 import { isAppwriteConfigured } from '../lib/appwrite';
+import { cryptoService } from '../services/cryptoService';
+import OfflinePinModal from './OfflinePinModal';
 
 interface ProfileSettingsProps {
   currentUser: any;
@@ -63,6 +65,27 @@ export default function ProfileSettings({
   profileAddress,
   setProfileAddress
 }: ProfileSettingsProps) {
+  const [showPinModal, setShowPinModal] = createSignal(false);
+  const [hasPinSetup, setHasPinSetup] = createSignal(false);
+  const [biometricsAvailable, setBiometricsAvailable] = createSignal(false);
+  const [useBiometrics, setUseBiometrics] = createSignal(false);
+
+  onMount(async () => {
+    setHasPinSetup(!!localStorage.getItem('ttt_pin_verify'));
+    const isBioAvail = await cryptoService.checkBiometricsAvailable();
+    setBiometricsAvailable(isBioAvail);
+    setUseBiometrics(localStorage.getItem('ttt_use_biometrics') === 'true');
+  });
+
+  const handleToggleBiometrics = (val: boolean) => {
+    setUseBiometrics(val);
+    if (val) {
+      localStorage.setItem('ttt_use_biometrics', 'true');
+    } else {
+      localStorage.removeItem('ttt_use_biometrics');
+    }
+  };
+
   return (
     <form onSubmit={onSubmit} class="max-w-md space-y-4">
       {/* DISPLAY NAME */}
@@ -201,6 +224,56 @@ export default function ProfileSettings({
           </div>
         </div>
       </div>
+
+      {/* OFFLINE ACCESS SECURITY */}
+      <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+        <span class="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Offline Access Security</span>
+        <div class="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 space-y-3">
+          <div class="flex justify-between items-center">
+            <div class="space-y-0.5">
+              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Offline Security PIN</span>
+              <p class="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
+                {hasPinSetup() ? 'PIN is configured. Data is encrypted.' : 'Set up a PIN to secure your local data.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPinModal(true)}
+              class="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
+            >
+              {hasPinSetup() ? 'Change PIN' : 'Set Up PIN'}
+            </button>
+          </div>
+
+          {biometricsAvailable() && (
+            <div class="flex justify-between items-center border-t border-slate-100 dark:border-slate-850 pt-3">
+              <div class="space-y-0.5">
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Biometric Unlock</span>
+                <p class="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
+                  Unlock the app using fingerprint/face recognition.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={useBiometrics()}
+                onChange={(e) => handleToggleBiometrics(e.currentTarget.checked)}
+                class="rounded border-slate-300 dark:border-slate-800 text-blue-600 focus:ring-blue-500 bg-slate-50 dark:bg-slate-950 cursor-pointer"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showPinModal() && (
+        <OfflinePinModal
+          mode="setup"
+          onSuccess={() => {
+            setHasPinSetup(true);
+            setShowPinModal(false);
+          }}
+          onCancel={() => setShowPinModal(false)}
+        />
+      )}
 
       {/* TWO-FACTOR AUTHENTICATION (2FA) */}
       <div class="border-t border-slate-100 dark:border-slate-800 pt-3">

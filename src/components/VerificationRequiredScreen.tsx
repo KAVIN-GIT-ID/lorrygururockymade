@@ -195,8 +195,8 @@ export const VerificationRequiredScreen: Component<VerificationRequiredScreenPro
 
                     try {
                       if (isAppwriteConfigured()) {
-                        const storedOtp = whatsappOtpCode || sessionStorage.getItem('whatsapp_otp_code');
-                        if (code === storedOtp || code === '123456') {
+                        const storedOtp = whatsappOtpCode;
+                        if (storedOtp && code === storedOtp) {
                           const email = (currentUser.email || '').toLowerCase().trim();
                           const updated = userRightsList.map(ur =>
                             ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur

@@ -1,4 +1,4 @@
-import { createEffect, batch, onMount, onCleanup } from 'solid-js';
+import { createEffect, batch, onMount, onCleanup, untrack } from 'solid-js';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { migrateAuditLogs, migrateUserPermissions, migrateTrucks, migrateTrips, migrateTripsIfNecessary, migrateDrivers, migrateOffices, migrateAccounts, migrateExpenses, migrateTyres } from '../lib/migrations';
 
@@ -25,10 +25,11 @@ export function useBackendSync(
     if (!user) return;
 
     const email = (user.email || '').toLowerCase().trim();
-    const match = userRightsList().find(ur => ur.email.toLowerCase().trim() === email);
+    const rights = untrack(userRightsList);
+    const match = rights.find(ur => ur.email.toLowerCase().trim() === email);
     if (!match || match.role !== 'SuperAdmin') return;
 
-    const connectedOrgId = currentUserOrgId() || 'org_backend';
+    const connectedOrgId = untrack(currentUserOrgId) || 'org_backend';
     const isSuper = true;
     const userEmail = email;
 
@@ -89,7 +90,7 @@ export function useBackendSync(
               if (orgData.trucks && Array.isArray(orgData.trucks)) {
                 updated = [
                   ...updated.filter(t => t.organizationId !== orgId),
-                  ...migrateTrucks(orgData.trucks).map(t => ({ ...t, organizationId: orgId }))
+                  ...migrateTrucks(orgData.trucks).map(t => ({ ...t, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -104,7 +105,7 @@ export function useBackendSync(
               if (orgData.trips && Array.isArray(orgData.trips)) {
                 updated = [
                   ...updated.filter(t => t.organizationId !== orgId),
-                  ...migrateTrips(migrateTripsIfNecessary(orgData.trips)).map(t => ({ ...t, organizationId: orgId }))
+                  ...migrateTrips(migrateTripsIfNecessary(orgData.trips)).map(t => ({ ...t, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -119,7 +120,7 @@ export function useBackendSync(
               if (orgData.drivers && Array.isArray(orgData.drivers)) {
                 updated = [
                   ...updated.filter(d => d.organizationId !== orgId),
-                  ...migrateDrivers(orgData.drivers).map(d => ({ ...d, organizationId: orgId }))
+                  ...migrateDrivers(orgData.drivers).map(d => ({ ...d, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -134,7 +135,7 @@ export function useBackendSync(
               if (orgData.offices && Array.isArray(orgData.offices)) {
                 updated = [
                   ...updated.filter(o => o.organizationId !== orgId),
-                  ...migrateOffices(orgData.offices).map(o => ({ ...o, organizationId: orgId }))
+                  ...migrateOffices(orgData.offices).map(o => ({ ...o, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -149,7 +150,7 @@ export function useBackendSync(
               if (orgData.accounts && Array.isArray(orgData.accounts)) {
                 updated = [
                   ...updated.filter(a => a.organizationId !== orgId),
-                  ...migrateAccounts(orgData.accounts).map(a => ({ ...a, organizationId: orgId }))
+                  ...migrateAccounts(orgData.accounts).map(a => ({ ...a, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -164,7 +165,7 @@ export function useBackendSync(
               if (orgData.expenses && Array.isArray(orgData.expenses)) {
                 updated = [
                   ...updated.filter(e => e.organizationId !== orgId),
-                  ...migrateExpenses(orgData.expenses).map(e => ({ ...e, organizationId: orgId }))
+                  ...migrateExpenses(orgData.expenses).map(e => ({ ...e, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -179,7 +180,7 @@ export function useBackendSync(
               if (orgData.tyres && Array.isArray(orgData.tyres)) {
                 updated = [
                   ...updated.filter(ty => ty.organizationId !== orgId),
-                  ...migrateTyres(orgData.tyres).map(ty => ({ ...ty, organizationId: orgId }))
+                  ...migrateTyres(orgData.tyres).map(ty => ({ ...ty, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -194,7 +195,7 @@ export function useBackendSync(
               if (orgData.auditLogs && Array.isArray(orgData.auditLogs)) {
                 updated = [
                   ...updated.filter(l => l.organizationId !== orgId),
-                  ...migrateAuditLogs(orgData.auditLogs).map(l => ({ ...l, organizationId: orgId }))
+                  ...migrateAuditLogs(orgData.auditLogs).map(l => ({ ...l, organizationId: orgId, syncState: 'synced' as const }))
                 ];
               }
             }
@@ -203,16 +204,20 @@ export function useBackendSync(
           });
 
           setSupportTickets((prev: any[]) => {
-            let updated = [...prev];
+            const map = new Map<string, any>();
+            (prev || []).forEach(t => { if (t && t.id) map.set(t.id, t); });
+
             for (const orgId in orgFleetData) {
               const orgData = orgFleetData[orgId];
               if (orgData.supportTickets && Array.isArray(orgData.supportTickets)) {
-                updated = [
-                  ...updated.filter(t => t.organizationId !== orgId),
-                  ...orgData.supportTickets.map(t => ({ ...t, organizationId: orgId }))
-                ];
+                orgData.supportTickets.forEach((t: any) => {
+                  if (t && t.id) {
+                    map.set(t.id, { ...t, organizationId: t.organizationId || orgId, syncState: 'synced' as const });
+                  }
+                });
               }
             }
+            const updated = Array.from(map.values());
             localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
             return updated;
           });
@@ -255,12 +260,14 @@ export function useBackendSync(
       try {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsHost = window.location.host;
-        const gatewayUrl = `${wsProtocol}//${wsHost}/realtime?orgId=${connectedOrgId}&email=${userEmail}&isSuperAdmin=${isSuper}`;
+        const jwt = await appwrite.createSessionJwt();
+        const gatewayUrl = `${wsProtocol}//${wsHost}/realtime`;
 
         const socket = new WebSocket(gatewayUrl);
         unsubscribe = { close: () => socket.close() };
 
         socket.onopen = () => {
+          socket.send(JSON.stringify({ type: 'authenticate', jwt }));
           reconnectDelay = 1000;
         };
 

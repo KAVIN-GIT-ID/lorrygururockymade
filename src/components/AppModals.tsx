@@ -117,10 +117,10 @@ export default function AppModals(rawProps: AppModalsProps) {
           onChangeMobileClick={() => props.setMobileWizardOpen(true)}
           onEnable2FAClick={() => props.setSetup2FAOpen(true)}
           onDisable2FAClick={() => props.setDisable2FAOpen(true)}
-          supportTickets={props.supportTickets()}
+          supportTickets={props.supportTickets}
           handleCreateSupportTicket={props.handleCreateSupportTicket}
           handleSendSupportTicketMessage={props.handleSendSupportTicketMessage}
-          payments={props.payments()}
+          payments={props.payments}
         />
       )}
 

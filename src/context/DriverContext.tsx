@@ -1,10 +1,10 @@
-import { createContext, useContext, createMemo, createEffect, JSX } from 'solid-js';
+import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Driver, createRecord, mutateRecord } from '../types';
 import { migrateDrivers } from '../lib/migrations';
 import { getDriverDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db } from '../services/cache';
+import { db, dbUnlocked } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -27,26 +27,19 @@ export function DriverProvider(props: { children: JSX.Element }) {
   const { showNotification } = useNotifications();
   const { orgTrips } = useTripsContext();
 
-  const initialDrivers = (() => {
-    try {
-      const stored = localStorage.getItem('ttt_drivers');
-      return stored ? migrateDrivers(JSON.parse(stored)) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const [driversStore, setDriversStore] = createStore<Driver[]>(initialDrivers);
+  const [driversStore, setDriversStore] = createStore<Driver[]>([]);
+  const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
+    if (!dbUnlocked()) return;
     db.drivers.toArray().then(cached => {
-      if (cached && cached.length > 0) {
-        setDriversStore(cached);
-      }
+      setDriversStore(cached || []);
+      setLoadedFromDB(true);
     });
   });
 
   createEffect(() => {
+    if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...driversStore];
     db.drivers.clear().then(() => db.drivers.bulkPut(list));
   });
@@ -54,7 +47,6 @@ export function DriverProvider(props: { children: JSX.Element }) {
   const saveDrivers = (newDrivers: Driver[] | ((prev: Driver[]) => Driver[])) => {
     const next = typeof newDrivers === 'function' ? newDrivers(driversStore) : newDrivers;
     setDriversStore(next);
-    localStorage.setItem('ttt_drivers', JSON.stringify(newDrivers));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
