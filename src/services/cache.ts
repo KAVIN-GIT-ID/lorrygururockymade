@@ -161,6 +161,49 @@ export class FleetDatabase extends Dexie {
     cryptoService.clearKey();
     setDbUnlocked(false);
   }
+
+  // Pre-load all tables in parallel to ensure decrypted data is ready before UI transitions
+  async prewarmCache() {
+    if (!cryptoService.hasKey()) return;
+    try {
+      const [
+        trucks, drivers, offices, accounts, trips, expenses, tyres, auditLogs, supportTickets, organizationProfiles
+      ] = await Promise.all([
+        this.trucks.toArray(),
+        this.drivers.toArray(),
+        this.offices.toArray(),
+        this.accounts.toArray(),
+        this.trips.toArray(),
+        this.expenses.toArray(),
+        this.tyres.toArray(),
+        this.auditLogs.toArray(),
+        this.supportTickets.toArray(),
+        this.organizationProfiles.toArray()
+      ]);
+
+      prewarmedData.trucks = trucks || [];
+      prewarmedData.drivers = drivers || [];
+      prewarmedData.offices = offices || [];
+      prewarmedData.accounts = accounts || [];
+      prewarmedData.trips = trips || [];
+      prewarmedData.expenses = expenses || [];
+      prewarmedData.tyres = tyres || [];
+      prewarmedData.auditLogs = auditLogs || [];
+      prewarmedData.supportTickets = supportTickets || [];
+      prewarmedData.organizationProfiles = organizationProfiles || [];
+
+      console.log("[cache.ts] Cache prewarmed successfully with in-memory records:", {
+        trips: prewarmedData.trips.length,
+        trucks: prewarmedData.trucks.length,
+        offices: prewarmedData.offices.length
+      });
+    } catch (e) {
+      console.warn("Prewarming Dexie cache failed:", e);
+    }
+  }
 }
+
+// In-memory cache store populated during prewarm Cache
+export const prewarmedData: Record<string, any[]> = {};
 
 export const db = new FleetDatabase();

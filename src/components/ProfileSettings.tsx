@@ -36,35 +36,9 @@ interface ProfileSettingsProps {
   setProfileAddress: (val: string) => void;
 }
 
-export default function ProfileSettings({
-  currentUser,
-  currentUserRights,
-  profileName,
-  setProfileName,
-  profileOrgName,
-  setProfileOrgName,
-  profileVoiceLang,
-  setProfileVoiceLang,
-  oldPassword,
-  setOldPassword,
-  newPassword,
-  setNewPassword,
-  confirmPassword,
-  setConfirmPassword,
-  onCancel,
-  onSubmit,
-  onChangeMobileClick,
-  onEnable2FAClick,
-  onDisable2FAClick,
-  profileGst,
-  setProfileGst,
-  profilePan,
-  setProfilePan,
-  profileAadhaar,
-  setProfileAadhaar,
-  profileAddress,
-  setProfileAddress
-}: ProfileSettingsProps) {
+export default function ProfileSettings(props: ProfileSettingsProps) {
+  const currentUser = () => props.currentUser || ({} as any);
+  const currentUserRights = () => props.currentUserRights || ({} as any);
   const [showPinModal, setShowPinModal] = createSignal(false);
   const [hasPinSetup, setHasPinSetup] = createSignal(false);
   const [biometricsAvailable, setBiometricsAvailable] = createSignal(false);
@@ -87,27 +61,27 @@ export default function ProfileSettings({
   };
 
   return (
-    <form onSubmit={onSubmit} class="max-w-md space-y-4">
+    <form onSubmit={props.onSubmit} class="max-w-md space-y-4">
       {/* DISPLAY NAME */}
       <div>
         <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Display Name</label>
         <input
           type="text"
-          value={profileName}
-          onChange={(e) => setProfileName(e.target.value)}
+          value={props.profileName}
+          onChange={(e) => props.setProfileName(e.target.value)}
           required
           class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
         />
       </div>
 
       {/* ORGANIZATION NAME */}
-      {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
+      {currentUserRights().isAdmin && currentUserRights().organizationId && currentUserRights().organizationId !== 'org_backend' && (
         <div>
           <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Organization Name</label>
           <input
             type="text"
-            value={profileOrgName}
-            onChange={(e) => setProfileOrgName(e.target.value)}
+            value={props.profileOrgName}
+            onChange={(e) => props.setProfileOrgName(e.target.value)}
             required
             class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
           />
@@ -119,7 +93,7 @@ export default function ProfileSettings({
         <label class="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
         <input
           type="email"
-          value={currentUser?.email || ''}
+          value={currentUser()?.email || ''}
           disabled
           class="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
         />
@@ -131,13 +105,13 @@ export default function ProfileSettings({
         <div class="flex gap-2">
           <input
             type="text"
-            value={currentUserRights.phone || 'Not Set'}
+            value={currentUserRights().phone || 'Not Set'}
             disabled
             class="flex-1 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-850 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
           />
           <button
             type="button"
-            onClick={onChangeMobileClick}
+            onClick={props.onChangeMobileClick}
             class="px-3 py-2 bg-blue-600 hover:bg-blue-755 text-white text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
           >
             Change
@@ -150,8 +124,8 @@ export default function ProfileSettings({
         <label for="voice-lang-select" class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
         <select
           id="voice-lang-select"
-          value={profileVoiceLang}
-          onChange={(e) => setProfileVoiceLang(e.target.value)}
+          value={props.profileVoiceLang}
+          onChange={(e) => props.setProfileVoiceLang(e.target.value)}
           class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-808 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
         >
           <option value="en-IN">English (India) - en-IN</option>
@@ -173,10 +147,10 @@ export default function ProfileSettings({
             <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">GSTIN (15 Characters)</label>
             <input
               type="text"
-              value={profileGst}
+              value={props.profileGst}
               onChange={(e) => {
                 const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 15);
-                setProfileGst(val);
+                props.setProfileGst(val);
               }}
               placeholder="e.g. 33AAFCL8686P1Z4"
               class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
@@ -188,10 +162,10 @@ export default function ProfileSettings({
               <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">PAN Card (10 Characters)</label>
               <input
                 type="text"
-                value={profilePan}
+                value={props.profilePan}
                 onChange={(e) => {
                   const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10);
-                  setProfilePan(val);
+                  props.setProfilePan(val);
                 }}
                 placeholder="e.g. AAFCL8686P"
                 class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
@@ -201,10 +175,10 @@ export default function ProfileSettings({
               <label class="block text-[10px] font-bold text-slate-550 uppercase tracking-wide mb-1">Aadhaar (12 Digits)</label>
               <input
                 type="text"
-                value={profileAadhaar}
+                value={props.profileAadhaar}
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '').substring(0, 12);
-                  setProfileAadhaar(val);
+                  props.setProfileAadhaar(val);
                 }}
                 placeholder="e.g. 123456789012"
                 class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
@@ -215,8 +189,8 @@ export default function ProfileSettings({
           <div>
             <label class="block text-[10px] font-bold text-slate-555 uppercase tracking-wide mb-1">Billing Address</label>
             <textarea
-              value={profileAddress}
-              onChange={(e) => setProfileAddress(e.target.value)}
+              value={props.profileAddress}
+              onChange={(e) => props.setProfileAddress(e.target.value)}
               placeholder="Full billing address for tax invoices"
               rows={2}
               class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-205 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
@@ -281,17 +255,17 @@ export default function ProfileSettings({
         <div class="bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 flex justify-between items-center">
           <div class="space-y-0.5">
             <div class="flex items-center gap-1.5">
-              <span class={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
+              <span class={`w-2 h-2 rounded-full ${currentUserRights().is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">{currentUserRights().is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
             </div>
             <p class="text-[10px] text-slate-400 dark:text-slate-550 leading-normal">
               Protect your account with Google Authenticator TOTP codes.
             </p>
           </div>
-          {currentUserRights.is2FAEnabled ? (
+          {currentUserRights().is2FAEnabled ? (
             <button
               type="button"
-              onClick={onDisable2FAClick}
+              onClick={props.onDisable2FAClick}
               class="px-3 py-1.5 border border-red-500/30 hover:border-red-50 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg text-[10px] font-bold transition cursor-pointer"
             >
               Disable
@@ -299,7 +273,7 @@ export default function ProfileSettings({
           ) : (
             <button
               type="button"
-              onClick={onEnable2FAClick}
+              onClick={props.onEnable2FAClick}
               class="px-3 py-1.5 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-[10px] font-bold shadow-xs transition cursor-pointer"
             >
               Enable
@@ -317,8 +291,8 @@ export default function ProfileSettings({
             <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Current Password</label>
             <input
               type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
+              value={props.oldPassword}
+              onChange={(e) => props.setOldPassword(e.target.value)}
               placeholder="••••••••"
               class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
@@ -330,8 +304,8 @@ export default function ProfileSettings({
             <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">New Password</label>
             <input
               type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              value={props.newPassword}
+              onChange={(e) => props.setNewPassword(e.target.value)}
               placeholder="••••••••"
               class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
@@ -340,8 +314,8 @@ export default function ProfileSettings({
             <label class="block text-[11px] font-extrabold text-slate-655 uppercase tracking-wider mb-1.5">Confirm Password</label>
             <input
               type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              value={props.confirmPassword}
+              onChange={(e) => props.setConfirmPassword(e.target.value)}
               placeholder="••••••••"
               class="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
             />
@@ -352,7 +326,7 @@ export default function ProfileSettings({
       <div class="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100 dark:border-slate-800">
         <button
           type="button"
-          onClick={onCancel}
+          onClick={props.onCancel}
           class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40 dark:border-slate-700/60"
         >
           Cancel

@@ -109,36 +109,23 @@ export const authService = {
             }
           }
 
-          const localStored = localStorage.getItem('ttt_user_rights');
-          let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
+          const getLocalRightsSafely = (): UserPermission[] => {
+            try {
+              const localStored = localStorage.getItem('ttt_user_rights');
+              if (localStored) {
+                const parsed = JSON.parse(localStored);
+                if (Array.isArray(parsed)) return migrateUserPermissions(parsed);
+              }
+            } catch (err) {
+              console.warn("Failed to parse local ttt_user_rights:", err);
+            }
+            return userRightsList;
+          };
+
+          let localRights: UserPermission[] = getLocalRightsSafely();
 
           if (activeRightsList.length > 0) {
             const existingOrgIds = new Set(rawProfiles.map(p => p.organizationId));
-            const myCloudRights = activeRightsList.find(ur => ur.email.toLowerCase().trim() === email);
-            const isSuper = myCloudRights?.role === 'SuperAdmin' || myCloudRights?.organizationId === 'org_backend';
-
-            const orphanedCloudKeys: string[] = [];
-            activeRightsList = activeRightsList.filter(ur => {
-              if (ur.email.toLowerCase().trim() === email) return true;
-              if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
-                return true;
-              }
-              const exists = existingOrgIds.has(ur.organizationId);
-              if (!exists) {
-                orphanedCloudKeys.push(appwrite.getEmailDocId(ur.email));
-              }
-              return exists;
-            });
-
-            // Disable dangerous automatic cleanup of user permissions to avoid race conditions during new organization registration.
-            /*
-            if (isSuper && orphanedCloudKeys.length > 0) {
-              for (const key of orphanedCloudKeys) {
-                appwrite.deleteGlobalConfig(databaseId, key).catch(() => {});
-              }
-            }
-            */
-
             localRights = localRights.filter(ur => {
               if (ur.email.toLowerCase().trim() === email) return true;
               if (!ur.organizationId || ur.organizationId === 'org_backend' || ur.organizationId === 'org_default') {
@@ -150,7 +137,14 @@ export const authService = {
             const merged = activeRightsList.map(cloudEntry => {
               const localEntry = localRights.find(l => l.email.toLowerCase() === cloudEntry.email.toLowerCase());
               if (localEntry) {
-                return { ...cloudEntry, isApproved: localEntry.isApproved || cloudEntry.isApproved };
+                return {
+                  ...cloudEntry,
+                  isApproved: localEntry.isApproved || cloudEntry.isApproved,
+                  is2FAEnabled: localEntry.is2FAEnabled ?? cloudEntry.is2FAEnabled,
+                  twoFactorSecret: localEntry.twoFactorSecret || cloudEntry.twoFactorSecret,
+                  phone: localEntry.phone || cloudEntry.phone,
+                  isPhoneVerified: localEntry.isPhoneVerified ?? cloudEntry.isPhoneVerified
+                };
               }
               return cloudEntry;
             });
@@ -162,8 +156,6 @@ export const authService = {
             setUserRightsList(activeRightsList);
             storageService.set('ttt_user_rights', activeRightsList);
           } else {
-            const localStored = localStorage.getItem('ttt_user_rights');
-            let localRights: UserPermission[] = localStored ? migrateUserPermissions(JSON.parse(localStored)) : userRightsList;
             const myLocalEntry = localRights.find(ur => ur.email.toLowerCase() === email);
             const isLocalSuperAdmin = myLocalEntry?.role === 'SuperAdmin' || myLocalEntry?.organizationId === 'org_backend';
 
@@ -255,7 +247,6 @@ export const authService = {
             }
             reconciled = organizationService.reconcileOrganizationProfiles(activeRightsList, reconciled, knownNames);
             
-            // Save organization profiles helper calls organizationService.saveOrganizationProfiles
             await organizationService.saveOrganizationProfiles(reconciled, organizationProfiles, email, myRights);
             setOrganizationProfiles(reconciled);
 

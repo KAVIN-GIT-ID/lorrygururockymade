@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, mergeProps, Show } from 'solid-js';
 
 import { TripEntry, TripPayment, SubTrip, Truck, Office, Account, Driver, FuelEntry, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, CargoExpense, mutateRecord, importLegacyCargoExpenses } from '../types';
 import { indianCities } from './indianCities';
@@ -26,23 +26,34 @@ interface TripFormProps {
   currentUserId?: string;
 }
 
-export default function TripForm({
-  isOpen,
-  onClose,
-  trucks,
-  offices,
-  accounts,
-  drivers,
-  existingTripNos,
-  onSubmit,
-  editingEntry,
-  canViewDrivers = true,
-  orgProfile,
-  trips,
-  onSaveTrips,
-  confirmAction,
-  currentUserId
-}: TripFormProps) {
+export default function TripForm(rawProps: TripFormProps) {
+  const props = mergeProps(
+    {
+      canViewDrivers: true,
+      existingTripNos: [],
+      trucks: [],
+      offices: [],
+      accounts: [],
+      drivers: []
+    },
+    rawProps
+  );
+
+  const isOpen = () => props.isOpen;
+  const editingEntry = () => props.editingEntry;
+  const trucks = () => props.trucks || [];
+  const offices = () => props.offices || [];
+  const accounts = () => props.accounts || [];
+  const drivers = () => props.drivers || [];
+  const existingTripNos = () => props.existingTripNos || [];
+  const onSubmit = props.onSubmit;
+  const onClose = props.onClose;
+  const canViewDrivers = () => props.canViewDrivers;
+  const orgProfile = () => props.orgProfile;
+  const trips = () => props.trips || [];
+  const onSaveTrips = props.onSaveTrips;
+  const confirmAction = props.confirmAction;
+  const currentUserId = () => props.currentUserId;
   // Trip group keying
   const [tripNoOption, setTripNoOption] = createSignal<'AUTO' | 'EXISTING'>('AUTO');
 
@@ -169,17 +180,18 @@ export default function TripForm({
 
   // Auto-fill active lists
   const todayStr = new Date().toISOString().substring(0, 10);
-  const activeTrucks = trucks;
-  const activeOffices = offices.filter(o => o.status === 'Active');
-  const activeAccounts = accounts.filter(a => a.status === 'Active');
-  const activeDrivers = drivers.filter(d => d.status === 'Active');
+  const activeTrucks = () => trucks();
+  const activeOffices = () => offices().filter(o => o.status === 'Active');
+  const activeAccounts = () => accounts().filter(a => a.status === 'Active');
+  const activeDrivers = () => drivers().filter(d => d.status === 'Active');
 
   const getLatestKMForTruck = (selectedTruckNo: string): number => {
     if (!selectedTruckNo) return 0;
-    const truckObj = trucks.find(t => t.truckNo === selectedTruckNo);
+    const cleanSelected = selectedTruckNo.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const truckObj = trucks().find(t => (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanSelected);
     let latestKM = truckObj?.currentKM || 0;
 
-    const truckTrips = (trips || []).filter(t => t.truckNo === selectedTruckNo);
+    const truckTrips = (trips() || []).filter(t => (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanSelected);
     if (truckTrips.length > 0) {
       const sorted = [...truckTrips].sort((a, b) => {
         const dateA = a.endDate || a.startDate || '';
@@ -197,11 +209,13 @@ export default function TripForm({
 
   // Year prefix sequence for Auto trip identifiers
   createEffect(() => {
-    if (!editingEntry && isOpen) {
+    const open = isOpen();
+    const entry = editingEntry();
+    if (!entry && open) {
       const currentYear = new Date().getFullYear();
       let lastSeq = 0;
 
-      existingTripNos.forEach(v => {
+      existingTripNos().forEach(v => {
         const match = v.match(/TRIP-(\d+)-(\d+)/);
         if (match && parseInt(match[1]) === currentYear) {
           const seq = parseInt(match[2]);
@@ -212,50 +226,52 @@ export default function TripForm({
       const newSeq = String(lastSeq + 1).padStart(4, '0');
       const generated = `TRIP-${currentYear}-${newSeq}`;
       setTripNo(generated);
-      setSelectedExistingTripNo(existingTripNos[0] || '');
+      setSelectedExistingTripNo(existingTripNos()[0] || '');
     }
   });
 
   // Fill default values or edit details
   createEffect(() => {
-    if (editingEntry && isOpen) {
+    const open = isOpen();
+    const entry = editingEntry();
+    if (entry && open) {
       setTripNoOption('AUTO');
-      setTripNo(editingEntry.tripNo);
-      setTruckNo(editingEntry.truckNo);
-      setStartDate(editingEntry.startDate || new Date().toISOString().substring(0, 10));
-      setEndDate(editingEntry.endDate || new Date().toISOString().substring(0, 10));
-      setDriverName(editingEntry.driverName || '');
-      setStartingKM(editingEntry.startingKM || 0);
-      setEndingKM(editingEntry.endingKM || 0);
-      setStatus(editingEntry.status);
-      setNotes(editingEntry.notes || '');
-      setSubTrips(editingEntry.subTrips || []);
-      setPayments(editingEntry.payments || []);
-      setAdvances(editingEntry.advances || []);
+      setTripNo(entry.tripNo);
+      setTruckNo(entry.truckNo);
+      setStartDate(entry.startDate || new Date().toISOString().substring(0, 10));
+      setEndDate(entry.endDate || new Date().toISOString().substring(0, 10));
+      setDriverName(entry.driverName || '');
+      setStartingKM(entry.startingKM || 0);
+      setEndingKM(entry.endingKM || 0);
+      setStatus(entry.status);
+      setNotes(entry.notes || '');
+      setSubTrips(entry.subTrips || []);
+      setPayments(entry.payments || []);
+      setAdvances(entry.advances || []);
 
       // Load master common expenses
-      setRtoExpense(editingEntry.rtoExpense || 0);
-      setDieselLiters(editingEntry.dieselLiters || 0);
-      setDieselRate(editingEntry.dieselRate || 0);
-      setDieselAmount(editingEntry.dieselAmount || 0);
-      setAddBlueExpense(editingEntry.addBlueExpense || 0);
-      setFastagExpense(editingEntry.fastagExpense || 0);
-      setOtherExpense(editingEntry.otherExpense || 0);
+      setRtoExpense(entry.rtoExpense || 0);
+      setDieselLiters(entry.dieselLiters || 0);
+      setDieselRate(entry.dieselRate || 0);
+      setDieselAmount(entry.dieselAmount || 0);
+      setAddBlueExpense(entry.addBlueExpense || 0);
+      setFastagExpense(entry.fastagExpense || 0);
+      setOtherExpense(entry.otherExpense || 0);
 
-      setRtoPaidByDriver(editingEntry.rtoPaidByDriver || false);
-      setAddBluePaidByDriver(editingEntry.addBluePaidByDriver || false);
-      setFastagPaidByDriver(editingEntry.fastagPaidByDriver || false);
-      setOtherPaidByDriver(editingEntry.otherPaidByDriver || false);
+      setRtoPaidByDriver(entry.rtoPaidByDriver || false);
+      setAddBluePaidByDriver(entry.addBluePaidByDriver || false);
+      setFastagPaidByDriver(entry.fastagPaidByDriver || false);
+      setOtherPaidByDriver(entry.otherPaidByDriver || false);
 
-      if (editingEntry.fuels && editingEntry.fuels.length > 0) {
-        setFuels(editingEntry.fuels);
-      } else if (editingEntry.dieselAmount && editingEntry.dieselAmount > 0) {
+      if (entry.fuels && entry.fuels.length > 0) {
+        setFuels(entry.fuels);
+      } else if (entry.dieselAmount && entry.dieselAmount > 0) {
         setFuels([{
           id: 'fuel-legacy-' + Date.now(),
-          date: editingEntry.startDate || new Date().toISOString().substring(0, 10),
-          liters: editingEntry.dieselLiters || 0,
-          rate: editingEntry.dieselRate || 0,
-          amount: editingEntry.dieselAmount,
+          date: entry.startDate || new Date().toISOString().substring(0, 10),
+          liters: entry.dieselLiters || 0,
+          rate: entry.dieselRate || 0,
+          amount: entry.dieselAmount,
           shopName: 'Legacy Fuel Station',
           paymentMode: ''
         }]);
@@ -265,14 +281,14 @@ export default function TripForm({
 
       setShowSubTripForm(false);
       setEditingSubTripId(null);
-    } else if (isOpen) {
+    } else if (open) {
       // Create resetting defaults
-      const firstTruck = activeTrucks[0];
+      const firstTruck = activeTrucks()[0];
       const defaultTruckNo = firstTruck?.truckNo || '';
       setTruckNo(defaultTruckNo);
 
       // Choose first active driver as default
-      setDriverName(activeDrivers[0]?.driverName || '');
+      setDriverName(activeDrivers()[0]?.driverName || '');
 
       setStartDate(new Date().toISOString().substring(0, 10));
       setEndDate(new Date().toISOString().substring(0, 10));
@@ -470,7 +486,7 @@ export default function TripForm({
   const handleOpenNewSubTrip = () => {
     setEditingSubTripId(null);
     setStLoadingDate(startDate() || new Date().toISOString().substring(0, 10));
-    setStOfficeName(activeOffices[0]?.officeName || '');
+    setStOfficeName(activeOffices()[0]?.officeName || '');
     setStRouteFrom('');
     setStRouteTo('');
     setStIncome(0);
@@ -493,7 +509,7 @@ export default function TripForm({
 
     const snapshot = {
       loadingDate: startDate() || new Date().toISOString().substring(0, 10),
-      officeName: activeOffices[0]?.officeName || '',
+      officeName: activeOffices()[0]?.officeName || '',
       routeFrom: '',
       routeTo: '',
       income: 0,
@@ -513,14 +529,14 @@ export default function TripForm({
   const handleOpenEditSubTrip = (st: SubTrip) => {
     setEditingSubTripId(st.id);
     setStLoadingDate(st.loadingDate || startDate());
-    setStOfficeName(st.officeName || activeOffices[0]?.officeName || '');
+    setStOfficeName(st.officeName || activeOffices()[0]?.officeName || '');
     setStRouteFrom(st.routeFrom || '');
     setStRouteTo(st.routeTo || '');
     setStIncome(st.income || 0);
 
     const importedExpenses = (st.cargoExpenses && st.cargoExpenses.length > 0)
       ? st.cargoExpenses
-      : importLegacyCargoExpenses(st, orgProfile);
+      : importLegacyCargoExpenses(st, orgProfile());
     setStCargoExpenses(importedExpenses);
     setNewCargoExpType('Loading');
     setNewCargoExpAmount('');
@@ -541,7 +557,7 @@ export default function TripForm({
 
     const snapshot = {
       loadingDate: st.loadingDate || startDate(),
-      officeName: st.officeName || activeOffices[0]?.officeName || '',
+      officeName: st.officeName || activeOffices()[0]?.officeName || '',
       routeFrom: st.routeFrom || '',
       routeTo: st.routeTo || '',
       income: st.income || 0,
@@ -787,8 +803,8 @@ export default function TripForm({
       return;
     }
 
-    const selectedTruck = trucks.find(t => t.truckNo === truckNo());
-    const isUnchangedEdit = editingEntry && truckNo() === editingEntry.truckNo;
+    const selectedTruck = trucks().find(t => t.truckNo === truckNo());
+    const isUnchangedEdit = editingEntry() && truckNo() === editingEntry()?.truckNo;
     if (selectedTruck && !isUnchangedEdit) {
       const isExpired = selectedTruck.registrationExpiryDate ? selectedTruck.registrationExpiryDate < todayStr : false;
       const isAdminDisabled = selectedTruck.status === 'Admin Disabled';
@@ -804,6 +820,13 @@ export default function TripForm({
 
     if (subTrips().length === 0) {
       alert("Fleet compliance requires registering at least 1 Cargo sub-trip segment for this trip journey.");
+      return;
+    }
+
+    const startKMVal = Number(startingKM()) || 0;
+    const endKMVal = Number(endingKM()) || 0;
+    if (endKMVal > 0 && endKMVal < startKMVal) {
+      alert(`Invalid Odometer Reading: Ending odometer (${endKMVal} KM) cannot be lower than starting odometer (${startKMVal} KM).`);
       return;
     }
 
@@ -838,23 +861,22 @@ export default function TripForm({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      class="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
-    >
+    <Show when={isOpen()}>
       <div
-        class="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
+        class="fixed inset-0 bg-slate-950/65 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto font-sans"
       >
+        <div
+          class="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] animate-scale-up"
+        >
 
-        {/* HEADER SPEC CHIPS */}
-        <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-          <div>
-            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Coins class="w-5 h-5 text-blue-600" />
-              {editingEntry ? `Modify Fleet Trip Journal: ${editingEntry.tripNo}` : 'Initiate Unified Fleet Journey'}
-            </h3>
+          {/* HEADER SPEC CHIPS */}
+          <div class="px-6 py-4.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Coins class="w-5 h-5 text-blue-600" />
+                {editingEntry() ? `Modify Fleet Trip Journal: ${editingEntry()?.tripNo}` : 'Initiate Unified Fleet Journey'}
+              </h3>
             <p class="text-xs text-slate-500 mt-0.5">Define master trip timelines, driver logs, multi-cargo sub-trips and financial settlement receipts.</p>
           </div>
           <button
@@ -933,7 +955,7 @@ export default function TripForm({
                     required
                     class="w-full bg-slate-50 border border-slate-200 text-blue-700 font-mono font-bold tracking-wider rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
-                    {existingTripNos.map(no => (
+                    {existingTripNos().map(no => (
                       <option  value={no}>{no}</option>
                     ))}
                   </select>
@@ -949,7 +971,7 @@ export default function TripForm({
                   onChange={(e) => {
                     const val = e.target.value;
                     setTruckNo(val);
-                    if (!editingEntry) {
+                    if (!editingEntry()) {
                       setStartingKM(getLatestKMForTruck(val));
                     }
                   }}
@@ -957,12 +979,12 @@ export default function TripForm({
                   class="w-full bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white"
                 >
                   <option value="">-- Choose Truck --</option>
-                  {activeTrucks.map(truck => {
+                  {activeTrucks().map(truck => {
                     const isExpired = truck.registrationExpiryDate ? truck.registrationExpiryDate < todayStr : false;
                     const isAdminDisabled = truck.status === 'Admin Disabled';
                     const isNotApproved = truck.isApproved === false || truck.requestStatus === 'Rejected';
                     const isBlocked = isExpired || isAdminDisabled || isNotApproved;
-                    const isSelected = editingEntry && truck.truckNo === editingEntry.truckNo;
+                    const isSelected = editingEntry() && truck.truckNo === editingEntry()?.truckNo;
 
                     let labelSuffix = '';
                     if (isAdminDisabled) labelSuffix = ' (Admin Disabled)';
@@ -993,17 +1015,17 @@ export default function TripForm({
                   class="w-full bg-slate-50 border border-slate-200 text-slate-800 font-semibold rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 focus:bg-white font-sans"
                 >
                   <option value="">-- Choose Driver --</option>
-                  {drivers.map(d => {
+                  {drivers().map(d => {
                     const isInactive = d.status === 'Inactive';
                     const isSelected = d.driverName === driverName();
                     if (isInactive && !isSelected) return null;
                     return (
                       <option  value={d.driverName}>
-                        {d.driverName} {canViewDrivers && d.phone ? `(${d.phone})` : ''}{isInactive ? ' (Inactive)' : ''}
+                        {d.driverName} {canViewDrivers() && d.phone ? `(${d.phone})` : ''}{isInactive ? ' (Inactive)' : ''}
                       </option>
                     );
                   })}
-                  {driverName() && !drivers.some(d => d.driverName === driverName()) && (
+                  {driverName() && !drivers().some(d => d.driverName === driverName()) && (
                     <option value={driverName()}>{driverName()} (Manual Override)</option>
                   )}
                 </select>
@@ -1075,10 +1097,9 @@ export default function TripForm({
                   id="input-endingKM()"
                   type="number"
                   min="0"
-                  required
                   value={endingKM() || ''}
                   onChange={(e) => setEndingKM(Math.max(0, parseInt(e.target.value) || 0))}
-                  placeholder="0"
+                  placeholder="0 (Optional)"
                   class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none text-right font-mono"
                 />
               </div>
@@ -1106,7 +1127,7 @@ export default function TripForm({
                 const wagesAmt = st.driverWages || 0;
                 const expenses = (st.cargoExpenses && st.cargoExpenses.length > 0)
                   ? st.cargoExpenses
-                  : importLegacyCargoExpenses(st, orgProfile);
+                  : importLegacyCargoExpenses(st, orgProfile());
 
                 const segmentDeductions = expenses
                   .filter(exp => exp.deductedFrom === 'OrgRental')
@@ -1313,7 +1334,7 @@ export default function TripForm({
                         class="w-full bg-white border border-slate-250 text-slate-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
                       >
                         <option value="">-- Choose Office --</option>
-                        {activeOffices.map(o => (
+                        {activeOffices().map(o => (
                           <option  value={o.officeName}>{o.officeName}</option>
                         ))}
                       </select>
@@ -1780,8 +1801,8 @@ export default function TripForm({
                           </thead>
                           <tbody class="divide-y divide-slate-100 font-medium text-slate-750">
                             {subTripPayments.map((p) => {
-                              const acc = activeAccounts.find(a => a.id === p.receivedBy);
-                              const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === p.receivedBy);
+                              const acc = activeAccounts().find(a => a.id === p.receivedBy);
+                              const fuelCard = orgProfile()?.fuelCards?.find(fc => fc.id === p.receivedBy);
                               const accountDisplay = p.receivedBy === 'paid_to_driver_advance'
                                 ? 'Paid to Driver Advance'
                                 : fuelCard
@@ -1839,10 +1860,10 @@ export default function TripForm({
                           <option value="">-- Choose Account --</option>
                           <option value="paid_to_driver_advance">Paid to Driver Advance</option>
                           <option value="Cash">Cash</option>
-                          {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newPayReceivedBy()).map(c => (
+                          {orgProfile()?.fuelCards && orgProfile()?.fuelCards?.filter(c => c.status === 'Active' || c.id === newPayReceivedBy()).map(c => (
                             <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                           ))}
-                          {activeAccounts.map(ac => (
+                          {activeAccounts().map(ac => (
                             <option  value={ac.id}>{ac.accountName}</option>
                           ))}
                         </select>
@@ -1923,8 +1944,8 @@ export default function TripForm({
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-medium">
                     {advances().map((adv, advIdx) => {
-                      const acc = activeAccounts.find(a => a.id === adv.fromAccountId);
-                      const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === adv.fromAccountId);
+                      const acc = activeAccounts().find(a => a.id === adv.fromAccountId);
+                      const fuelCard = orgProfile()?.fuelCards?.find(fc => fc.id === adv.fromAccountId);
                       const accountDisplay = fuelCard ? `${fuelCard.cardName} (Fuel Card)` : (acc?.accountName || adv.fromAccountId);
                       return (
                         <tr  class="hover:bg-slate-50 text-slate-705 font-medium">
@@ -1987,10 +2008,10 @@ export default function TripForm({
                 >
                   <option value="">-- Choose Account --</option>
                   <option value="Cash">Cash</option>
-                  {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newAdvFromAccount()).map(c => (
+                  {orgProfile()?.fuelCards && orgProfile()?.fuelCards?.filter(c => c.status === 'Active' || c.id === newAdvFromAccount()).map(c => (
                     <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                   ))}
-                  {activeAccounts.map(ac => (
+                  {activeAccounts().map(ac => (
                     <option  value={ac.id}>{ac.accountName}</option>
                   ))}
                 </select>
@@ -2070,8 +2091,8 @@ export default function TripForm({
                       {[...fuels()].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(f => {
                         const acctName = f.paymentMode === 'driver'
                           ? 'Paid by Driver (from Advance)'
-                          : (accounts.find(a => a.id === f.paymentMode)?.accountName ||
-                            orgProfile?.fuelCards?.find(fc => fc.id === f.paymentMode)?.cardName ||
+                          : (accounts().find(a => a.id === f.paymentMode)?.accountName ||
+                            orgProfile()?.fuelCards?.find(fc => fc.id === f.paymentMode)?.cardName ||
                             'Cash/General');
                         return (
                           <tr  class="hover:bg-amber-50/20">
@@ -2174,10 +2195,10 @@ export default function TripForm({
                   >
                     <option value="">Cash/General Mode</option>
                     <option value="driver">Paid by Driver (from Advance)</option>
-                    {activeAccounts.map(a => (
+                    {activeAccounts().map(a => (
                       <option  value={a.id}>{a.accountName}</option>
                     ))}
-                    {orgProfile?.fuelCards && orgProfile.fuelCards.filter(c => c.status === 'Active' || c.id === newFuelPaymentMode()).map(c => (
+                    {orgProfile()?.fuelCards && orgProfile()?.fuelCards?.filter(c => c.status === 'Active' || c.id === newFuelPaymentMode()).map(c => (
                       <option  value={c.id}>{c.cardName} (Fuel Card)</option>
                     ))}
                   </select>
@@ -2351,10 +2372,10 @@ export default function TripForm({
           </div>
 
           {showQuickFwdPanel() && driverBalance !== 0 && (() => {
-            const allTrips = Array.isArray(trips) ? trips : [];
-            const finalTripNo = editingEntry ? tripNo() : (tripNoOption() === 'AUTO' ? tripNo() : selectedExistingTripNo());
+            const allTrips = Array.isArray(trips()) ? trips() : [];
+            const finalTripNo = editingEntry() ? tripNo() : (tripNoOption() === 'AUTO' ? tripNo() : selectedExistingTripNo());
             const eligibleFwdTrips = allTrips.filter(
-              t => (!editingEntry || t.id !== editingEntry.id) && t.status !== 'Settled'
+              t => (!editingEntry() || t.id !== editingEntry()?.id) && t.status !== 'Settled'
             ).sort((a, b) => {
               const aSame = a.driverName?.toLowerCase().trim() === driverName()?.toLowerCase().trim();
               const bSame = b.driverName?.toLowerCase().trim() === driverName()?.toLowerCase().trim();
@@ -2498,7 +2519,7 @@ export default function TripForm({
                                 syncState: 'pending' as const,
                                 updatedAt: new Date().toISOString()
                               };
-                              const updatedTrips = trips.map(t => t.id === updatedDest.id ? updatedDest : t);
+                              const updatedTrips = trips().map(t => t.id === updatedDest.id ? updatedDest : t);
                               onSaveTrips(updatedTrips);
                             }
 
@@ -2557,7 +2578,7 @@ export default function TripForm({
                         >
                           <option value="">-- Select Company Account --</option>
                           <option value="Cash">Cash</option>
-                          {accounts.filter(a => a.status === 'Active').map(a => (
+                          {accounts().filter(a => a.status === 'Active').map(a => (
                             <option  value={a.id}>
                               {a.accountName} ({a.type})
                             </option>
@@ -2591,7 +2612,7 @@ export default function TripForm({
                             alert("Please enter a valid settle amount greater than 0.");
                             return;
                           }
-                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId());
+                          const targetAccount = accounts().find(a => a.id === selectedFwdAccountId());
                           const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId();
 
                           const confirmMsg = driverBalance < 0
@@ -2667,11 +2688,12 @@ export default function TripForm({
             onClick={handleSubmitMasterForm}
             class="bg-blue-600 hover:bg-blue-700 border border-blue-550 text-white font-bold text-xs px-6 py-2.5 rounded-lg shadow-md hover:scale-[1.01] transition duration-200 cursor-pointer bg-blue-605 h-10"
           >
-            {editingEntry ? 'Update Fleet Record' : 'Publish Fleet Record'}
+            {editingEntry() ? 'Update Fleet Record' : 'Publish Fleet Record'}
           </button>
         </div>
 
       </div>
     </div>
+    </Show>
   );
 }

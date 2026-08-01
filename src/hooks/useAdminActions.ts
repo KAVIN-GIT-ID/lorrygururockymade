@@ -17,16 +17,10 @@ export function useAdminActions({
 
   const handleUpdateOrgStatus = async (orgId: string, status: 'Active' | 'Disabled') => {
     try {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const updatedList = organizationProfiles().map(p =>
         p.organizationId === orgId ? { ...p, status } : p
       );
       await saveOrganizationProfiles(updatedList);
-
-      const target = updatedList.find(p => p.organizationId === orgId);
-      if (target) {
-        await appwrite.saveGlobalConfig(databaseId, appwrite.getOrgDocId(orgId), target);
-      }
       showNotification(`Organization ${orgId} status updated to ${status}.`);
       logAction('Edited', 'OrgProfile', orgId, `Status changed to ${status} by SuperAdmin.`);
     } catch (err: any) {
@@ -37,16 +31,10 @@ export function useAdminActions({
 
   const handleUpdateOrgLimit = async (orgId: string, limit: number) => {
     try {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const updatedList = organizationProfiles().map(p =>
         p.organizationId === orgId ? { ...p, maxTrucksAllowed: limit } : p
       );
       await saveOrganizationProfiles(updatedList);
-
-      const target = updatedList.find(p => p.organizationId === orgId);
-      if (target) {
-        await appwrite.saveGlobalConfig(databaseId, appwrite.getOrgDocId(orgId), target);
-      }
       showNotification(`Organization ${orgId} limit updated to ${limit} trucks.`);
       logAction('Edited', 'OrgProfile', orgId, `Max truck limit set to ${limit} by SuperAdmin.`);
     } catch (err: any) {

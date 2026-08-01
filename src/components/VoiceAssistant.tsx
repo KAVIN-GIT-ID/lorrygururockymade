@@ -375,7 +375,7 @@ export default function VoiceAssistant({
     messagesEndRef?.scrollIntoView({ behavior: 'smooth' });
   });
 
-  const speakText = (text: string, callback?: () => void) => {
+  function speakText(text: string, callback?: () => void) {
     if (isMuted()) {
       if (callback) callback();
       return;
@@ -416,9 +416,9 @@ export default function VoiceAssistant({
       setIsSpeaking(false);
       if (callback) callback();
     }
-  };
+  }
 
-  const startListening = () => {
+  function startListening() {
     if (isSpeaking()) return;
     if (recognitionRef) {
       try {
@@ -427,16 +427,16 @@ export default function VoiceAssistant({
         // Recognition might already be running
       }
     }
-  };
+  }
 
-  const stopListening = () => {
+  function stopListening() {
     if (recognitionRef) {
       recognitionRef.stop();
     }
     setIsListening(false);
-  };
+  }
 
-  const stopVoiceAll = () => {
+  function stopVoiceAll() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
@@ -445,13 +445,13 @@ export default function VoiceAssistant({
     }
     setIsSpeaking(false);
     setIsListening(false);
-  };
+  }
 
-  const addMessage = (sender: 'assistant' | 'user', text: string, status?: 'success' | 'error' | 'neutral') => {
+  function addMessage(sender: 'assistant' | 'user', text: string, status?: 'success' | 'error' | 'neutral') {
     setMessages(prev => [...prev, { sender, text, timestamp: new Date(), status }]);
-  };
+  }
 
-  const greetUser = () => {
+  function greetUser() {
     setMessages([]);
     setActiveFlow(null);
     setCurrentStepIdx(-1);

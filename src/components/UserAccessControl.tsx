@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from 'solid-js';
+import { createSignal, createEffect, For, mergeProps } from 'solid-js';
 
 import { UserPermission, OrganizationProfile, UserRights } from '../types';
 import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone } from 'lucide-solid';
@@ -33,23 +33,38 @@ interface UserAccessControlProps {
   onUpdateOrgProfile?: (updatedProfile: OrganizationProfile) => void;
 }
 
-export default function UserAccessControl({
-  permissions,
-  currentUserEmail = '',
-  onAddPermission,
-  onUpdatePermission,
-  onDeletePermission,
-  confirmAction,
-  showNotification,
-  currentUserOrgId = 'org_default',
-  teamMembers = [],
-  loadingTeamMembers = false,
-  canAddBackend = false,
-  canEditBackend = false,
-  canDeleteBackend = false,
-  orgProfile,
-  onUpdateOrgProfile
-}: UserAccessControlProps) {
+export default function UserAccessControl(rawProps: UserAccessControlProps) {
+  const props = mergeProps(
+    {
+      get permissions() { return typeof rawProps.permissions === 'function' ? (rawProps.permissions as any)() : (rawProps.permissions || []); },
+      get orgProfile() { return typeof rawProps.orgProfile === 'function' ? (rawProps.orgProfile as any)() : rawProps.orgProfile; },
+      get teamMembers() { return typeof rawProps.teamMembers === 'function' ? (rawProps.teamMembers as any)() : (rawProps.teamMembers || []); },
+      get currentUserOrgId() { return typeof rawProps.currentUserOrgId === 'function' ? (rawProps.currentUserOrgId as any)() : (rawProps.currentUserOrgId || 'org_default'); },
+      get loadingTeamMembers() { return typeof rawProps.loadingTeamMembers === 'function' ? (rawProps.loadingTeamMembers as any)() : (rawProps.loadingTeamMembers || false); },
+      get canAddBackend() { return typeof rawProps.canAddBackend === 'function' ? (rawProps.canAddBackend as any)() : (rawProps.canAddBackend || false); },
+      get canEditBackend() { return typeof rawProps.canEditBackend === 'function' ? (rawProps.canEditBackend as any)() : (rawProps.canEditBackend || false); },
+      get canDeleteBackend() { return typeof rawProps.canDeleteBackend === 'function' ? (rawProps.canDeleteBackend as any)() : (rawProps.canDeleteBackend || false); },
+      get currentUserEmail() { return typeof rawProps.currentUserEmail === 'function' ? (rawProps.currentUserEmail as any)() : (rawProps.currentUserEmail || ''); },
+    },
+    rawProps
+  );
+
+  const permissions = () => props.permissions;
+  const orgProfile = () => props.orgProfile;
+  const teamMembers = () => props.teamMembers;
+  const currentUserOrgId = () => props.currentUserOrgId;
+  const loadingTeamMembers = () => props.loadingTeamMembers;
+  const canAddBackend = () => props.canAddBackend;
+  const canEditBackend = () => props.canEditBackend;
+  const canDeleteBackend = () => props.canDeleteBackend;
+  const confirmAction = props.confirmAction;
+  const showNotification = props.showNotification;
+  const currentUserEmail = () => props.currentUserEmail;
+  const onAddPermission = props.onAddPermission;
+  const onUpdatePermission = props.onUpdatePermission;
+  const onDeletePermission = props.onDeletePermission;
+  const onUpdateOrgProfile = props.onUpdateOrgProfile;
+
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [email, setEmail] = createSignal('');
   const [name, setName] = createSignal('');
@@ -75,30 +90,32 @@ export default function UserAccessControl({
   const [lastOrgId, setLastOrgId] = createSignal<string | null>(null);
 
   createEffect(() => {
-    if (orgProfile && orgProfile.organizationId !== lastOrgId()) {
-      setEngineOilInterval(orgProfile.engineOilIntervalKM !== undefined && orgProfile.engineOilIntervalKM !== null ? orgProfile.engineOilIntervalKM : '');
-      setCrownOilInterval(orgProfile.crownOilIntervalKM !== undefined && orgProfile.crownOilIntervalKM !== null ? orgProfile.crownOilIntervalKM : '');
-      setGearBoxOilInterval(orgProfile.gearBoxOilIntervalKM !== undefined && orgProfile.gearBoxOilIntervalKM !== null ? orgProfile.gearBoxOilIntervalKM : '');
-      setRadiatorInterval(orgProfile.radiatorIntervalKM !== undefined && orgProfile.radiatorIntervalKM !== null ? orgProfile.radiatorIntervalKM : '');
-      setPinpushInterval(orgProfile.pinpushIntervalKM !== undefined && orgProfile.pinpushIntervalKM !== null ? orgProfile.pinpushIntervalKM : '');
-      setWheelGreaseInterval(orgProfile.wheelGreaseIntervalKM !== undefined && orgProfile.wheelGreaseIntervalKM !== null ? orgProfile.wheelGreaseIntervalKM : '');
-      setBrokeragePolicy(orgProfile.brokeragePolicy || 'DriverBears');
-      setInsuranceWarningDays(orgProfile.insuranceWarningDays !== undefined && orgProfile.insuranceWarningDays !== null ? orgProfile.insuranceWarningDays : '');
-      setFcWarningDays(orgProfile.fcWarningDays !== undefined && orgProfile.fcWarningDays !== null ? orgProfile.fcWarningDays : '');
-      setNpTaxWarningDays(orgProfile.npTaxWarningDays !== undefined && orgProfile.npTaxWarningDays !== null ? orgProfile.npTaxWarningDays : '');
-      setFiveYearPermitWarningDays(orgProfile.fiveYearPermitWarningDays !== undefined && orgProfile.fiveYearPermitWarningDays !== null ? orgProfile.fiveYearPermitWarningDays : '');
-      setQTaxWarningDays(orgProfile.qTaxWarningDays !== undefined && orgProfile.qTaxWarningDays !== null ? orgProfile.qTaxWarningDays : '');
-      setGreenTaxWarningDays(orgProfile.greenTaxWarningDays !== undefined && orgProfile.greenTaxWarningDays !== null ? orgProfile.greenTaxWarningDays : '');
-      setSubscriptionWarningDays(orgProfile.subscriptionWarningDays !== undefined && orgProfile.subscriptionWarningDays !== null ? orgProfile.subscriptionWarningDays : '');
-      setLastOrgId(orgProfile.organizationId);
+    const prof = orgProfile();
+    if (prof && prof.organizationId !== lastOrgId()) {
+      setEngineOilInterval(prof.engineOilIntervalKM !== undefined && prof.engineOilIntervalKM !== null ? prof.engineOilIntervalKM : '');
+      setCrownOilInterval(prof.crownOilIntervalKM !== undefined && prof.crownOilIntervalKM !== null ? prof.crownOilIntervalKM : '');
+      setGearBoxOilInterval(prof.gearBoxOilIntervalKM !== undefined && prof.gearBoxOilIntervalKM !== null ? prof.gearBoxOilIntervalKM : '');
+      setRadiatorInterval(prof.radiatorIntervalKM !== undefined && prof.radiatorIntervalKM !== null ? prof.radiatorIntervalKM : '');
+      setPinpushInterval(prof.pinpushIntervalKM !== undefined && prof.pinpushIntervalKM !== null ? prof.pinpushIntervalKM : '');
+      setWheelGreaseInterval(prof.wheelGreaseIntervalKM !== undefined && prof.wheelGreaseIntervalKM !== null ? prof.wheelGreaseIntervalKM : '');
+      setBrokeragePolicy(prof.brokeragePolicy || 'DriverBears');
+      setInsuranceWarningDays(prof.insuranceWarningDays !== undefined && prof.insuranceWarningDays !== null ? prof.insuranceWarningDays : '');
+      setFcWarningDays(prof.fcWarningDays !== undefined && prof.fcWarningDays !== null ? prof.fcWarningDays : '');
+      setNpTaxWarningDays(prof.npTaxWarningDays !== undefined && prof.npTaxWarningDays !== null ? prof.npTaxWarningDays : '');
+      setFiveYearPermitWarningDays(prof.fiveYearPermitWarningDays !== undefined && prof.fiveYearPermitWarningDays !== null ? prof.fiveYearPermitWarningDays : '');
+      setQTaxWarningDays(prof.qTaxWarningDays !== undefined && prof.qTaxWarningDays !== null ? prof.qTaxWarningDays : '');
+      setGreenTaxWarningDays(prof.greenTaxWarningDays !== undefined && prof.greenTaxWarningDays !== null ? prof.greenTaxWarningDays : '');
+      setSubscriptionWarningDays(prof.subscriptionWarningDays !== undefined && prof.subscriptionWarningDays !== null ? prof.subscriptionWarningDays : '');
+      setLastOrgId(prof.organizationId);
     }
   });
 
   const handleSaveOrgDefaults = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    onUpdateOrgProfile({
-      ...orgProfile,
+    const currentProf = orgProfile();
+    if (!currentProf || !props.onUpdateOrgProfile) return;
+    props.onUpdateOrgProfile({
+      ...currentProf,
       engineOilIntervalKM: engineOilInterval() !== '' ? Number(engineOilInterval()) : undefined,
       crownOilIntervalKM: crownOilInterval() !== '' ? Number(crownOilInterval()) : undefined,
       gearBoxOilIntervalKM: gearBoxOilInterval() !== '' ? Number(gearBoxOilInterval()) : undefined,
@@ -114,7 +131,7 @@ export default function UserAccessControl({
       greenTaxWarningDays: greenTaxWarningDays() !== '' ? Number(greenTaxWarningDays()) : undefined,
       subscriptionWarningDays: subscriptionWarningDays() !== '' ? Number(subscriptionWarningDays()) : undefined,
     });
-    showNotification("Organization defaults updated successfully!");
+    props.showNotification("Organization defaults updated successfully!");
   };
 
   const [newExpenseType, setNewExpenseType] = createSignal('');
@@ -122,15 +139,17 @@ export default function UserAccessControl({
 
   const handleAddExpenseType = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile || !newExpenseType().trim()) return;
-    const currentTypes = orgProfile.customExpenseTypes || [];
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !newExpenseType().trim()) return;
+    const currentTypes = prof.customExpenseTypes || [];
     const val = newExpenseType().trim();
     if (currentTypes.includes(val)) {
       showNotification("Expense type already exists!");
       return;
     }
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       customExpenseTypes: [...currentTypes, val]
     });
     setNewExpenseType('');
@@ -138,10 +157,12 @@ export default function UserAccessControl({
   };
 
   const handleDeleteExpenseType = (typeToDelete: string) => {
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    const currentTypes = orgProfile.customExpenseTypes || [];
-    onUpdateOrgProfile({
-      ...orgProfile,
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentTypes = prof.customExpenseTypes || [];
+    updater({
+      ...prof,
       customExpenseTypes: currentTypes.filter(t => t !== typeToDelete)
     });
     showNotification("Expense type deleted successfully!");
@@ -149,15 +170,17 @@ export default function UserAccessControl({
 
   const handleAddShopName = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile || !newShopName().trim()) return;
-    const currentShops = orgProfile.shopNames || [];
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !newShopName().trim()) return;
+    const currentShops = prof.shopNames || [];
     const val = newShopName().trim();
     if (currentShops.includes(val)) {
       showNotification("Shop name() already exists!");
       return;
     }
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       shopNames: [...currentShops, val]
     });
     setNewShopName('');
@@ -165,10 +188,12 @@ export default function UserAccessControl({
   };
 
   const handleDeleteShopName = (shopToDelete: string) => {
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    const currentShops = orgProfile.shopNames || [];
-    onUpdateOrgProfile({
-      ...orgProfile,
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentShops = prof.shopNames || [];
+    updater({
+      ...prof,
       shopNames: currentShops.filter(s => s !== shopToDelete)
     });
     showNotification("Shop name() deleted successfully!");
@@ -182,9 +207,11 @@ export default function UserAccessControl({
 
   const handleSaveFuelCard = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile || !fuelCardName().trim()) return;
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !fuelCardName().trim()) return;
 
-    const currentCards = orgProfile.fuelCards || [];
+    const currentCards = prof.fuelCards || [];
     let updatedCards;
 
     if (editingFuelCardId()) {
@@ -203,8 +230,8 @@ export default function UserAccessControl({
       updatedCards = [...currentCards, newCard];
     }
 
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       fuelCards: updatedCards
     });
 
@@ -217,20 +244,22 @@ export default function UserAccessControl({
   };
 
   const handleDeleteFuelCard = (cardId: string) => {
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    const currentCards = orgProfile.fuelCards || [];
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentCards = prof.fuelCards || [];
     const updatedCards = currentCards.filter(c => c.id !== cardId);
 
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       fuelCards: updatedCards
     });
     showNotification("Fuel card deleted successfully!");
   };
 
-  const isBackendOrg = currentUserOrgId === 'org_backend';
-  const currentUserPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim());
-  const currentUserRole = currentUserPerm?.role || 'Custom';
+  const isBackendOrg = currentUserOrgId() === 'org_backend';
+  const currentUserPerm = () => permissions().find(p => p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim());
+  const currentUserRole = () => currentUserPerm()?.role || 'Custom';
 
   // Custom permissions state for creation form
   const [supportRoles, setSupportRoles] = createSignal<('Technical' | 'Billing' | 'General')[]>([]);
@@ -281,7 +310,7 @@ export default function UserAccessControl({
     if (!email().trim() || !name().trim()) return;
 
     // Check duplicate email()
-    if (permissions.some(p => p.email.toLowerCase().trim() === email().toLowerCase().trim())) {
+    if (permissions().some(p => p.email.toLowerCase().trim() === email().toLowerCase().trim())) {
       alert("A user with this email() address already exists in the access control registry.");
       return;
     }
@@ -293,7 +322,7 @@ export default function UserAccessControl({
       isEmailVerified: false,
       isPhoneVerified: false,
       role: role(),
-      organizationId: currentUserOrgId,
+      organizationId: currentUserOrgId(),
       isApproved: true, // Manual additions by admin are auto-approved
       supportRole: isBackendOrg ? supportRoles() : [],
       ...rights()
@@ -339,7 +368,7 @@ export default function UserAccessControl({
   };
 
   const toggleUserRight = (userPerm: UserPermission, rightKey: keyof Omit<UserPermission, 'id' | 'email' | 'name' | 'role' | 'organizationId' | 'isApproved'>) => {
-    if (isBackendOrg && !canEditBackend) {
+    if (isBackendOrg && !canEditBackend()) {
       showNotification("You do not have permission to edit backend team privileges.");
       return;
     }
@@ -357,11 +386,11 @@ export default function UserAccessControl({
   };
 
   const changeUserRole = (userPerm: UserPermission, newRole: 'Admin' | 'Custom') => {
-    if (userPerm.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()) {
+    if (userPerm.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim()) {
       alert("Safety Lock: You cannot change your own role() and revoke your Admin permissions.");
       return;
     }
-    if (isBackendOrg && !canEditBackend) {
+    if (isBackendOrg && !canEditBackend()) {
       showNotification("You do not have permission to modify backend team roles.");
       return;
     }
@@ -420,13 +449,14 @@ export default function UserAccessControl({
   /** Find this user's live Appwrite membership record (by email() match) */
   const getAppwriteMembership = (targetEmail: string): TeamMember | undefined => {
     const cleanEmail = targetEmail.trim().toLowerCase();
-    const match = teamMembers.find(m => {
+    const list = teamMembers();
+    const match = list.find(m => {
       const mEmail = (m.userEmail || (m as any).email || '').trim().toLowerCase();
       return mEmail === cleanEmail;
     });
-    console.log(`[getAppwriteMembership] Matching email: "${cleanEmail}" -> found:`, match, "in list:", teamMembers);
-    if (teamMembers.length > 0) {
-      console.log(`[getAppwriteMembership] Raw memberships list JSON:`, JSON.stringify(teamMembers));
+    console.log(`[getAppwriteMembership] Matching email: "${cleanEmail}" -> found:`, match, "in list:", list);
+    if (list.length > 0) {
+      console.log(`[getAppwriteMembership] Raw memberships list JSON:`, JSON.stringify(list));
     }
     return match;
   };
@@ -445,13 +475,13 @@ export default function UserAccessControl({
         </div>
         <div class="flex items-center gap-2.5">
           {/* Appwrite Teams sync indicator */}
-          {teamMembers.length > 0 && (
+          {teamMembers().length > 0 && (
             <span class="inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
               <Cloud class="w-3 h-3" />
-              {teamMembers.length} in Appwrite Team
+              {teamMembers().length} in Appwrite Team
             </span>
           )}
-          {loadingTeamMembers && (
+          {loadingTeamMembers() && (
             <span class="inline-flex items-center gap-1 text-[9px] text-slate-400">
               <RefreshCw class="w-3 h-3 animate-spin" /> Syncing...
             </span>
@@ -459,14 +489,14 @@ export default function UserAccessControl({
           <button
             id="btn-add-permission"
             onClick={() => {
-              if (isBackendOrg && !canAddBackend) {
+              if (isBackendOrg && !canAddBackend()) {
                 showNotification("You do not have permission to add backend team members.");
                 return;
               }
               resetForm();
               setShowAddForm(!showAddForm());
             }}
-            disabled={isBackendOrg && !canAddBackend}
+            disabled={isBackendOrg && !canAddBackend()}
             class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {showAddForm() ? 'Close Panel' : (
@@ -479,7 +509,7 @@ export default function UserAccessControl({
       </div>
 
       {/* ORGANIZATION DEFAULT MAINTENANCE SETTINGS (ORG DEFAULTS) */}
-      {orgProfile && !isBackendOrg && (
+      {orgProfile() && !isBackendOrg && (
         <div class="mb-6 p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 text-slate-800">
           <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
             <Shield class="w-4 h-4 text-blue-600 animate-pulse" />
@@ -699,9 +729,9 @@ export default function UserAccessControl({
                 </h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <label for="input-fuel-card-name()" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Name / Account</label>
+                    <label for="input-fuel-card-name" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Name / Account</label>
                     <input
-                      id="input-fuel-card-name()"
+                      id="input-fuel-card-name"
                       type="text"
                       required
                       placeholder="e.g. HPCL Card #1"
@@ -752,49 +782,51 @@ export default function UserAccessControl({
             )}
 
             {/* List of Fuel Cards */}
-            {(!orgProfile.fuelCards || orgProfile.fuelCards.length === 0) ? (
+            {(!orgProfile()?.fuelCards || orgProfile()?.fuelCards?.length === 0) ? (
               <p class="text-[11px] text-slate-400 italic text-center py-2">No fuel cards configured for this organization.</p>
             ) : (
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {orgProfile.fuelCards.map((card) => (
-                  <div  class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-3xs">
-                    <div class="space-y-0.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="font-bold text-slate-800 text-xs">{card.cardName}</span>
-                        <span class={`inline-block w-1.5 h-1.5 rounded-full ${card.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-350'}`}></span>
+                <For each={orgProfile()?.fuelCards || []}>
+                  {(card) => (
+                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-3xs">
+                      <div class="space-y-0.5">
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-slate-800 text-xs">{card.cardName}</span>
+                          <span class={`inline-block w-1.5 h-1.5 rounded-full ${card.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-350'}`}></span>
+                        </div>
+                        {card.cardNumber && (
+                          <code class="text-[10px] text-slate-400 font-mono select-all block">{card.cardNumber}</code>
+                        )}
                       </div>
-                      {card.cardNumber && (
-                        <code class="text-[10px] text-slate-400 font-mono select-all block">{card.cardNumber}</code>
-                      )}
+                      <div class="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingFuelCardId(card.id);
+                            setFuelCardName(card.cardName);
+                            setFuelCardNo(card.cardNumber || '');
+                            setFuelCardStatus(card.status);
+                            setShowFuelCardForm(true);
+                          }}
+                          class="text-blue-600 hover:text-blue-800 text-[10px] font-bold cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Remove fuel card "${card.cardName}"?`)) {
+                              handleDeleteFuelCard(card.id);
+                            }
+                          }}
+                          class="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingFuelCardId(card.id);
-                          setFuelCardName(card.cardName);
-                          setFuelCardNo(card.cardNumber || '');
-                          setFuelCardStatus(card.status);
-                          setShowFuelCardForm(true);
-                        }}
-                        class="text-blue-600 hover:text-blue-800 text-[10px] font-bold cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Remove fuel card "${card.cardName}"?`)) {
-                            handleDeleteFuelCard(card.id);
-                          }
-                        }}
-                        class="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )}
+                </For>
               </div>
             )}
             {/* CUSTOM EXPENSE TYPES & SHOP NAMES SECTION */}
@@ -827,29 +859,28 @@ export default function UserAccessControl({
                   </button>
                 </form>
 
-                {(!orgProfile.customExpenseTypes || orgProfile.customExpenseTypes.length === 0) ? (
+                {(!orgProfile()?.customExpenseTypes || orgProfile()?.customExpenseTypes?.length === 0) ? (
                   <p class="text-[11px] text-slate-400 italic py-1">No custom expense types configured. Standard defaults will be used.</p>
                 ) : (
                   <div class="flex flex-wrap gap-2">
-                    {orgProfile.customExpenseTypes.map((type) => (
-                      <span
-                        
-                        class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-blue-750 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1"
-                      >
-                        {type}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Delete custom expense type "${type}"?`)) {
-                              handleDeleteExpenseType(type);
-                            }
-                          }}
-                          class="text-slate-405 hover:text-rose-600 transition"
-                        >
-                          <Trash2 class="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
+                    <For each={orgProfile()?.customExpenseTypes || []}>
+                      {(type) => (
+                        <span class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-blue-750 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1">
+                          {type}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Delete custom expense type "${type}"?`)) {
+                                handleDeleteExpenseType(type);
+                              }
+                            }}
+                            class="text-slate-405 hover:text-rose-600 transition"
+                          >
+                            <Trash2 class="w-3 h-3" />
+                          </button>
+                        </span>
+                      )}
+                    </For>
                   </div>
                 )}
               </div>
@@ -881,29 +912,28 @@ export default function UserAccessControl({
                   </button>
                 </form>
 
-                {(!orgProfile.shopNames || orgProfile.shopNames.length === 0) ? (
+                {(!orgProfile()?.shopNames || orgProfile()?.shopNames?.length === 0) ? (
                   <p class="text-[11px] text-slate-400 italic py-1">No custom shop names configured. Users can type any name().</p>
                 ) : (
                   <div class="flex flex-wrap gap-2">
-                    {orgProfile.shopNames.map((shop) => (
-                      <span
-                        
-                        class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-250 rounded-lg px-2.5 py-1"
-                      >
-                        {shop}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Delete shop name() "${shop}"?`)) {
-                              handleDeleteShopName(shop);
-                            }
-                          }}
-                          class="text-slate-405 hover:text-rose-600 transition"
-                        >
-                          <Trash2 class="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
+                    <For each={orgProfile()?.shopNames || []}>
+                      {(shop) => (
+                        <span class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-250 rounded-lg px-2.5 py-1">
+                          {shop}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Delete shop name() "${shop}"?`)) {
+                                handleDeleteShopName(shop);
+                              }
+                            }}
+                            class="text-slate-405 hover:text-rose-600 transition"
+                          >
+                            <Trash2 class="w-3 h-3" />
+                          </button>
+                        </span>
+                      )}
+                    </For>
                   </div>
                 )}
               </div>
@@ -1100,7 +1130,7 @@ export default function UserAccessControl({
             </button>
             <button
               type="submit"
-              disabled={isBackendOrg && !canAddBackend}
+              disabled={isBackendOrg && !canAddBackend()}
               class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Grant Access
@@ -1111,13 +1141,14 @@ export default function UserAccessControl({
 
       {/* ── Mobile card list (< md) ── */}
       <div class="block md:hidden space-y-3">
-        {permissions.map((p) => {
-          const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
-          const membership = getAppwriteMembership(p.email);
-          const isExpanded = expandedUserId() === p.id;
-          const canEdit = !isBackendOrg || canEditBackend;
+        <For each={permissions()}>
+          {(p) => {
+            const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim();
+            const membership = getAppwriteMembership(p.email);
+            const isExpanded = expandedUserId() === p.id;
+            const canEdit = !isBackendOrg || canEditBackend();
 
-          return (
+            return (
             <div  class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
               {/* Card header */}
               <div class="flex items-start gap-3 p-4">
@@ -1149,7 +1180,7 @@ export default function UserAccessControl({
                           onClick={() => {
                             const updated = { ...p, isEmailVerified: true };
                             onUpdatePermission(updated);
-                            showNotification(`Manually verified email() for ${p.name}.`);
+                            showNotification(`Manually verified email for ${p.name}.`);
                           }}
                           class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                         >
@@ -1171,7 +1202,7 @@ export default function UserAccessControl({
                           onClick={() => {
                             const updated = { ...p, isPhoneVerified: true };
                             onUpdatePermission(updated);
-                            showNotification(`Manually verified phone() for ${p.name}.`);
+                            showNotification(`Manually verified phone for ${p.name}.`);
                           }}
                           class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                         >
@@ -1191,7 +1222,7 @@ export default function UserAccessControl({
                         Pending
                       </span>
                     )}
-                    {teamMembers.length > 0 && (
+                    {teamMembers().length > 0 && (
                       membership ? (
                         membership.confirm ? (
                           <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
@@ -1221,8 +1252,8 @@ export default function UserAccessControl({
                   disabled={
                     isCurrentUser ||
                     !p.isApproved ||
-                    (isBackendOrg && !canEditBackend) ||
-                    (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                    (isBackendOrg && !canEditBackend()) ||
+                    (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                   }
                   class="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-2 focus:outline-none cursor-pointer disabled:opacity-50 flex-1 min-w-0"
                 >
@@ -1236,13 +1267,13 @@ export default function UserAccessControl({
                   <button
                     type="button"
                     onClick={() => {
-                      if (isBackendOrg && !canEditBackend) {
+                      if (isBackendOrg && !canEditBackend()) {
                         showNotification("You do not have permission to approve team members.");
                         return;
                       }
                       approveUser(p);
                     }}
-                    disabled={isBackendOrg && !canEditBackend}
+                    disabled={isBackendOrg && !canEditBackend()}
                     class="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Check class="w-3.5 h-3.5" /> Approve
@@ -1280,11 +1311,11 @@ export default function UserAccessControl({
                       alert("Safety Lock: You cannot delete your own user profile while logged in.");
                       return;
                     }
-                    if (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
+                    if (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
                       alert("Security Restriction: You do not have permission to delete/revoke Administrator or Super Admin accounts.");
                       return;
                     }
-                    if (isBackendOrg && !canDeleteBackend) {
+                    if (isBackendOrg && !canDeleteBackend()) {
                       showNotification("You do not have permission to revoke backend team access.");
                       return;
                     }
@@ -1297,8 +1328,8 @@ export default function UserAccessControl({
                   }}
                   disabled={
                     isCurrentUser ||
-                    (isBackendOrg && !canDeleteBackend) ||
-                    (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                    (isBackendOrg && !canDeleteBackend()) ||
+                    (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                   }
                   class="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Revoke User Access"
@@ -1328,7 +1359,8 @@ export default function UserAccessControl({
                       { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                       { label: 'Backend Team Access', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
                       { label: 'Database Console', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
-                      { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
+                      { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' },
+                      { label: 'Generate Coupon Codes', view: 'canGenerateCoupon', edit: 'canGenerateCoupon', del: 'canGenerateCoupon' }
                     ]).map(mod => (
                       <div  class="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
                         <span class="text-xs font-bold text-slate-700 block mb-2">{mod.label}</span>
@@ -1339,7 +1371,7 @@ export default function UserAccessControl({
                                 type="checkbox"
                                 checked={!!(p as any)[mod.view]}
                                 onChange={() => toggleUserRight(p, mod.view as any)}
-                                disabled={isBackendOrg && !canEditBackend}
+                                disabled={isBackendOrg && !canEditBackend()}
                                 class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                               />
                               View
@@ -1352,7 +1384,7 @@ export default function UserAccessControl({
                               type="checkbox"
                               checked={!!(p as any)[mod.edit]}
                               onChange={() => toggleUserRight(p, mod.edit as any)}
-                              disabled={isBackendOrg && !canEditBackend}
+                              disabled={isBackendOrg && !canEditBackend()}
                               class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                             />
                             Edit
@@ -1362,7 +1394,7 @@ export default function UserAccessControl({
                               type="checkbox"
                               checked={!!(p as any)[mod.del]}
                               onChange={() => toggleUserRight(p, mod.del as any)}
-                              disabled={isBackendOrg && !canEditBackend}
+                              disabled={isBackendOrg && !canEditBackend()}
                               class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                             />
                             Delete
@@ -1439,7 +1471,8 @@ export default function UserAccessControl({
               )}
             </div>
           );
-        })}
+        }}
+        </For>
       </div>
 
       {/* ── Desktop table (≥ md) ── */}
@@ -1455,12 +1488,12 @@ export default function UserAccessControl({
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 font-sans">
-            {permissions.map((p) => {
-              const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
-              const canEdit = !isBackendOrg || canEditBackend;
+            <For each={permissions()}>
+              {(p) => {
+                const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim();
+                const canEdit = !isBackendOrg || canEditBackend();
 
-              return (
-                <>
+                return [
                   <tr class="hover:bg-slate-50/50 transition">
                     <td class="px-4 py-3.5 pl-6 font-bold text-slate-800 flex items-center gap-2.5">
                       <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold font-sans border border-slate-200 shadow-2xs">
@@ -1491,7 +1524,7 @@ export default function UserAccessControl({
                                 onClick={() => {
                                   const updated = { ...p, isEmailVerified: true };
                                   onUpdatePermission(updated);
-                                  showNotification(`Manually verified email() for ${p.name}.`);
+                                  showNotification(`Manually verified email for ${p.name}.`);
                                 }}
                                 class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                               >
@@ -1513,7 +1546,7 @@ export default function UserAccessControl({
                                 onClick={() => {
                                   const updated = { ...p, isPhoneVerified: true };
                                   onUpdatePermission(updated);
-                                  showNotification(`Manually verified phone() for ${p.name}.`);
+                                  showNotification(`Manually verified phone for ${p.name}.`);
                                 }}
                                 class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                               >
@@ -1542,13 +1575,13 @@ export default function UserAccessControl({
                             <button
                               type="button"
                               onClick={() => {
-                                if (isBackendOrg && !canEditBackend) {
+                                if (isBackendOrg && !canEditBackend()) {
                                   showNotification("You do not have permission to approve team members.");
                                   return;
                                 }
                                 approveUser(p);
                               }}
-                              disabled={isBackendOrg && !canEditBackend}
+                              disabled={isBackendOrg && !canEditBackend()}
                               class="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 rounded text-[10px] font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Check class="w-3 h-3 text-white" /> Approve
@@ -1557,29 +1590,23 @@ export default function UserAccessControl({
                         )}
 
                         {/* Live Appwrite Teams sync status */}
-                        {(() => {
-                          const membership = getAppwriteMembership(p.email);
-                          if (teamMembers.length === 0) return null; // Not loaded yet
-                          if (!membership) {
-                            return (
-                              <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                                <XCircle class="w-2.5 h-2.5" /> Not in Appwrite Team
-                              </span>
-                            );
-                          }
-                          if (membership.confirm) {
-                            return (
+                        {teamMembers().length > 0 && (
+                          getAppwriteMembership(p.email) ? (
+                            getAppwriteMembership(p.email)?.confirm ? (
                               <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
                                 <CheckCircle class="w-2.5 h-2.5" /> Appwrite ✓
                               </span>
-                            );
-                          }
-                          return (
-                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                              <RefreshCw class="w-2.5 h-2.5" /> Invite Pending
+                            ) : (
+                              <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                                <RefreshCw class="w-2.5 h-2.5" /> Invite Pending
+                              </span>
+                            )
+                          ) : (
+                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                              <XCircle class="w-2.5 h-2.5" /> Not in Appwrite Team
                             </span>
-                          );
-                        })()}
+                          )
+                        )}
                       </div>
                     </td>
 
@@ -1590,8 +1617,8 @@ export default function UserAccessControl({
                         disabled={
                           isCurrentUser ||
                           !p.isApproved ||
-                          (isBackendOrg && !canEditBackend) ||
-                          (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                          (isBackendOrg && !canEditBackend()) ||
+                          (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }
                         class="bg-slate-50 border border-slate-200 text-slate-800 text-[11px] font-bold rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer disabled:opacity-50"
                       >
@@ -1634,11 +1661,11 @@ export default function UserAccessControl({
                             alert("Safety Lock: You cannot delete your own user profile while logged in.");
                             return;
                           }
-                          if (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
+                          if (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
                             alert("Security Restriction: You do not have permission to delete/revoke Administrator or Super Admin accounts.");
                             return;
                           }
-                          if (isBackendOrg && !canDeleteBackend) {
+                          if (isBackendOrg && !canDeleteBackend()) {
                             showNotification("You do not have permission to revoke backend team access.");
                             return;
                           }
@@ -1651,8 +1678,8 @@ export default function UserAccessControl({
                         }}
                         disabled={
                           isCurrentUser ||
-                          (isBackendOrg && !canDeleteBackend) ||
-                          (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                          (isBackendOrg && !canDeleteBackend()) ||
+                          (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }
                         class="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-650 hover:text-rose-700 rounded border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Revoke User Access"
@@ -1660,10 +1687,10 @@ export default function UserAccessControl({
                         <Trash2 class="w-3.5 h-3.5" />
                       </button>
                     </td>
-                  </tr>
+                  </tr>,
 
-                  {/* Expanded Nested Grid of 21 check flags */}
-                  {expandedUserId() === p.id && p.role === 'Custom' && p.isApproved && (
+                  // Expanded Nested Grid of 21 check flags
+                  (expandedUserId() === p.id && p.role === 'Custom' && p.isApproved) ? (
                     <tr class="bg-slate-50/50">
                       <td colSpan={5} class="p-4 pl-8 pr-8">
                         <div class="max-w-2xl bg-white border border-slate-200 rounded-xl p-4 shadow-sm animate-fade-in space-y-3 text-left">
@@ -1706,7 +1733,7 @@ export default function UserAccessControl({
                                         type="checkbox"
                                         checked={!!(p as any)[mod.view]}
                                         onChange={() => toggleUserRight(p, mod.view as any)}
-                                        disabled={isBackendOrg && !canEditBackend}
+                                        disabled={isBackendOrg && !canEditBackend()}
                                         class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                       />
                                     ) : (
@@ -1718,7 +1745,7 @@ export default function UserAccessControl({
                                       type="checkbox"
                                       checked={!!(p as any)[mod.edit]}
                                       onChange={() => toggleUserRight(p, mod.edit as any)}
-                                      disabled={isBackendOrg && !canEditBackend}
+                                      disabled={isBackendOrg && !canEditBackend()}
                                       class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -1727,7 +1754,7 @@ export default function UserAccessControl({
                                       type="checkbox"
                                       checked={!!(p as any)[mod.del]}
                                       onChange={() => toggleUserRight(p, mod.del as any)}
-                                      disabled={isBackendOrg && !canEditBackend}
+                                      disabled={isBackendOrg && !canEditBackend()}
                                       class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -1754,7 +1781,7 @@ export default function UserAccessControl({
                                         <input
                                           type="checkbox"
                                           checked={isChecked}
-                                          disabled={isBackendOrg && !canEditBackend}
+                                          disabled={isBackendOrg && !canEditBackend()}
                                           onChange={() => {
                                             const newRoles = (isChecked
                                               ? currentRoles.filter(r => r !== typedRole)
@@ -1781,7 +1808,7 @@ export default function UserAccessControl({
                                     const updated = { ...p, canTransferTickets: !p.canTransferTickets };
                                     onUpdatePermission(updated);
                                   }}
-                                  disabled={isBackendOrg && !canEditBackend}
+                                  disabled={isBackendOrg && !canEditBackend()}
                                   class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
                                 />
                                 <label for={`checkbox-transfer-tickets-${p.id}`} class="text-xs font-bold text-slate-700 cursor-pointer uppercase tracking-tight">
@@ -1802,10 +1829,10 @@ export default function UserAccessControl({
                         </div>
                       </td>
                     </tr>
-                  )}
-                </>
-              );
-            })}
+                  ) : null
+                ].filter(Boolean);
+              }}
+            </For>
           </tbody>
         </table>
       </div>

@@ -1,6 +1,6 @@
 import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
 import TripList from './TripList';
 import { TripEntry, Truck, Office, Account } from '../types';
 
@@ -71,7 +71,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should render the list of trips in table rows', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -80,7 +80,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
     expect(screen.getAllByText('TRIP-B-02')[0]).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should filter the list of trips based on search text input', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -98,7 +98,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     const searchInput = screen.getByPlaceholderText(/Search Trips, Trucks, Drivers/i);
 
@@ -112,7 +112,7 @@ describe('TripList Component Tests', () => {
 
   it('should trigger onEditEntry when the modify button is clicked', () => {
     const handleEdit = vi.fn();
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -121,7 +121,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={handleEdit}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     const editBtns = screen.getAllByTitle('Modify Cargo Entry specs');
     fireEvent.click(editBtns[1]); // Click edit on second rendered row (t-101) in sorted order
@@ -134,7 +134,7 @@ describe('TripList Component Tests', () => {
     const handleDelete = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm()); // Auto-confirm
 
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -144,7 +144,7 @@ describe('TripList Component Tests', () => {
         onDeleteEntry={handleDelete}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     const deleteBtns = screen.getAllByTitle('Wipe Cargo Entry record');
     fireEvent.click(deleteBtns[0]); // Delete first rendered row (t-102)
@@ -154,7 +154,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should open details inspector overlay modal when clicking Eye button', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -163,7 +163,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.queryByText('Ultimate Fleet-Book Document Ledger')).not.toBeInTheDocument();
 
@@ -176,34 +176,40 @@ describe('TripList Component Tests', () => {
   });
 
   it('should refresh displayed trips when trips prop changes', () => {
-    const { rerender } = render(
+    const newTrip: TripEntry = {
+      id: 't-new',
+      tripNo: 'TRIP-NEW-99',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      truckNo: 'MH-12-NEW',
+      driverName: 'New Driver',
+      status: 'In Progress',
+      startingKM: 0,
+      endingKM: 0,
+      subTrips: [],
+      payments: []
+    };
+
+    const [trips, setTrips] = createSignal<TripEntry[]>([mockTrips[0]]);
+    render(() => (
       <TripList
-        trips={[mockTrips[0]]}
+        trips={trips()}
         trucks={mockTrucks}
         offices={mockOffices}
         accounts={mockAccounts}
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
-    expect(screen.queryByText('TRIP-B-02')).not.toBeInTheDocument();
+    expect(screen.queryByText('TRIP-NEW-99')).not.toBeInTheDocument();
 
-    // Rerender with new trips list
-    rerender(
-      <TripList
-        trips={mockTrips}
-        trucks={mockTrucks}
-        offices={mockOffices}
-        accounts={mockAccounts}
-        onEditEntry={vi.fn()}
-        onDeleteEntry={vi.fn()}
-      />
-    );
+    // Rerender with new trips list via signal update
+    setTrips([mockTrips[0], newTrip]);
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('TRIP-B-02')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-NEW-99')[0]).toBeInTheDocument();
   });
 
   it('should render Pay/Recover status badge based on calculated driver balance', () => {
@@ -257,7 +263,7 @@ describe('TripList Component Tests', () => {
       ]
     };
 
-    render(
+    render(() => (
       <TripList
         trips={[tripPay, tripRecover]}
         trucks={mockTrucks}
@@ -266,7 +272,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getByText(/Pay: ₹9,000/i)).toBeInTheDocument();
     expect(screen.getByText(/Recover: ₹5,000/i)).toBeInTheDocument();
@@ -316,7 +322,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA, tripB]}
         trucks={mockTrucks}
@@ -327,7 +333,7 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     // Open detail modal for TRIP-A by clicking the row
     const tripARow = screen.getAllByText('TRIP-A')[0];
@@ -400,7 +406,7 @@ describe('TripList Component Tests', () => {
       advances: []
     };
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA, tripB]}
         trucks={[]}
@@ -410,7 +416,7 @@ describe('TripList Component Tests', () => {
         onDeleteEntry={vi.fn()}
         onSaveTrips={vi.fn()}
       />
-    );
+    ));
 
     // Open detail modal for TRIP-A by clicking the row
     const tripARow = screen.getAllByText('TRIP-A')[0];
@@ -452,7 +458,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    const { container } = render(
+    const { container } = render(() => (
       <TripList
         trips={[tripA]}
         trucks={[]}
@@ -463,7 +469,7 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     // Open detail modal for TRIP-A by clicking the row
     const tripARow = screen.getAllByText('TRIP-A')[0];
@@ -527,7 +533,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA]}
         trucks={[]}
@@ -538,7 +544,7 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     // Open detail modal for TRIP-A by clicking the row
     const tripARow = screen.getAllByText('TRIP-A')[0];
@@ -592,7 +598,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA]}
         trucks={[]}
@@ -603,7 +609,7 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     // Open detail modal for TRIP-A by clicking the row
     const tripARow = screen.getAllByText('TRIP-A')[0];
@@ -659,7 +665,7 @@ describe('TripList Component Tests', () => {
       }
     ];
 
-    render(
+    render(() => (
       <TripList
         trips={testTrips}
         trucks={[]}
@@ -668,7 +674,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     // Default select should include Pending (TRIP-PENDING visible) but exclude Settled (TRIP-SETTLED hidden)
     expect(screen.getAllByText('TRIP-PENDING')[0]).toBeInTheDocument();

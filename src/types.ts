@@ -157,6 +157,7 @@ export interface TripAdvance {
   notes?: string;
   receivedByDriverDirectly?: boolean; // True if received directly by driver (e.g. direct party payment)
   subTripId?: string; // Optional: reference to subTrip.id
+  linkId?: string;
 }
 
 export type TripStatus = 'Pending' | 'In Progress' | 'Completed' | 'Settled' | 'Deleted';
@@ -522,6 +523,7 @@ export interface ExpenseEntry extends BaseRecord {
   driverName?: string; // Driver Name if accountType is 'Driver'
   notes?: string;      // Optional service notes (e.g. early service reason)
   organizationId?: string;
+  tyreId?: string;     // Reference to Tyre ID if generated from Tyre purchase
 }
 
 export interface AuditLog extends BaseRecord {
@@ -555,8 +557,12 @@ export interface Tyre extends BaseRecord {
   installationDate?: string; // Mounting date
   installationKM?: number;   // Vehicle Odometer when installed
   accumulatedKM: number;  // Mileage accrued on previous trucks (excluding current mounting)
+  model?: string;
+  treadDepthMM?: number;
+  nsdMM?: number;
   purchaseDate?: string;
   purchaseAmount?: number;
+  purchaseExpenseId?: string; // Direct link to posted purchase Expense record ID
   saleDate?: string;
   saleAmount?: number;
   movementHistory: TyreMovementLog[];
@@ -685,6 +691,21 @@ export interface UserRights {
   canViewTickets?: boolean;
   canEditTickets?: boolean;
   canDeleteTickets?: boolean;
+  canGenerateCoupon?: boolean;
+}
+
+export interface Coupon extends BaseRecord {
+  code: string;              // Uppercase coupon code e.g. "WELCOME100", "SAVE50"
+  organizationId: string;    // Target Organization ID (strictly bound to org)
+  discountType: 'PERCENT' | 'FLAT';
+  discountValue: number;     // 1 to 100 for percentage discounts, or flat rupee amount
+  maxDiscountAmount?: number;// Optional max discount cap in ₹
+  expiryDate?: string;       // Optional YYYY-MM-DD
+  usageLimit?: number;       // Optional usage count limit (0 = unlimited)
+  usedCount: number;         // Count of times redeemed
+  status: 'Active' | 'Disabled' | 'Expired';
+  createdBy?: string;
+  notes?: string;
 }
 
 export interface TruckRequest {
@@ -712,6 +733,7 @@ export interface OrganizationProfile {
   status: 'Active' | 'Disabled';
   maxTrucksAllowed: number;
   truckRequests: TruckRequest[];
+  approvedTrucks?: any[];
   engineOilIntervalKM?: number;
   crownOilIntervalKM?: number;
   gearBoxOilIntervalKM?: number;
@@ -776,6 +798,7 @@ export interface TicketMessage {
   timestamp: string;
   attachmentUrl?: string;
   attachmentName?: string;
+  status?: 'sent' | 'delivered' | 'read';
 }
 
 export interface SupportTicket extends BaseRecord {
@@ -794,6 +817,8 @@ export interface SupportTicket extends BaseRecord {
   lockedByName?: string;
   lockedByEmail?: string;
   lockedByAt?: string;
+  userLastReadMessageId?: string;
+  agentLastReadMessageId?: string;
 }
 
 export function importLegacyCargoExpenses(s: SubTrip, orgProfile?: OrganizationProfile): CargoExpense[] {

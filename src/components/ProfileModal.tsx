@@ -1,4 +1,4 @@
-import { Suspense, lazy, Component, createSignal, createMemo, onMount } from 'solid-js';
+import { Suspense, lazy, Component, createSignal, createMemo, onMount, Show } from 'solid-js';
 import { User, MessageSquare } from 'lucide-solid';
 import ProfileSettings from './ProfileSettings';
 import { useAuth } from '../context/AuthContext';
@@ -78,55 +78,57 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
   });
 
   const isBackendTeam = () => currentUserOrgId() === 'org_backend' || !!currentUserRights()?.isSuperAdmin;
+  const activeTabVal = () => typeof props.profileActiveTab === 'function' ? (props.profileActiveTab as any)() : (props.profileActiveTab || 'SETTINGS');
 
   return (
-    <div class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in flex flex-col md:flex-row overflow-hidden h-[600px] text-left">
-        
-        {/* Sidebar navigation */}
-        <div class="w-full md:w-56 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-1.5 shrink-0">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="font-extrabold text-slate-850 dark:text-slate-100 text-sm uppercase tracking-wider">Settings Panel</h3>
-            <button
-              onClick={props.onClose}
-              class="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
+    <Show when={props.isOpen}>
+      <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-4 z-[9999] font-sans">
+        <div class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden animate-in fade-in zoom-in duration-150">
+          
+          {/* Modal Sidebar */}
+          <div class="w-full md:w-64 bg-slate-50 dark:bg-slate-900/50 p-4 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-slate-400">User Settings</span>
+              <button
+                onClick={props.onClose}
+                class="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
-          <button
-            onClick={() => props.setProfileActiveTab('SETTINGS')}
-            class={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-              props.profileActiveTab === 'SETTINGS'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
-            }`}
-          >
-            <User class="w-4 h-4" />
-            <span>Profile & Security</span>
-          </button>
-
-          {!isBackendTeam() && (
             <button
-              onClick={() => props.setProfileActiveTab('SUPPORT')}
-              class={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                props.profileActiveTab === 'SUPPORT'
+              onClick={() => props.setProfileActiveTab('SETTINGS')}
+              class={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTabVal() === 'SETTINGS'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
               }`}
             >
-              <div class="flex items-center gap-2.5">
-                <MessageSquare class="w-4 h-4" />
-                <span>Support Center</span>
-              </div>
-              {props.getClientUnreadTicketsCount() > 0 && (
-                <span class="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
-                  {props.getClientUnreadTicketsCount()}
-                </span>
-              )}
+              <User class="w-4 h-4" />
+              <span>Profile & Security</span>
             </button>
-          )}
+
+            {!isBackendTeam() && (
+              <button
+                onClick={() => props.setProfileActiveTab('SUPPORT')}
+                class={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                  activeTabVal() === 'SUPPORT'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-555 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                }`}
+              >
+                <div class="flex items-center gap-2.5">
+                  <MessageSquare class="w-4 h-4" />
+                  <span>Support Center</span>
+                </div>
+                {props.getClientUnreadTicketsCount() > 0 && (
+                  <span class="flex items-center justify-center bg-rose-500 text-white rounded-full text-[9px] px-1.5 min-w-[16px] h-4 font-sans font-bold leading-none animate-pulse">
+                    {props.getClientUnreadTicketsCount()}
+                  </span>
+                )}
+              </button>
+            )}
           
           <div class="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800 hidden md:block">
             <button
@@ -142,7 +144,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
         <div class="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
           <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/20 dark:bg-slate-950/5 shrink-0">
             <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm">
-              {props.profileActiveTab === 'SETTINGS' ? 'Profile & Security' : 'Support Center Help Desk'}
+              {activeTabVal() === 'SETTINGS' ? 'Profile & Security' : 'Support Center Help Desk'}
             </h3>
             <button
               onClick={props.onClose}
@@ -153,7 +155,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
           </div>
 
           <div class="flex-1 overflow-y-auto p-5 min-h-0">
-            {props.profileActiveTab === 'SETTINGS' ? (
+            {activeTabVal() === 'SETTINGS' ? (
               <ProfileSettings
                 currentUser={currentUser()}
                 currentUserRights={currentUserRights() as any}
@@ -213,8 +215,9 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
           </div>
         </div>
 
+        </div>
       </div>
-    </div>
+    </Show>
   );
 };
 

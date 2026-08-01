@@ -6,20 +6,22 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'list',
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'https://localhost:3000',
+    ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], ignoreHTTPSErrors: true },
     },
   ],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:3000',
+    url: 'https://localhost:3000',
+    ignoreHTTPSErrors: true,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

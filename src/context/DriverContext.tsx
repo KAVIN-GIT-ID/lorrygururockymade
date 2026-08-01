@@ -1,10 +1,10 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { Driver, createRecord, mutateRecord } from '../types';
 import { migrateDrivers } from '../lib/migrations';
 import { getDriverDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -32,6 +32,10 @@ export function DriverProvider(props: { children: JSX.Element }) {
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.drivers && prewarmedData.drivers.length > 0) {
+      setDriversStore(prewarmedData.drivers);
+      setLoadedFromDB(true);
+    }
     db.drivers.toArray().then(cached => {
       setDriversStore(cached || []);
       setLoadedFromDB(true);
@@ -41,7 +45,11 @@ export function DriverProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...driversStore];
-    db.drivers.clear().then(() => db.drivers.bulkPut(list));
+    if (list.length === 0) {
+      db.drivers.clear();
+    } else {
+      db.drivers.bulkPut(list);
+    }
   });
 
   const saveDrivers = (newDrivers: Driver[] | ((prev: Driver[]) => Driver[])) => {
@@ -52,7 +60,7 @@ export function DriverProvider(props: { children: JSX.Element }) {
 
   const orgDrivers = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return (orgId === 'org_backend' ? driversStore : driversStore.filter(d => d.organizationId === orgId)).filter(d => !d.deletedAt);
+    return driversStore.filter(d => d.organizationId === orgId && !d.deletedAt);
   });
 
   const addDriver = async (driverInput: Omit<Driver, 'id'>) => {

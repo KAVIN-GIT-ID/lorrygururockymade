@@ -1,0 +1,15 @@
+# Robots.txt for Lorry Guru
+User-agent: *
+Allow: /
+Allow: /console/dashboard
+Allow: /console/trips
+Allow: /console/trucks
+Allow: /console/expenses
+Allow: /console/drivers
+Allow: /console/accounts
+Allow: /console/offices
+Allow: /console/tyres
+Allow: /console/reports
+
+# Sitemap
+Sitemap: https://lorryguru.in/sitemap.xml

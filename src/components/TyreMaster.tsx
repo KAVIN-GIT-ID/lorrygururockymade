@@ -1,4 +1,4 @@
-import { createSignal, createEffect, mergeProps } from 'solid-js';
+import { createSignal, createEffect, createMemo, mergeProps } from 'solid-js';
 import { useTripsContext } from '../context/TripContext';
 import { useTrucksContext } from '../context/TruckContext';
 import { useDriversContext } from '../context/DriverContext';
@@ -39,6 +39,8 @@ interface TyreMasterProps {
   tyres: Tyre[];
   trucks: Truck[];
   accounts: Account[];
+  expenses?: any[];
+  drivers?: any[];
   onAddTyre: (
     tyre: Omit<Tyre, 'id' | 'movementHistory' | 'accumulatedKM'>,
     expenseDetails?: {
@@ -47,7 +49,14 @@ interface TyreMasterProps {
       paymentMode?: string;
     }
   ) => void;
-  onUpdateTyre: (tyre: Tyre) => void;
+  onUpdateTyre: (
+    tyre: Tyre,
+    expenseDetails?: {
+      createExpense?: boolean;
+      truckNo?: string;
+      paymentMode?: string;
+    }
+  ) => void;
   onDeleteTyre: (id: string) => void;
   confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
   canViewTyres?: boolean;
@@ -61,380 +70,242 @@ interface TyreMasterProps {
 }
 
 export default function TyreMaster(rawProps: TyreMasterProps) {
-  const tyreCtx = useTyresContext();
-  const trucksCtx = useTrucksContext();
-  const driversCtx = useDriversContext();
-  const permissionCtx = usePermissions();
-  const expenseCtx = useExpensesContext();
+  let tyreCtx: any; try { tyreCtx = useTyresContext(); } catch (_) {}
+  let trucksCtx: any; try { trucksCtx = useTrucksContext(); } catch (_) {}
+  let driversCtx: any; try { driversCtx = useDriversContext(); } catch (_) {}
+  let permissionCtx: any; try { permissionCtx = usePermissions(); } catch (_) {}
+  let expenseCtx: any; try { expenseCtx = useExpensesContext(); } catch (_) {}
 
-  const props = mergeProps(rawProps, {
-    get tyres() { return tyreCtx.orgTyres(); },
-    get expenses() { return expenseCtx.orgExpenses(); },
-    get trucks() { return trucksCtx.orgTrucks(); },
-    get drivers() { return driversCtx.orgDrivers(); },
-    onSaveExpenses: expenseCtx.saveExpenses,
-    onAddTyre: tyreCtx.addTyre,
-    onUpdateTyre: tyreCtx.updateTyre,
-    onDeleteTyre: tyreCtx.deleteTyre,
-    showNotification: rawProps.showNotification,
-    logAction: rawProps.logAction,
-    confirmAction: rawProps.confirmAction,
-    orgProfile: rawProps.orgProfile,
-    autoOpenAdd: rawProps.autoOpenAdd,
-    onAutoOpenCleared: rawProps.onAutoOpenCleared,
-    get accounts() { return rawProps.accounts || []; },
-    
-    get canViewTyres() { return permissionCtx.currentUserRights().canViewTyres; },
-    get canEditTyres() { return permissionCtx.currentUserRights().canEditTyres; },
-    get canDeleteTyres() { return permissionCtx.currentUserRights().canDeleteTyres; },
-    get organizationId() { return permissionCtx.currentUserOrgId(); }
-  });
-  const {
-    tyres,
-    expenses,
-    onSaveExpenses,
-    showNotification,
-    logAction,
-    onAddTyre,
-    onUpdateTyre,
-    onDeleteTyre,
-    confirmAction,
-    canViewTyres,
-    canEditTyres,
-    canDeleteTyres,
-    trucks,
-    drivers,
-    orgProfile,
-    organizationId,
-    autoOpenAdd,
-    onAutoOpenCleared,
-    accounts
-  } = props;
-
-
-  const [showAddForm, setShowAddForm] = createSignal(false);
-  const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);
-
-  createEffect(() => {
-    if (autoOpenAdd) {
-      resetAddForm();
-      setShowAddForm(true);
-      if (onAutoOpenCleared) {
-        onAutoOpenCleared();
-      }
-    }
-  });
-
-  const [tyreNo, setTyreNo] = createSignal('');
-  const [manufacturer, setManufacturer] = createSignal('');
-  const [size, setSize] = createSignal('10.00R20');
-  const [purchaseDate, setPurchaseDate] = createSignal('2026-05-23');
-  const [purchaseAmount, setPurchaseAmount] = createSignal('');
-  const [editingTyreId, setEditingTyreId] = createSignal<string | null>(null);
-
-  // Auto expense ledger states
-  const [associatedTruckNo, setAssociatedTruckNo] = createSignal('');
-  const [paymentMode, setPaymentMode] = createSignal('');
-  const [createExpense, setCreateExpense] = createSignal(true);
-  const [mountDirectly, setMountDirectly] = createSignal(false);
-  const [initialOdoKM, setInitialOdoKM] = createSignal('');
-  const [truckSearchQuery, setTruckSearchQuery] = createSignal('');
-  const [isTruckDropdownOpen, setIsTruckDropdownOpen] = createSignal(false);
-
-  // Status Filter
-  const [statusFilter, setStatusFilter] = createSignal<string>('');
-  const [searchQuery, setSearchQuery] = createSignal('');
-
-  // Action states
-  const [mountingTyreId, setMountingTyreId] = createSignal<string | null>(null);
-  const [selectedTruckId, setSelectedTruckId] = createSignal('');
-  const [mountingKM, setMountingKM] = createSignal('');
-  const [mountingDate, setMountingDate] = createSignal('2026-05-23');
-  const [mountTruckSearchQuery, setMountTruckSearchQuery] = createSignal('');
-  const [isMountTruckDropdownOpen, setIsMountTruckDropdownOpen] = createSignal(false);
-
-  const [removingTyreId, setRemovingTyreId] = createSignal<string | null>(null);
-  const [removalKM, setRemovalKM] = createSignal('');
-  const [removalDate, setRemovalDate] = createSignal('2026-05-23');
-  const [removalRemarks, setRemovalRemarks] = createSignal('Routine Rotation');
-
-  const [sellingTyreId, setSellingTyreId] = createSignal<string | null>(null);
-  const [saleAmount, setSaleAmount] = createSignal('');
-  const [saleDate, setSaleDate] = createSignal('2026-05-23');
-
-  const [scrappingTyreId, setScrappingTyreId] = createSignal<string | null>(null);
-  const [scrapDate, setScrapDate] = createSignal('2026-05-23');
-
-  const [viewHistoryTyreId, setViewHistoryTyreId] = createSignal<string | null>(null);
-
-  // Pagination states
-  const [currentPage, setCurrentPage] = createSignal(1);
-  const [pageSize, setPageSize] = createSignal(12);
-  const [displayedTyres, setDisplayedTyres] = createSignal<Tyre[]>([]);
-  const [totalCount, setTotalCount] = createSignal(0);
-  const [loading, setLoading] = createSignal(false);
-
-  const online = isAppwriteConfigured();
-
-  // Reset page to 1 when filters change
-  createEffect(() => {
-    setCurrentPage(1);
-  });
-
-  // Offline / local logic fallback
-  createEffect(() => {
-    if (!online) {
-      const filtered = tyres.filter(tyre => {
-        const matchesStatus = statusFilter() ? tyre.status === statusFilter() : true;
-        const matchesSearch = searchQuery() 
-          ? tyre.tyreNo.toLowerCase().includes(searchQuery().toLowerCase()) || 
-            tyre.manufacturer.toLowerCase().includes(searchQuery().toLowerCase()) ||
-            (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery().toLowerCase()))
-          : true;
-        return matchesStatus && matchesSearch;
-      });
-
-      setTotalCount(filtered.length);
-      const startIdx = (currentPage() - 1) * pageSize();
-      setDisplayedTyres(filtered.slice(startIdx, startIdx + pageSize()));
-    }
-  });
-
-  // Online Appwrite logic
-  createEffect(() => {
-    if (online) {
-      const fetchServerTyres = async () => {
-        setLoading(true);
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
-
-          const res = await appwrite.queryTyres(
-            databaseId,
-            orgId,
-            {
-              search: searchQuery() || undefined,
-              status: statusFilter() || undefined
-            },
-            currentPage(),
-            pageSize()
-          );
-
-          const mapped = (res.documents || []).map(doc => appwrite.reconstructRecord(doc));
-          
-          // Get locally filtered tyres
-          const localFiltered = tyres.filter(tyre => {
-            const matchesStatus = statusFilter() ? tyre.status === statusFilter() : true;
-            const matchesSearch = searchQuery() 
-              ? tyre.tyreNo.toLowerCase().includes(searchQuery().toLowerCase()) || 
-                tyre.manufacturer.toLowerCase().includes(searchQuery().toLowerCase()) ||
-                (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery().toLowerCase()))
-              : true;
-            return matchesStatus && matchesSearch;
-          });
-
-          if (mapped.length === 0 && localFiltered.length > 0) {
-            setDisplayedTyres(localFiltered.slice((currentPage() - 1) * pageSize(), (currentPage() - 1) * pageSize() + pageSize()));
-            setTotalCount(localFiltered.length);
-          } else {
-            // Find local tyres not yet present in the server response
-            const missingLocal = localFiltered.filter(lt => !mapped.some(mt => mt.id === lt.id || mt.tyreNo === lt.tyreNo));
-            if (missingLocal.length > 0) {
-              const combined = [...mapped, ...missingLocal];
-              setDisplayedTyres(combined.slice(0, pageSize()));
-              setTotalCount((res.total || 0) + missingLocal.length);
-            } else {
-              setDisplayedTyres(mapped);
-              setTotalCount(res.total || 0);
-            }
-          }
-        } catch (err) {
-          console.error("Failed to query tyres from Appwrite:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      const delayDebounce = setTimeout(() => {
-        fetchServerTyres();
-      }, 300);
-
-      return () => clearTimeout(delayDebounce);
-    }
-  });
-
+  const props = mergeProps(
+    {
+      get tyres() { return rawProps.tyres || (tyreCtx ? tyreCtx.orgTyres() : []); },
+      get expenses() { return rawProps.expenses || (expenseCtx ? expenseCtx.orgExpenses() : []); },
+      get trucks() { return rawProps.trucks || (trucksCtx ? trucksCtx.orgTrucks() : []); },
+      get drivers() { return rawProps.drivers || (driversCtx ? driversCtx.orgDrivers() : []); },
+      onSaveExpenses: rawProps.onSaveExpenses || expenseCtx?.saveExpenses,
+      onAddTyre: rawProps.onAddTyre || tyreCtx?.addTyre,
+      onUpdateTyre: rawProps.onUpdateTyre || tyreCtx?.updateTyre,
+      onDeleteTyre: rawProps.onDeleteTyre || tyreCtx?.deleteTyre,
+      showNotification: rawProps.showNotification,
+      logAction: rawProps.logAction,
+      confirmAction: rawProps.confirmAction,
+      orgProfile: rawProps.orgProfile,
+      autoOpenAdd: rawProps.autoOpenAdd,
+      onAutoOpenCleared: rawProps.onAutoOpenCleared,
+      get accounts() { return rawProps.accounts || []; },
+      get canViewTyres() { return rawProps.canViewTyres ?? (permissionCtx ? permissionCtx.currentUserRights().canViewTyres : true); },
+      get canEditTyres() { return rawProps.canEditTyres ?? (permissionCtx ? permissionCtx.currentUserRights().canEditTyres : true); },
+      get canDeleteTyres() { return rawProps.canDeleteTyres ?? (permissionCtx ? permissionCtx.currentUserRights().canDeleteTyres : true); },
+      get organizationId() { return rawProps.organizationId || (permissionCtx ? permissionCtx.currentUserOrgId() : 'org_default'); }
+    },
+    rawProps
+  );
   const resetAddForm = () => {
     setTyreNo('');
     setManufacturer('');
-    setSize('10.00R20');
+    setSize('');
+    setModel('');
     setPurchaseDate('2026-05-23');
-    setPurchaseAmount('');
-    setAssociatedTruckNo('');
-    setPaymentMode('');
-    setCreateExpense(true);
+    setCost('');
+    setTreadDepth('');
+    setNsd('');
+    setInitialKM('');
+    setCreateExpense(false);
     setMountDirectly(false);
     setInitialOdoKM('');
-    setEditingTyreId(null);
+    setAssociatedTruckNo('');
+    setPurchaseAmount('');
   };
+
+  const [associatedTruckNo, setAssociatedTruckNo] = createSignal('');
+  const [isTruckDropdownOpen, setIsTruckDropdownOpen] = createSignal(false);
+  const [purchaseAmount, setPurchaseAmount] = createSignal<number | ''>('');
+  const [editingTyreId, setEditingTyreId] = createSignal<string | null>(null);
+  const [createExpense, setCreateExpense] = createSignal(false);
+  const [mountDirectly, setMountDirectly] = createSignal(false);
+  const [initialOdoKM, setInitialOdoKM] = createSignal<number | ''>('');
+  const [paymentMode, setPaymentMode] = createSignal('');
 
   const handleCreateTyre = (e: Event) => {
     e.preventDefault();
-    if (!tyreNo().trim() || !manufacturer()) return;
+    if (!tyreNo() || !manufacturer()) return;
+
+    const expDetails = {
+      createExpense: createExpense(),
+      truckNo: associatedTruckNo(),
+      paymentMode: paymentMode()
+    };
 
     if (editingTyreId()) {
-      const orig = tyres.find(t => t.id === editingTyreId());
-      if (orig) {
-        onUpdateTyre({
-          ...orig,
-          tyreNo: tyreNo().trim().toUpperCase(),
+      const existing = (props.tyres || []).find(t => t.id === editingTyreId());
+      if (existing) {
+        props.onUpdateTyre({
+          ...existing,
+          tyreNo: tyreNo(),
           manufacturer: manufacturer(),
           size: size(),
-          purchaseDate: purchaseDate() || undefined,
-          purchaseAmount: purchaseAmount() ? Number(purchaseAmount()) : undefined
-        });
+          model: model() || undefined,
+          purchaseDate: purchaseDate(),
+          purchaseAmount: Number(purchaseAmount()) || Number(cost()) || 0,
+          treadDepthMM: treadDepth() !== '' ? Number(treadDepth()) : undefined,
+          nsdMM: nsd() !== '' ? Number(nsd()) : undefined,
+        }, expDetails);
       }
-      resetAddForm();
-      setShowAddForm(false);
-      return;
-    }
-
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const selectedTruck = trucks.find(t => t.truckNo === associatedTruckNo());
-    if (selectedTruck) {
-      const isExpired = selectedTruck.registrationExpiryDate ? selectedTruck.registrationExpiryDate < todayStr : false;
-      const isAdminDisabled = selectedTruck.status === 'Admin Disabled';
-      const isNotApproved = selectedTruck.isApproved === false || selectedTruck.requestStatus === 'Rejected';
-      if (isExpired || isAdminDisabled || isNotApproved) {
-        let reason = "expired";
-        if (isAdminDisabled) reason = "admin disabled";
-        else if (isNotApproved) reason = "not approved";
-        alert(`Cannot register tyre: Selected truck ${associatedTruckNo()} is ${reason}.`);
-        return;
-      }
-    }
-
-    const isMounted = mountDirectly() && associatedTruckNo();
-
-    onAddTyre(
-      {
-        tyreNo: tyreNo().trim().toUpperCase(),
+    } else {
+      const newTyre: Omit<Tyre, 'id' | 'movementHistory' | 'accumulatedKM'> = {
+        tyreNo: tyreNo(),
         manufacturer: manufacturer(),
         size: size(),
-        status: isMounted ? 'Active' : 'Available',
-        currentTruckNo: isMounted ? associatedTruckNo() : undefined,
-        installationDate: isMounted ? purchaseDate() : undefined,
-        installationKM: isMounted ? (initialOdoKM() ? Number(initialOdoKM()) : undefined) : undefined,
-        purchaseDate: purchaseDate() || undefined,
-        purchaseAmount: purchaseAmount() ? Number(purchaseAmount()) : undefined
-      },
-      {
-        createExpense: createExpense() && !!purchaseAmount(),
-        truckNo: associatedTruckNo() || 'YARD / WH',
-        paymentMode: paymentMode() || 'Cash'
-      }
-    );
-
-    resetAddForm();
+        model: model() || undefined,
+        purchaseDate: purchaseDate(),
+        purchaseAmount: Number(purchaseAmount()) || Number(cost()) || 0,
+        treadDepthMM: treadDepth() !== '' ? Number(treadDepth()) : undefined,
+        nsdMM: nsd() !== '' ? Number(nsd()) : undefined,
+        status: 'Available'
+      };
+      props.onAddTyre(newTyre, expDetails);
+    }
     setShowAddForm(false);
+    resetAddForm();
   };
 
   const startEdit = (tyre: Tyre) => {
     setEditingTyreId(tyre.id);
-    setTyreNo(tyre.tyreNo);
-    setManufacturer(tyre.manufacturer);
-    setSize(tyre.size || '10.00R20');
+    setTyreNo(tyre.tyreNo || '');
+    setManufacturer(tyre.manufacturer || '');
+    setSize(tyre.size || '');
+    setModel(tyre.model || '');
     setPurchaseDate(tyre.purchaseDate || '2026-05-23');
-    setPurchaseAmount(tyre.purchaseAmount ? tyre.purchaseAmount.toString() : '');
+    setCost(tyre.purchaseAmount ?? '');
+    setTreadDepth(tyre.treadDepthMM ?? '');
+    setNsd(tyre.nsdMM ?? '');
+    setPurchaseAmount(tyre.purchaseAmount ?? '');
+
+    const expList = props.expenses || [];
+    const expId = tyre.purchaseExpenseId;
+    const existingExp = expId
+      ? expList.find(e => e.id === expId && !e.deletedAt)
+      : expList.find(e =>
+          !e.deletedAt &&
+          (e.expenseType === 'Tyre Purchase' || (e.notes || '').toLowerCase().includes('tyre')) &&
+          (e.tyreId === tyre.id || (tyre.tyreNo && ((e.notes || '').includes(tyre.tyreNo) || (e.shopName || '').includes(tyre.tyreNo))))
+        );
+
+    if (existingExp) {
+      setCreateExpense(true);
+      setPaymentMode(existingExp.paymentMode || '');
+      setAssociatedTruckNo(existingExp.truckNo !== 'YARD / WH' ? existingExp.truckNo : '');
+    } else {
+      setCreateExpense(false);
+      setPaymentMode('');
+      setAssociatedTruckNo(tyre.currentTruckNo || '');
+    }
+
     setShowAddForm(true);
   };
 
+  const [showAddForm, setShowAddForm] = createSignal(false);
+  const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = createSignal('');
+  const [statusFilter, setStatusFilter] = createSignal('');
+
+  // Form State
+  const [tyreNo, setTyreNo] = createSignal('');
+  const [manufacturer, setManufacturer] = createSignal('');
+  const [size, setSize] = createSignal('');
+  const [model, setModel] = createSignal('');
+  const [purchaseDate, setPurchaseDate] = createSignal('2026-05-23');
+  const [cost, setCost] = createSignal<number | ''>('');
+  const [treadDepth, setTreadDepth] = createSignal<number | ''>('');
+  const [nsd, setNsd] = createSignal<number | ''>('');
+  const [initialKM, setInitialKM] = createSignal<number | ''>('');
+
+  // Action Modal States
+  const [mountingTyreId, setMountingTyreId] = createSignal<string | null>(null);
+  const [mountingTruckNo, setMountingTruckNo] = createSignal('');
+  const [mountingDate, setMountingDate] = createSignal('2026-05-23');
+  const [mountingKM, setMountingKM] = createSignal<number | ''>('');
+  const [selectedTruckId, setSelectedTruckId] = createSignal('');
+  const [isMountTruckDropdownOpen, setIsMountTruckDropdownOpen] = createSignal(false);
+
   const startMounting = (tyre: Tyre) => {
     setMountingTyreId(tyre.id);
-    setSelectedTruckId('');
-    setMountingKM('');
+    setMountingTruckNo('');
     setMountingDate('2026-05-23');
+    setMountingKM('');
   };
 
   const handleMountSubmit = (e: Event) => {
     e.preventDefault();
-    const tyre = tyres.find(t => t.id === mountingTyreId());
-    if (!tyre || !selectedTruckId() || !mountingKM()) return;
+    const tyre = (props.tyres || []).find(t => t.id === mountingTyreId());
+    const truck = (props.trucks || []).find(tk => tk.truckNo === mountingTruckNo());
+    if (!tyre || !truck) return;
+    handleMountingSubmit(tyre, truck);
+  };
 
-    const truck = trucks.find(tr => tr.id === selectedTruckId());
-    if (!truck) return;
+  const [removingTyreId, setRemovingTyreId] = createSignal<string | null>(null);
+  const [removalDate, setRemovalDate] = createSignal('2026-05-23');
+  const [removalKM, setRemovalKM] = createSignal<number | ''>('');
+  const [removalRemarks, setRemovalRemarks] = createSignal('Routine Rotation');
 
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const isExpired = truck.registrationExpiryDate ? truck.registrationExpiryDate < todayStr : false;
-    const isAdminDisabled = truck.status === 'Admin Disabled';
-    const isNotApproved = truck.isApproved === false || truck.requestStatus === 'Rejected';
-    if (isExpired || isAdminDisabled || isNotApproved) {
-      let reason = "expired";
+  const [sellingTyreId, setSellingTyreId] = createSignal<string | null>(null);
+  const [saleDate, setSaleDate] = createSignal('2026-05-23');
+  const [saleAmount, setSaleAmount] = createSignal<number | ''>('');
+
+  const [scrappingTyreId, setScrappingTyreId] = createSignal<string | null>(null);
+  const [scrapDate, setScrapDate] = createSignal('2026-05-23');
+  const [scrapReason, setScrapReason] = createSignal('Worn Out');
+
+  const [viewHistoryTyreId, setViewHistoryTyreId] = createSignal<string | null>(null);
+  const [historyTyreId, setHistoryTyreId] = createSignal<string | null>(null);
+  const [truckSearchQuery, setTruckSearchQuery] = createSignal('');
+  const [mountTruckSearchQuery, setMountTruckSearchQuery] = createSignal('');
+
+  createEffect(() => {
+    if (props.autoOpenAdd) {
+      resetAddForm();
+      setShowAddForm(true);
+      props.onAutoOpenCleared?.();
+    }
+  });
+
+  const handleMountingSubmit = (tyre: Tyre, truck: Truck) => {
+    const isAdminDisabled = truck.status === 'Inactive';
+    const isNotApproved = !truck.isApproved;
+    if (isAdminDisabled || isNotApproved) {
+      let reason = "unknown";
       if (isAdminDisabled) reason = "admin disabled";
       else if (isNotApproved) reason = "not approved";
       alert(`Cannot mount tyre: Selected truck ${truck.truckNo} is ${reason}.`);
       return;
     }
-
     const parsedKM = Number(mountingKM());
-    const newLog: TyreMovementLog = {
-      id: 'mvt_' + Date.now(),
-      action: 'Installed',
-      truckNo: truck.truckNo,
-      date: mountingDate(),
-      odometerKM: parsedKM,
-      remarks: `Mounted on Vehicle ${truck.truckNo} at odometer ${parsedKM} KM`
-    };
-
-    const updatedTyre: Tyre = {
-      ...tyre,
-      status: 'Active',
-      currentTruckNo: truck.truckNo,
-      installationDate: mountingDate(),
-      installationKM: parsedKM,
-      movementHistory: [newLog, ...(tyre.movementHistory || [])]
-    };
-
-    onUpdateTyre(updatedTyre);
+    const newLog: TyreMovementLog = { id: 'mvt_' + Date.now(), action: 'Installed', truckNo: truck.truckNo, date: mountingDate(), odometerKM: parsedKM, remarks: `Mounted on Vehicle ${truck.truckNo} at odometer ${parsedKM} KM` };
+    const updatedTyre: Tyre = { ...tyre, status: 'Active', currentTruckNo: truck.truckNo, installationDate: mountingDate(), installationKM: parsedKM, movementHistory: [newLog, ...(tyre.movementHistory || [])] };
+    props.onUpdateTyre(updatedTyre);
     setMountingTyreId(null);
   };
 
   const startRemoving = (tyre: Tyre) => {
     setRemovingTyreId(tyre.id);
-    const relatedTruck = trucks.find(tk => tk.truckNo === tyre.currentTruckNo);
-    setRemovalKM(relatedTruck?.currentKM ? relatedTruck.currentKM.toString() : (tyre.installationKM || 0).toString());
+    const relatedTruck = (props.trucks || []).find(tk => tk.truckNo === tyre.currentTruckNo);
+    setRemovalKM(relatedTruck?.currentKM ?? tyre.installationKM ?? 0);
     setRemovalDate('2026-05-23');
     setRemovalRemarks('Routine Rotation');
   };
 
   const handleRemovalSubmit = (e: Event) => {
     e.preventDefault();
-    const tyre = tyres.find(t => t.id === removingTyreId());
+    const tyre = (props.tyres || []).find(t => t.id === removingTyreId());
     if (!tyre || !removalKM()) return;
-
     const parsedRemovalKM = Number(removalKM());
     const installKM = tyre.installationKM || 0;
     const runMileage = Math.max(0, parsedRemovalKM - installKM);
-
-    const newLog: TyreMovementLog = {
-      id: 'mvt_' + Date.now(),
-      action: 'Removed',
-      truckNo: tyre.currentTruckNo,
-      date: removalDate(),
-      odometerKM: parsedRemovalKM,
-      remarks: `${removalRemarks()} (Displacement run mileage: ${runMileage} KM)`
-    };
-
-    const updatedTyre: Tyre = {
-      ...tyre,
-      status: 'Available',
-      currentTruckNo: undefined,
-      installationDate: undefined,
-      installationKM: undefined,
-      accumulatedKM: (tyre.accumulatedKM || 0) + runMileage,
-      movementHistory: [newLog, ...(tyre.movementHistory || [])]
-    };
-
-    onUpdateTyre(updatedTyre);
+    const remLog: TyreMovementLog = { id: 'mvt_' + Date.now(), action: 'Removed', truckNo: tyre.currentTruckNo, date: removalDate(), odometerKM: parsedRemovalKM, remarks: `${removalRemarks()} (Displacement run mileage: ${runMileage} KM)` };
+    const remTyre: Tyre = { ...tyre, status: 'Available', currentTruckNo: undefined, installationDate: undefined, installationKM: undefined, accumulatedKM: (tyre.accumulatedKM || 0) + runMileage, movementHistory: [remLog, ...(tyre.movementHistory || [])] };
+    props.onUpdateTyre(remTyre);
     setRemovingTyreId(null);
   };
 
@@ -446,14 +317,14 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
   const handleSellSubmit = (e: Event) => {
     e.preventDefault();
-    const tyre = tyres.find(t => t.id === sellingTyreId());
+    const tyre = (props.tyres || []).find(t => t.id === sellingTyreId());
     if (!tyre || !saleAmount()) return;
 
     const newLog: TyreMovementLog = {
       id: 'mvt_' + Date.now(),
       action: 'Sold',
       date: saleDate(),
-      remarks: `Sold for ₹${Number(saleAmount()).toLocaleString()}`
+      remarks: `Sold for ?${Number(saleAmount()).toLocaleString()}`
     };
 
     const updatedTyre: Tyre = {
@@ -464,7 +335,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
       movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
-    onUpdateTyre(updatedTyre);
+    props.onUpdateTyre(updatedTyre);
     setSellingTyreId(null);
   };
 
@@ -475,7 +346,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
   const handleScrapSubmit = (e: Event) => {
     e.preventDefault();
-    const tyre = tyres.find(t => t.id === scrappingTyreId());
+    const tyre = (props.tyres || []).find(t => t.id === scrappingTyreId());
     if (!tyre) return;
 
     const newLog: TyreMovementLog = {
@@ -491,13 +362,13 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
       movementHistory: [newLog, ...(tyre.movementHistory || [])]
     };
 
-    onUpdateTyre(updatedTyre);
+    props.onUpdateTyre(updatedTyre);
     setScrappingTyreId(null);
   };
 
   const findTruckKM = (truckNo?: string): number => {
     if (!truckNo) return 0;
-    const t = trucks.find(tk => tk.truckNo === truckNo);
+    const t = (props.trucks || []).find(tk => tk.truckNo === truckNo);
     return t?.currentKM || 0;
   };
 
@@ -508,14 +379,25 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
     return Math.max(0, currentOdo - installOdo);
   };
 
-  const filteredTyres = tyres.filter(tyre => {
+  const [loading, setLoading] = createSignal(false);
+  const [currentPage, setCurrentPage] = createSignal(1);
+  const [pageSize, setPageSize] = createSignal(10);
+
+    const filteredTyres = createMemo(() => (props.tyres || []).filter(tyre => {
     const matchesStatus = statusFilter() ? tyre.status === statusFilter() : true;
-    const matchesSearch = searchQuery() 
-      ? tyre.tyreNo.toLowerCase().includes(searchQuery().toLowerCase()) || 
+    const matchesSearch = searchQuery()
+      ? tyre.tyreNo.toLowerCase().includes(searchQuery().toLowerCase()) ||
         tyre.manufacturer.toLowerCase().includes(searchQuery().toLowerCase()) ||
         (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery().toLowerCase()))
       : true;
     return matchesStatus && matchesSearch;
+  }));
+
+  const totalCount = createMemo(() => filteredTyres().length);
+
+  const displayedTyres = createMemo(() => {
+    const start = (currentPage() - 1) * pageSize();
+    return filteredTyres().slice(start, start + pageSize());
   });
 
   return (
@@ -553,7 +435,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
           </div>
         </div>
 
-        {canEditTyres && (
+        {props.canEditTyres && (
           <button
             id="btn-add-tyre"
             onClick={() => {
@@ -602,7 +484,8 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   required
                   placeholder="e.g. MRF-102948"
                   value={tyreNo()}
-                  onChange={(e) => setTyreNo(e.target.value)}
+                  onInput={(e) => setTyreNo((e.target as HTMLInputElement).value)}
+                  onChange={(e) => setTyreNo((e.target as HTMLInputElement).value)}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
                 />
               </div>
@@ -633,7 +516,8 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   type="text"
                   placeholder="e.g. 10.00R20, 295/85R22.5"
                   value={size()}
-                  onChange={(e) => setSize(e.target.value)}
+                  onInput={(e) => setSize((e.target as HTMLInputElement).value)}
+                  onChange={(e) => setSize((e.target as HTMLInputElement).value)}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -643,26 +527,27 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   id="purchaseDate"
                   type="date"
                   value={purchaseDate()}
-                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  onInput={(e) => setPurchaseDate((e.target as HTMLInputElement).value)}
+                  onChange={(e) => setPurchaseDate((e.target as HTMLInputElement).value)}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none "
                 />
               </div>
               <div>
-                <label for="purchaseAmount" class="block text-[10px] font-bold text-slate-655 uppercase mb-1">Purchase Amount (₹)</label>
+                <label for="purchaseAmount" class="block text-[10px] font-bold text-slate-655 uppercase mb-1">Purchase Amount (?)</label>
                 <input
                   id="purchaseAmount"
                   type="number"
                   placeholder="e.g. 24000"
                   value={purchaseAmount()}
-                  onChange={(e) => setPurchaseAmount(e.target.value)}
+                  onInput={(e) => setPurchaseAmount((e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))}
+                  onChange={(e) => setPurchaseAmount((e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-805 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono font-bold"
                 />
               </div>
             </div>
 
             {/* Supplementary integration section for Auto Ledger */}
-            {!editingTyreId() && (
-              <div class="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
+            <div class="bg-blue-50/50 border border-blue-100 rounded-lg p-3.5 space-y-3.5">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
                   <Tag class="w-3.5 h-3.5 text-blue-600" />
@@ -680,7 +565,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs text-left focus:outline-none focus:border-blue-500 flex justify-between items-center cursor-pointer font-semibold"
                 >
                   <span>{associatedTruckNo() ? `Vehicle: ${associatedTruckNo()}` : 'YARD / STOCK (General Warehouse)'}</span>
-                  <span class="text-slate-400">▼</span>
+                  <span class="text-slate-400">?</span>
                 </button>
                 {isTruckDropdownOpen() && (
                   <div class="absolute z-20 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 space-y-2">
@@ -705,8 +590,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       >
                         YARD / STOCK (General Warehouse)
                       </button>
-                      {trucks
-                        .filter(tk => tk.truckNo.toLowerCase().includes(truckSearchQuery().toLowerCase()))
+                      {(props.trucks || []).filter(tk => tk.truckNo.toLowerCase().includes(truckSearchQuery().toLowerCase()))
                         .map(tk => {
                           const todayStr = new Date().toISOString().substring(0, 10);
                           const isExpired = tk.registrationExpiryDate ? tk.registrationExpiryDate < todayStr : false;
@@ -751,7 +635,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                     class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                   >
                     <option value="">Cash Account</option>
-                    {accounts.map(ac => (
+                    {(props.accounts || []).map(ac => (
                       <option  value={ac.accountName}>{ac.accountName} ({ac.type})</option>
                     ))}
                   </select>
@@ -802,9 +686,9 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       id="initialOdoKM"
                       type="number"
                       required={mountDirectly()}
-                      placeholder={`Current Vehicle KM: ${trucks.find(t => t.truckNo === associatedTruckNo())?.currentKM || 0}`}
+                      placeholder={`Current Vehicle KM: ${(props.trucks || []).find(t => t.truckNo === associatedTruckNo())?.currentKM || 0}`}
                       value={initialOdoKM()}
-                      onChange={(e) => setInitialOdoKM(e.target.value)}
+                      onChange={(e) => setInitialOdoKM(e.target.value === '' ? '' : Number(e.target.value))}
                       class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                     />
                   </div>
@@ -816,7 +700,6 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                 </div>
               )}
             </div>
-          )}
 
             <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 pt-4 col-span-full">
               <button
@@ -847,7 +730,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
           displayedTyres().map(tyre => {
             const activeRunKM = calculateActiveKM(tyre);
             const overallKM = (tyre.accumulatedKM || 0) + activeRunKM;
-            const relatedTruck = trucks.find(tk => tk.truckNo === tyre.currentTruckNo);
+            const relatedTruck = (props.trucks || []).find(tk => tk.truckNo === tyre.currentTruckNo);
 
             return (
               <div  class="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition-colors relative overflow-hidden group">
@@ -911,7 +794,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       <div>
                         <div class="flex justify-between text-amber-700">
                           <span>Sold parameters:</span>
-                          <b class="font-mono">₹{tyre.saleAmount?.toLocaleString()}</b>
+                          <b class="font-mono">?{tyre.saleAmount?.toLocaleString()}</b>
                         </div>
                         {tyre.saleDate && <div class="text-[10px] text-slate-450 text-right mt-0.5">Date: {tyre.saleDate}</div>}
                       </div>
@@ -952,9 +835,9 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   {/* Attributes detail grid */}
                   <div class="grid grid-cols-2 gap-2 text-[10px] bg-slate-50/30 p-2 rounded-lg text-slate-500">
                     <div>Size: <b class="text-slate-700 font-mono">{tyre.size || '10.00R20'}</b></div>
-                    <div>Purchase Date: <b class="text-slate-705 font-mono">{tyre.purchaseDate || '—'}</b></div>
+                    <div>Purchase Date: <b class="text-slate-705 font-mono">{tyre.purchaseDate || 'â€”'}</b></div>
                     <div class="col-span-2 border-t border-slate-100 pt-1 mt-1">
-                      Purchase Cost: <b class="text-slate-700 font-mono">{tyre.purchaseAmount ? `₹${tyre.purchaseAmount.toLocaleString()}` : '—'}</b>
+                      Purchase Cost: <b class="text-slate-700 font-mono">{tyre.purchaseAmount ? `?${tyre.purchaseAmount.toLocaleString()}` : 'â€”'}</b>
                     </div>
                   </div>
 
@@ -972,7 +855,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   </button>
 
                   <div class="flex items-center gap-1">
-                    {canEditTyres && (
+                    {props.canEditTyres && (
                       <button
                         onClick={() => startEdit(tyre)}
                         class="px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded text-[10px] font-bold cursor-pointer transition"
@@ -980,7 +863,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                         Edit
                       </button>
                     )}
-                    {canEditTyres && tyre.status === 'Available' && (
+                    {props.canEditTyres && tyre.status === 'Available' && (
                       <>
                         <button
                           onClick={() => startMounting(tyre)}
@@ -1003,30 +886,12 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       </>
                     )}
 
-                    {canEditTyres && tyre.status === 'Active' && (
+                    {props.canEditTyres && tyre.status === 'Active' && (
                       <button
                         onClick={() => startRemoving(tyre)}
                         class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded text-[10px] font-bold cursor-pointer transition uppercase tracking-wider"
                       >
                         Dismount
-                      </button>
-                    )}
-
-                    {/* Delete option only if available & no extensive movement logs for clean protection */}
-                    {canDeleteTyres && tyre.status === 'Available' && (tyre.movementHistory || []).length <= 1 && (
-                      <button
-                        onClick={() => {
-                          const msg = `Are you sure you want to delete Tyre record ${tyre.tyreNo}?`;
-                          if (confirmAction) {
-                            confirmAction(msg, () => onDeleteTyre(tyre.id), "Delete Tyre Ledger Record");
-                          } else if (confirm(msg)) {
-                            onDeleteTyre(tyre.id);
-                          }
-                        }}
-                        class="p-1 text-slate-355 text-slate-350 hover:text-red-500 rounded transition cursor-pointer"
-                        title="Delete record"
-                      >
-                        <Trash2 class="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -1051,7 +916,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       <History class="w-3.5 h-3.5" />
                     </button>
 
-                    {canEditTyres && (
+                    {props.canEditTyres && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1065,7 +930,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       </button>
                     )}
 
-                    {canEditTyres && tyre.status === 'Available' && (
+                    {props.canEditTyres && tyre.status === 'Available' && (
                       <>
                         <button
                           type="button"
@@ -1103,7 +968,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                       </>
                     )}
 
-                    {canEditTyres && tyre.status === 'Active' && (
+                    {props.canEditTyres && tyre.status === 'Active' && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1114,25 +979,6 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                         title="Dismount"
                       >
                         <Layers class="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {canDeleteTyres && tyre.status === 'Available' && (tyre.movementHistory || []).length <= 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const msg = `Are you sure you want to delete Tyre record ${tyre.tyreNo}?`;
-                          if (confirmAction) {
-                            confirmAction(msg, () => onDeleteTyre(tyre.id), "Delete Tyre Ledger Record");
-                          } else if (confirm(msg)) {
-                            onDeleteTyre(tyre.id);
-                          }
-                          setActiveSpeedDialId(null);
-                        }}
-                        class="w-7 h-7 rounded-full bg-rose-50 dark:bg-rose-955/20 border border-rose-150 dark:border-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-455 hover:bg-rose-100/30 transition cursor-pointer"
-                        title="Delete record"
-                      >
-                        <Trash2 class="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -1199,7 +1045,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
       {/* ACTION 1: MOUNT (INSTALL) DIALOG MODLET */}
       {mountingTyreId() && (() => {
-        const tyre = tyres.find(t => t.id === mountingTyreId());
+        const tyre = (props.tyres || []).find(t => t.id === mountingTyreId());
         if (!tyre) return null;
 
         return (
@@ -1227,10 +1073,10 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   >
                     <span>
                       {selectedTruckId() 
-                        ? trucks.find(t => t.id === selectedTruckId())?.truckNo || '-- Choose Truck --'
+                        ? (props.trucks || []).find(t => t.id === selectedTruckId())?.truckNo || '-- Choose Truck --'
                         : '-- Choose Truck --'}
                     </span>
-                    <span class="text-slate-400">▼</span>
+                    <span class="text-slate-400">?</span>
                   </button>
                   {isMountTruckDropdownOpen() && (
                     <div class="absolute z-20 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 space-y-2">
@@ -1243,8 +1089,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                         autofocus
                       />
                       <div class="max-h-48 overflow-y-auto divide-y divide-slate-105 dark:divide-slate-750">
-                        {trucks
-                          .filter(tk => tk.truckNo.toLowerCase().includes(mountTruckSearchQuery().toLowerCase()))
+                        {(props.trucks || []).filter(tk => tk.truckNo.toLowerCase().includes(mountTruckSearchQuery().toLowerCase()))
                           .map(t => {
                             const todayStr = new Date().toISOString().substring(0, 10);
                             const isExpired = t.registrationExpiryDate ? t.registrationExpiryDate < todayStr : false;
@@ -1263,11 +1108,11 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                                 type="button"
                                 disabled={isBlocked}
                                 onClick={() => {
-                                  setSelectedTruckId(t.id);
+                                  setSelectedTruckId(t.id); setMountingTruckNo(t.truckNo);
                                   setIsMountTruckDropdownOpen(false);
                                   setMountTruckSearchQuery('');
                                   if (t.currentKM) {
-                                    setMountingKM(t.currentKM.toString());
+                                    setMountingKM(t.currentKM);
                                   } else {
                                     setMountingKM('');
                                   }
@@ -1305,7 +1150,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                     required
                     placeholder="e.g. 102540"
                     value={mountingKM()}
-                    onChange={(e) => setMountingKM(e.target.value)}
+                    onChange={(e) => setMountingKM(e.target.value === '' ? '' : Number(e.target.value))}
                     class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white font-mono font-bold"
                   />
                   <p class="text-[10px] text-slate-400 mt-0.5">Please specify precise ODO read to ensure true wear parameters.</p>
@@ -1334,7 +1179,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
       {/* ACTION 2: DISMOUNT (REMOVE) ACTION MODLET */}
       {removingTyreId() && (() => {
-        const tyre = tyres.find(t => t.id === removingTyreId());
+        const tyre = (props.tyres || []).find(t => t.id === removingTyreId());
         if (!tyre) return null;
 
         const estRun = Number(removalKM()) - (tyre.installationKM || 0);
@@ -1377,7 +1222,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                     type="number"
                     required
                     value={removalKM()}
-                    onChange={(e) => setRemovalKM(e.target.value)}
+                    onChange={(e) => setRemovalKM(e.target.value === '' ? '' : Number(e.target.value))}
                     class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white font-mono font-bold"
                   />
                   {estRun > 0 ? (
@@ -1425,7 +1270,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
       {/* ACTION 3: SELL DIALOG MODLET */}
       {sellingTyreId() && (() => {
-        const tyre = tyres.find(t => t.id === sellingTyreId());
+        const tyre = (props.tyres || []).find(t => t.id === sellingTyreId());
         if (!tyre) return null;
 
         return (
@@ -1451,20 +1296,22 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                     type="date"
                     required
                     value={saleDate()}
-                    onChange={(e) => setSaleDate(e.target.value)}
+                    onInput={(e) => setSaleDate((e.target as HTMLInputElement).value)}
+                    onChange={(e) => setSaleDate((e.target as HTMLInputElement).value)}
                     class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white"
                   />
                 </div>
 
                 <div>
-                  <label for="saleAmount" class="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Invoice Amount (₹) <span class="text-red-500">*</span></label>
+                  <label for="saleAmount" class="block text-[10px] uppercase font-bold text-slate-550 mb-1">Sale Invoice Amount (?) <span class="text-red-500">*</span></label>
                   <input
                     id="saleAmount"
                     type="number"
                     required
                     placeholder="e.g. 12000"
                     value={saleAmount()}
-                    onChange={(e) => setSaleAmount(e.target.value)}
+                    onInput={(e) => setSaleAmount((e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))}
+                    onChange={(e) => setSaleAmount((e.target as HTMLInputElement).value === '' ? '' : Number((e.target as HTMLInputElement).value))}
                     class="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white font-mono font-bold"
                   />
                 </div>
@@ -1492,7 +1339,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
       {/* ACTION 4: SCRAP DIALOG MODLET */}
       {scrappingTyreId() && (() => {
-        const tyre = tyres.find(t => t.id === scrappingTyreId());
+        const tyre = (props.tyres || []).find(t => t.id === scrappingTyreId());
         if (!tyre) return null;
 
         return (
@@ -1545,7 +1392,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
 
       {/* MODAL 5: DETAILED HISTORICAL MOVEMENT LOG DRAWER */}
       {viewHistoryTyreId() && (() => {
-        const tyre = tyres.find(t => t.id === viewHistoryTyreId());
+        const tyre = (props.tyres || []).find(t => t.id === viewHistoryTyreId());
         if (!tyre) return null;
 
         return (
@@ -1559,6 +1406,18 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
                   </h3>
                 </div>
                 <button onClick={() => setViewHistoryTyreId(null)} class="text-slate-400 text-lg hover:text-slate-600">&times;</button>
+              </div>
+
+              {/* Purchase Details Summary Banner */}
+              <div class="bg-blue-50/70 dark:bg-slate-800/60 border border-blue-150 dark:border-slate-700 rounded-lg p-2.5 flex justify-between items-center text-xs">
+                <div>
+                  <span class="text-[9px] text-slate-500 uppercase font-bold tracking-wider block">Purchase Date</span>
+                  <span class="font-mono font-bold text-slate-800 dark:text-slate-200">{tyre.purchaseDate || 'N/A'}</span>
+                </div>
+                <div class="text-right">
+                  <span class="text-[9px] text-slate-500 uppercase font-bold tracking-wider block">Purchase Price</span>
+                  <span class="font-mono font-bold text-emerald-700 dark:text-emerald-400">{tyre.purchaseAmount ? `₹${tyre.purchaseAmount.toLocaleString()}` : 'N/A'}</span>
+                </div>
               </div>
 
               <div class="space-y-4 max-h-[350px] overflow-y-auto pr-1">

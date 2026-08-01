@@ -1,10 +1,10 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { Office } from '../types';
 import { migrateOffices } from '../lib/migrations';
 import { getOfficeDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useTripsContext } from './TripContext';
@@ -30,6 +30,10 @@ export function OfficeProvider(props: { children: JSX.Element }) {
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.offices && prewarmedData.offices.length > 0) {
+      setOfficesStore(prewarmedData.offices);
+      setLoadedFromDB(true);
+    }
     db.offices.toArray().then(cached => {
       setOfficesStore(cached || []);
       setLoadedFromDB(true);
@@ -39,7 +43,11 @@ export function OfficeProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...officesStore];
-    db.offices.clear().then(() => db.offices.bulkPut(list));
+    if (list.length === 0) {
+      db.offices.clear();
+    } else {
+      db.offices.bulkPut(list);
+    }
   });
 
   const saveOffices = (newOffices: Office[] | ((prev: Office[]) => Office[])) => {
@@ -50,7 +58,7 @@ export function OfficeProvider(props: { children: JSX.Element }) {
 
   const orgOffices = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return orgId === 'org_backend' ? officesStore : officesStore.filter(o => o.organizationId === orgId);
+    return officesStore.filter(o => o.organizationId === orgId);
   });
 
   const addOffice = async (officeInput: Omit<Office, 'id'>) => {

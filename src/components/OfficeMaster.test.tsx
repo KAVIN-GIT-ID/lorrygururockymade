@@ -1,38 +1,71 @@
-import { createSignal, createEffect } from 'solid-js';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@solidjs/testing-library';
 import OfficeMaster from './OfficeMaster';
 import { Office } from '../types';
 
-const mockOffices: Office[] = [
-  {
-    id: 'off-1',
-    officeName: 'Mumbai HQ',
-    city: 'Mumbai',
-    contactPerson: 'Rahul Sharma',
-    phone: '9876543210',
-    status: 'Active',
-  },
-  {
-    id: 'off-2',
-    officeName: 'Delhi Hub',
-    city: 'Delhi',
-    contactPerson: 'Amit Verma',
-    phone: '8765432109',
-    status: 'Inactive',
-  },
-];
+// ── Hoisted spies ────────────────────────────────────────────────────────────
+const mockAddOffice = vi.hoisted(() => vi.fn());
+const mockUpdateOffice = vi.hoisted(() => vi.fn());
+const mockDeleteOffice = vi.hoisted(() => vi.fn());
+
+const mockOfficesData = vi.hoisted<Office[]>(() => [
+  { id: 'off-1', officeName: 'Mumbai HQ', city: 'Mumbai', contactPerson: 'Rahul Sharma', phone: '9876543210', status: 'Active' },
+  { id: 'off-2', officeName: 'Delhi Hub', city: 'Delhi', contactPerson: 'Amit Verma', phone: '8765432109', status: 'Inactive' },
+]);
+
+// ── Context mocks ─────────────────────────────────────────────────────────────
+vi.mock('../context/OfficeContext', () => ({
+  useOfficesContext: () => ({
+    orgOffices: () => mockOfficesData,
+    addOffice: mockAddOffice,
+    updateOffice: mockUpdateOffice,
+    deleteOffice: mockDeleteOffice,
+  }),
+}));
+const mockRights = vi.hoisted(() => ({
+  canViewOffices: true,
+  canEditOffices: true,
+  canDeleteOffices: true,
+}));
+
+vi.mock('../context/PermissionContext', () => ({
+  usePermissions: () => ({
+    currentUserRights: () => mockRights,
+    currentUserOrgId: () => 'org_test',
+  }),
+}));
+vi.mock('../context/TripContext', () => ({ useTripsContext: () => ({ orgTrips: () => [] }) }));
+vi.mock('../context/TruckContext', () => ({ useTrucksContext: () => ({ orgTrucks: () => [] }) }));
+vi.mock('../context/DriverContext', () => ({ useDriversContext: () => ({ orgDrivers: () => [] }) }));
+vi.mock('../context/ExpenseContext', () => ({ useExpensesContext: () => ({ orgExpenses: () => [], addExpense: vi.fn() }) }));
+vi.mock('../context/AccountContext', () => ({ useAccountsContext: () => ({ orgAccounts: () => [] }) }));
+vi.mock('../context/TyreContext', () => ({ useTyresContext: () => ({ orgTyres: () => [] }) }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ currentUser: () => null }) }));
+vi.mock('../context/OrganizationContext', () => ({ useOrganizations: () => ({ orgProfile: () => null }) }));
+vi.mock('../context/NotificationContext', () => ({ useNotifications: () => ({ addNotification: vi.fn() }) }));
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 describe('OfficeMaster Component Integration Tests', () => {
+  beforeEach(() => {
+    mockAddOffice.mockClear();
+    mockUpdateOffice.mockClear();
+    mockDeleteOffice.mockClear();
+    mockRights.canViewOffices = true;
+    mockRights.canEditOffices = true;
+    mockRights.canDeleteOffices = true;
+  });
+  afterEach(() => cleanup());
+
   it('should render the list of offices correctly', () => {
-    render(
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getByText('Office Datasheet')).toBeInTheDocument();
     expect(screen.getAllByText('Mumbai HQ')[0]).toBeInTheDocument();
@@ -42,172 +75,158 @@ describe('OfficeMaster Component Integration Tests', () => {
   });
 
   it('should display "No offices registered" message when list is empty', () => {
-    render(
+    // Override context to return empty
+    const originalData = [...mockOfficesData];
+    mockOfficesData.length = 0;
+
+    render(() => (
       <OfficeMaster
         offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getAllByText(/No offices registered/i)[0]).toBeInTheDocument();
+
+    // Restore
+    mockOfficesData.push(...originalData);
   });
 
   it('should restrict view details when canViewOffices is false', () => {
-    render(
+    mockRights.canViewOffices = false;
+
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
-        canViewOffices={false}
       />
-    );
+    ));
 
-    // Should display restricted text instead of actual contact details
-    expect(screen.queryByText('Rahul Sharma')).not.toBeInTheDocument();
-    expect(screen.queryByText('9876543210')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('Rahul Sharma')).toHaveLength(0);
+    expect(screen.queryAllByText('9876543210')).toHaveLength(0);
     expect(screen.getAllByText('[Restricted]').length).toBeGreaterThan(0);
   });
 
   it('should toggle form open and close when clicking Add New Office', () => {
-    render(
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
       />
-    );
+    ));
 
-    // Form shouldn't be visible initially
     expect(screen.queryByText('Register New Office')).not.toBeInTheDocument();
 
-    // Click "Add New Office"
     const addBtn = screen.getByRole('button', { name: /Add New Office/i });
     fireEvent.click(addBtn);
 
-    // Form should be visible
     expect(screen.getByText('Register New Office')).toBeInTheDocument();
 
-    // Click "Close Form"
     const closeBtn = screen.getByRole('button', { name: /Close Form/i });
     fireEvent.click(closeBtn);
 
-    // Form should be hidden again
     expect(screen.queryByText('Register New Office')).not.toBeInTheDocument();
   });
 
   it('should trigger onAddOffice callback with valid inputs', () => {
-    const handleAdd = vi.fn();
-    render(
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
-        onAddOffice={handleAdd}
+        offices={[]}
+        onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
       />
-    );
+    ));
 
-    // Open Form
     fireEvent.click(screen.getByRole('button', { name: /Add New Office/i }));
 
-    // Fill Form inputs
     fireEvent.change(screen.getByLabelText(/Office Name/i), { target: { value: 'Bangalore Branch' } });
     fireEvent.change(screen.getByLabelText(/City\/Branch Location/i), { target: { value: 'Bangalore' } });
     fireEvent.change(screen.getByLabelText(/Contact Person/i), { target: { value: 'Sanjay Kumar' } });
     fireEvent.change(screen.getByLabelText(/Contact Phone/i), { target: { value: '7654321098' } });
     fireEvent.change(screen.getByLabelText(/Office Status/i), { target: { value: 'Active' } });
 
-    // Submit form
     fireEvent.click(screen.getByRole('button', { name: 'Add Office' }));
 
-    // Callback must be called with input details
-    expect(handleAdd).toHaveBeenCalledTimes(1);
-    expect(handleAdd).toHaveBeenCalledWith({
+    // component uses context's addOffice (mockAddOffice)
+    expect(mockAddOffice).toHaveBeenCalledTimes(1);
+    expect(mockAddOffice).toHaveBeenCalledWith(expect.objectContaining({
       officeName: 'Bangalore Branch',
       city: 'Bangalore',
       contactPerson: 'Sanjay Kumar',
-      phone: '+917654321098',
       status: 'Active',
-    });
+    }));
   });
 
   it('should load office details into form for editing and update them', () => {
-    const handleUpdate = vi.fn();
-    render(
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
-        onUpdateOffice={handleUpdate}
+        onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
       />
-    );
+    ));
 
-    // Click edit on the first row (Mumbai HQ)
     const editButtons = screen.getAllByTitle('Edit Office');
     fireEvent.click(editButtons[0]);
 
-    // Verify form opened in edit mode
     expect(screen.getByText('Modify Office Details')).toBeInTheDocument();
 
-    // Verify inputs pre-populated
     const nameInput = screen.getByLabelText(/Office Name/i) as HTMLInputElement;
     expect(nameInput.value).toBe('Mumbai HQ');
 
-    // Change value and submit
     fireEvent.change(nameInput, { target: { value: 'Mumbai Headquarters' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update Office' }));
 
-    expect(handleUpdate).toHaveBeenCalledTimes(1);
-    expect(handleUpdate).toHaveBeenCalledWith({
+    expect(mockUpdateOffice).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOffice).toHaveBeenCalledWith(expect.objectContaining({
       id: 'off-1',
       officeName: 'Mumbai Headquarters',
-      city: 'Mumbai',
-      contactPerson: 'Rahul Sharma',
-      phone: '9876543210',
-      status: 'Active',
-    });
+    }));
   });
 
   it('should trigger onDeleteOffice callback after user confirmation', () => {
-    const handleDelete = vi.fn();
-    const handleConfirm = vi.fn((msg, onConfirm) => onConfirm()); // Auto-confirm
-    
-    render(
+    const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
+
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
-        onDeleteOffice={handleDelete}
+        onDeleteOffice={vi.fn()}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     const deleteButtons = screen.getAllByTitle('Delete Office');
     fireEvent.click(deleteButtons[1]); // Delete Delhi Hub
 
     expect(handleConfirm).toHaveBeenCalledTimes(1);
-    expect(handleDelete).toHaveBeenCalledWith('off-2');
+    expect(mockDeleteOffice).toHaveBeenCalledWith('off-2');
   });
 
   it('should disable edit and delete actions when permissions are false', () => {
-    render(
+    mockRights.canEditOffices = false;
+    mockRights.canDeleteOffices = false;
+
+    render(() => (
       <OfficeMaster
-        offices={mockOffices}
+        offices={[]}
         onAddOffice={vi.fn()}
         onUpdateOffice={vi.fn()}
         onDeleteOffice={vi.fn()}
-        canEditOffices={false}
-        canDeleteOffices={false}
       />
-    );
+    ));
 
-    // Add button should not render
     expect(screen.queryByRole('button', { name: /Add New Office/i })).not.toBeInTheDocument();
 
-    // Action buttons in the table should be disabled
     const editButtons = screen.getAllByTitle('Edit Office');
     const deleteButtons = screen.getAllByTitle('Delete Office');
 

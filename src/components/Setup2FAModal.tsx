@@ -14,13 +14,7 @@ interface Setup2FAModalProps {
   reconcileSession: (user: any, freshRightsList?: any[]) => Promise<any>;
 }
 
-export default function Setup2FAModal({
-  isOpen,
-  onClose,
-  setup2FASecret,
-  showNotification,
-  reconcileSession
-}: Setup2FAModalProps) {
+export default function Setup2FAModal(props: Setup2FAModalProps) {
   const auth = useAuth();
   const perm = usePermissions();
 
@@ -28,7 +22,7 @@ export default function Setup2FAModal({
   const [setup2FAPassword, setSetup2FAPassword] = createSignal('');
   const [setup2FAError, setSetup2FAError] = createSignal<string | null>(null);
 
-  if (!isOpen) return null;
+  if (!props.isOpen) return null;
 
   return (
     <div class="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
@@ -39,7 +33,7 @@ export default function Setup2FAModal({
             Enable 2FA Protection
           </h3>
           <button
-            onClick={onClose}
+            onClick={props.onClose}
             class="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
           >
             ✕
@@ -63,7 +57,7 @@ export default function Setup2FAModal({
             <div class="bg-white p-2 rounded-lg">
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
-                  `otpauth://totp/FleetTrack:${auth.currentUser()?.email || ''}?secret=${setup2FASecret}&issuer=FleetTrack`
+                  `otpauth://totp/FleetTrack:${auth.currentUser()?.email || ''}?secret=${props.setup2FASecret}&issuer=FleetTrack`
                 )}`}
                 alt="Scan with Authenticator App"
                 class="w-36 h-36 border border-slate-200"
@@ -75,11 +69,11 @@ export default function Setup2FAModal({
             <div class="w-full text-center space-y-1">
               <span class="text-[9px] text-slate-500 uppercase tracking-widest font-extrabold block">Secret Setup Key</span>
               <div class="flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 font-mono text-xs text-blue-400 font-bold select-all">
-                <span>{setup2FASecret}</span>
+                <span>{props.setup2FASecret}</span>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(setup2FASecret);
+                    navigator.clipboard.writeText(props.setup2FASecret);
                     alert('Secret key copied to clipboard!');
                   }}
                   class="text-slate-400 hover:text-white p-0.5"
@@ -124,7 +118,7 @@ export default function Setup2FAModal({
           <div class="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
             <button
               type="button"
-              onClick={onClose}
+              onClick={props.onClose}
               class="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
             >
               Cancel
@@ -146,25 +140,29 @@ export default function Setup2FAModal({
                     await appwrite.login(auth.currentUser().email, setup2FAPassword());
                   }
 
-                  const verified = await verifyTOTP(setup2FASecret, setup2FACode());
+                  const verified = await verifyTOTP(props.setup2FASecret, setup2FACode());
                   if (!verified) {
                     setSetup2FAError('Invalid authenticator verification code.');
                     return;
                   }
 
-                  const email = (auth.currentUser()?.email || '').toLowerCase().trim();
+                  const email = (auth.currentUser()?.email || (perm.currentUserRights() as any)?.email || '').toLowerCase().trim();
                   const updated = perm.userRightsList().map(ur =>
-                    ur.email.toLowerCase().trim() === email
-                      ? { ...ur, is2FAEnabled: true, twoFactorSecret: setup2FASecret }
+                    (!email || ur.email.toLowerCase().trim() === email)
+                      ? { ...ur, is2FAEnabled: true, twoFactorSecret: props.setup2FASecret }
                       : ur
                   );
                   perm.setUserRightsList(updated);
                   localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                  await perm.pushPermissions(updated);
-                  await reconcileSession(auth.currentUser(), updated);
+                  await perm.pushPermissions(updated, email);
+                  if (props.reconcileSession) {
+                    await props.reconcileSession(auth.currentUser(), updated);
+                  }
 
-                  showNotification('Two-Factor Authentication successfully enabled!');
-                  onClose();
+                  if (props.showNotification) {
+                    props.showNotification('Two-Factor Authentication successfully enabled!');
+                  }
+                  props.onClose();
                 } catch (err: any) {
                   setSetup2FAError(err.message || 'Verification or password invalid.');
                 }

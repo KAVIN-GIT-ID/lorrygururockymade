@@ -13,12 +13,7 @@ interface Disable2FAModalProps {
   reconcileSession: (user: any, freshRightsList?: any[]) => Promise<any>;
 }
 
-export default function Disable2FAModal({
-  isOpen,
-  onClose,
-  showNotification,
-  reconcileSession
-}: Disable2FAModalProps) {
+export default function Disable2FAModal(props: Disable2FAModalProps) {
   const auth = useAuth();
   const perm = usePermissions();
 
@@ -26,7 +21,7 @@ export default function Disable2FAModal({
   const [disable2FAPassword, setDisable2FAPassword] = createSignal('');
   const [disable2FAError, setDisable2FAError] = createSignal<string | null>(null);
 
-  if (!isOpen) return null;
+  if (!props.isOpen) return null;
 
   return (
     <div class="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
@@ -37,7 +32,7 @@ export default function Disable2FAModal({
             Disable 2FA Protection
           </h3>
           <button
-            onClick={onClose}
+            onClick={props.onClose}
             class="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
           >
             ✕
@@ -88,7 +83,7 @@ export default function Disable2FAModal({
           <div class="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
             <button
               type="button"
-              onClick={onClose}
+              onClick={props.onClose}
               class="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
             >
               Cancel
@@ -124,11 +119,15 @@ export default function Disable2FAModal({
                   );
                   perm.setUserRightsList(updated);
                   localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                  await perm.pushPermissions(updated);
-                  await reconcileSession(auth.currentUser(), updated);
+                  await perm.pushPermissions(updated, email);
+                  if (props.reconcileSession) {
+                    await props.reconcileSession(auth.currentUser(), updated);
+                  }
 
-                  showNotification('Two-Factor Authentication successfully disabled.');
-                  onClose();
+                  if (props.showNotification) {
+                    props.showNotification('Two-Factor Authentication successfully disabled.');
+                  }
+                  props.onClose();
                 } catch (err: any) {
                   setDisable2FAError(err.message || 'Verification or password invalid.');
                 }

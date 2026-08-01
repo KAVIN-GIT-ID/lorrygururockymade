@@ -135,10 +135,15 @@ export const organizationService = {
       let appUpdateConfig = null;
       for (const doc of allConfigs) {
         try {
-          const parsed = JSON.parse(doc.data);
+          let parsed = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
+          if (parsed && typeof parsed.data === 'string') {
+            try { parsed = JSON.parse(parsed.data); } catch {}
+          }
           const keyVal = doc.key || doc.$id || '';
           if (keyVal.startsWith('usr_')) {
-            userRightsList.push(parsed);
+            if (parsed && parsed.organizationId) {
+              userRightsList.push(parsed);
+            }
           } else if (keyVal.startsWith('prf_')) {
             if (parsed && parsed.organizationId) {
               organizationProfiles.push(parsed);

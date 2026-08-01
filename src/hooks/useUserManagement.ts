@@ -109,8 +109,12 @@ export function useUserManagement(
   const handlePhoneUpdateSubmit = async (e: Event) => {
     e.preventDefault();
     const target = e.target as any;
-    const newPhone = target.newPhone.value.trim();
-    const currentPassword = isAppwriteConfigured() ? target.currentPassword.value : '';
+    const formEl = target.form || target.closest?.('form') || target;
+    const phoneEl = formEl.newPhone || (formEl.elements && formEl.elements.newPhone) || formEl.querySelector?.('[name="newPhone"]');
+    const passEl = formEl.currentPassword || (formEl.elements && formEl.elements.currentPassword) || formEl.querySelector?.('[name="currentPassword"]');
+    const newPhone = phoneEl ? (phoneEl.value || '').trim() : '';
+    const currentPassword = passEl ? (passEl.value || '') : '';
+    console.log("DEBUG handlePhoneUpdateSubmit:", { newPhone, currentPassword });
 
     const phoneRegex = /^\+[1-9]\d{6,14}$/;
     if (!phoneRegex.test(newPhone)) {

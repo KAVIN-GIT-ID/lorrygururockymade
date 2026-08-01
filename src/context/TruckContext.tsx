@@ -1,10 +1,10 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { Truck, createRecord, mutateRecord } from '../types';
 import { migrateTrucks } from '../lib/migrations';
 import { getTruckDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -38,6 +38,10 @@ export function TruckProvider(props: { children: JSX.Element }) {
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.trucks && prewarmedData.trucks.length > 0) {
+      setTrucksStore(prewarmedData.trucks);
+      setLoadedFromDB(true);
+    }
     db.trucks.toArray().then(cached => {
       setTrucksStore(cached || []);
       setLoadedFromDB(true);
@@ -47,7 +51,11 @@ export function TruckProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...trucksStore];
-    db.trucks.clear().then(() => db.trucks.bulkPut(list));
+    if (list.length === 0) {
+      db.trucks.clear();
+    } else {
+      db.trucks.bulkPut(list);
+    }
   });
 
   const saveTrucks = (newTrucks: Truck[] | ((prev: Truck[]) => Truck[])) => {
@@ -56,9 +64,70 @@ export function TruckProvider(props: { children: JSX.Element }) {
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
+  const normalizeTruckNo = (no: string) => (no || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
   const orgTrucks = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return (orgId === 'org_backend' ? trucksStore : trucksStore.filter(t => t.organizationId === orgId)).filter(t => !t.deletedAt);
+    const isSuper = !!currentUserRights()?.isSuperAdmin || currentUserOrgId() === 'org_backend';
+    console.log(`[TruckContext Debug] orgId="${orgId}", storeCount=${trucksStore.length}, isSuper=${isSuper}`);
+    console.log('[TruckContext Debug] Store trucks:', trucksStore.map(t => ({ id: t.id, truckNo: t.truckNo, orgId: t.organizationId, isApproved: t.isApproved, status: t.status })));
+    
+    const rawFiltered = trucksStore.filter(t => {
+      if (t.deletedAt) return false;
+      if (isSuper) return true;
+      if (!t.organizationId || t.organizationId === 'org_default') return true;
+      return (t.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
+    console.log(`[TruckContext Debug] rawFiltered count=${rawFiltered.length}:`, rawFiltered.map(t => t.truckNo));
+    const tripsList = orgTrips();
+    const seen = new Set<string>();
+    const filtered: Truck[] = [];
+
+    for (const t of rawFiltered) {
+      const key = (t.truckNo || t.id || '').toUpperCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+
+      const cleanNo = normalizeTruckNo(t.truckNo);
+      let maxTripKM = 0;
+      if (cleanNo && tripsList) {
+        tripsList.forEach(tr => {
+          if (tr.deletedAt) return;
+          const trCleanNo = normalizeTruckNo(tr.truckNo);
+          if (trCleanNo === cleanNo) {
+            if (tr.endingKM && tr.endingKM > maxTripKM) maxTripKM = tr.endingKM;
+            (tr.subTrips || []).forEach(st => {
+              if (st.endingKM && st.endingKM > maxTripKM) maxTripKM = st.endingKM;
+            });
+          }
+        });
+      }
+
+      const effectiveCurrentKM = Math.max(t.currentKM || 0, maxTripKM);
+      const effectiveTruck = effectiveCurrentKM !== t.currentKM ? { ...t, currentKM: effectiveCurrentKM } : t;
+
+      filtered.push(effectiveTruck);
+    }
+    return filtered;
+  });
+
+  createEffect(() => {
+    if (!loadedFromDB()) return;
+    const currentOrgTrucks = orgTrucks();
+    let updatedAny = false;
+    const nextStore = trucksStore.map(t => {
+      const cleanNo = normalizeTruckNo(t.truckNo);
+      const match = currentOrgTrucks.find(ot => ot.id === t.id || (cleanNo && normalizeTruckNo(ot.truckNo) === cleanNo));
+      if (match && match.currentKM !== undefined && match.currentKM !== t.currentKM && match.currentKM > (t.currentKM || 0)) {
+        updatedAny = true;
+        return { ...t, currentKM: match.currentKM };
+      }
+      return t;
+    });
+
+    if (updatedAny) {
+      saveTrucks(nextStore);
+    }
   });
 
   const approvedOrgTrucks = createMemo(() => {
@@ -104,9 +173,13 @@ export function TruckProvider(props: { children: JSX.Element }) {
   const updateTruck = async (updated: Truck) => {
     const orgId = currentUserOrgId() || 'org_default';
     const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
-    const oldTruck = trucksStore.find(t => t.id === updated.id);
+    const cleanTruckNo = (updated.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const oldTruck = trucksStore.find(t =>
+      t.id === updated.id ||
+      (t.truckNo && (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanTruckNo)
+    );
     const merged: Truck = oldTruck
-      ? mutateRecord(oldTruck, updated, currentUserId)
+      ? mutateRecord(oldTruck, { ...updated, id: oldTruck.id, organizationId: orgId }, currentUserId)
       : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
 
     if (isAppwriteConfigured()) {
@@ -121,7 +194,9 @@ export function TruckProvider(props: { children: JSX.Element }) {
       }
     }
 
-    const next = trucksStore.map(t => t.id === updated.id ? merged : t);
+    const next = trucksStore.map(t =>
+      (t.id === merged.id || (t.truckNo && (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanTruckNo)) ? merged : t
+    );
     saveTrucks(next);
 
     const diff = getTruckDiff(oldTruck, merged);

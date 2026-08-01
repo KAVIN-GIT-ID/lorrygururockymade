@@ -25,9 +25,23 @@ export const migrationService = {
       const migrateCategory = (key: string, setter: (data: any[]) => void) => {
         const list = storageService.get<any[]>(key, []);
         if (list.some((item: any) => item.organizationId === 'org_default')) {
-          const updated = list.map((item: any) =>
-            item.organizationId === 'org_default' ? { ...item, organizationId: newOrgId } : item
-          );
+          const defaultItems = list.filter((item: any) => item.organizationId === 'org_default');
+          const nonDefaultItems = list.filter((item: any) => item.organizationId !== 'org_default');
+          const updated = [...nonDefaultItems];
+
+          for (const item of defaultItems) {
+            const isTruck = key === 'ttt_trucks' && item.truckNo;
+            const existingIdx = isTruck
+              ? updated.findIndex(existing => existing.organizationId === newOrgId && (existing.id === item.id || (existing.truckNo && existing.truckNo.toUpperCase().trim() === item.truckNo.toUpperCase().trim())))
+              : updated.findIndex(existing => existing.organizationId === newOrgId && existing.id === item.id);
+
+            if (existingIdx > -1) {
+              updated[existingIdx] = { ...updated[existingIdx], ...item, organizationId: newOrgId };
+            } else {
+              updated.push({ ...item, organizationId: newOrgId });
+            }
+          }
+
           storageService.set(key, updated);
           setter(updated);
           changed = true;

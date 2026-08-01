@@ -222,13 +222,6 @@ export default function MobileViewport(rawProps: MobileViewportProps) {
 
   return (
     <div class="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans overflow-hidden select-none">
-      {/* GLOBAL TOAST BANNER */}
-      {props.toastMessage() && (
-        <div id="toast-notify" class="fixed bottom-20 left-4 right-4 z-50 bg-blue-600 border border-blue-400/30 text-white p-3 px-5 rounded-2xl shadow-xl flex items-center gap-2.5 animate-bounce">
-          <CheckCircle class="w-4 h-4 text-white" />
-          <span class="text-xs font-semibold">{props.toastMessage()}</span>
-        </div>
-      )}
 
       {/* Dynamic Mobile Header */}
       <div class="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 p-4 shrink-0 flex items-center justify-between">

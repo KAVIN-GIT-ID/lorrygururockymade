@@ -317,7 +317,7 @@ class AppwriteService {
       );
       return response.$id;
     } catch (err: any) {
-      console.error("Appwrite uploadTicketFile failed:", err);
+      console.error('appwrite.uploadTicketFile error:', err);
       throw err;
     }
   }
@@ -740,6 +740,43 @@ class AppwriteService {
     return jwtResult.jwt;
   }
 
+  async registerPushNotificationTarget(): Promise<boolean> {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return false;
+    }
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return false;
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        // Sample public VAPID key - fallback to browser default subscription if VAPID not supplied
+        const vapidPublicKey = import.meta.env.VITE_APPWRITE_VAPID_KEY || '';
+        if (vapidPublicKey) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: vapidPublicKey
+          });
+        }
+      }
+
+      if (sub && isAppwriteConfigured()) {
+        await this.initSession();
+        const targetId = `target_${Date.now()}`;
+        const identifier = JSON.stringify(sub);
+        try {
+          await (this.account as any).createPushTarget(targetId, identifier);
+        } catch (_) {}
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn('[Push Notification Registration Warning]:', err);
+      return false;
+    }
+  }
+
   private async proxyRequest(path: string, body: any): Promise<any> {
     if (!this.isRealtimeConnected()) {
       throw new Error('Backend system down, please try again later. Save only when online.');
@@ -748,7 +785,6 @@ class AppwriteService {
     try {
       jwtToken = await this.createSessionJwt();
     } catch (err: any) {
-      console.warn("Could not generate session JWT for database proxy request:", err);
       throw new Error("Session expired or authentication failed. Please re-login.");
     }
 
@@ -756,24 +792,28 @@ class AppwriteService {
       ? 'https://api.lorryguru.in/truck-backend'
       : (import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend');
 
-    const response = await fetch(`${serverUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`
-      },
-      body: JSON.stringify(body)
-    });
+    try {
+      const response = await fetch(`${serverUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwtToken}`
+        },
+        body: JSON.stringify(body)
+      });
 
-    const data = await response.json();
-    if (!response.ok) {
-      const errObj = new Error(data.error || `Proxy request to ${path} failed with status ${response.status}`);
-      if (data.stack) {
-        (errObj as any).serverStack = data.stack;
+      const data = await response.json();
+      if (!response.ok) {
+        const errObj = new Error(data.error || `Proxy request to ${path} failed with status ${response.status}`);
+        if (data.stack) {
+          (errObj as any).serverStack = data.stack;
+        }
+        throw errObj;
       }
-      throw errObj;
+      return data;
+    } catch (fetchErr: any) {
+      throw fetchErr;
     }
-    return data;
   }
 
   /**

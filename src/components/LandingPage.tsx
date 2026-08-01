@@ -18,7 +18,15 @@ import {
   Menu,
   X,
   Users,
-  CheckCircle
+  CheckCircle,
+  Activity,
+  Cpu,
+  Database,
+  FileSpreadsheet,
+  Zap,
+  Lock,
+  RefreshCw,
+  FileText
 } from 'lucide-solid';
 
 interface LandingPageProps {
@@ -71,6 +79,11 @@ export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: Lan
 
   return (
     <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans select-none overflow-x-hidden selection:bg-blue-600/10">
+
+      {/* TOP ANNOUNCEMENT BANNER */}
+      <div class="bg-slate-900 dark:bg-slate-950 text-slate-300 text-xs md:text-sm font-medium py-1.5 px-4 text-center border-b border-slate-800 tracking-wide select-none">
+        This Site in Beta test mode - the database maybe deleted once site on live
+      </div>
 
       {/* HEADER */}
       <header class="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
@@ -225,45 +238,74 @@ export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: Lan
             </div>
 
             {/* Features Row */}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-10">
-              <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs">
-                <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                  <Navigation class="w-5 h-5" />
-                </div>
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Active Dispatch Logs</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Record segment cargo details, truck loadings, driver metrics, and route branch configurations.
-                </p>
+            <div class="space-y-4 pt-10">
+              <div class="text-left space-y-1">
+                <span class="px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-500/20 uppercase tracking-widest">
+                  Platform Architecture
+                </span>
+                <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Enterprise Logistics Capabilities</h2>
               </div>
 
-              <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs">
-                <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                  <Coins class="w-5 h-5" />
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-blue-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Navigation class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Active Dispatch & SubTrip Logs</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Record segment cargo details, truck loadings, driver metrics, cargo expense bearings (Org/Office/Driver), and route branch configurations.
+                  </p>
                 </div>
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Voucher Ledger</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Audit fuel slips, advance driver allocations, and maintenance costs under automated ledgers.
-                </p>
-              </div>
 
-              <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs">
-                <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                  <Shield class="w-5 h-5" />
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-indigo-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <Zap class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">TanStack Query Caching</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Sub-millisecond query caching, background revalidation, optimistic mutation state management, and zero-latency UI updates.
+                  </p>
                 </div>
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Enterprise Security</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Secure access controls with Two-Factor Auth (2FA), AWS hosting, and encrypted Cloud database.
-                </p>
-              </div>
 
-              <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs">
-                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <Clock class="w-5 h-5" />
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-emerald-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Coins class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Driver Settlement Ledger</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Automated driver hand-cash advances, trip-level expense credits, fuel reimbursements, and instant net balance reconciliation statement sheets.
+                  </p>
                 </div>
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Real-Time Sync</h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Synchronize data instantly across all devices. Local backup recovery checks ensure offline reliability.
-                </p>
+
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-purple-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                    <Truck class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Multi-Axle Tyres Master</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Position-based wheel mounting, dismounting history, manufacturer tread depth ODO wear indicators, and scrap/sale accounting.
+                  </p>
+                </div>
+
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-amber-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <Lock class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">WhatsApp & Double 2FA Security</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    WhatsApp OTP delivery gateway, TOTP two-factor wizard locks, encrypted session key memory, and role-based access permissions.
+                  </p>
+                </div>
+
+                <div class="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-left space-y-3 shadow-xs hover:border-cyan-500/30 transition-all">
+                  <div class="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                    <Cpu class="w-5 h-5" />
+                  </div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Background Job Queue & CDN Media</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Asynchronous worker task queue for PDF report generation, bulk CSV parsing, WebP media compression, and CDN preview acceleration.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

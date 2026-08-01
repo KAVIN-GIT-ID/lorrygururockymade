@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, mergeProps } from 'solid-js';
+import { createSignal, createEffect, createMemo, onMount, mergeProps } from 'solid-js';
 import { useTripsContext } from '../context/TripContext';
 import { useTrucksContext } from '../context/TruckContext';
 import { useDriversContext } from '../context/DriverContext';
@@ -9,7 +9,7 @@ import { useTyresContext } from '../context/TyreContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useAuth } from '../context/AuthContext';
 
-import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry } from '../types';
+import { Truck, TripEntry, ExpenseEntry, getTripMetrics, OrganizationProfile, Account, Driver, ServiceDonePayload, ServiceType, LoanEntry, Coupon } from '../types';
 import { Plus, Edit2, Trash2, Shield, CheckCircle, XCircle, Wrench, Calendar, Settings, X, Loader2, ChevronUp, ChevronDown, FileText, Eye, Landmark, Search, MoreVertical } from 'lucide-solid';
 import { calculateDaysLeft as calculateDaysLeftUtil, formatToDisplayDate } from '../lib/dateUtils';
 import { formatTruckNumber } from '../lib/formatUtils';
@@ -131,19 +131,16 @@ export const calculateSingleLoanStats = (
       e.notes?.includes(dueDateStr) &&
       (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
     );
-    
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const isPast = dueD < regDate;
     const isPaid = isPaidInExpenses || isPast || dueDateStr === startDateStr;
-    
     if (!isPaid) {
       nextDueDateStr = dueDateStr;
       isOverdue = dueD <= today;
       break;
     }
   }
-  
   return {
     paidInstallments,
     totalPaid,
@@ -201,8 +198,8 @@ interface TruckMasterProps {
   ) => Promise<void> | void;
   autoOpenAdd?: boolean;
   onAutoOpenCleared?: () => void;
+  coupons?: Coupon[] | (() => Coupon[]);
 }
-
 export default function TruckMaster(rawProps: TruckMasterProps) {
   const tripsCtx = useTripsContext();
   const trucksCtx = useTrucksContext();
@@ -237,7 +234,6 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     get currentUserPhone() { return authCtx.currentUser()?.phone || ''; }
   });
   const {
-    trucks,
     trips,
     expenses,
     onAddTruck,
@@ -377,23 +373,8 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      container.removeEventListener('wheel', handleWheel);
-    };
+    return () => container.removeEventListener('wheel', handleWheel);
   });
-
-  // Monitor if the currently edited truck is disabled by admin in the background
-  createEffect(() => {
-    if (isEditing()) {
-      const currentTruck = trucks.find(t => t.id === isEditing());
-      if (currentTruck && currentTruck.status === 'Admin Disabled') {
-        alert(`Vehicle ${currentTruck.truckNo} has been disabled by the administrator. Access is locked.`);
-        resetForm();
-      }
-    }
-  });
-  
-  // Base Information
   const [truckNo, setTruckNo] = createSignal('');
   const [ownerName, setOwnerName] = createSignal('');
   const [status, setStatus] = createSignal<'Active' | 'Inactive' | 'Admin Disabled' | 'Sold'>('Active');
@@ -530,7 +511,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
     const formattedInputNo = formatTruckNumber(truckNo()).toUpperCase().trim();
-    const isDuplicate = trucks.some(t => 
+    const isDuplicate = (props.trucks || []).some(t => 
       t.id !== isEditing() && 
       t.truckNo.toUpperCase().trim() === formattedInputNo &&
       t.isApproved !== false
@@ -580,9 +561,8 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
       setInsuranceUploading(false);
     }
 
-
-    const approvedCount = trucks.filter(t => t.isApproved !== false).length;
-    const limitReached = approvedCount >= maxTrucksAllowed;
+    const approvedCountVal = (props.trucks || []).filter(t => t.isApproved !== false).length;
+    const limitReachedVal = approvedCountVal >= maxTrucksAllowed;
 
     let finalLoans = [...loans()];
     if (tempLoanStart() && tempLoanEmi() && tempLoanTenure()) {
@@ -622,7 +602,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     const truckPayload = {
       truckNo: formatTruckNumber(truckNo()),
       ownerName: ownerName() || undefined,
-      status: limitReached && !isEditing() ? 'Inactive' : status(),
+      status: limitReachedVal && !isEditing() ? 'Inactive' : status(),
       make: make() || undefined,
       model: model() || undefined,
       type: type() || undefined,
@@ -653,7 +633,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     };
 
     if (isEditing()) {
-      const editingTruckObj = trucks.find(t => t.id === isEditing());
+      const editingTruckObj = (props.trucks || []).find(t => t.id === isEditing());
       const todayStr = new Date().toISOString().split('T')[0];
       const isExpired = editingTruckObj && editingTruckObj.registrationExpiryDate && editingTruckObj.registrationExpiryDate < todayStr;
       const isRejected = editingTruckObj && editingTruckObj.requestStatus === 'Rejected';
@@ -681,7 +661,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     } else {
       const newTruckId = 'tr_' + Date.now();
       
-      if (limitReached) {
+      if (limitReachedVal) {
         // Save temp payment details in localStorage
         sessionStorage.setItem('ttt_temp_payment_payload', JSON.stringify(truckPayload));
         sessionStorage.setItem('ttt_temp_payment_truck_id', newTruckId);
@@ -848,15 +828,12 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     }
   };
 
-  const approvedCount = trucks.filter(t => t.isApproved !== false).length;
-  const limitReached = approvedCount >= maxTrucksAllowed;
-
-  const activeEngineOilInterval = Number(engineOilIntervalKM()) || orgProfile?.engineOilIntervalKM || 15000;
-  const activeCrownOilInterval = Number(crownOilIntervalKM()) || orgProfile?.crownOilIntervalKM || 40000;
-  const activeGearBoxOilInterval = Number(gearBoxOilIntervalKM()) || orgProfile?.gearBoxOilIntervalKM || 40000;
-  const activeRadiatorInterval = Number(radiatorIntervalKM()) || orgProfile?.radiatorIntervalKM || 20000;
-  const activePinpushInterval = Number(pinpushIntervalKM()) || orgProfile?.pinpushIntervalKM || 5000;
-  const activeWheelGreaseInterval = Number(wheelGreaseIntervalKM()) || orgProfile?.wheelGreaseIntervalKM || 5000;
+  const activeEngineOilInterval = createMemo(() => Number(engineOilIntervalKM()) || orgProfile?.engineOilIntervalKM || 15000);
+  const activeCrownOilInterval = createMemo(() => Number(crownOilIntervalKM()) || orgProfile?.crownOilIntervalKM || 40000);
+  const activeGearBoxOilInterval = createMemo(() => Number(gearBoxOilIntervalKM()) || orgProfile?.gearBoxOilIntervalKM || 40000);
+  const activeRadiatorInterval = createMemo(() => Number(radiatorIntervalKM()) || orgProfile?.radiatorIntervalKM || 20000);
+  const activePinpushInterval = createMemo(() => Number(pinpushIntervalKM()) || orgProfile?.pinpushIntervalKM || 5000);
+  const activeWheelGreaseInterval = createMemo(() => Number(wheelGreaseIntervalKM()) || orgProfile?.wheelGreaseIntervalKM || 5000);
 
   // Helper to open the Service Done modal for a given truck and service
   const openServiceDone = (truck: Truck, serviceType: ServiceType, targetKM: number | undefined, intervalKM: number) => {
@@ -1026,17 +1003,20 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     );
   };
 
-  const filteredTrucks = trucks.filter(truck => {
+  const approvedCount = createMemo(() => (props.trucks || []).filter(t => t.isApproved !== false).length);
+  const limitReached = createMemo(() => approvedCount() >= (props.maxTrucksAllowed || 9999));
+
+  const filteredTrucks = createMemo(() => (props.trucks || []).filter(truck => {
     const matchesSearch = truck.truckNo.toLowerCase().includes(searchQuery().toLowerCase().trim());
     const matchesStatus = statusFilter() === 'All' || truck.status === statusFilter();
     return matchesSearch && matchesStatus;
-  });
+  }));
 
-  const allCount = trucks.length;
-  const activeCount = trucks.filter(t => t.status === 'Active').length;
-  const inactiveCount = trucks.filter(t => t.status === 'Inactive').length;
-  const adminDisabledCount = trucks.filter(t => t.status === 'Admin Disabled').length;
-  const soldCount = trucks.filter(t => t.status === 'Sold').length;
+  const allCount = createMemo(() => (props.trucks || []).length);
+  const activeCount = createMemo(() => (props.trucks || []).filter(t => t.status === 'Active').length);
+  const inactiveCount = createMemo(() => (props.trucks || []).filter(t => t.status === 'Inactive').length);
+  const adminDisabledCount = createMemo(() => (props.trucks || []).filter(t => t.status === 'Admin Disabled').length);
+  const soldCount = createMemo(() => (props.trucks || []).filter(t => t.status === 'Sold').length);
 
   return (
     <div id="truck-master-panel" class="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in space-y-6">
@@ -1045,7 +1025,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
           <h2 class="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2.5">
             <span>Truck Datasheet & Compliance Ledger</span>
             <span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold px-2 py-0.5 rounded-full text-[10px]">
-              Registered: {approvedCount} / Limit: {maxTrucksAllowed}
+              Registered: {approvedCount()} / Limit: {maxTrucksAllowed}
             </span>
           </h2>
           <p class="text-xs text-slate-500 mt-0.5">Maintain complete mechanical, oil milestone readings, green taxes, fitness certifications and active compliance logs.</p>
@@ -1061,7 +1041,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
           >
             {showAddForm() ? 'Close Specification Panel' : (
               <>
-                <Plus class="w-3.5 h-3.5" /> {limitReached ? 'Subscribe & Add Truck' : 'Add/Edit Truck Specs'}
+                <Plus class="w-3.5 h-3.5" /> {limitReached() ? 'Subscribe & Add Truck' : 'Add/Edit Truck Specs'}
               </>
             )}
           </button>
@@ -1075,7 +1055,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
               <div class="flex items-center gap-2">
                 <Settings class="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h3 class="text-sm font-bold text-slate-800 dark:text-white tracking-wide">
-                  {isEditing() ? 'Modify Fleet Information' : limitReached ? 'Subscribe & Add Truck' : 'Register Vehicle & Technical Specs'}
+                  {isEditing() ? 'Modify Fleet Information' : limitReached() ? 'Subscribe & Add Truck' : 'Register Vehicle & Technical Specs'}
                 </h3>
               </div>
               <button 
@@ -1087,82 +1067,82 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
               </button>
             </div>
 
-            {limitReached && !isEditing() && (
+            {limitReached() && !isEditing() && (
               <div class="bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg text-amber-800 dark:text-amber-400 text-xs flex gap-2">
                 <Shield class="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p class="font-bold">Truck Registration Limit Reached ({approvedCount} / {maxTrucksAllowed} Free Allowed)</p>
+                  <p class="font-bold">Truck Registration Limit Reached ({approvedCount()} / {maxTrucksAllowed} Free Allowed)</p>
                   <p class="mt-0.5 text-[11px]">Saving this truck will direct you to the PhonePe checkout page to complete the subscription. Once payment is successful, the truck will be automatically approved and activated.</p>
                 </div>
               </div>
             )}
 
-          {/* SECTION 1: Core Mechanics */}
-          <div>
-            <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">1. Core Vehicle Specs</span>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label for="input-truck-no" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Vehicle No <span class="text-red-500">*</span></label>
-                <input
-                  id="input-truck-no"
-                  type="text"
-                  placeholder="e.g. MH-12-PQ-4532"
-                  value={truckNo()}
-                  onChange={(e) => setTruckNo(formatTruckNumber(e.target.value))}
-                  required
-                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 uppercase font-mono font-bold"
-                />
-              </div>
-              <div>
-                <label for="input-make()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Manufacturer / Make</label>
-                <select
-                  id="input-make()"
-                  value={make()}
-                  onChange={(e) => setMake(e.target.value)}
-                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="">-- Choose Make --</option>
-                  <option value="Ashok Leyland">Ashok Leyland</option>
-                  <option value="TATA">TATA</option>
-                  {make() && make() !== 'Ashok Leyland' && make() !== 'TATA' && (
-                    <option value={make()}>{make()}</option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label for="input-model()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Model / Horsepower</label>
-                <input
-                  id="input-model()"
-                  type="text"
-                  placeholder="e.g. LPT 3118, 5525"
-                  value={model()}
-                  onChange={(e) => setModel(e.target.value)}
-                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label for="input-type()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Trailer Type</label>
-                <select
-                  id="input-type()"
-                  value={type()}
-                  onChange={(e) => setType(e.target.value)}
-                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="">-- Choose Type --</option>
-                  <option value="12 Wheeler">12 Wheeler</option>
-                  <option value="14 Wheeler">14 Wheeler</option>
-                  <option value="16 Wheeler">16 Wheeler</option>
-                  {type() && type() !== '12 Wheeler' && type() !== '14 Wheeler' && type() !== '16 Wheeler' && (
-                    <option value={type()}>{type()}</option>
-                  )}
-                </select>
+            {/* SECTION 1: Core Mechanics */}
+            <div>
+              <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">1. Core Vehicle Specs</span>
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label for="input-truck-no" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Vehicle No <span class="text-red-500">*</span></label>
+                  <input
+                    id="input-truck-no"
+                    type="text"
+                    placeholder="e.g. MH-12-PQ-4532"
+                    value={truckNo()}
+                    onChange={(e) => setTruckNo(formatTruckNumber(e.target.value))}
+                    required
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 uppercase font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label for="input-make()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Manufacturer / Make</label>
+                  <select
+                    id="input-make()"
+                    value={make()}
+                    onChange={(e) => setMake(e.target.value)}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="">-- Choose Make --</option>
+                    <option value="Ashok Leyland">Ashok Leyland</option>
+                    <option value="TATA">TATA</option>
+                    {make() && make() !== 'Ashok Leyland' && make() !== 'TATA' && (
+                      <option value={make()}>{make()}</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label for="input-model()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Model / Horsepower</label>
+                  <input
+                    id="input-model()"
+                    type="text"
+                    placeholder="e.g. LPT 3118, 5525"
+                    value={model()}
+                    onChange={(e) => setModel(e.target.value)}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label for="input-type()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Trailer Type</label>
+                  <select
+                    id="input-type()"
+                    value={type()}
+                    onChange={(e) => setType(e.target.value)}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="">-- Choose Type --</option>
+                    <option value="12 Wheeler">12 Wheeler</option>
+                    <option value="14 Wheeler">14 Wheeler</option>
+                    <option value="16 Wheeler">16 Wheeler</option>
+                    {type() && type() !== '12 Wheeler' && type() !== '14 Wheeler' && type() !== '16 Wheeler' && (
+                      <option value={type()}>{type()}</option>
+                    )}
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* SECTION 2: Compliance Certificates Dates */}
-          <div>
-            <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">2. Taxes & Compliance Validity Dates</span>
+            {/* SECTION 2: Compliance Certificates Dates */}
+            <div>
+              <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2">2. Taxes & Compliance Validity Dates</span>
             <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
               <div>
                 <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Insurance Expiry</label>
@@ -1297,11 +1277,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setEngineOilKM(odo + activeEngineOilInterval);
+                      setEngineOilKM(odo + activeEngineOilInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activeEngineOilInterval} KM)
+                    ✨ Set next due (Odo + {activeEngineOilInterval()} KM)
                   </button>
                 </div>
                 <div>
@@ -1332,11 +1312,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setCrownOilKM(odo + activeCrownOilInterval);
+                      setCrownOilKM(odo + activeCrownOilInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activeCrownOilInterval} KM)
+                    ✨ Set next due (Odo + {activeCrownOilInterval()} KM)
                   </button>
                 </div>
                 <div>
@@ -1367,11 +1347,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setGearBoxOilKM(odo + activeGearBoxOilInterval);
+                      setGearBoxOilKM(odo + activeGearBoxOilInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activeGearBoxOilInterval} KM)
+                    ✨ Set next due (Odo + {activeGearBoxOilInterval()} KM)
                   </button>
                 </div>
                 <div>
@@ -1402,11 +1382,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setRadiatorKM(odo + activeRadiatorInterval);
+                      setRadiatorKM(odo + activeRadiatorInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activeRadiatorInterval} KM)
+                    ✨ Set next due (Odo + {activeRadiatorInterval()} KM)
                   </button>
                 </div>
                 <div>
@@ -1437,11 +1417,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setPinpushKM(odo + activePinpushInterval);
+                      setPinpushKM(odo + activePinpushInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activePinpushInterval.toLocaleString()} KM)
+                    ✨ Set next due (Odo + {activePinpushInterval().toLocaleString()} KM)
                   </button>
                 </div>
                 <div>
@@ -1472,11 +1452,11 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                     type="button"
                     onClick={() => {
                       const odo = currentKM() !== '' ? Number(currentKM()) : 0;
-                      setWheelGreaseKM(odo + activeWheelGreaseInterval);
+                      setWheelGreaseKM(odo + activeWheelGreaseInterval());
                     }}
                     class="mt-1 text-[9px] text-blue-600 hover:text-blue-800 font-semibold block text-left"
                   >
-                    ✨ Set next due (Odo + {activeWheelGreaseInterval.toLocaleString()} KM)
+                    ✨ Set next due (Odo + {activeWheelGreaseInterval().toLocaleString()} KM)
                   </button>
                 </div>
                 <div>
@@ -1662,6 +1642,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
               {/* SECTION 4: Upload Documents */}
               <div class="col-span-full border-t border-slate-200 pt-3">
                 <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-2.5">4. Compliance Document Uploads (Optional)</span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">RC Document File</label>
                     <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
@@ -1726,48 +1707,48 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                       <span class="text-[9px] text-amber-500 font-semibold block mt-0.5">Appwrite bucket connection required for document uploads.</span>
                     )}
                   </div>
+                </div>
               </div>
 
               <div>
-                <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Operational Status</label>
-                <select
-                  disabled={status() === 'Admin Disabled' || (isEditing() !== null && trucks.find(t => t.id === isEditing())?.isApproved === false) || (isEditing() === null && limitReached) || isSubmitting()}
-                  value={limitReached && !isEditing() ? 'Inactive' : status()}
+                <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Operational Status</label>                <select
+                  disabled={status() === 'Admin Disabled' || (isEditing() !== null && (props.trucks || []).find(t => t.id === isEditing())?.isApproved === false) || (isEditing() === null && limitReached()) || isSubmitting()}
+                  value={limitReached() && !isEditing() ? 'Inactive' : status()}
                   onChange={(e) => setStatus(e.target.value as any)}
                   class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1 text-xs focus:outline-none disabled:opacity-50"
                 >
                   {status() === 'Admin Disabled' && (
                     <option value="Admin Disabled">Admin Disabled (Locked)</option>
                   )}
-                  <option value="Active">Operational (Active)</option>
-                  <option value="Inactive">Under Maintenance (Inactive)</option>
+                  <option value="Active">Operational / Active</option>
+                  <option value="Inactive">Under Maintenance / Inactive</option>
                   <option value="Sold">Sold</option>
                 </select>
-                {limitReached && !isEditing() && (
-                  <span class="text-[9px] text-amber-500 font-semibold block mt-0.5">Unsubscribed/inactive vehicles are disabled until a subscription is active</span>
+                {limitReached() && !isEditing() && (
+                  <span class="text-[9px] text-amber-600 font-semibold block mt-0.5">Free fleet registration limit reached. Truck will be added as Inactive until subscription payment.</span>
                 )}
               </div>
               <div>
-                <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">Subscription Expiry (Read-only)</label>
+                <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Registration Expiry Date</label>
                 <input
                   type="text"
                   disabled
                   value={
                     isEditing() 
-                      ? trucks.find(t => t.id === isEditing())?.registrationExpiryDate || '1 Year Cycle'
+                      ? (props.trucks || []).find(t => t.id === isEditing())?.registrationExpiryDate || 'Not set' 
                       : 'Auto-set (1 Year)'
                   }
-                  class="w-full bg-slate-100 border border-slate-205 text-slate-500 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none font-mono font-semibold"
+                  class="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 text-xs font-mono"
                 />
               </div>
             </div>
 
-          <div class="flex justify-end gap-3 mt-4 pt-3 border-t border-slate-200">
+          <div class="flex justify-end gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={resetForm}
               disabled={isSubmitting()}
-              class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-810 cursor-pointer disabled:opacity-50"
+              class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 transition cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1779,12 +1760,13 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
               {isSubmitting() && <Loader2 class="w-3.5 h-3.5 animate-spin" />}
               {isSubmitting() 
                 ? 'Uploading & Saving...' 
-                : (isEditing() ? (trucks.find(t => t.id === isEditing())?.requestStatus === 'Rejected' ? 'Subscribe' : 'Save Specification Updates') : limitReached ? 'Subscribe' : 'Add Truck Specs')}
+                : (isEditing() ? ((props.trucks || []).find(t => t.id === isEditing())?.requestStatus === 'Rejected' ? 'Subscribe' : 'Save Specification Updates') : limitReached() ? 'Subscribe' : 'Add Truck Specs')}
             </button>
           </div>
         </form>
       </div>
       )}
+
       {/* SEARCH AND FILTER TOOLBAR */}
       <div class="bg-slate-50 dark:bg-slate-900/40 p-4 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Search Input Box */}
@@ -1826,7 +1808,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
             <span>All</span>
             <span class={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
               statusFilter() === 'All' ? 'bg-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}>{allCount}</span>
+            }`}>{allCount()}</span>
           </button>
 
           {/* ACTIVE Tab */}
@@ -1843,7 +1825,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
             <span>Active</span>
             <span class={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
               statusFilter() === 'Active' ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}>{activeCount}</span>
+            }`}>{activeCount()}</span>
           </button>
 
           {/* INACTIVE Tab */}
@@ -1860,7 +1842,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
             <span>Under Maintenance</span>
             <span class={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
               statusFilter() === 'Inactive' ? 'bg-rose-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}>{inactiveCount}</span>
+            }`}>{inactiveCount()}</span>
           </button>
 
           {/* ADMIN DISABLED Tab */}
@@ -1877,7 +1859,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
             <span>Admin Blocked</span>
             <span class={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
               statusFilter() === 'Admin Disabled' ? 'bg-red-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}>{adminDisabledCount}</span>
+            }`}>{adminDisabledCount()}</span>
           </button>
 
           {/* SOLD Tab */}
@@ -1894,23 +1876,23 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
             <span>Sold</span>
             <span class={`text-[10px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
               statusFilter() === 'Sold' ? 'bg-slate-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}>{soldCount}</span>
+            }`}>{soldCount()}</span>
           </button>
         </div>
       </div>
 
       {/* BEAUTIFUL HIGH-DENSITY GRID OF FLEET COMPLIANCE CARDS */}
-      {trucks.length === 0 ? (
+      {(props.trucks || []).length === 0 ? (
         <div class="text-center py-12 text-slate-400 font-medium italic border border-slate-200 rounded-xl bg-slate-50/50">
           No operational vehicles registered in the system database.
         </div>
-      ) : filteredTrucks.length === 0 ? (
+      ) : filteredTrucks().length === 0 ? (
         <div class="text-center py-12 text-slate-400 font-medium italic border border-slate-200 rounded-xl bg-slate-50/50">
           No vehicles found matching search query "{searchQuery()}" or selected status() filters.
         </div>
       ) : (
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTrucks.map((truck) => {
+          {filteredTrucks().map((truck) => {
             const insDays = calculateDaysLeft(truck.insuranceDate);
             const fcDays = calculateDaysLeft(truck.fcDate);
             const aliDays = calculateDaysLeft(truck.alignmentNextDate);
@@ -2189,7 +2171,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
 
       {/* VEHICLE METRICS & FINANCIAL PERFORMANCE DRAWER (FLYOUT) */}
       {viewingTruckId() && (() => {
-        const truck = trucks.find(t => t.id === viewingTruckId());
+        const truck = (props.trucks || []).find(t => t.id === viewingTruckId());
         if (!truck) return null;
 
         const truckTrips = trips.filter(t => t.truckNo === truck.truckNo && t.status !== 'Deleted' && !t.deletedAt);
@@ -2663,8 +2645,14 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
           defaultCustomerEmail={currentUserEmail}
           defaultCustomerName={currentUserName}
           defaultCustomerPhone={currentUserPhone}
-          initialTxnId={initialTxnId()}
-          organizationId={organizationId}
+          organizationId={props.organizationId || organizationId}
+          coupons={props.coupons}
+          onSaveCoupons={(nextCoupons, cpnToSave, cpnIdToDelete) => {
+            const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+            if (cpnToSave) {
+              appwrite.saveFleetDocument(databaseId, 'coupons', cpnToSave.id, cpnToSave.organizationId || 'org_backend', cpnToSave).catch(() => {});
+            }
+          }}
           onSuccess={async (paymentDetails) => {
             if (onProcessTruckPayment) {
               await onProcessTruckPayment(phonePePayload(), paymentDetails, phonePeEditingId());

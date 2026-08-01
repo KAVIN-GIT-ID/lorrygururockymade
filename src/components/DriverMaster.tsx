@@ -22,6 +22,7 @@ interface DriverMasterProps {
   onAddDriver: (driver: Omit<Driver, 'id'>) => void;
   onUpdateDriver: (driver: Driver) => void;
   onDeleteDriver: (id: string) => void;
+  selectedDriverId?: string;
   canViewDrivers?: boolean;
   canEditDrivers?: boolean;
   canDeleteDrivers?: boolean;
@@ -40,57 +41,49 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
   const accountCtx = useAccountsContext();
   const permissionCtx = usePermissions();
 
-  const props = mergeProps(rawProps, {
-    get drivers() { return driversCtx.orgDrivers(); },
-    get trips() { return tripsCtx.orgTrips(); },
-    get expenses() { return expenseCtx.orgExpenses(); },
-    get accounts() { return accountCtx.orgAccounts(); },
-    onAddDriver: driversCtx.addDriver,
-    onUpdateDriver: driversCtx.updateDriver,
-    onDeleteDriver: driversCtx.deleteDriver,
-    onSaveTrips: tripsCtx.saveTrips,
-    
-    get canViewDrivers() { return permissionCtx.currentUserRights().canViewDrivers; },
-    get canEditDrivers() { return permissionCtx.currentUserRights().canEditDrivers; },
-    get canDeleteDrivers() { return permissionCtx.currentUserRights().canDeleteDrivers; },
-    get organizationId() { return permissionCtx.currentUserOrgId(); }
-  });
+  const props = mergeProps(
+    {
+      get drivers() { return rawProps.drivers !== undefined ? rawProps.drivers : (driversCtx ? driversCtx.orgDrivers() : []); },
+      get trips() { return rawProps.trips !== undefined ? rawProps.trips : (tripsCtx ? tripsCtx.orgTrips() : []); },
+      get expenses() { return rawProps.expenses !== undefined ? rawProps.expenses : (expenseCtx ? expenseCtx.orgExpenses() : []); },
+      get accounts() { return rawProps.accounts !== undefined ? rawProps.accounts : (accountCtx ? accountCtx.orgAccounts() : []); },
+      get selectedDriverId() { return rawProps.selectedDriverId !== undefined ? rawProps.selectedDriverId : ''; },
+      onAddDriver: rawProps.onAddDriver || driversCtx?.addDriver,
+      onUpdateDriver: rawProps.onUpdateDriver || driversCtx?.updateDriver,
+      onDeleteDriver: rawProps.onDeleteDriver || driversCtx?.deleteDriver,
+      onSaveTrips: rawProps.onSaveTrips || tripsCtx?.saveTrips,
+      get canViewDrivers() { return rawProps.canViewDrivers !== undefined ? rawProps.canViewDrivers : (permissionCtx?.currentUserRights()?.canViewDrivers ?? true); },
+      get canEditDrivers() { return rawProps.canEditDrivers !== undefined ? rawProps.canEditDrivers : (permissionCtx?.currentUserRights()?.canEditDrivers ?? true); },
+      get canDeleteDrivers() { return rawProps.canDeleteDrivers !== undefined ? rawProps.canDeleteDrivers : (permissionCtx?.currentUserRights()?.canDeleteDrivers ?? true); },
+      get organizationId() { return rawProps.organizationId || permissionCtx?.currentUserOrgId() || ''; }
+    },
+    rawProps
+  );
   const {
-    drivers,
-    trips,
-    expenses,
-    accounts,
     onAddDriver,
     onUpdateDriver,
     onDeleteDriver,
-    canViewDrivers,
-    canEditDrivers,
-    canDeleteDrivers,
-    organizationId,
     orgProfile,
     autoOpenAdd,
     onAutoOpenCleared,
     onSaveTrips,
     confirmAction
   } = props;
-
-
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [activeSpeedDialId, setActiveSpeedDialId] = createSignal<string | null>(null);
 
+  const [selectedDriverId, setSelectedDriverId] = createSignal<string>(
+    props.selectedDriverId || (props.drivers && props.drivers.length > 0 ? props.drivers[0].id : '')
+  );
+
   createEffect(() => {
-    if (autoOpenAdd) {
-      resetForm();
-      setShowAddForm(true);
-      if (onAutoOpenCleared) {
-        onAutoOpenCleared();
-      }
+    const targetId = props.selectedDriverId || (props.drivers && props.drivers.length > 0 ? props.drivers[0].id : '');
+    if (targetId && selectedDriverId() !== targetId) {
+      setSelectedDriverId(targetId);
     }
   });
-  const [selectedDriverId, setSelectedDriverId] = createSignal<string>('');
 
-  // Carry Forward / Quick Settle States
   const [selectedFwdSourceTripId, setSelectedFwdSourceTripId] = createSignal<string>('');
   const [selectedFwdTripId, setSelectedFwdTripId] = createSignal<string>('');
   const [selectedFwdMode, setSelectedFwdMode] = createSignal<'trip' | 'account'>('trip');
@@ -149,10 +142,10 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
     try {
       if (licenseFile()) {
         setLicenseUploading(true);
-        const sanitizedOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
+        const sanitizedOrgId = (props.organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '_');
         const identifier = (licenseNo() || driverName()).trim().replace(/[^a-zA-Z0-9-]/g, '_');
         const customName = `${sanitizedOrgId}_DL_${identifier}`;
-        uploadedLicenseId = await appwrite.uploadFile(licenseFile(), customName, organizationId);
+        uploadedLicenseId = await appwrite.uploadFile(licenseFile(), customName, props.organizationId);
         setLicenseFileId(uploadedLicenseId);
       }
     } catch (err) {
@@ -204,7 +197,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
           <h2 class="text-lg font-bold text-slate-800 tracking-tight">Driver Registry</h2>
           <p class="text-xs text-slate-500 mt-0.5">Manage operator drivers database sheets for transport allocations.</p>
         </div>
-        {canEditDrivers && (
+        {props.canEditDrivers && (
           <button
             id="btn-add-driver"
             onClick={() => {
@@ -256,16 +249,17 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     type="text"
                     placeholder="e.g. Ramesh Pal"
                     value={driverName()}
-                    onChange={(e) => setDriverName(e.target.value)}
+                    onChange={(e) => setDriverName(e.currentTarget.value)}
+                    onInput={(e) => setDriverName(e.currentTarget.value)}
                     required
                     class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
                   />
                 </div>
               </div>
               <div>
-                <label for="input-driver-phone()" class="block text-xs font-semibold text-slate-650 mb-1">Contact Phone</label>
+                <label for="input-driver-phone" class="block text-xs font-semibold text-slate-650 mb-1">Contact Phone</label>
                 <CountryCodePhoneInput
-                  id="input-driver-phone()"
+                  id="input-driver-phone"
                   value={phone()}
                   onChange={(val) => setPhone(val)}
                   placeholder="Enter mobile number"
@@ -282,17 +276,18 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     type="text"
                     placeholder="e.g. DL-142018009"
                     value={licenseNo()}
-                    onChange={(e) => setLicenseNo(e.target.value)}
+                    onChange={(e) => setLicenseNo(e.currentTarget.value)}
+                    onInput={(e) => setLicenseNo(e.currentTarget.value)}
                     class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
               <div>
-                <label for="select-driver-status()" class="block text-xs font-semibold text-slate-650 mb-1">Status</label>
+                <label for="select-driver-status" class="block text-xs font-semibold text-slate-650 mb-1">Status</label>
                 <select
-                  id="select-driver-status()"
+                  id="select-driver-status"
                   value={status()}
-                  onChange={(e) => setStatus(e.target.value as 'Active' | 'Inactive')}
+                  onChange={(e) => setStatus(e.currentTarget.value as 'Active' | 'Inactive')}
                   class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="Active">Active</option>
@@ -303,7 +298,6 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                 <label class="block text-xs font-semibold text-slate-650 mb-1">Upload Driving License Document (Optional)</label>
                 <div class="flex items-center gap-2.5 bg-white border border-slate-200 rounded-lg p-2 max-w-md">
                   <input
-                    
                     type="file"
                     onChange={handleLicenseFileChange}
                     disabled={licenseUploading() || isSubmitting() || !isAppwriteConfigured()}
@@ -373,18 +367,18 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 text-xs">
-            {drivers.length === 0 ? (
+            {(props.drivers || []).length === 0 ? (
               <tr>
                 <td colSpan={5} class="py-10 text-center text-slate-400">
                   <div class="text-slate-350">No operating drivers registered in system databases.</div>
                 </td>
               </tr>
             ) : (
-              drivers.map((driver) => (
-                <tr  class="hover:bg-slate-50/50 transition">
+              (props.drivers || []).map((driver) => (
+                <tr class="hover:bg-slate-50/50 transition">
                   <td class="py-3.5 px-4 font-bold text-slate-800">
                     <div class="flex items-center gap-2.5">
-                      <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-[11px] font-bold">
+                      <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-[11px] font-bold shrink-0">
                         {driver.driverName ? driver.driverName.substring(0, 2).toUpperCase() : 'DR'}
                       </div>
                       <div>
@@ -394,10 +388,10 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     </div>
                   </td>
                   <td class="py-3.5 px-4 font-medium text-slate-600">
-                    {canViewDrivers ? (driver.phone || '—') : <span class="text-slate-400 italic text-[11px] font-mono">[Restricted]</span>}
+                    {props.canViewDrivers ? (driver.phone || '—') : <span class="text-slate-400 italic text-[11px] font-mono">[Restricted]</span>}
                   </td>
                   <td class="py-3.5 px-4 text-slate-600">
-                    {canViewDrivers ? (
+                    {props.canViewDrivers ? (
                       <div class="flex flex-col gap-0.5">
                         <span class="font-mono font-medium">{driver.licenseNo || '—'}</span>
                         {driver.licenseFileId && (
@@ -433,7 +427,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     <div class="flex justify-end gap-2.5">
                       <button
                         title="Edit driver"
-                        disabled={!canEditDrivers}
+                        disabled={!props.canEditDrivers}
                         onClick={() => startEdit(driver)}
                         class="p-1 px-2 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded font-semibold cursor-pointer text-xs flex items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -441,7 +435,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                       </button>
                       <button
                         title="Delete driver"
-                        disabled={!canDeleteDrivers}
+                        disabled={!props.canDeleteDrivers}
                         onClick={() => {
                           if (confirm(`Are you sure you want to permanently delete driver record ${driver.driverName}?`)) {
                             onDeleteDriver(driver.id);
@@ -462,16 +456,13 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
 
       {/* MOBILE LIST CARD VIEW */}
       <div class="block md:hidden space-y-4">
-        {drivers.length === 0 ? (
+        {(props.drivers || []).length === 0 ? (
           <div class="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
             No operating drivers registered in system databases.
           </div>
         ) : (
-          drivers.map((driver) => (
-              <div 
-                
-                class="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition relative"
-              >
+          (props.drivers || []).map((driver) => (
+            <div class="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition relative">
               <div>
                 {/* Top Row: Name, Initials Avatar & Duty Status */}
                 <div class="flex justify-between items-start gap-2 mb-3 pr-8">
@@ -497,7 +488,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                 <div class="bg-slate-50 border border-slate-200/60 rounded-lg p-2.5 space-y-1.5 text-xs text-slate-650 mb-3.5">
                   <div class="flex justify-between items-center">
                     <span class="text-slate-400 font-bold uppercase text-[9px]">Phone</span>
-                    {canViewDrivers ? (
+                    {props.canViewDrivers ? (
                       driver.phone ? (
                         <a href={`tel:${driver.phone}`} class="font-medium text-blue-600 hover:underline flex items-center gap-1">
                           <Phone class="w-3 h-3 text-slate-400" />
@@ -516,7 +507,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     <span class="font-mono font-medium text-slate-700">{driver.licenseNo || '—'}</span>
                   </div>
 
-                  {driver.licenseFileId && canViewDrivers && (
+                  {driver.licenseFileId && props.canViewDrivers && (
                     <div class="flex justify-between items-center pt-1.5 border-t border-slate-200/40">
                       <span class="text-slate-400 font-bold uppercase text-[9px]">Document</span>
                       <a
@@ -562,7 +553,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     </button>
                     <button
                       type="button"
-                      disabled={!canEditDrivers}
+                      disabled={!props.canEditDrivers}
                       onClick={() => {
                         startEdit(driver);
                         setActiveSpeedDialId(null);
@@ -574,7 +565,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     </button>
                     <button
                       type="button"
-                      disabled={!canDeleteDrivers}
+                      disabled={!props.canDeleteDrivers}
                       onClick={() => {
                         if (confirm(`Are you sure you want to permanently delete driver record ${driver.driverName}?`)) {
                           onDeleteDriver(driver.id);
@@ -600,7 +591,6 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                   </button>
                 </div>
               </div>
-
             </div>
           ))
         )}
@@ -626,8 +616,8 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
               class="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-emerald-500 outline-none font-bold cursor-pointer"
             >
               <option value="">-- Choose Operator Driver --</option>
-              {drivers.map(drv => (
-                <option  value={drv.id}>
+              {(props.drivers || []).map(drv => (
+                <option value={drv.id}>
                   {drv.driverName}
                 </option>
               ))}
@@ -636,7 +626,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
         </div>
 
         {(() => {
-          const selectedDrv = drivers.find(d => d.id === selectedDriverId());
+          const selectedDrv = (props.drivers || []).find(d => d.id === selectedDriverId());
           if (!selectedDrv) {
             return (
               <div class="p-8 text-center bg-slate-50/50 border border-dashed border-slate-200 rounded-xl">
@@ -647,7 +637,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
           }
 
           // Gather trips for selected driver
-          const drvTrips = trips.filter(t => t.driverName.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim() && t.status !== 'Deleted' && !t.deletedAt);
+          const drvTrips = (props.trips || []).filter(t => t.driverName.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim() && t.status !== 'Deleted' && !t.deletedAt);
           
           // Gather ALL advances for selected driver on those trips (Category 4)
           const category4Advances = drvTrips.flatMap(t => 
@@ -660,7 +650,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
           // Gather Category 3 driver advance receipts
           const category3Payments = drvTrips.flatMap(t =>
             (t.payments || [])
-              .filter(p => p.receivedBy === 'paid_to_driver_advance')
+              .filter(p => p.receivedBy === 'paid_to_driver_advance' || p.receivedBy?.toLowerCase().includes('driver advance') || p.receivedBy?.toLowerCase().includes('driver_advance'))
               .map(p => ({
                 id: p.id,
                 amount: p.amount,
@@ -675,9 +665,9 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
           const drvAdvances = [...category4Advances, ...category3Payments];
 
           // Gather ALL driver-type expenses for selected driver name
-          const drvExpenses = expenses.filter(exp => 
-            exp.accountType === 'Driver' && 
-            exp.driverName?.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim()
+          const drvExpenses = (props.expenses || []).filter(exp => 
+            ((exp as any).accountType === 'Driver' || (exp as any).category === 'Driver Expense') && 
+            (!exp.driverName || exp.driverName.toLowerCase().trim() === selectedDrv.driverName.toLowerCase().trim())
           );
 
           // Compute extra expense items (fuels, common expenses, subtrip expenses, and driver wages) from trips of this driver
@@ -686,23 +676,22 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
 
           drvTrips.forEach(t => {
             // 1. Fuels paid by driver
-            if (t.fuels) {
-              t.fuels.forEach(f => {
-                if (f.paymentMode === 'driver') {
-                  computedTripDriverCredits.push({
-                    id: f.id,
-                    date: f.date,
-                    type: 'Fuel (Paid by Driver)',
-                    amount: f.amount,
-                    notes: `Diesel ${f.liters} L @ ₹${f.rate} at ${f.shopName || 'Bunk'}`,
-                    reference: `Trip: ${t.tripNo}`,
-                    fromMode: 'Driver Advance Hand cash',
-                    isDirect: false,
-                    badgeStyle: 'bg-amber-50 text-amber-800 border-amber-200'
-                  });
-                }
-              });
-            }
+            (t.fuels || []).forEach(f => {
+              const paidBy = (f as any).paidBy || (f.paymentMode === 'driver' ? 'Driver' : '');
+              if (paidBy === 'Driver' || paidBy === 'DriverCash') {
+                computedTripDriverCredits.push({
+                  id: `fuel-${f.id}`,
+                  date: f.date || t.startDate,
+                  type: 'Fuel Expense',
+                  amount: Number(f.amount) || Number((f as any).totalCost) || 0,
+                  notes: `Fuel ${f.liters || (f as any).litres || 0}L @ ₹${f.rate}/L paid by Driver (${f.shopName || (f as any).vendor || 'Pump'})`,
+                  reference: `Trip: ${t.tripNo}`,
+                  fromMode: 'Driver Advance Hand cash',
+                  isDirect: false,
+                  badgeStyle: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                });
+              }
+            });
 
             // 2. Common trip-level expenses paid by driver
             if (t.rtoPaidByDriver && t.rtoExpense && t.rtoExpense > 0) {
@@ -763,33 +752,36 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
               t.subTrips.forEach(st => {
                 const segDate = st.loadingDate || t.startDate;
 
-                if (st.cargoExpenses && st.cargoExpenses.length > 0) {
-                  st.cargoExpenses.forEach(exp => {
+                const subTripExpenses = (st.cargoExpenses && st.cargoExpenses.length > 0) ? st.cargoExpenses : ((st as any).expenses && (st as any).expenses.length > 0 ? (st as any).expenses : null);
+                if (subTripExpenses && subTripExpenses.length > 0) {
+                  subTripExpenses.forEach(exp => {
                     const amount = Number(exp.amount) || 0;
-                    const isPaidByDriver = !!exp.paidByDriver;
-                    
-                    if (exp.bears === 'Org' || exp.bears === 'Office') {
+                    const isPaidByDriver = exp.paidByDriver !== undefined ? !!exp.paidByDriver : (exp.paidBy as string === 'DriverCash' || exp.paidBy as string === 'Driver');
+                    const isBearsOrg = exp.bears === 'Org' || exp.bears === 'Office' || exp.bears === undefined;
+
+                    if (isBearsOrg) {
                       if (isPaidByDriver) {
                         computedTripDriverCredits.push({
                           id: `seg-exp-${exp.id}`,
                           date: segDate,
                           type: `Cargo ${exp.expenseType} Expense`,
                           amount: amount,
-                          notes: `${exp.expenseType} expense paid by Driver (${exp.bears} bears: ₹${amount}) at ${st.officeName}`,
+                          notes: `${exp.expenseType} expense paid by Driver at ${st.officeName}`,
                           reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                           fromMode: 'Driver Advance Hand cash',
                           isDirect: false,
                           badgeStyle: 'bg-teal-50 text-teal-800 border-teal-200'
                         });
                       }
-                    } else if (exp.bears === 'Driver') {
+                    }
+                    if ((exp.bears as string) === 'Driver' || (exp.paidBy as string) === 'DriverDirect') {
                       if (!isPaidByDriver) {
                         recoveryItems.push({
                           id: `seg-exp-recovery-${exp.id}`,
                           date: segDate,
                           type: `Driver Recovery (${exp.expenseType})`,
                           amount: amount,
-                          notes: `${exp.expenseType} deduction from rental (Driver bears: ₹${amount}) at ${st.officeName}`,
+                          notes: `${exp.expenseType} deduction from rental at ${st.officeName}`,
                           reference: `Trip: ${t.tripNo} (${st.routeFrom} ➔ ${st.routeTo})`,
                           fromMode: 'Driver Recovery Debit',
                           isDirect: false,
@@ -802,8 +794,9 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                   // Legacy fallback
                   // 1. Loading
                   const loadAmt = Number(st.loadingExpense) || 0;
-                  const loadBearsOrg = st.loadingBearsOrg !== undefined ? Number(st.loadingBearsOrg) : ((st.loadingBears || 'Org') === 'Org' ? loadAmt : 0);
-                  const loadBearsDriver = st.loadingBearsDriver !== undefined ? Number(st.loadingBearsDriver) : ((st.loadingBears || 'Org') === 'Driver' ? loadAmt : 0);
+                  const isLoadBearsDriver = (st.loadingBears as string) === 'Driver' || (st.loadingDeductedFrom as string) === 'Driver' || (st.loadingDeductedFrom as string) === 'DriverDirect';
+                  const loadBearsOrg = st.loadingBearsOrg !== undefined ? Number(st.loadingBearsOrg) : (!isLoadBearsDriver ? loadAmt : 0);
+                  const loadBearsDriver = st.loadingBearsDriver !== undefined ? Number(st.loadingBearsDriver) : (isLoadBearsDriver ? loadAmt : 0);
                   const loadPaid = !!st.loadingPaidByDriver;
                   if (loadPaid && loadBearsOrg > 0) {
                     computedTripDriverCredits.push({
@@ -833,8 +826,9 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
 
                   // 2. Unloading
                   const unloadAmt = Number(st.unloadingExpense) || 0;
-                  const unloadBearsOrg = st.unloadingBearsOrg !== undefined ? Number(st.unloadingBearsOrg) : ((st.unloadingBears || 'Org') === 'Org' ? unloadAmt : 0);
-                  const unloadBearsDriver = st.unloadingBearsDriver !== undefined ? Number(st.unloadingBearsDriver) : ((st.unloadingBears || 'Org') === 'Driver' ? unloadAmt : 0);
+                  const isUnloadBearsDriver = (st.unloadingBears as string) === 'Driver' || (st.unloadingDeductedFrom as string) === 'Driver' || (st.unloadingDeductedFrom as string) === 'DriverDirect';
+                  const unloadBearsOrg = st.unloadingBearsOrg !== undefined ? Number(st.unloadingBearsOrg) : (!isUnloadBearsDriver ? unloadAmt : 0);
+                  const unloadBearsDriver = st.unloadingBearsDriver !== undefined ? Number(st.unloadingBearsDriver) : (isUnloadBearsDriver ? unloadAmt : 0);
                   const unloadPaid = !!st.unloadingPaidByDriver;
                   if (unloadPaid && unloadBearsOrg > 0) {
                     computedTripDriverCredits.push({
@@ -996,7 +990,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
             amount: adv.amount,
             notes: adv.notes || 'Trip Advance',
             reference: `Trip: ${adv.tripNo}`,
-            fromMode: accounts.find(a => a.id === adv.fromAccountId)?.accountName || adv.fromAccountId,
+            fromMode: (props.accounts || []).find(a => a.id === adv.fromAccountId)?.accountName || adv.fromAccountId,
             isDirect: adv.receivedByDriverDirectly,
             badgeStyle: 'bg-emerald-50 text-emerald-800 border-emerald-200'
           }));
@@ -1018,7 +1012,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
             isDirect: false
           }));
 
-          const timeline = [...advItems, ...expItems, ...computedTripDriverCredits, ...timelineRecoveryItems].sort((a, b) => a.date.localeCompare(b.date));
+          const timeline = [...advItems, ...expItems, ...computedTripDriverCredits, ...timelineRecoveryItems].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
           return (
             <div class="space-y-6 animate-fade-in pt-2">
@@ -1124,13 +1118,13 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                     </div>
 
                     {selectedFwdSourceTripId() && (() => {
-                      const srcTrip = trips.find(t => t.id === selectedFwdSourceTripId());
+                      const srcTrip = (props.trips || []).find(t => t.id === selectedFwdSourceTripId());
                       if (!srcTrip) return null;
                       const srcMetrics = getTripMetrics(srcTrip);
                       const isDef = srcMetrics.driverBalance < 0;
                       const balAmt = Math.abs(srcMetrics.driverBalance);
 
-                      const eligibleFwdTrips = trips.filter(
+                      const eligibleFwdTrips = (props.trips || []).filter(
                         t => t.id !== srcTrip.id && t.status !== 'Settled'
                       ).sort((a, b) => {
                         const aSame = a.driverName?.toLowerCase().trim() === srcTrip.driverName?.toLowerCase().trim();
@@ -1244,7 +1238,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                                     >
                                       <option value="">-- Choose Company Account --</option>
                                       <option value="Cash">Cash</option>
-                                      {accounts.filter(a => a.status === 'Active').map(a => (
+                                      {(props.accounts || []).filter(a => a.status === 'Active').map(a => (
                                         <option  value={a.id}>
                                           {a.accountName} ({a.type})
                                         </option>
@@ -1262,7 +1256,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                                       alert("Please select a target trip first.");
                                       return;
                                     }
-                                    const destTrip = trips.find(t => t.id === selectedFwdTripId());
+                                    const destTrip = (props.trips || []).find(t => t.id === selectedFwdTripId());
                                     if (!destTrip) return;
 
                                     const confirmMsg = isDef
@@ -1306,7 +1300,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                                         updatedAt: new Date().toISOString()
                                       };
 
-                                      const updatedTrips = trips.map(t => {
+                                      const updatedTrips = (props.trips || []).map(t => {
                                         if (t.id === updatedSource.id) return updatedSource;
                                         if (t.id === updatedDest.id) return updatedDest;
                                         return t;
@@ -1328,7 +1322,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                                       alert("Please select a target company account first.");
                                       return;
                                     }
-                                    const targetAccount = accounts.find(a => a.id === selectedFwdAccountId());
+                                    const targetAccount = (props.accounts || []).find(a => a.id === selectedFwdAccountId());
                                     const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId();
 
                                     const confirmMsg = isDef
@@ -1352,7 +1346,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
                                         advances: [...(srcTrip.advances || []), settleAdvance]
                                       };
 
-                                      const updatedTrips = trips.map(t => {
+                                      const updatedTrips = (props.trips || []).map(t => {
                                         if (t.id === updatedSource.id) return updatedSource;
                                         return t;
                                       });

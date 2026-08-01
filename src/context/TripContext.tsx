@@ -4,7 +4,7 @@ import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
 import { getTripDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -20,6 +20,48 @@ interface TripContextType {
 
 const TripContext = createContext<TripContextType>();
 
+function autoHealAdvances(list: TripEntry[]): TripEntry[] {
+  const activeFwdInLinkIds = new Set<string>();
+  const activeFwdInTripNos = new Set<string>();
+
+  list.forEach(t => {
+    if (t.deletedAt) return;
+    (t.advances || []).forEach(a => {
+      if (a.id.startsWith('fwd_in_')) {
+        if (a.linkId) activeFwdInLinkIds.add(a.linkId);
+        activeFwdInTripNos.add(t.tripNo);
+      }
+    });
+  });
+
+  return list.map(t => {
+    if (t.deletedAt || !t.advances) return t;
+    const hasOrphanFwdOut = t.advances.some(a => {
+      if (!a.id.startsWith('fwd_out_')) return false;
+      if (a.linkId) return !activeFwdInLinkIds.has(a.linkId);
+      const targetTripNoMatch = a.notes?.match(/TRIP-[A-Z0-9-]+/i)?.[0];
+      if (targetTripNoMatch) {
+        return !activeFwdInTripNos.has(targetTripNoMatch);
+      }
+      return true;
+    });
+
+    if (hasOrphanFwdOut) {
+      const cleaned = t.advances.filter(a => {
+        if (!a.id.startsWith('fwd_out_')) return true;
+        if (a.linkId) return activeFwdInLinkIds.has(a.linkId);
+        const targetTripNoMatch = a.notes?.match(/TRIP-[A-Z0-9-]+/i)?.[0];
+        if (targetTripNoMatch) {
+          return activeFwdInTripNos.has(targetTripNoMatch);
+        }
+        return false;
+      });
+      return { ...t, advances: cleaned };
+    }
+    return t;
+  });
+}
+
 export function TripProvider(props: { children: JSX.Element }) {
   const { currentUser } = useAuth();
   const { currentUserOrgId, currentUserRights } = usePermissions();
@@ -32,8 +74,21 @@ export function TripProvider(props: { children: JSX.Element }) {
   // Load from Dexie cache on start
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.trips && prewarmedData.trips.length > 0) {
+      const healed = autoHealAdvances(prewarmedData.trips);
+      saveTrips(healed);
+      setLoadedFromDB(true);
+    }
     db.trips.toArray().then(cached => {
-      setTripsStore(cached || []);
+      let raw = cached && cached.length > 0 ? cached : [];
+      if (raw.length === 0) {
+        const localTrips = localStorage.getItem('ttt_trips');
+        if (localTrips) {
+          try { raw = JSON.parse(localTrips); } catch (e) {}
+        }
+      }
+      const healed = autoHealAdvances(raw);
+      saveTrips(healed);
       setLoadedFromDB(true);
     });
   });
@@ -42,7 +97,11 @@ export function TripProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...tripsStore];
-    db.trips.clear().then(() => db.trips.bulkPut(list));
+    if (list.length === 0) {
+      db.trips.clear();
+    } else {
+      db.trips.bulkPut(list);
+    }
   });
 
   const saveTrips = (newTrips: TripEntry[] | ((prev: TripEntry[]) => TripEntry[])) => {
@@ -69,12 +128,13 @@ export function TripProvider(props: { children: JSX.Element }) {
     }
 
     setTripsStore(list);
+    localStorage.setItem('ttt_trips', JSON.stringify(list));
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
   };
 
   const orgTrips = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return (orgId === 'org_backend' ? tripsStore : tripsStore.filter(t => t.organizationId === orgId))
+    return tripsStore.filter(t => t.organizationId === orgId)
       .map(t => t.deletedAt ? { ...t, status: 'Deleted' as any } : t);
   });
 
@@ -194,7 +254,7 @@ export function TripProvider(props: { children: JSX.Element }) {
       showNotification(`Trip ${updated.tripNo} changes successfully committed.`);
     } else {
       const isDup = tripsStore
-        .filter(t => orgId === 'org_backend' || t.organizationId === orgId)
+        .filter(t => t.organizationId === orgId)
         .some(t => t.tripNo.toUpperCase().trim() === finalEntryInput.tripNo.toUpperCase().trim());
       if (isDup) {
         alert("Trip Number is already in use by another active ledger.");
@@ -231,6 +291,7 @@ export function TripProvider(props: { children: JSX.Element }) {
     const orgId = currentUserOrgId() || 'org_default';
     const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
     const deletedTripNo = tEntry.tripNo;
+    const deletedLinkIds = (tEntry.advances || []).map(a => a.linkId).filter(Boolean) as string[];
     const modifiedTripIds: string[] = [];
 
     const updatedTrip = mutateRecord(tEntry, { deletedAt: new Date().toISOString() }, currentUserId);
@@ -239,12 +300,14 @@ export function TripProvider(props: { children: JSX.Element }) {
     next = next.map(t => {
       const hasReferencingAdv = (t.advances || []).some(adv => 
         (adv.id.startsWith('fwd_in_') || adv.id.startsWith('fwd_out_')) &&
-        adv.notes && (adv.notes.endsWith(deletedTripNo) || adv.notes.includes(deletedTripNo))
+        ((adv.linkId && deletedLinkIds.includes(adv.linkId)) ||
+         (adv.notes && (adv.notes.endsWith(deletedTripNo) || adv.notes.includes(deletedTripNo))))
       );
       if (hasReferencingAdv) {
         const cleanedAdvances = (t.advances || []).filter(adv => {
           const isFwd = adv.id.startsWith('fwd_in_') || adv.id.startsWith('fwd_out_');
-          const referencesDeleted = adv.notes && (adv.notes.endsWith(deletedTripNo) || adv.notes.includes(deletedTripNo));
+          const referencesDeleted = (adv.linkId && deletedLinkIds.includes(adv.linkId)) ||
+            (adv.notes && (adv.notes.endsWith(deletedTripNo) || adv.notes.includes(deletedTripNo)));
           return !(isFwd && referencesDeleted);
         });
         modifiedTripIds.push(t.id);

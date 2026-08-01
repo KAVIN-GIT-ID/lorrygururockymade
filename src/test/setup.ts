@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom';
 import { createSignal, createEffect } from 'solid-js';
 import { vi, beforeEach } from 'vitest';
@@ -136,6 +137,11 @@ vi.mock('../lib/appwrite', () => {
           unsubscribe: vi.fn()
         })
       }),
+      flushSyncQueue: vi.fn().mockResolvedValue(undefined),
+      loadGlobalConfig: vi.fn().mockResolvedValue(null),
+      reconstructRecord: vi.fn().mockImplementation((doc) => doc),
+      createSessionJwt: vi.fn().mockResolvedValue({ jwt: 'mock-jwt' }),
+      subscribeToGateway: vi.fn().mockReturnValue({ close: vi.fn(), unsubscribe: vi.fn() }),
       getClient: vi.fn().mockReturnValue({
         setEndpoint: vi.fn().mockReturnThis(),
         setProject: vi.fn().mockReturnThis(),

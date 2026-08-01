@@ -38,24 +38,22 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
   const driversCtx = useDriversContext();
   const permissionCtx = usePermissions();
 
-  const props = mergeProps(rawProps, {
-    get expenses() { return expenseCtx.orgExpenses(); },
-    get trucks() { return trucksCtx.orgTrucks(); },
-    get drivers() { return driversCtx.orgDrivers(); },
-    onAddExpense: expenseCtx.addExpense,
-    onUpdateExpense: expenseCtx.updateExpense,
-    onDeleteExpense: expenseCtx.deleteExpense,
-    confirmAction: rawProps.confirmAction,
-    get accounts() { return rawProps.accounts || []; },
-    autoOpenAdd: rawProps.autoOpenAdd,
-    onAutoOpenCleared: rawProps.onAutoOpenCleared,
-    orgProfile: rawProps.orgProfile,
-    
-    get canViewExpenses() { return permissionCtx.currentUserRights().canViewExpenses; },
-    get canEditExpenses() { return permissionCtx.currentUserRights().canEditExpenses; },
-    get canDeleteExpenses() { return permissionCtx.currentUserRights().canDeleteExpenses; },
-    get organizationId() { return permissionCtx.currentUserOrgId(); }
-  });
+  const props = mergeProps(
+    {
+      get expenses() { return expenseCtx ? expenseCtx.orgExpenses() : []; },
+      get trucks() { return trucksCtx ? trucksCtx.orgTrucks() : []; },
+      get drivers() { return driversCtx ? driversCtx.orgDrivers() : []; },
+      onAddExpense: expenseCtx?.addExpense,
+      onUpdateExpense: expenseCtx?.updateExpense,
+      onDeleteExpense: expenseCtx?.deleteExpense,
+      get accounts() { return []; },
+      get canViewExpenses() { return permissionCtx?.currentUserRights()?.canViewExpenses; },
+      get canEditExpenses() { return permissionCtx?.currentUserRights()?.canEditExpenses; },
+      get canDeleteExpenses() { return permissionCtx?.currentUserRights()?.canDeleteExpenses; },
+      get organizationId() { return permissionCtx?.currentUserOrgId(); }
+    },
+    rawProps
+  );
   
 
 
@@ -160,7 +158,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
-    if (!truckNo().trim() || !amount().trim() || isNaN(Number(amount()))) {
+    if (!truckNo().trim() || !String(amount()).trim() || isNaN(Number(amount()))) {
       return;
     }
 
@@ -406,7 +404,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
       {/* EXPENSE REGISTRATION FORM */}
       {showForm() && (
         <div class="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 backdrop-blur-xs p-4 overflow-y-auto py-8 animate-fade-in" id="expense-form-backdrop">
-          <form id="expense-registration-form" onSubmit={handleSubmit} class="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto md:overflow-visible text-left my-auto">
+          <form id="expense-registration-form" noValidate onSubmit={handleSubmit} class="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto md:overflow-visible text-left my-auto">
             <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-850 pb-3">
               <div class="flex items-center gap-2">
                 <FileSpreadsheet class="w-5 h-5 text-indigo-600 dark:text-indigo-450" />
@@ -471,16 +469,17 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
               {/* Expense Amount */}
               <div>
-                <label for="expense-input-amount()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span class="text-rose-500">*</span></label>
+                <label for="expense-input-amount" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Amount (₹) <span class="text-rose-500">*</span></label>
                 <input
-                  id="expense-input-amount()"
+                  id="expense-input-amount"
                   type="number"
                   min="0.01"
                   step="any"
                   placeholder="0.00"
                   value={amount()}
                   required
-                  onChange={(e) => setAmount(e.target.value)}
+                  onInput={(e) => setAmount((e.target as HTMLInputElement).value)}
+                  onChange={(e) => setAmount((e.target as HTMLInputElement).value)}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-850 dark:text-white font-bold rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 font-mono outline-none text-right"
                 />
               </div>
@@ -547,9 +546,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
               {/* Date */}
               <div>
-                <label for="expense-input-date()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
+                <label for="expense-input-date" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Expense Date</label>
                 <input
-                  id="expense-input-date()"
+                  id="expense-input-date"
                   type="date"
                   value={date()}
                   onChange={(e) => setDate(e.target.value)}
@@ -560,9 +559,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
               {/* Ledger Status */}
               <div>
-                <label for="expense-input-status()" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
+                <label for="expense-input-status" class="block text-[10px] font-bold text-slate-550 uppercase mb-1">Clearance Status</label>
                 <select
-                  id="expense-input-status()"
+                  id="expense-input-status"
                   value={status()}
                   onChange={(e) => setStatus(e.target.value as ExpenseEntry['status'])}
                   class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none font-bold"
@@ -602,7 +601,8 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
             type="text"
             placeholder="Search shop name or expense type..."
             value={searchQuery()}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+            onChange={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
             class="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-semibold"
           />
         </div>

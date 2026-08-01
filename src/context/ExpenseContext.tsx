@@ -1,10 +1,10 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { ExpenseEntry, createRecord, mutateRecord } from '../types';
 import { migrateExpenses } from '../lib/migrations';
 import { getExpenseDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -30,6 +30,10 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.expenses && prewarmedData.expenses.length > 0) {
+      setExpensesStore(prewarmedData.expenses);
+      setLoadedFromDB(true);
+    }
     db.expenses.toArray().then(cached => {
       setExpensesStore(cached || []);
       setLoadedFromDB(true);
@@ -39,7 +43,11 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...expensesStore];
-    db.expenses.clear().then(() => db.expenses.bulkPut(list));
+    if (list.length === 0) {
+      db.expenses.clear();
+    } else {
+      db.expenses.bulkPut(list);
+    }
   });
 
   const saveExpenses = (newExpenses: ExpenseEntry[] | ((prev: ExpenseEntry[]) => ExpenseEntry[])) => {
@@ -50,7 +58,7 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
 
   const orgExpenses = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return (orgId === 'org_backend' ? expensesStore : expensesStore.filter(e => e.organizationId === orgId)).filter(e => !e.deletedAt);
+    return expensesStore.filter(e => e.organizationId === orgId && !e.deletedAt);
   });
 
   const addExpense = async (expenseInput: Omit<ExpenseEntry, 'id'>) => {

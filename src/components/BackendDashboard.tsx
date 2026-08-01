@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo, untrack, For } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Accessor, createMemo, untrack, For, Show } from 'solid-js';
 
 import {
   OrganizationProfile,
@@ -14,6 +14,8 @@ import {
   AuditLog,
   SupportTicket,
   TicketMessage,
+  Coupon,
+  createRecord,
   mutateRecord
 } from '../types';
 import { formatDate, parseLocalDate, formatToDisplayDate } from '../lib/dateUtils';
@@ -38,6 +40,8 @@ import {
   Edit,
   Save,
   Database,
+  Sparkles,
+  Tag,
   Trash2,
   Code,
   AlertCircle,
@@ -52,7 +56,8 @@ import {
   Globe,
   Users,
   RefreshCw,
-  BarChart2
+  BarChart2,
+  Mail
 } from 'lucide-solid';
 import { fetchVisitorStats, VisitorStatsResponse } from '../lib/visitorTracker';
 
@@ -201,6 +206,8 @@ interface BackendDashboardProps {
   onInitiateRefund?: (orgId: string, truckNo: string, paymentRecord: any) => Promise<void>;
   appUpdateConfig?: { version: string; releaseNotes: string; downloadUrl: string; updatedAt?: string } | null;
   onSaveAppUpdateConfig?: (config: any) => Promise<void>;
+  coupons?: Accessor<Coupon[]>;
+  onSaveCoupons?: (coupons: Coupon[], cpnToSave?: Coupon, cpnIdToDelete?: string) => void;
 }
 
 const SCHEMA_TEMPLATES = {
@@ -357,6 +364,179 @@ export default function BackendDashboard(props: BackendDashboardProps) {
   const tyres = () => props.tyres();
   const auditLogs = () => props.auditLogs();
   const supportTickets = () => props.supportTickets ? props.supportTickets() : [];
+
+  const [couponsState, setCouponsState] = createSignal<Coupon[]>([]);
+  const coupons = () => props.coupons ? props.coupons() : couponsState();
+
+  const [couponModalOrg, setCouponModalOrg] = createSignal<OrganizationProfile | null>(null);
+  const [couponCode, setCouponCode] = createSignal('');
+  const [couponDiscountType, setCouponDiscountType] = createSignal<'PERCENT' | 'FLAT'>('PERCENT');
+  const [couponDiscountValue, setCouponDiscountValue] = createSignal<number>(100);
+  const [couponUsageLimit, setCouponUsageLimit] = createSignal<number>(1);
+  const [couponExpiryDate, setCouponExpiryDate] = createSignal<string>('');
+  const [couponNotes, setCouponNotes] = createSignal<string>('');
+
+  const getOrgCoupons = (orgId: string) => {
+    return coupons().filter(c => c.organizationId === orgId);
+  };
+
+  const [sendEmailOnCreate, setSendEmailOnCreate] = createSignal(true);
+
+  const handleSendCouponEmail = async (cpn: Coupon, customEmail?: string) => {
+    const org = couponModalOrg();
+    const targetEmail = (customEmail || org?.ownerEmail || '').trim();
+
+    if (!targetEmail || !targetEmail.includes('@')) {
+      alert("No valid owner email found for this organization. Please specify an owner email.");
+      return;
+    }
+
+    const orgName = org?.organizationName || 'Organization';
+    const discountText = cpn.discountType === 'PERCENT' ? `${cpn.discountValue}% OFF` : `₹${cpn.discountValue} FLAT OFF`;
+
+    try {
+      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const jwt = await appwrite.createSessionJwt();
+      const res = await fetch(`${serverUrl}/api/payment/send-coupon-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwt}`
+        },
+        body: JSON.stringify({
+          toEmail: targetEmail,
+          orgName,
+          couponCode: cpn.code,
+          discountType: cpn.discountType,
+          discountValue: cpn.discountValue,
+          expiryDate: cpn.expiryDate,
+          notes: cpn.notes
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        logAction('Cloud', 'Coupon', cpn.code, `Dispatched coupon email to ${targetEmail}`);
+        alert(`Coupon email for code "${cpn.code}" successfully sent to ${targetEmail}!`);
+      } else {
+        throw new Error(data.error || 'Server returned error');
+      }
+    } catch (e: any) {
+      console.warn('Backend coupon email API warning, opening fallback mail client:', e);
+      const subject = encodeURIComponent(`Exclusive Subscription Discount Coupon for ${orgName}: ${cpn.code}`);
+      const body = encodeURIComponent(
+        `Hello ${orgName} Team,\n\n` +
+        `Here is your exclusive subscription discount coupon for Truck Trip Tracker:\n\n` +
+        `Coupon Code: ${cpn.code}\n` +
+        `Discount: ${discountText}\n` +
+        `${cpn.expiryDate ? `Expiry Date: ${cpn.expiryDate}\n` : ''}` +
+        `${cpn.notes ? `Memo: ${cpn.notes}\n` : ''}\n` +
+        `Redeem this code at checkout to claim your discount!\n\n` +
+        `Best regards,\n` +
+        `Truck Trip Tracker Team`
+      );
+      window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
+      alert(`Opened email client for ${targetEmail} with coupon details!`);
+    }
+  };
+
+  const handleCreateCoupon = (e: Event) => {
+    e.preventDefault();
+    const org = couponModalOrg();
+    if (!org) return;
+
+    const code = couponCode().trim().toUpperCase();
+    if (!code) {
+      alert("Please enter a valid coupon code.");
+      return;
+    }
+    const val = Number(couponDiscountValue()) || 0;
+    if (val <= 0) {
+      alert("Discount value must be greater than 0.");
+      return;
+    }
+    if (couponDiscountType() === 'PERCENT' && val > 100) {
+      alert("Percentage discount cannot exceed 100%.");
+      return;
+    }
+
+    const existing = coupons().find(c => c.code.toUpperCase() === code);
+    if (existing) {
+      alert(`Coupon code "${code}" already exists. Please choose a different code.`);
+      return;
+    }
+
+    const newCoupon: Coupon = createRecord<Coupon>({
+      id: 'cpn-' + Math.random().toString(36).substring(2, 9),
+      code,
+      organizationId: org.organizationId,
+      discountType: couponDiscountType(),
+      discountValue: val,
+      usageLimit: Number(couponUsageLimit()) || 0,
+      usedCount: 0,
+      expiryDate: couponExpiryDate() || undefined,
+      status: 'Active',
+      createdBy: currentUser()?.email || 'admin',
+      notes: couponNotes() || undefined
+    }, currentUser()?.email || 'admin');
+
+    const nextCoupons = [newCoupon, ...coupons()];
+    if (props.onSaveCoupons) {
+      props.onSaveCoupons(nextCoupons, newCoupon);
+    } else {
+      setCouponsState(nextCoupons);
+      try {
+        localStorage.setItem('ttt_coupons', JSON.stringify(nextCoupons));
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        appwrite.saveFleetDocument(databaseId, 'coupons', newCoupon.id, newCoupon.organizationId, newCoupon).catch(() => {});
+      } catch (e) {}
+    }
+    logAction('Created', 'Coupon', code, `Generated ${val}${couponDiscountType() === 'PERCENT' ? '%' : '₹'} discount coupon for Org ${org.organizationName} (${org.organizationId})`);
+    
+    if (sendEmailOnCreate() && org.ownerEmail) {
+      handleSendCouponEmail(newCoupon, org.ownerEmail);
+    } else {
+      alert(`Coupon "${code}" generated successfully for ${org.organizationName}!`);
+    }
+
+    setCouponCode('');
+    setCouponNotes('');
+  };
+
+  const handleToggleCouponStatus = (cpn: Coupon) => {
+    const nextStatus = cpn.status === 'Active' ? 'Disabled' : 'Active';
+    const updated: Coupon = { ...cpn, status: nextStatus, updatedAt: new Date().toISOString() };
+    const nextCoupons = coupons().map(c => c.id === cpn.id ? updated : c);
+    if (props.onSaveCoupons) {
+      props.onSaveCoupons(nextCoupons, updated);
+    } else {
+      setCouponsState(nextCoupons);
+      try {
+        localStorage.setItem('ttt_coupons', JSON.stringify(nextCoupons));
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        appwrite.saveFleetDocument(databaseId, 'coupons', updated.id, updated.organizationId, updated).catch(() => {});
+      } catch (e) {}
+    }
+    logAction('Edited', 'Coupon', cpn.code, `Set coupon status to ${nextStatus}`);
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
+    const cpn = coupons().find(c => c.id === couponId);
+    if (!cpn) return;
+    if (!confirm(`Are you sure you want to delete coupon code "${cpn.code}"?`)) return;
+
+    const nextCoupons = coupons().filter(c => c.id !== couponId);
+    if (props.onSaveCoupons) {
+      props.onSaveCoupons(nextCoupons, undefined, couponId);
+    } else {
+      setCouponsState(nextCoupons);
+      try {
+        localStorage.setItem('ttt_coupons', JSON.stringify(nextCoupons));
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        appwrite.deleteFleetDocument(databaseId, 'coupons', couponId).catch(() => {});
+      } catch (e) {}
+    }
+    logAction('Deleted', 'Coupon', cpn.code, `Deleted coupon code ${cpn.code}`);
+  };
 
   const canEditBackend = () => props.canEditBackend ? props.canEditBackend() : true;
   const canApproveBackend = () => props.canApproveBackend ? props.canApproveBackend() : true;
@@ -549,6 +729,52 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     }
   });
 
+  const [typingClientUser, setTypingClientUser] = createSignal('');
+  let agentTypingTimeout: any = null;
+
+  onMount(() => {
+    if (isAppwriteConfigured()) {
+      appwrite.registerPushNotificationTarget().catch(() => {});
+    }
+
+    const handleCustomWsMessage = (e: any) => {
+      const data = e.detail;
+      if (!data) return;
+      if (data.type === 'ttt:typing_start' && data.ticketId === selectedTicketId()) {
+        setTypingClientUser(data.senderName || 'Client User');
+      } else if (data.type === 'ttt:typing_stop' && data.ticketId === selectedTicketId()) {
+        setTypingClientUser('');
+      }
+    };
+    window.addEventListener('ttt_ws_message', handleCustomWsMessage);
+    onCleanup(() => window.removeEventListener('ttt_ws_message', handleCustomWsMessage));
+  });
+
+  const emitAgentTyping = (isTyping: boolean) => {
+    const t = selectedTicket();
+    if (!t) return;
+    const ws = (window as any)._ttt_websocket;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: isTyping ? 'ttt:typing_start' : 'ttt:typing_stop',
+        ticketId: t.id,
+        senderName: currentUser()?.name || currentUser()?.email || 'Support Agent',
+        isAgent: true,
+        organizationId: t.organizationId,
+        requesterEmail: t.requesterEmail
+      }));
+    }
+  };
+
+  const handleAgentInputChange = (val: string) => {
+    setChatInput(val);
+    emitAgentTyping(true);
+    if (agentTypingTimeout) clearTimeout(agentTypingTimeout);
+    agentTypingTimeout = setTimeout(() => {
+      emitAgentTyping(false);
+    }, 2500);
+  };
+
   // Keep latest refs to prevent stale closure capturing
   let currentUserRef: any;
   createEffect(() => { currentUserRef = currentUser(); });
@@ -626,35 +852,58 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     };
   });
 
-  const handleFocusInput = () => {
+  const handleSelectTicket = (t: SupportTicket) => {
+    const previousTicketId = selectedTicketId();
     const email = (currentUser()?.email || 'agent@support.com').toLowerCase().trim();
     const name = currentUser()?.name || currentUser()?.email || 'Support Agent';
-    if (selectedTicketId() && onSaveSupportTickets) {
-      const ticket = supportTickets().find(t => t.id === selectedTicketId());
-      if (!ticket) return;
 
-      // If already locked by the current user and active, do NOT re-save/re-render DOM!
-      if (ticket.lockedByEmail?.toLowerCase().trim() === email && isTicketActiveLocked(ticket)) {
-        return;
+    setSelectedTicketId(t.id);
+    lockedTicketIdRef = t.id;
+    setResolvedUrls({});
+
+    if (!onSaveSupportTickets) return;
+
+    const tickets = supportTickets();
+    const target = tickets.find(st => st.id === t.id);
+    if (!target) return;
+
+    const isOtherLocked = isTicketActiveLocked(target) && (target.lockedByEmail || '').toLowerCase().trim() !== email;
+    if (isOtherLocked) return;
+
+    let changed = false;
+    const nextTickets = tickets.map(ticket => {
+      if (previousTicketId && previousTicketId !== t.id && ticket.id === previousTicketId && (ticket.lockedByEmail || '').toLowerCase().trim() === email) {
+        changed = true;
+        return mutateRecord(ticket, {
+          ...ticket,
+          lockedByName: undefined,
+          lockedByEmail: undefined,
+          lockedByAt: undefined
+        }, email);
       }
 
-      if (!isTicketActiveLocked(ticket) || ticket.lockedByEmail?.toLowerCase().trim() === email) {
-        console.log('[SupportTicket Lock Debug] Locking ticket on focus:', selectedTicketId(), 'to:', email);
-        lockedTicketIdRef = selectedTicketId();
-        const nextTickets = supportTickets().map(t => {
-          if (t.id === selectedTicketId()) {
-            const updated = {
-              ...t,
-              lockedByName: name,
-              lockedByEmail: email,
-              lockedByAt: new Date().toISOString()
-            };
-            return mutateRecord(t, updated, email);
-          }
-          return t;
-        });
-        onSaveSupportTickets(nextTickets);
+      if (ticket.id === t.id && (!ticket.lockedByEmail || (ticket.lockedByEmail || '').toLowerCase().trim() === email)) {
+        changed = true;
+        return mutateRecord(ticket, {
+          ...ticket,
+          lockedByName: name,
+          lockedByEmail: email,
+          lockedByAt: new Date().toISOString()
+        }, email);
       }
+
+      return ticket;
+    });
+
+    if (changed) {
+      onSaveSupportTickets(nextTickets);
+    }
+  };
+
+  const handleFocusInput = () => {
+    // Record active ticket focus locally
+    if (selectedTicketId()) {
+      lockedTicketIdRef = selectedTicketId();
     }
   };
 
@@ -715,16 +964,26 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     logAction('Edited', 'SupportTicket', ticketId, `Force unlocked support ticket`);
   };
 
-  // Mark selected ticket as read for the agent
+  // Mark selected ticket as read for the agent & persist to DB so all agent devices sync
   createEffect(() => {
-    const ticket = selectedTicket();
-    if (ticket) {
-      const msgs = ticket.messages || [];
-      if (msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        localStorage.setItem(`ttt_tkt_agent_read_${ticket.id}`, lastMsg.id);
-      } else {
-        localStorage.setItem(`ttt_tkt_agent_read_${ticket.id}`, 'read');
+    const t = selectedTicket();
+    if (t) {
+      const msgs = t.messages || [];
+      const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      const targetReadId = lastMsg ? lastMsg.id : 'read';
+
+      localStorage.setItem(`ttt_tkt_agent_read_${t.id}`, targetReadId);
+
+      if (t.agentLastReadMessageId !== targetReadId && onSaveSupportTickets) {
+        t.agentLastReadMessageId = targetReadId;
+        const email = currentUser()?.email || 'agent@support.com';
+        const nextTickets = supportTickets().map(st => {
+          if (st.id === t.id) {
+            return mutateRecord(st, { ...st, agentLastReadMessageId: targetReadId }, email);
+          }
+          return st;
+        });
+        onSaveSupportTickets(nextTickets);
       }
     }
   });
@@ -732,7 +991,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
   const getAgentUnreadInfo = (t: SupportTicket) => {
     if (t.status === 'Closed') return { count: 0, hasUnread: false };
     const msgs = t.messages || [];
-    const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+    const lastReadMsgId = t.agentLastReadMessageId || localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
     
     if (msgs.length === 0) {
       const hasUnread = !lastReadMsgId;
@@ -751,6 +1010,11 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     }
     
     const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+    if (lastReadIndex === -1) {
+      const userMsgs = msgs.filter(m => m.sender === 'User');
+      return { count: userMsgs.length, hasUnread: userMsgs.length > 0 };
+    }
+
     const unreadUserMsgs = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User');
     return { count: unreadUserMsgs.length, hasUnread: unreadUserMsgs.length > 0 };
   };
@@ -766,21 +1030,26 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     filtered.forEach(t => {
       if (t.status === 'Closed') return;
       const msgs = t.messages || [];
-      const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+      const lastReadMsgId = t.agentLastReadMessageId || localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
       
       if (msgs.length === 0) {
         if (!lastReadMsgId) totalUnread++;
       } else {
         if (!lastReadMsgId) {
           const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
-          if (userMsgsCount > 0 || msgs.length > 0) totalUnread++;
+          if (userMsgsCount > 0) totalUnread++;
         } else if (lastReadMsgId === 'read') {
           const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
           if (userMsgsCount > 0) totalUnread++;
         } else {
           const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
-          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
-          if (unreadCount > 0) totalUnread++;
+          if (lastReadIndex === -1) {
+            const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+            if (userMsgsCount > 0) totalUnread++;
+          } else {
+            const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
+            if (unreadCount > 0) totalUnread++;
+          }
         }
       }
     });
@@ -910,10 +1179,15 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
       const nextTickets = supportTickets().map(t => {
         if (t.id === selectedTicketId()) {
+          const currentTicketInState = supportTickets().find(st => st.id === selectedTicketId());
+          const latestMessages = currentTicketInState?.messages || t.messages || [];
+          const messageExists = latestMessages.some(m => m.id === newMessage.id);
+          const finalMessages = messageExists ? latestMessages : [...latestMessages, newMessage];
+
           const updated = {
-            ...t,
+            ...(currentTicketInState || t),
             status: t.status === 'Open' ? ('In Progress' as const) : t.status,
-            messages: [...(t.messages || []), newMessage],
+            messages: finalMessages,
           };
           return mutateRecord(t, updated, currentUser()?.email || 'agent');
         }
@@ -923,6 +1197,10 @@ export default function BackendDashboard(props: BackendDashboardProps) {
       await onSaveSupportTickets(nextTickets);
       setChatInput('');
       setChatFile(null);
+      if (fileInputRef) fileInputRef.value = '';
+      if (typeof window !== 'undefined' && (window as any)._triggerSupportTicketSync) {
+        (window as any)._triggerSupportTicketSync();
+      }
       if (fileInputRef) fileInputRef.value = '';
     } catch (err) {
       alert('Failed to send support reply message.');
@@ -1222,9 +1500,9 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     setEditingTruck(updatedTruck);
   };
 
-  // Exclude the backend organization itself from the control list
+  // Exclude the backend organization itself and any blank/uninitialized profiles from the control list
   const filteredOrgs = createMemo(() => organizationProfiles().filter(p =>
-    p.organizationId !== 'org_backend' &&
+    p && p.organizationId && p.organizationId !== 'org_backend' &&
     ((p.organizationName || '').toLowerCase().includes(orgSearch().toLowerCase()) ||
       (p.organizationId || '').toLowerCase().includes(orgSearch().toLowerCase()) ||
       (p.ownerEmail || '').toLowerCase().includes(orgSearch().toLowerCase()))
@@ -1380,7 +1658,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
               />
             </div>
             <div class="text-xs text-slate-505 dark:text-slate-400 font-medium">
-              Showing {filteredOrgs().length} of {organizationProfiles().filter(p => p.organizationId !== 'org_backend').length} Organizations
+              Showing {filteredOrgs().length} of {organizationProfiles().filter(p => p && p.organizationId && p.organizationId !== 'org_backend').length} Organizations
             </div>
           </div>
 
@@ -1396,7 +1674,14 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                 // Use the trucks state directly as source of truth (cloud snapshot).
                 // Do NOT synthesize entries from truckRequests — deleted pending vehicles
                 // would otherwise be re-added to the list (matches Truck Requests tab behaviour).
-                const orgTrucks = trucks().filter(t => t.organizationId === profile.organizationId);
+                const rawOrgTrucks = trucks().filter(t => t.organizationId === profile.organizationId);
+                const seenNos = new Set<string>();
+                const orgTrucks = rawOrgTrucks.filter(t => {
+                  const key = (t.truckNo || '').toUpperCase().trim();
+                  if (!key || seenNos.has(key)) return false;
+                  seenNos.add(key);
+                  return true;
+                });
                 const approvedTrucks = orgTrucks.filter(t => t.isApproved !== false);
 
                 return (
@@ -1486,6 +1771,18 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                         <div class="text-[11px] font-medium text-slate-600 dark:text-slate-400">
                           <b>Trucks:</b> {approvedTrucks.length} Active / {orgTrucks.length} Total
                         </div>
+
+                        <button
+                          onClick={() => {
+                            setCouponModalOrg(profile);
+                            setCouponCode(profile.organizationId.replace('org_', '').toUpperCase() + Math.floor(10 + Math.random() * 90));
+                          }}
+                          class="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                          title="Generate & Manage Org Coupons"
+                        >
+                          <Sparkles class="w-3.5 h-3.5" />
+                          <span>Generate Coupon ({getOrgCoupons(profile.organizationId).length})</span>
+                        </button>
 
                         <button
                           onClick={() => setSelectedOrgId(isSelected ? null : profile.organizationId)}
@@ -2331,10 +2628,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                     const isSelected = () => selectedTicketId() === t.id;
                     return (
                       <button
-                        onClick={() => {
-                          setSelectedTicketId(t.id);
-                          setResolvedUrls({});
-                        }}
+                        onClick={() => handleSelectTicket(t)}
                         class={`w-full text-left p-3 rounded-xl transition-all ${
                           isSelected()
                             ? 'bg-purple-50/40 dark:bg-purple-950/30 border-l-4 border-purple-600'
@@ -2389,240 +2683,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
 
           {/* Right Panel: Chat & Actions */}
           <div class="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/35">
-            {selectedTicket() ? (() => {
-              const ticket = selectedTicket()!;
-              const isLockedByOther = !!(isTicketActiveLocked(ticket) && ticket.lockedByEmail.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim());
-              return (
-                <>
-                  {/* Header */}
-                  <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-start shadow-3xs gap-3">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <h4 class="font-bold text-slate-800 dark:text-slate-200 text-xs font-mono">
-                          #{ticket.ticketNo}
-                        </h4>
-                        <span class="text-slate-450 dark:text-slate-550 text-xs">•</span>
-                        <span class="font-semibold text-xs text-slate-705 dark:text-slate-350">
-                          {ticket.title}
-                        </span>
-                      </div>
-                      <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 space-y-0.5">
-                        <p>
-                          Requester: <span class="font-bold text-slate-700 dark:text-slate-300">{ticket.requesterName}</span> ({ticket.requesterEmail})
-                        </p>
-                        <p>
-                          Phone: <span class="font-mono">{ticket.requesterPhone || '—'}</span> | Org ID: <span class="font-mono">{ticket.organizationId || 'Public'}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Actions Area */}
-                    <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                      {/* Team Transfer dropdown if allowed */}
-                      {(isSuperAdmin() || myCanTransfer()) && (
-                        <div class="flex items-center gap-1.5">
-                          <span class="text-[10px] font-bold text-slate-450 uppercase">Team:</span>
-                          <select
-                            value={ticket.assignedTeam}
-                            onChange={(e) => handleTransferTicket(ticket.id, e.target.value as any)}
-                            disabled={isLockedByOther}
-                            class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded px-2 py-1 text-[11px] font-bold outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <option value="Technical">Technical</option>
-                            <option value="Billing">Billing</option>
-                            <option value="General">General</option>
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Close/Reopen ticket button */}
-                      {ticket.status !== 'Closed' ? (
-                        <button
-                          onClick={() => handleUpdateTicketStatus(ticket.id, 'Closed')}
-                          disabled={isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                          class="bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Close Ticket
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleUpdateTicketStatus(ticket.id, 'In Progress')}
-                          disabled={isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                          class="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Reopen Ticket
-                        </button>
-                      )}
-
-                      {/* Delete ticket button */}
-                      {(isSuperAdmin() || myRights()?.canDeleteTickets) && (
-                        <button
-                          onClick={() => handleDeleteTicket(ticket.id)}
-                          disabled={isLockedByOther}
-                          class="bg-rose-600 text-white hover:bg-rose-750 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                        >
-                          <Trash2 class="w-3.5 h-3.5" />
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <div class="p-3 mx-4 mt-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-650 dark:text-slate-350 shadow-3xs">
-                    <span class="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Description</span>
-                    <p class="whitespace-pre-line leading-relaxed">{ticket.description}</p>
-                  </div>
-                  {/* Chat Messages */}
-                  <div class="flex-1 overflow-y-auto p-4 space-y-3">
-                    <For each={selectedTicket()?.messages || []}>
-                      {(msg) => {
-                        const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
-                        const isAgent = msg.sender === 'Agent';
-
-                        if (isSystem) {
-                          return (
-                            <div class="flex justify-center my-2">
-                              <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
-                                {msg.content}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div class={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
-                            <div
-                              class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
-                                isAgent
-                                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-purple-500/10'
-                                  : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none shadow-xs'
-                              }`}
-                            >
-                              <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
-                                <span>{msg.senderName} ({msg.sender === 'Agent' ? 'Agent' : 'User'})</span>
-                                <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                              </div>
-                              <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
-
-                              {msg.attachmentUrl && (
-                                <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
-                                  isAgent ? 'bg-purple-705 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
-                                }`}>
-                                  <div class="flex items-center gap-1.5 truncate">
-                                    <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
-                                    <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
-                                  </div>
-                                  {resolvedUrls()[msg.id] ? (
-                                    <a
-                                      href={(() => {
-                                        const isFileId = !msg.attachmentUrl!.startsWith('http');
-                                        if (isFileId && isAppwriteConfigured()) {
-                                          return appwrite.getTicketFileDownload(msg.attachmentUrl!);
-                                        }
-                                        return resolvedUrls()[msg.id];
-                                      })()}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      download={msg.attachmentName || ''}
-                                      class={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isAgent ? 'text-white' : 'text-blue-600'}`}
-                                      title="Download attachment"
-                                    >
-                                      <Download class="w-3.5 h-3.5" />
-                                    </a>
-                                  ) : (
-                                    <Loader2 class="w-3 h-3 animate-spin opacity-60" />
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }}
-                    </For>
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Lock Warning Banner */}
-                  {isLockedByOther && (
-                    <div class="mx-4 mb-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 text-amber-800 dark:text-amber-400 p-2.5 rounded-lg text-xs flex items-center justify-between gap-3 shadow-3xs">
-                      <div class="flex items-center gap-2">
-                        <Lock class="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" />
-                        <span>
-                          <strong>{ticket.lockedByName}</strong> is currently handling this ticket.
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleForceUnlock(ticket.id)}
-                        class="bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-300 font-bold px-2 py-1 rounded text-[10px] transition cursor-pointer"
-                      >
-                        Force Unlock
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Chat Input Footer */}
-                  <form onSubmit={handleSendChat} class="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
-                    {chatFile() && (
-                      <div class="flex items-center justify-between bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/30 rounded-lg px-2.5 py-1 text-[10px] text-purple-700 dark:text-purple-400 font-medium">
-                        <div class="flex items-center gap-1.5 truncate">
-                          <CheckCircle class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span class="truncate max-w-[200px] font-mono">{chatFile().name}</span>
-                        </div>
-                        <button type="button" onClick={() => setChatFile(null)} class="text-slate-455 hover:text-slate-700 cursor-pointer" disabled={isLockedByOther}>
-                          <CloseIcon class="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                    <div class="flex items-center gap-2">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={(e) => setChatFile(e.target.files?.[0] || null)}
-                        class="hidden"
-                        disabled={isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef?.click()}
-                        disabled={isSending() || isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                        class="p-2 text-slate-450 hover:text-slate-705 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition shrink-0 cursor-pointer disabled:opacity-50"
-                        title="Attach file document"
-                      >
-                        <Paperclip class="w-4 h-4" />
-                      </button>
-                      <input
-                        type="text"
-                        value={chatInput()}
-                        onInput={(e) => setChatInput(e.currentTarget.value)}
-                        onFocus={handleFocusInput}
-                        onBlur={handleBlurInput}
-                        disabled={isSending() || isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                        placeholder={
-                          isLockedByOther
-                            ? `Locked by ${ticket.lockedByName}...`
-                            : (!isSuperAdmin() && !myRights()?.canEditTickets)
-                            ? 'No edit permissions for tickets.'
-                            : ticket.status === 'Closed'
-                            ? 'Ticket is closed. Reopen to reply.'
-                            : 'Type support reply...'
-                        }
-                        class="flex-1 bg-slate-55 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 focus:bg-white dark:focus:bg-slate-900 disabled:opacity-60 font-semibold"
-                        readOnly={ticket.status === 'Closed' || isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets)}
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSending() || isLockedByOther || (!isSuperAdmin() && !myRights()?.canEditTickets) || (ticket.status === 'Closed') || (!chatInput().trim() && !chatFile())}
-                        class="p-2 bg-purple-600 hover:bg-purple-750 text-white rounded-lg transition shrink-0 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {isSending() ? <Loader2 class="w-4 h-4 animate-spin" /> : <Send class="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </form>
-                </>
-              );
-            })() : (
+            <Show when={selectedTicket()} fallback={
               <div class="flex-1 flex flex-col items-center justify-center text-center p-8">
                 <MessageSquare class="w-12 h-12 text-slate-350 dark:text-slate-750 mb-2.5" />
                 <p class="font-bold text-slate-700 dark:text-slate-400 text-xs">Select a Support Ticket</p>
@@ -2630,7 +2691,277 @@ export default function BackendDashboard(props: BackendDashboardProps) {
                   Choose a ticket from the support queue to communicate with the client.
                 </p>
               </div>
-            )}
+            }>
+              {/* Header */}
+              <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-start shadow-3xs gap-3">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h4 class="font-bold text-slate-800 dark:text-slate-200 text-xs font-mono">
+                      #{selectedTicket()?.ticketNo}
+                    </h4>
+                    <span class="text-slate-450 dark:text-slate-550 text-xs">•</span>
+                    <span class="font-semibold text-xs text-slate-705 dark:text-slate-350">
+                      {selectedTicket()?.title}
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 space-y-0.5">
+                    <p>
+                      Requester: <span class="font-bold text-slate-700 dark:text-slate-300">{selectedTicket()?.requesterName}</span> ({selectedTicket()?.requesterEmail})
+                    </p>
+                    <p>
+                      Phone: <span class="font-mono">{selectedTicket()?.requesterPhone || '—'}</span> | Org ID: <span class="font-mono">{selectedTicket()?.organizationId || 'Public'}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Actions Area */}
+                <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                  {/* Team Transfer dropdown if allowed */}
+                  {(isSuperAdmin() || myCanTransfer()) && (
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[10px] font-bold text-slate-450 uppercase">Team:</span>
+                      <select
+                        value={selectedTicket()?.assignedTeam}
+                        onChange={(e) => selectedTicket() && handleTransferTicket(selectedTicket()!.id, e.target.value as any)}
+                        disabled={!!(selectedTicket() && isTicketActiveLocked(selectedTicket()!) && selectedTicket()!.lockedByEmail?.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim())}
+                        class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-200 rounded px-2 py-1 text-[11px] font-bold outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="Technical">Technical</option>
+                        <option value="Billing">Billing</option>
+                        <option value="General">General</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Close/Reopen ticket button */}
+                  {selectedTicket()?.status !== 'Closed' ? (
+                    <button
+                      onClick={() => selectedTicket() && handleUpdateTicketStatus(selectedTicket()!.id, 'Closed')}
+                      disabled={!!(selectedTicket() && isTicketActiveLocked(selectedTicket()!) && selectedTicket()!.lockedByEmail?.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim()) || (!isSuperAdmin() && !myRights()?.canEditTickets)}
+                      class="bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Close Ticket
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => selectedTicket() && handleUpdateTicketStatus(selectedTicket()!.id, 'In Progress')}
+                      disabled={!!(selectedTicket() && isTicketActiveLocked(selectedTicket()!) && selectedTicket()!.lockedByEmail?.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim()) || (!isSuperAdmin() && !myRights()?.canEditTickets)}
+                      class="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Reopen Ticket
+                    </button>
+                  )}
+
+                  {/* Delete ticket button */}
+                  {(isSuperAdmin() || myRights()?.canDeleteTickets) && (
+                    <button
+                      onClick={() => selectedTicket() && handleDeleteTicket(selectedTicket()!.id)}
+                      disabled={!!(selectedTicket() && isTicketActiveLocked(selectedTicket()!) && selectedTicket()!.lockedByEmail?.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim())}
+                      class="bg-rose-600 text-white hover:bg-rose-750 font-bold px-2.5 py-1 rounded text-[10px] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <Trash2 class="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Description */}
+              <div class="p-3 mx-4 mt-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-650 dark:text-slate-350 shadow-3xs">
+                <span class="font-bold text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Description</span>
+                <p class="whitespace-pre-line leading-relaxed">{selectedTicket()?.description}</p>
+              </div>
+
+              {/* Chat Messages */}
+              <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                <For each={selectedTicket()?.messages || []}>
+                  {(msg) => {
+                    const isSystem = msg.senderName === 'System Notification' || msg.senderEmail === 'system@ttt.com';
+                    const isAgent = msg.sender === 'Agent';
+
+                    if (isSystem) {
+                      return (
+                        <div class="flex justify-center my-2">
+                          <div class="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/20 rounded-lg px-3 py-1.5 text-[11px] max-w-[85%] text-center font-medium shadow-3xs">
+                            {msg.content}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div class={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          class={`max-w-[75%] rounded-2xl p-3 border shadow-3xs text-xs text-left ${
+                            isAgent
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent rounded-tr-none shadow-md shadow-purple-500/10'
+                              : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/60 dark:border-slate-700/60 rounded-tl-none shadow-xs'
+                          }`}
+                        >
+                          <div class="flex justify-between items-center gap-4 mb-1 text-[9px] opacity-75 font-semibold">
+                            <span>{msg.senderName} ({msg.sender === 'Agent' ? 'Agent' : 'User'})</span>
+                            <span class="flex items-center gap-1">
+                              <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              {isAgent && (
+                                <span class="inline-flex items-center ml-0.5 text-[10px]" title={
+                                  (() => {
+                                    const lastReadId = selectedTicket()?.userLastReadMessageId;
+                                    const msgs = selectedTicket()?.messages || [];
+                                    const lastReadIndex = msgs.findIndex(m => m.id === lastReadId);
+                                    const myIndex = msgs.findIndex(m => m.id === msg.id);
+                                    if (lastReadId && lastReadIndex !== -1 && myIndex <= lastReadIndex) return 'Read by Client';
+                                    return 'Delivered to Client';
+                                  })()
+                                }>
+                                  {(() => {
+                                    const lastReadId = selectedTicket()?.userLastReadMessageId;
+                                    const msgs = selectedTicket()?.messages || [];
+                                    const lastReadIndex = msgs.findIndex(m => m.id === lastReadId);
+                                    const myIndex = msgs.findIndex(m => m.id === msg.id);
+                                    const isRead = lastReadId && (lastReadId === 'read' || (lastReadIndex !== -1 && myIndex <= lastReadIndex));
+
+                                    if (isRead) {
+                                      return <span class="text-purple-200 font-extrabold flex items-center -space-x-1 ml-0.5"><span>✓</span><span>✓</span></span>;
+                                    } else {
+                                      return <span class="text-purple-200 opacity-80 flex items-center -space-x-1 ml-0.5"><span>✓</span><span>✓</span></span>;
+                                    }
+                                  })()}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
+
+                          {msg.attachmentUrl && (
+                            <div class={`mt-2 p-1.5 rounded flex items-center justify-between gap-3 text-[10px] ${
+                              isAgent ? 'bg-purple-705 border border-purple-600/40 text-purple-50' : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350'
+                            }`}>
+                              <div class="flex items-center gap-1.5 truncate">
+                                <FileText class="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                <span class="truncate max-w-[130px] font-mono">{msg.attachmentName || 'Attachment'}</span>
+                              </div>
+                              {resolvedUrls()[msg.id] ? (
+                                <a
+                                  href={(() => {
+                                    const isFileId = !msg.attachmentUrl!.startsWith('http');
+                                    if (isFileId && isAppwriteConfigured()) {
+                                      return appwrite.getTicketFileDownload(msg.attachmentUrl!);
+                                    }
+                                    return resolvedUrls()[msg.id];
+                                  })()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  download={msg.attachmentName || ''}
+                                  class={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0 ${isAgent ? 'text-white' : 'text-blue-600'}`}
+                                  title="Download attachment"
+                                >
+                                  <Download class="w-3.5 h-3.5" />
+                                </a>
+                              ) : (
+                                <Loader2 class="w-3 h-3 animate-spin opacity-60" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }}
+                </For>
+
+                {/* Incoming Client Typing Indicator */}
+                {typingClientUser() && (
+                  <div class="flex justify-start my-1 animate-fade-in">
+                    <div class="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl rounded-tl-none px-3.5 py-2 text-xs flex items-center gap-2 border border-slate-200 dark:border-slate-700 shadow-sm">
+                      <span class="font-bold text-[11px] text-blue-600 dark:text-blue-400">{typingClientUser()}</span>
+                      <span class="text-[10px] text-slate-400 italic">is typing...</span>
+                      <span class="flex gap-1 items-center ml-1">
+                        <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ "animation-delay": "0ms" }} />
+                        <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ "animation-delay": "150ms" }} />
+                        <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Lock Warning Banner */}
+              {selectedTicket() && isTicketActiveLocked(selectedTicket()!) && selectedTicket()!.lockedByEmail?.toLowerCase().trim() !== (currentUser()?.email || '').toLowerCase().trim() && (
+                <div class="mx-4 mb-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 text-amber-800 dark:text-amber-400 p-2.5 rounded-lg text-xs flex items-center justify-between gap-3 shadow-3xs">
+                  <div class="flex items-center gap-2">
+                    <Lock class="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" />
+                    <span>
+                      <strong>{selectedTicket()?.lockedByName}</strong> is currently handling this ticket.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => selectedTicket() && handleForceUnlock(selectedTicket()!.id)}
+                    class="bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-300 font-bold px-2 py-1 rounded text-[10px] transition cursor-pointer"
+                  >
+                    Force Unlock
+                  </button>
+                </div>
+              )}
+
+              {/* Chat Input Footer */}
+              <form onSubmit={handleSendChat} class="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+                {chatFile() && (
+                  <div class="flex items-center justify-between bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-purple-900/30 rounded-lg px-2.5 py-1 text-[10px] text-purple-700 dark:text-purple-400 font-medium">
+                    <div class="flex items-center gap-1.5 truncate">
+                      <CheckCircle class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span class="truncate max-w-[200px] font-mono">{chatFile().name}</span>
+                    </div>
+                    <button type="button" onClick={() => setChatFile(null)} class="text-slate-455 hover:text-slate-700 cursor-pointer">
+                      <CloseIcon class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div class="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => setChatFile(e.target.files?.[0] || null)}
+                    class="hidden"
+                    disabled={!isSuperAdmin() && !myRights()?.canEditTickets}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef?.click()}
+                    disabled={isSending() || (!isSuperAdmin() && !myRights()?.canEditTickets)}
+                    class="p-2 text-slate-450 hover:text-slate-705 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition shrink-0 cursor-pointer disabled:opacity-50"
+                    title="Attach file document"
+                  >
+                    <Paperclip class="w-4 h-4" />
+                  </button>
+                  <input
+                    type="text"
+                    value={chatInput()}
+                    onInput={(e) => handleAgentInputChange(e.currentTarget.value)}
+                    onFocus={handleFocusInput}
+                    onBlur={(e) => { handleBlurInput(); emitAgentTyping(false); }}
+                    disabled={isSending() || (!isSuperAdmin() && !myRights()?.canEditTickets)}
+                    placeholder={
+                      (!isSuperAdmin() && !myRights()?.canEditTickets)
+                        ? 'No edit permissions for tickets.'
+                        : selectedTicket()?.status === 'Closed'
+                        ? 'Ticket is closed. Reopen to reply.'
+                        : 'Type support reply...'
+                    }
+                    class="flex-1 bg-slate-55 dark:bg-slate-950 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 focus:bg-white dark:focus:bg-slate-900 disabled:opacity-60 font-semibold"
+                    readOnly={selectedTicket()?.status === 'Closed' || (!isSuperAdmin() && !myRights()?.canEditTickets)}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSending() || (!isSuperAdmin() && !myRights()?.canEditTickets) || (selectedTicket()?.status === 'Closed') || (!chatInput().trim() && !chatFile())}
+                    class="p-2 bg-purple-600 hover:bg-purple-750 text-white rounded-lg transition shrink-0 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isSending() ? <Loader2 class="w-4 h-4 animate-spin" /> : <Send class="w-4 h-4" />}
+                  </button>
+                </div>
+              </form>
+            </Show>
           </div>
         </div>
       )}
@@ -3058,14 +3389,244 @@ export default function BackendDashboard(props: BackendDashboardProps) {
               </div>
             </div>
 
-            <div class="p-4 bg-slate-50 border-t border-slate-150 dark:border-slate-800 flex justify-end gap-3">
+            <div class="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-150 dark:border-slate-800 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => { setEditingTruck(null); setEditingTruckOrgId(null); }}
-                class="px-4 py-2 border border-slate-200 text-slate-500 rounded text-xs font-bold transition hover:bg-slate-100 cursor-pointer"
+                class="px-4 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 rounded text-xs font-bold transition hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer"
               >
                 Cancel
               </button>
+              <button
+                type="button"
+                disabled={!canEditBackend()}
+                onClick={handleSaveTruckClick}
+                class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ORGANIZATION COUPON MANAGEMENT MODAL */}
+      {couponModalOrg() && (
+        <div class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-amber-500/10 rounded-xl text-amber-600 dark:text-amber-400">
+                  <Sparkles class="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 class="text-base font-bold text-slate-900 dark:text-white">Organization Coupon Generator</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Generating discount code strictly for <span class="font-bold text-purple-600 dark:text-purple-400">{couponModalOrg()?.organizationName}</span> (<code class="font-mono">{couponModalOrg()?.organizationId}</code>)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCouponModalOrg(null)}
+                class="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <CloseIcon class="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Form & List */}
+            <div class="overflow-y-auto space-y-6 pr-1 flex-1">
+              {/* Create Form */}
+              <form onSubmit={handleCreateCoupon} class="bg-slate-50 dark:bg-slate-950/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-4">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Create New Discount Coupon</h4>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Coupon Code</label>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={couponCode()}
+                        onInput={(e) => setCouponCode(e.currentTarget.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                        placeholder="e.g. WELCOME100"
+                        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCouponCode('DISC' + Math.floor(1000 + Math.random() * 9000))}
+                        class="px-2.5 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer"
+                        title="Random Code"
+                      >
+                        <RefreshCw class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Discount Type & Value</label>
+                    <div class="flex gap-2">
+                      <select
+                        value={couponDiscountType()}
+                        onChange={(e) => setCouponDiscountType(e.currentTarget.value as any)}
+                        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-2 py-2 text-xs font-bold focus:outline-none"
+                      >
+                        <option value="PERCENT">% Discount</option>
+                        <option value="FLAT">₹ Flat Discount</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="1"
+                        max={couponDiscountType() === 'PERCENT' ? 100 : 50000}
+                        required
+                        value={couponDiscountValue()}
+                        onChange={(e) => setCouponDiscountValue(Number(e.currentTarget.value) || 0)}
+                        placeholder={couponDiscountType() === 'PERCENT' ? '1 to 100%' : 'Amount in ₹'}
+                        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Usage Limit (0 = Unlimited)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={couponUsageLimit()}
+                      onChange={(e) => setCouponUsageLimit(Number(e.currentTarget.value) || 0)}
+                      placeholder="1 (Single Use)"
+                      class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-xs font-mono font-semibold focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Expiry Date (Optional)</label>
+                    <input
+                      type="date"
+                      value={couponExpiryDate()}
+                      onChange={(e) => setCouponExpiryDate(e.currentTarget.value)}
+                      class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Memo / Purpose Notes</label>
+                  <input
+                    type="text"
+                    value={couponNotes()}
+                    onChange={(e) => setCouponNotes(e.currentTarget.value)}
+                    placeholder="e.g. Special onboarding offer"
+                    class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+                  <label class="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendEmailOnCreate()}
+                      onChange={(e) => setSendEmailOnCreate(e.currentTarget.checked)}
+                      class="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                    />
+                    <span class="flex items-center gap-1">
+                      <Mail class="w-3.5 h-3.5 text-amber-500" />
+                      <span>Send Email to Owner ({couponModalOrg()?.ownerEmail || 'No email specified'})</span>
+                    </span>
+                  </label>
+
+                  <button
+                    type="submit"
+                    class="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <Plus class="w-4 h-4" />
+                    <span>Generate & Activate Coupon</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Active Coupons List */}
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Issued Coupons for {couponModalOrg()?.organizationName}
+                </h4>
+                {getOrgCoupons(couponModalOrg()!.organizationId).length === 0 ? (
+                  <div class="text-center py-6 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs italic">
+                    No coupons generated for this organization yet.
+                  </div>
+                ) : (
+                  <div class="space-y-2">
+                    {getOrgCoupons(couponModalOrg()!.organizationId).map(cpn => (
+                      <div class="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl gap-3">
+                        <div class="space-y-1">
+                          <div class="flex items-center gap-2">
+                            <span class="font-mono font-black text-sm text-amber-600 dark:text-amber-400 tracking-wider bg-amber-500/10 px-2 py-0.5 rounded select-all">
+                              {cpn.code}
+                            </span>
+                            <span class={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                              cpn.discountType === 'PERCENT' && cpn.discountValue === 100
+                                ? 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/50 dark:text-purple-300'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+                            }`}>
+                              {cpn.discountType === 'PERCENT' ? `${cpn.discountValue}% OFF` : `₹${cpn.discountValue} FLAT OFF`}
+                            </span>
+                            {(() => {
+                              const isExpired = cpn.expiryDate && cpn.expiryDate < new Date().toISOString().split('T')[0];
+                              const isUsedUp = cpn.usageLimit && cpn.usageLimit > 0 && cpn.usedCount >= cpn.usageLimit;
+                              const effectiveStatus = isExpired ? 'Expired' : (isUsedUp ? 'Used / Disabled' : cpn.status);
+                              return (
+                                <span class={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                  effectiveStatus === 'Active'
+                                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                    : effectiveStatus === 'Expired'
+                                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
+                                }`}>
+                                  {effectiveStatus}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <div class="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5">
+                            <span>Usage: <b>{cpn.usedCount}</b> / {cpn.usageLimit ? cpn.usageLimit : 'Unlimited'}</span>
+                            <span>Expires: <b>{cpn.expiryDate || 'Never'}</b></span>
+                            {cpn.notes && <span>Memo: <i>{cpn.notes}</i></span>}
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleSendCouponEmail(cpn)}
+                            class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 cursor-pointer transition flex items-center gap-1"
+                            title="Send coupon code via email to owner"
+                          >
+                            <Mail class="w-3.5 h-3.5" />
+                            <span>Send Email</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCouponStatus(cpn)}
+                            class="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-300 cursor-pointer transition"
+                          >
+                            {cpn.status === 'Active' ? 'Disable' : 'Enable'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCoupon(cpn.id)}
+                            class="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                            title="Delete Coupon"
+                          >
+                            <Trash2 class="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

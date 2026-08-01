@@ -1,10 +1,10 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { Account } from '../types';
 import { migrateAccounts } from '../lib/migrations';
 import { getAccountDiff } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useTripsContext } from './TripContext';
@@ -30,6 +30,10 @@ export function AccountProvider(props: { children: JSX.Element }) {
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.accounts && prewarmedData.accounts.length > 0) {
+      setAccountsStore(prewarmedData.accounts);
+      setLoadedFromDB(true);
+    }
     db.accounts.toArray().then(cached => {
       setAccountsStore(cached || []);
       setLoadedFromDB(true);
@@ -39,7 +43,11 @@ export function AccountProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...accountsStore];
-    db.accounts.clear().then(() => db.accounts.bulkPut(list));
+    if (list.length === 0) {
+      db.accounts.clear();
+    } else {
+      db.accounts.bulkPut(list);
+    }
   });
 
   const saveAccounts = (newAccounts: Account[] | ((prev: Account[]) => Account[])) => {
@@ -50,7 +58,7 @@ export function AccountProvider(props: { children: JSX.Element }) {
 
   const orgAccounts = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return orgId === 'org_backend' ? accountsStore : accountsStore.filter(a => a.organizationId === orgId);
+    return accountsStore.filter(a => a.organizationId === orgId);
   });
 
   const addAccount = async (accountInput: Omit<Account, 'id'>) => {

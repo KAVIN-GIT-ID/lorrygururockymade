@@ -12,12 +12,18 @@ export interface SyncStateData {
   tyres: any[];
   auditLogs: any[];
   supportTickets: any[];
+  coupons?: any[];
 }
 
-export const wrapAbort = <T,>(promise: Promise<T>, signal: AbortSignal): Promise<T> => {
+export const wrapAbort = <T,>(promise: Promise<T>, signal?: AbortSignal, name?: string): Promise<T> => {
+  if (!signal) return promise;
   return new Promise((resolve, reject) => {
-    const onAbort = () => reject(new Error('Aborted'));
-    if (signal.aborted) return onAbort();
+    const onAbort = () => {
+      reject(new Error('Aborted'));
+    };
+    if (signal.aborted) {
+      return onAbort();
+    }
     signal.addEventListener('abort', onAbort);
     promise.then(
       (res) => {
@@ -38,12 +44,12 @@ export const SyncService = {
     orgId: string,
     currentLocalState: SyncStateData,
     incremental: boolean,
-    signal: AbortSignal
+    signal?: AbortSignal
   ) {
-    if (!isAppwriteConfigured()) throw new Error('Appwrite not configured');
+    if (!isAppwriteConfigured()) {
+      throw new Error('Appwrite not configured');
+    }
 
-    // If the local IndexedDB cache is completely empty for key collections, force a full sync
-    // to repopulate the cache, even if incremental sync was requested.
     const isLocalCacheEmpty = !currentLocalState.trucks?.length && !currentLocalState.trips?.length;
     const lastSyncTime = (incremental && !isLocalCacheEmpty) 
       ? Number(localStorage.getItem('appwrite_last_sync_time') || '0') 
@@ -62,7 +68,8 @@ export const SyncService = {
       expenses: [...(currentLocalState.expenses || [])],
       tyres: [...(currentLocalState.tyres || [])],
       auditLogs: [...(currentLocalState.auditLogs || [])],
-      supportTickets: [...(currentLocalState.supportTickets || [])]
+      supportTickets: [...(currentLocalState.supportTickets || [])],
+      coupons: [...(currentLocalState.coupons || [])]
     };
 
     let userRightsData: any = null;
@@ -78,39 +85,50 @@ export const SyncService = {
       { key: 'expenses', collection: 'expenses' },
       { key: 'tyres', collection: 'tyres' },
       { key: 'auditLogs', collection: 'audit_logs' },
-      { key: 'supportTickets', collection: 'support_tickets' }
+      { key: 'supportTickets', collection: 'support_tickets' },
+      { key: 'coupons', collection: 'coupons' }
     ];
 
     const fetchPromises = categories.map(async (cat) => {
-      const docs = await wrapAbort(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal);
-      verifiedCollections.push(cat.collection);
-      
-      const updatedCollection = [...(loadedState[cat.key] || [])];
-      for (const doc of docs) {
-        if (doc.updatedAt) {
-          const docTime = new Date(doc.updatedAt).getTime();
-          if (docTime > maxUpdatedAt) {
-            maxUpdatedAt = docTime;
+      try {
+        const docs = await wrapAbort(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal, `fetch_${cat.collection}`);
+        verifiedCollections.push(cat.collection);
+        
+        const updatedCollection = [...(loadedState[cat.key] || [])];
+        for (const doc of docs) {
+          const docId = doc.$id || doc.id;
+          if (!docId) continue;
+          if (doc.updatedAt) {
+            const docTime = new Date(doc.updatedAt).getTime();
+            if (docTime > maxUpdatedAt) {
+              maxUpdatedAt = docTime;
+            }
           }
-        }
-        const parsedRecord = appwrite.reconstructRecord(doc);
-        const idx = updatedCollection.findIndex(x => x.id === doc.$id);
-        if (parsedRecord.deletedAt) {
-          if (idx > -1) updatedCollection.splice(idx, 1);
-        } else {
-          const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
-          if (idx > -1) {
-            updatedCollection[idx] = nextRecord;
+          const parsedRecord = doc;
+          const idx = updatedCollection.findIndex(x => x.id === docId);
+          if (parsedRecord.deletedAt) {
+            if (idx > -1) updatedCollection.splice(idx, 1);
           } else {
-            updatedCollection.push(nextRecord);
+            const nextRecord = { ...parsedRecord, id: docId, syncState: 'synced' as const };
+            if (idx > -1) {
+              updatedCollection[idx] = nextRecord;
+            } else {
+              updatedCollection.push(nextRecord);
+            }
           }
         }
+        if (docs.length > 0 || lastSyncTime === 0) {
+          loadedState[cat.key] = updatedCollection;
+        } else {
+          delete loadedState[cat.key];
+        }
+      } catch (err: any) {
+        throw err;
       }
-      loadedState[cat.key] = updatedCollection;
     });
 
     const loadRightsPromise = (async () => {
-      const allConfigs = await wrapAbort(appwrite.listGlobalConfigs(databaseId), signal);
+      const allConfigs = await wrapAbort(appwrite.listGlobalConfigs(databaseId), signal, 'fetch_global_configs');
       userRightsData = { userRightsList: [], organizationProfiles: [] };
       for (const doc of allConfigs) {
         try {
@@ -134,14 +152,16 @@ export const SyncService = {
       }
     })();
 
-    await Promise.all([...fetchPromises, loadRightsPromise]);
-
-    if (maxUpdatedAt > 0) {
-      loadedState.exportDate = maxUpdatedAt;
-      localStorage.setItem('appwrite_last_sync_time', String(maxUpdatedAt));
+    try {
+      await Promise.all([...fetchPromises, loadRightsPromise]);
+      if (maxUpdatedAt > 0) {
+        loadedState.exportDate = maxUpdatedAt;
+        localStorage.setItem('appwrite_last_sync_time', String(maxUpdatedAt));
+      }
+      return { loadedState, userRightsData, verifiedCollections };
+    } catch (err: any) {
+      throw err;
     }
-
-    return { loadedState, userRightsData, verifiedCollections };
   },
 
   async pushAllLocalToDB(databaseId: string, orgId: string, currentLocalState: SyncStateData) {

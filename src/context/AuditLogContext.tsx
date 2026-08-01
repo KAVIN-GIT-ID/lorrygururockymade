@@ -3,7 +3,7 @@ import { createStore, reconcile } from 'solid-js/store';
 import { AuditLog } from '../types';
 import { migrateAuditLogs } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
@@ -11,7 +11,7 @@ import { useNotifications } from './NotificationContext';
 interface AuditLogContextType {
   auditLogs: AuditLog[];
   orgAuditLogs: () => AuditLog[];
-  saveAuditLogs: (newLogs: AuditLog[]) => void;
+  saveAuditLogs: (newLogs: AuditLog[] | ((prev: AuditLog[]) => AuditLog[])) => void;
   logAction: (
     action: 'Created' | 'Edited' | 'Deleted' | 'Cloud' | 'Approved' | 'Rejected',
     category: string,
@@ -35,8 +35,12 @@ export function AuditLogProvider(props: { children: JSX.Element }) {
   // Load from Dexie cache on start
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.auditLogs && prewarmedData.auditLogs.length > 0) {
+      setAuditLogsStore(prewarmedData.auditLogs);
+      setLoadedFromDB(true);
+    }
     db.auditLogs.toArray().then(cached => {
-      setAuditLogsStore(reconcile(cached || []));
+      setAuditLogsStore(cached || []);
       setLoadedFromDB(true);
     });
   });
@@ -45,16 +49,21 @@ export function AuditLogProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...auditLogsStore];
-    db.auditLogs.clear().then(() => db.auditLogs.bulkPut(list));
+    if (list.length === 0) {
+      db.auditLogs.clear();
+    } else {
+      db.auditLogs.bulkPut(list);
+    }
   });
 
-  const saveAuditLogs = (newLogs: AuditLog[]) => {
-    setAuditLogsStore(reconcile(newLogs));
+  const saveAuditLogs = (newLogs: AuditLog[] | ((prev: AuditLog[]) => AuditLog[])) => {
+    const list = typeof newLogs === 'function' ? newLogs(auditLogsStore) : newLogs;
+    setAuditLogsStore(reconcile(list, { key: 'id' }));
   };
 
   const orgAuditLogs = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return orgId === 'org_backend' ? auditLogsStore : auditLogsStore.filter(log => log.organizationId === orgId);
+    return auditLogsStore.filter(log => log.organizationId === orgId);
   });
 
   const logAction = (

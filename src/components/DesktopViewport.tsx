@@ -7,9 +7,10 @@ import { useOfficesContext } from '../context/OfficeContext';
 import { useAccountsContext } from '../context/AccountContext';
 import { useTyresContext } from '../context/TyreContext';
 import { useAuditLogsContext } from '../context/AuditLogContext';
-import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile } from '../types';
+import { Truck, TripEntry, ExpenseEntry, AuditLog, UserPermission, OrganizationProfile, Coupon } from '../types';
 import { AlertCircle, Loader } from 'lucide-solid';
 
+import UserAccessControl from './UserAccessControl';
 const Dashboard = lazy(() => import('./Dashboard'));
 const TripList = lazy(() => import('./TripList'));
 const TruckMaster = lazy(() => import('./TruckMaster'));
@@ -21,7 +22,6 @@ const MonthlyReport = lazy(() => import('./MonthlyReport'));
 const AuditLogView = lazy(() => import('./AuditLogView'));
 const TyreMaster = lazy(() => import('./TyreMaster'));
 const BillingHistory = lazy(() => import('./BillingHistory'));
-const UserAccessControl = lazy(() => import('./UserAccessControl'));
 
 const isMobileTarget = import.meta.env.VITE_BUILD_TARGET === 'mobile';
 const BackendDashboard = isMobileTarget
@@ -114,6 +114,8 @@ interface DesktopViewportProps {
   setActiveTicketId: (ticketId: string | null) => void;
   handleInitiateRefund: (orgId: string, truckNo: string, paymentRecord: any) => Promise<void>;
   handleSaveAppUpdateConfig: (config: any) => Promise<void>;
+  coupons?: () => Coupon[];
+  handleSaveCoupons?: (coupons: Coupon[]) => void;
   orgUserRights: () => UserPermission[];
   handleAddPermission: (newPerm: Omit<UserPermission, 'id'>, showNotification: (msg: string) => void, logAction: (action: string, cat: string, ref: string, detail: string) => void) => Promise<any>;
   handleUpdatePermission: (updated: UserPermission, showNotification: (msg: string) => void, logAction: (action: string, cat: string, ref: string, detail: string) => void, currentUserOrgId: string) => Promise<any>;
@@ -284,6 +286,7 @@ export default function DesktopViewport(rawProps: DesktopViewportProps) {
             currentUserName={props.currentUser()?.name || ''}
             currentUserPhone={props.currentUser()?.phone || ''}
             onProcessTruckPayment={props.handleProcessTruckPayment}
+            coupons={props.coupons}
           />
         )}
 
@@ -433,6 +436,8 @@ export default function DesktopViewport(rawProps: DesktopViewportProps) {
             onInitiateRefund={props.handleInitiateRefund}
             appUpdateConfig={props.appUpdateConfig()}
             onSaveAppUpdateConfig={props.handleSaveAppUpdateConfig}
+            coupons={props.coupons}
+            onSaveCoupons={props.handleSaveCoupons}
           />
         )}
 

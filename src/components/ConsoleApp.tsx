@@ -7,8 +7,10 @@ import {
   TripEntry,
   ExpenseEntry,
   AuditLog,
+  SupportTicket,
   UserPermission,
   OrganizationProfile,
+  Coupon,
   createRecord,
   mutateRecord
 } from '../types';
@@ -42,6 +44,7 @@ import { useAppUpdate } from '../hooks/useAppUpdate';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { db } from '../services/cache';
 import { SyncService } from '../services/SyncService';
+import { reconcileById } from '../utils/reconcileUtils';
 import logo from '../logo.png';
 import versionData from '../version.json';
 const APP_VERSION = versionData.version;
@@ -336,6 +339,58 @@ export default function ConsoleApp() {
     localStorage.setItem('ttt_payments', JSON.stringify(nextPayments));
   };
 
+  // Coupons State
+  const [coupons, setCoupons] = createSignal<Coupon[]>(
+    (() => {
+      try {
+        const stored = localStorage.getItem('ttt_coupons');
+        return stored ? JSON.parse(stored) : [];
+      } catch {
+        return [];
+      }
+    })()
+  );
+
+  const handleSaveCoupons = async (nextCoupons: Coupon[], cpnToSave?: Coupon, cpnIdToDelete?: string) => {
+    setCoupons(nextCoupons);
+    try {
+      localStorage.setItem('ttt_coupons', JSON.stringify(nextCoupons));
+    } catch (e) {}
+
+    const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+    if (cpnIdToDelete) {
+      try {
+        await appwrite.deleteFleetDocument(databaseId, 'coupons', cpnIdToDelete);
+      } catch (err: any) {
+        console.warn('[Appwrite] Delete coupon cloud error:', err.message || err);
+      }
+    } else if (cpnToSave) {
+      try {
+        await appwrite.saveFleetDocument(
+          databaseId,
+          'coupons',
+          cpnToSave.id,
+          cpnToSave.organizationId || 'org_backend',
+          cpnToSave
+        );
+      } catch (err: any) {
+        console.warn('[Appwrite] Save coupon cloud error:', err.message || err);
+      }
+    } else {
+      for (const cpn of nextCoupons) {
+        try {
+          await appwrite.saveFleetDocument(
+            databaseId,
+            'coupons',
+            cpn.id,
+            cpn.organizationId || 'org_backend',
+            cpn
+          );
+        } catch (err: any) {}
+      }
+    }
+  };
+
   const currentUserOrgId = createMemo(() => currentUserRights()?.organizationId || '');
   const hasUsersTabAccess = createMemo(() => currentUserOrgId() === 'org_backend' ? !!currentUserRights().canViewBackendTeam : !!currentUserRights().isAdmin);
 
@@ -351,6 +406,7 @@ export default function ConsoleApp() {
 
   // Redirect restricted tabs
   createEffect(() => {
+    if (userRightsList().length === 0) return;
     const isBackendUser = !!(currentUserRights().isSuperAdmin || currentUserOrgId() === 'org_backend');
     const fallbackTab = isBackendUser ? 'BACKEND' : 'DASHBOARD';
     if (activeTab() === 'USERS' && !hasUsersTabAccess()) {
@@ -505,15 +561,16 @@ export default function ConsoleApp() {
   const onLoadCloudState = (loaded: any, globalConfig: any, quiet = false) => {
     let didChange = false;
     if (loaded) {
-      if (loaded.trips) { setTrips(loaded.trips); didChange = true; }
-      if (loaded.trucks) { setTrucks(loaded.trucks); didChange = true; }
-      if (loaded.drivers) { setDrivers(loaded.drivers); didChange = true; }
-      if (loaded.expenses) { setExpenses(loaded.expenses); didChange = true; }
-      if (loaded.offices) { setOffices(loaded.offices); didChange = true; }
-      if (loaded.accounts) { setAccounts(loaded.accounts); didChange = true; }
-      if (loaded.tyres) { setTyres(loaded.tyres); didChange = true; }
-      if (loaded.auditLogs) { setAuditLogs(loaded.auditLogs); didChange = true; }
-      if (loaded.supportTickets) { setSupportTickets(loaded.supportTickets); didChange = true; }
+      if (loaded.trips) { setTrips((prev: any) => reconcileById(prev || [], loaded.trips, 'trips:cloudSync')); didChange = true; }
+      if (loaded.trucks) { setTrucks((prev: any) => reconcileById(prev || [], loaded.trucks, 'trucks:cloudSync')); didChange = true; }
+      if (loaded.drivers) { setDrivers((prev: any) => reconcileById(prev || [], loaded.drivers, 'drivers:cloudSync')); didChange = true; }
+      if (loaded.expenses) { setExpenses((prev: any) => reconcileById(prev || [], loaded.expenses, 'expenses:cloudSync')); didChange = true; }
+      if (loaded.offices) { setOffices((prev: any) => reconcileById(prev || [], loaded.offices, 'offices:cloudSync')); didChange = true; }
+      if (loaded.accounts) { setAccounts((prev: any) => reconcileById(prev || [], loaded.accounts, 'accounts:cloudSync')); didChange = true; }
+      if (loaded.tyres) { setTyres((prev: any) => reconcileById(prev || [], loaded.tyres, 'tyres:cloudSync')); didChange = true; }
+      if (loaded.auditLogs) { setAuditLogs(reconcileById(auditLogsCtx.auditLogs, loaded.auditLogs, 'auditLogs:cloudSync')); didChange = true; }
+      if (loaded.supportTickets) { setSupportTickets((prev: any) => reconcileById(prev || [], loaded.supportTickets, 'supportTickets:cloudSync') as SupportTicket[]); didChange = true; }
+      if (loaded.coupons) { setCoupons((prev: any) => reconcileById(prev || [], loaded.coupons, 'coupons:cloudSync') as Coupon[]); didChange = true; }
     }
     if (globalConfig) {
       if (globalConfig.userRightsList) { setUserRightsList(globalConfig.userRightsList); didChange = true; }
@@ -523,86 +580,44 @@ export default function ConsoleApp() {
   };
 
   onMount(() => {
+    (window as any)._onConsoleCloudStateLoaded = onLoadCloudState;
     const handleKeyUnlocked = async () => {
-      console.log('[Encryption Key Entered] Key unlocked! Clearing existing memory/cache and fetching fresh dataset...');
-
-      try {
-        await Promise.all([
-          db.trucks.clear(),
-          db.drivers.clear(),
-          db.offices.clear(),
-          db.accounts.clear(),
-          db.trips.clear(),
-          db.expenses.clear(),
-          db.tyres.clear(),
-          db.auditLogs.clear(),
-          db.supportTickets.clear(),
-          db.organizationProfiles.clear(),
-          db.syncMetadata.clear()
-        ]);
-      } catch (err) {
-        console.warn('Dexie DB clear warning on key unlock:', err);
-      }
-
-      const cacheKeys = [
-        'ttt_trucks',
-        'ttt_drivers',
-        'ttt_offices',
-        'ttt_accounts',
-        'ttt_trips',
-        'ttt_expenses',
-        'ttt_tyres',
-        'fleet_audit_logs',
-        'ttt_support_tickets',
-        'appwrite_last_sync_time'
-      ];
-      cacheKeys.forEach(k => localStorage.removeItem(k));
-
-      batch(() => {
-        setTrucks([]);
-        setDrivers([]);
-        setOffices([]);
-        setAccounts([]);
-        setTrips([]);
-        setExpenses([]);
-        setTyres([]);
-        setAuditLogs([]);
-        setSupportTickets([]);
-      });
+      console.log('[Encryption Key Entered] Key unlocked! Enabling decrypted access and checking for incremental cloud updates...');
 
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
           const orgId = currentUserOrgId() || 'org_default';
-
-          const emptyLocalState = {
-            trucks: [],
-            drivers: [],
-            offices: [],
-            accounts: [],
-            trips: [],
-            expenses: [],
-            tyres: [],
-            auditLogs: [],
-            supportTickets: []
+          const currentState = {
+            trucks: trucksCtx.trucks,
+            drivers: driversCtx.drivers,
+            offices: officeCtx.offices,
+            accounts: accountCtx.accounts,
+            trips: tripsCtx.trips,
+            expenses: expenseCtx.expenses,
+            tyres: tyreCtx.tyres,
+            auditLogs: auditLogsCtx.auditLogs,
+            supportTickets: supportTickets()
           };
 
-          const controller = new AbortController();
-          const res = await SyncService.pullFromDB(databaseId, orgId, emptyLocalState, false, controller.signal);
+          const res = await SyncService.pullFromDB(databaseId, orgId, currentState, true);
 
           if (res && res.loadedState) {
             onLoadCloudState(res.loadedState, res.userRightsData, true);
-            console.log('[Encryption Key Entered] Fresh decrypted data fetched and loaded successfully!');
-            showNotification('Encryption Key Entered: Memory wiped & fresh data updated.');
+            console.log('[Encryption Key Entered] Decrypted access enabled and incremental updates applied!');
+            showNotification('Encryption key entered: Decrypted access enabled.');
           }
         } catch (err) {
-          console.warn('[Encryption Key Entered] Cloud fetch failed after key unlock:', err);
+          console.warn('[Encryption Key Entered] Incremental sync check failed after key unlock:', err);
         }
       }
     };
 
     window.addEventListener('ttt:storage-unlocked', handleKeyUnlocked);
-    onCleanup(() => window.removeEventListener('ttt:storage-unlocked', handleKeyUnlocked));
+    onCleanup(() => {
+      window.removeEventListener('ttt:storage-unlocked', handleKeyUnlocked);
+      delete (window as any)._onConsoleCloudStateLoaded;
+    });
   });
 
   const {
@@ -771,19 +786,57 @@ export default function ConsoleApp() {
 
     let trucksUpdated = false;
     const approvedTrucksToSave: Truck[] = [];
+
+    const normalizeNo = (no: string) => (no || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const approvedNos = new Set<string>();
+    (currentOrgProfile.approvedTrucks || []).forEach((at: any) => {
+      if (at && at.truckNo) approvedNos.add(normalizeNo(at.truckNo));
+    });
+    (currentOrgProfile.truckRequests || []).forEach((tr: any) => {
+      if (tr && tr.status === 'Approved' && tr.truckNo) approvedNos.add(normalizeNo(tr.truckNo));
+    });
+
+    const existingNos = new Set<string>();
+    currentTrucks.forEach(t => {
+      if (t.truckNo) existingNos.add(normalizeNo(t.truckNo));
+    });
+
+    console.log(`[Reconcile Debug] orgId="${orgId}", approvedNos=`, Array.from(approvedNos), 'existingNos=', Array.from(existingNos));
+
     const updatedTrucks = currentTrucks.map(truck => {
-      if (truck.organizationId === orgId && truck.isApproved === false) {
-        const approvedReq = (currentOrgProfile.truckRequests || []).find(
-          r => r.truckNo === truck.truckNo && r.status === 'Approved'
-        );
-        if (approvedReq) {
-          trucksUpdated = true;
-          const updatedT = { ...truck, isApproved: true, status: 'Active' as const };
-          approvedTrucksToSave.push(updatedT);
-          return updatedT;
-        }
+      const cleanNo = normalizeNo(truck.truckNo);
+      if (truck.organizationId === orgId && (truck.isApproved === false || truck.deletedAt || truck.status === 'Admin Disabled') && approvedNos.has(cleanNo)) {
+        trucksUpdated = true;
+        const updatedT = { ...truck, isApproved: true, status: 'Active' as const, deletedAt: undefined };
+        approvedTrucksToSave.push(updatedT);
+        return updatedT;
       }
       return truck;
+    });
+
+    approvedNos.forEach(cleanNo => {
+      if (!existingNos.has(cleanNo)) {
+        trucksUpdated = true;
+        const rawNo = (currentOrgProfile.truckRequests || []).find((r: any) => normalizeNo(r.truckNo) === cleanNo)?.truckNo ||
+          (currentOrgProfile.approvedTrucks || []).find((at: any) => normalizeNo(at.truckNo) === cleanNo)?.truckNo || cleanNo;
+        
+        const d = new Date();
+        d.setFullYear(d.getFullYear() + 1);
+        const expiryStr = d.toISOString().split('T')[0];
+
+        const newT: Truck = createRecord<Truck>({
+          id: 't_id_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          truckNo: rawNo,
+          organizationId: orgId,
+          isApproved: true,
+          status: 'Active',
+          registrationExpiryDate: expiryStr,
+          make: 'Ashok Leyland',
+          model: 'Cargo'
+        }, 'system');
+        updatedTrucks.push(newT);
+        approvedTrucksToSave.push(newT);
+      }
     });
 
     if (trucksUpdated) {
@@ -829,13 +882,13 @@ export default function ConsoleApp() {
   const isBackendTeam = currentUserOrgId() === 'org_backend' || currentUserRights().isSuperAdmin;
 
   return (
-    <div class="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
-      {toastMessage() && (
-        <div id="toast-notify" class="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-          <CheckCircle class="w-4 h-4 text-white" />
-          <span class="text-xs font-semibold">{toastMessage()}</span>
-        </div>
-      )}
+    <div class="h-screen bg-slate-50 text-slate-800 flex flex-col font-sans select-none selection:bg-blue-600/10 overflow-hidden">
+      {/* TOP ANNOUNCEMENT BANNER */}
+      <div class="w-full bg-slate-900 dark:bg-slate-950 text-slate-300 text-xs md:text-sm font-medium py-1.5 px-4 text-center border-b border-slate-800 tracking-wide select-none shrink-0 z-50">
+        This Site in Beta test mode - the database maybe deleted once site on live
+      </div>
+
+      <div class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
 
       <AppSidebar
         logo={logo}
@@ -1061,6 +1114,8 @@ export default function ConsoleApp() {
                 setActiveTicketId={setActiveTicketId}
                 handleInitiateRefund={handleInitiateRefund}
                 handleSaveAppUpdateConfig={handleSaveAppUpdateConfig}
+                coupons={coupons}
+                handleSaveCoupons={handleSaveCoupons}
                 orgUserRights={orgUserRights}
                 handleAddPermission={handleAddPermission}
                 handleUpdatePermission={handleUpdatePermission}
@@ -1110,7 +1165,7 @@ export default function ConsoleApp() {
       <AppModals
         isBackendTeam={isBackendTeam}
         currentUser={currentUser}
-        currentUserRights={currentUserRights}
+        currentUserRights={currentUserRights as any}
         organizationProfiles={organizationProfiles}
         profileModalOpen={profileModalOpen}
         setProfileModalOpen={setProfileModalOpen}
@@ -1119,7 +1174,17 @@ export default function ConsoleApp() {
         getClientUnreadTicketsCount={getClientUnreadTicketsCount}
         handleUpdateProfile={handleUpdateProfile}
         setMobileWizardOpen={setMobileWizardOpen}
-        setSetup2FAOpen={setSetup2FAOpen}
+        setSetup2FAOpen={(open: boolean) => {
+          if (open) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            let secret = '';
+            for (let i = 0; i < 16; i++) {
+              secret += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            setSetup2FASecret(secret);
+          }
+          setSetup2FAOpen(open);
+        }}
         setDisable2FAOpen={setDisable2FAOpen}
         supportTickets={supportTickets}
         currentUserOrgId={currentUserOrgId()}
@@ -1167,6 +1232,7 @@ export default function ConsoleApp() {
       {!isOnline() && (
         <ConnectionStatusBlocker reason={disconnectReason()} />
       )}
+      </div>
     </div>
   );
 }

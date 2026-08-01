@@ -31,13 +31,14 @@ export function OrganizationProvider(props: { children: any }) {
   }
 
   const saveProfiles = async (nextProfiles: OrganizationProfile[]) => {
+    const prev = organizationProfiles();
+    setOrganizationProfiles(nextProfiles);
     await organizationService.saveOrganizationProfiles(
       nextProfiles,
-      organizationProfiles(),
+      prev,
       currentUser()?.email,
       currentUserRights()
     );
-    setOrganizationProfiles(nextProfiles);
   };
 
   const orgValue: OrganizationContextType = {

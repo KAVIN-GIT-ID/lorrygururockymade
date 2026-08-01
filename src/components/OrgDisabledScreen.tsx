@@ -1,13 +1,68 @@
-import { createSignal, createEffect, Component } from 'solid-js';
-
+import { onMount, onCleanup, Component } from 'solid-js';
 import { AlertCircle } from 'lucide-solid';
+import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { OrganizationProfile } from '../types';
 
 interface OrgDisabledScreenProps {
   currentUserOrgId: () => string;
+  setOrganizationProfiles?: (profiles: OrganizationProfile[]) => void;
   onLogout: () => void;
 }
 
 export const OrgDisabledScreen: Component<OrgDisabledScreenProps> = (props) => {
+  onMount(async () => {
+    if (!isAppwriteConfigured() || !props.setOrganizationProfiles) return;
+    let socket: WebSocket | null = null;
+    let destroyed = false;
+
+    try {
+      await appwrite.initSession();
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const jwt = await appwrite.createSessionJwt();
+      const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime`;
+      socket = new WebSocket(gatewayUrl);
+
+      socket.onopen = () => {
+        if (!destroyed && socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'authenticate', jwt }));
+        }
+      };
+
+      socket.onmessage = (msg) => {
+        try {
+          const response = JSON.parse(msg.data);
+          const doc = response.payload;
+          if (!doc) return;
+          const keyVal = doc.$id || doc.key || '';
+          if (keyVal.startsWith('prf_')) {
+            let parsed = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc;
+            if (parsed && typeof parsed.data === 'string') {
+              try { parsed = JSON.parse(parsed.data); } catch {}
+            }
+            const targetOrgId = props.currentUserOrgId();
+            if (parsed && parsed.organizationId === targetOrgId && parsed.status === 'Active') {
+              const stored = localStorage.getItem('ttt_organization_profiles');
+              let profiles: OrganizationProfile[] = stored ? JSON.parse(stored) : [];
+              const idx = profiles.findIndex(p => p.organizationId === parsed.organizationId);
+              if (idx > -1) profiles[idx] = parsed; else profiles.push(parsed);
+              localStorage.setItem('ttt_organization_profiles', JSON.stringify(profiles));
+              if (props.setOrganizationProfiles) {
+                props.setOrganizationProfiles(profiles);
+              }
+            }
+          }
+        } catch (_) {}
+      };
+    } catch (_) {}
+
+    onCleanup(() => {
+      destroyed = true;
+      if (socket) {
+        try { socket.close(); } catch (_) {}
+      }
+    });
+  });
+
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans p-4">
       <div class="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 text-center">

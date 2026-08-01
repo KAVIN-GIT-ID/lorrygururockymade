@@ -56,57 +56,47 @@ export function useSupportTicketsState(
   });
 
   const saveSupportTickets = async (nextTicketsOrFn: SupportTicket[] | ((prev: SupportTicket[]) => SupportTicket[])) => {
-    const rawNextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
+    try {
+      const rawNextTickets = typeof nextTicketsOrFn === 'function' ? nextTicketsOrFn(supportTickets()) : nextTicketsOrFn;
 
-    const ticketMap = new Map<string, SupportTicket>();
-    rawNextTickets.forEach(t => {
-      if (t && t.id) ticketMap.set(t.id, t);
-    });
-    const nextTickets = Array.from(ticketMap.values());
+      const ticketMap = new Map<string, SupportTicket>();
+      rawNextTickets.forEach(t => {
+        if (t && t.id) ticketMap.set(t.id, t);
+      });
+      const nextTickets = Array.from(ticketMap.values());
 
-    const changedTickets = nextTickets.filter(t => {
-      const existing = supportTickets().find(x => x.id === t.id);
-      return !existing || JSON.stringify(existing) !== JSON.stringify(t);
-    });
+      const changedTickets = nextTickets.filter(t => {
+        const existing = supportTickets().find(x => x.id === t.id);
+        return !existing || JSON.stringify(existing) !== JSON.stringify(t);
+      });
 
-    console.log('[CHAT SYNC] saveSupportTickets: Total tickets:', nextTickets.length, 'Changed:', changedTickets.length);
+      const deletedTickets = supportTickets().filter(t => !nextTickets.some(x => x.id === t.id));
 
-    const deletedTickets = supportTickets().filter(t => !nextTickets.some(x => x.id === t.id));
+      setSupportTickets(nextTickets);
+      localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
 
-    setSupportTickets(nextTickets);
-    localStorage.setItem('ttt_support_tickets', JSON.stringify(nextTickets));
+      if (isAppwriteConfigured()) {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
-    if (isAppwriteConfigured()) {
-      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        if (changedTickets.length > 0) {
+          await Promise.allSettled(changedTickets.map(async (t) => {
+            return await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
+          }));
+        }
 
-      if (changedTickets.length > 0) {
-        console.log('[CHAT SYNC] Starting Appwrite sync for', changedTickets.length, 'tickets');
-        try {
-          await Promise.all(changedTickets.map(async (t) => {
+        if (deletedTickets.length > 0) {
+          await Promise.all(deletedTickets.map(async (t) => {
             try {
-              console.log('[CHAT SYNC] Saving ticket to Appwrite:', { id: t.id, msgCount: t.messages?.length, orgId: t.organizationId });
-              await appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', t);
-              console.log('[CHAT SYNC] Successfully saved ticket:', t.id);
+              await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
             } catch (err: any) {
-              console.error(`[CHAT SYNC] Failed to sync support ticket ${t.id} to Appwrite:`, err.message);
+              console.error(`Failed to delete support ticket ${t.id} from Appwrite:`, err);
             }
           }));
-          console.log('[CHAT SYNC] All ticket saves completed');
-        } catch (err) {
-          console.error('[CHAT SYNC] Promise.all error:', err);
         }
       }
-
-      if (deletedTickets.length > 0) {
-        console.log('[CHAT SYNC] Deleting', deletedTickets.length, 'tickets from Appwrite');
-        await Promise.all(deletedTickets.map(async (t) => {
-          try {
-            await appwrite.deleteFleetDocument(databaseId, 'support_tickets', t.id);
-          } catch (err) {
-            console.error(`[CHAT SYNC] Failed to delete support ticket ${t.id} from Appwrite:`, err);
-          }
-        }));
-      }
+    } catch (err: any) {
+      console.error(`saveSupportTickets error:`, err);
+      throw err;
     }
   };
 
@@ -241,50 +231,55 @@ export function useSupportTicketsState(
     description: string,
     attachmentFile?: File
   ) => {
-    let attachmentUrl = '';
-    let attachmentName = '';
-    const ticketId = 'tkt_' + Date.now();
+    try {
+      let attachmentUrl = '';
+      let attachmentName = '';
+      const ticketId = 'tkt_' + Date.now();
 
-    if (attachmentFile && isAppwriteConfigured()) {
-      try {
-        const customName = `ticket_attach_${ticketId}_initial`;
-        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
-        attachmentName = attachmentFile.name;
-      } catch (err) {
-        console.error('Failed to upload initial attachment:', err);
+      if (attachmentFile && isAppwriteConfigured()) {
+        try {
+          const customName = `ticket_attach_${ticketId}_initial`;
+          attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
+          attachmentName = attachmentFile.name;
+        } catch (err) {
+          console.error('Failed to upload initial attachment:', err);
+        }
       }
+
+      const initialMessage = attachmentFile ? {
+        id: `msg-${Date.now()}`,
+        sender: 'User' as const,
+        senderName: currentUser()?.name || currentUser()?.email || 'User',
+        senderEmail: currentUser()?.email || '',
+        content: description,
+        timestamp: new Date().toISOString(),
+        attachmentUrl: attachmentUrl || undefined,
+        attachmentName: attachmentName || undefined,
+      } : null;
+
+      const newTicket = createRecord<SupportTicket>({
+        id: ticketId,
+        ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
+        organizationId: currentUserOrgId() || '',
+        requesterName: currentUser()?.name || currentUser()?.email || 'Unknown User',
+        requesterEmail: currentUser()?.email || '',
+        requesterPhone: currentUserRights()?.phone || '',
+        category,
+        title,
+        description,
+        status: 'Open',
+        assignedTeam: category,
+        messages: initialMessage ? [initialMessage] : [],
+      }, currentUserId());
+
+      const nextTickets = [newTicket, ...supportTickets()];
+      await saveSupportTickets(nextTickets);
+      logAction('Created', 'SupportTicket', newTicket.ticketNo, `Raised support ticket: ${title}`);
+      showNotification(`Support ticket #${newTicket.ticketNo} raised successfully.`);
+    } catch (err: any) {
+      console.error(`handleCreateSupportTicket error:`, err);
+      throw err;
     }
-
-    const initialMessage = attachmentFile ? {
-      id: `msg-${Date.now()}`,
-      sender: 'User' as const,
-      senderName: currentUser()?.name || currentUser()?.email || 'User',
-      senderEmail: currentUser()?.email || '',
-      content: description,
-      timestamp: new Date().toISOString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    } : null;
-
-    const newTicket = createRecord<SupportTicket>({
-      id: ticketId,
-      ticketNo: 'TKT-' + Math.floor(100000 + Math.random() * 900000),
-      organizationId: currentUserOrgId() || '',
-      requesterName: currentUser()?.name || currentUser()?.email || 'Unknown User',
-      requesterEmail: currentUser()?.email || '',
-      requesterPhone: currentUserRights()?.phone || '',
-      category,
-      title,
-      description,
-      status: 'Open',
-      assignedTeam: category,
-      messages: initialMessage ? [initialMessage] : [],
-    }, currentUserId());
-
-    const nextTickets = [newTicket, ...supportTickets()];
-    await saveSupportTickets(nextTickets);
-    logAction('Created', 'SupportTicket', newTicket.ticketNo, `Raised support ticket: ${title}`);
-    showNotification(`Support ticket #${newTicket.ticketNo} raised successfully.`);
   };
 
   const getClientUnreadTicketsCount = () => {
@@ -294,14 +289,19 @@ export function useSupportTicketsState(
       if (t.status === 'Closed') return;
       const msgs = t.messages || [];
       if (msgs.length === 0) return;
-      const lastReadMsgId = localStorage.getItem(`ttt_tkt_read_${t.id}`);
+      const lastReadMsgId = t.userLastReadMessageId || localStorage.getItem(`ttt_tkt_read_${t.id}`);
       if (!lastReadMsgId) {
         const agentMsgsCount = msgs.filter(m => m.sender === 'Agent').length;
         if (agentMsgsCount > 0) totalUnread++;
       } else {
         const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
-        const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'Agent').length;
-        if (unreadCount > 0) totalUnread++;
+        if (lastReadIndex === -1) {
+          const agentMsgsCount = msgs.filter(m => m.sender === 'Agent').length;
+          if (agentMsgsCount > 0) totalUnread++;
+        } else {
+          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'Agent').length;
+          if (unreadCount > 0) totalUnread++;
+        }
       }
     });
     return totalUnread;
@@ -325,21 +325,26 @@ export function useSupportTicketsState(
     filtered.forEach(t => {
       if (t.status === 'Closed') return;
       const msgs = t.messages || [];
-      const lastReadMsgId = localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
+      const lastReadMsgId = t.agentLastReadMessageId || localStorage.getItem(`ttt_tkt_agent_read_${t.id}`);
 
       if (msgs.length === 0) {
         if (!lastReadMsgId) totalUnread++;
       } else {
         if (!lastReadMsgId) {
           const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
-          if (userMsgsCount > 0 || msgs.length > 0) totalUnread++;
+          if (userMsgsCount > 0) totalUnread++;
         } else if (lastReadMsgId === 'read') {
           const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
           if (userMsgsCount > 0) totalUnread++;
         } else {
           const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
-          const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
-          if (unreadCount > 0) totalUnread++;
+          if (lastReadIndex === -1) {
+            const userMsgsCount = msgs.filter(m => m.sender === 'User').length;
+            if (userMsgsCount > 0) totalUnread++;
+          } else {
+            const unreadCount = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'User').length;
+            if (unreadCount > 0) totalUnread++;
+          }
         }
       }
     });
@@ -351,51 +356,59 @@ export function useSupportTicketsState(
     content: string,
     attachmentFile?: File
   ) => {
-    let attachmentUrl = '';
-    let attachmentName = '';
+    try {
+      let attachmentUrl = '';
+      let attachmentName = '';
 
-    if (attachmentFile && isAppwriteConfigured()) {
-      try {
-        const customName = `ticket_attach_${ticketId}_${Date.now()}`;
-        attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
-        attachmentName = attachmentFile.name;
-      } catch (err) {
-        console.error('Failed to upload attachment:', err);
+      if (attachmentFile && isAppwriteConfigured()) {
+        try {
+          const customName = `ticket_attach_${ticketId}_${Date.now()}`;
+          attachmentUrl = await appwrite.uploadTicketFile(attachmentFile, customName);
+          attachmentName = attachmentFile.name;
+        } catch (err) {
+          console.error('Failed to upload attachment:', err);
+        }
       }
+
+      const myRights = userRightsList().find(u => u.email === currentUser()?.email);
+      const isSupportAgent = currentUserOrgId() === 'org_backend' || myRights?.role === 'SuperAdmin';
+
+      const newMessage = {
+        id: `msg-${Date.now()}`,
+        sender: (isSupportAgent ? 'Agent' : 'User') as 'User' | 'Agent',
+        senderName: currentUser()?.name || currentUser()?.email || 'User',
+        senderEmail: currentUser()?.email || '',
+        content,
+        timestamp: new Date().toISOString(),
+        attachmentUrl: attachmentUrl || undefined,
+        attachmentName: attachmentName || undefined,
+      };
+
+      const nextTickets = supportTickets().map(t => {
+        if (t.id === ticketId) {
+          const updated = mutateRecord<SupportTicket>(t, {
+            status: t.status === 'Closed' ? ('Open' as const) : t.status,
+            messages: [...(t.messages || []), newMessage],
+          }, currentUserId());
+          return updated;
+        }
+        return t;
+      });
+
+      await saveSupportTickets(nextTickets);
+      
+      // Trigger instant sync on all connected clients
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && (window as any)._triggerSupportTicketSync) {
+          (window as any)._triggerSupportTicketSync();
+        }
+      }, 100);
+      
+      logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
+    } catch (err: any) {
+      console.error(`handleSendSupportTicketMessage error:`, err);
+      throw err;
     }
-
-    const myRights = userRightsList().find(u => u.email === currentUser()?.email);
-    const isSupportAgent = currentUserOrgId() === 'org_backend' || myRights?.role === 'SuperAdmin';
-
-    const newMessage = {
-      id: `msg-${Date.now()}`,
-      sender: (isSupportAgent ? 'Agent' : 'User') as 'User' | 'Agent',
-      senderName: currentUser()?.name || currentUser()?.email || 'User',
-      senderEmail: currentUser()?.email || '',
-      content,
-      timestamp: new Date().toISOString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    };
-
-    console.log('[CHAT SYNC] Sending message:', { ticketId, sender: newMessage.sender, content, senderEmail: newMessage.senderEmail });
-
-    const nextTickets = supportTickets().map(t => {
-      if (t.id === ticketId) {
-        const updated = mutateRecord<SupportTicket>(t, {
-          status: t.status === 'Closed' ? ('Open' as const) : t.status,
-          messages: [...(t.messages || []), newMessage],
-        }, currentUserId());
-        console.log('[CHAT SYNC] Updated ticket with new message. Total messages:', updated.messages?.length);
-        return updated;
-      }
-      return t;
-    });
-
-    console.log('[CHAT SYNC] Calling saveSupportTickets for sync...');
-    await saveSupportTickets(nextTickets);
-    console.log('[CHAT SYNC] saveSupportTickets completed, message should be synced to Appwrite');
-    logAction('Edited', 'SupportTicket', ticketId, `Sent message on support ticket`);
   };
 
   return {

@@ -1,14 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('FleetTrack Pro E2E - Login Flow', () => {
+test.describe('LorryGuru E2E - Login Flow', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to the main app url configured in playwright.config.ts
-    await page.goto('/');
+    // Clear localStorage and navigate to /login path
+    await page.goto('/login');
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('/login');
   });
 
   test('should load the page and show the login form header', async ({ page }) => {
     // Assert page has the branding header visible
-    const title = page.locator('h2:has-text("FleetTrack Pro")');
+    const title = page.locator('h2:has-text("LorryGuru")');
     await expect(title).toBeVisible();
 
     const subtitle = page.locator('p:has-text("Enterprise Transport & Logistics Fleet Manager")');
@@ -31,7 +33,7 @@ test.describe('FleetTrack Pro E2E - Login Flow', () => {
     await expect(submitBtn).toHaveText(/Log In to System/);
 
     // Switch to Create Account
-    const createAccountTab = page.locator('button:has-text("Create Account")');
+    const createAccountTab = page.locator('button:has-text("Create Account")').first();
     await createAccountTab.click();
 
     // Submit button should update
@@ -42,7 +44,7 @@ test.describe('FleetTrack Pro E2E - Login Flow', () => {
     await expect(nameLabel).toBeVisible();
 
     // Switch back to Log In
-    const loginTab = page.locator('button:has-text("Log In")');
+    const loginTab = page.locator('button:has-text("Log In")').first();
     await loginTab.click();
 
     // Submit button should revert

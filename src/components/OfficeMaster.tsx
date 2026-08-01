@@ -40,15 +40,14 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
     get canDeleteOffices() { return permissionCtx.currentUserRights().canDeleteOffices; }
   });
   const {
-    offices,
+    
     onAddOffice,
     onUpdateOffice,
     onDeleteOffice,
     confirmAction,
-    canViewOffices,
-    canEditOffices,
-    canDeleteOffices
-  } = props;
+    
+    
+      } = props;
 
 
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
@@ -113,7 +112,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
           <h2 class="text-lg font-bold text-slate-800 tracking-tight">Office Datasheet</h2>
           <p class="text-xs text-slate-500 mt-0.5">Manage active trading offices and transport hubs details.</p>
         </div>
-        {canEditOffices && (
+        {props.canEditOffices && (
           <button
             id="btn-add-office"
             onClick={() => {
@@ -224,12 +223,12 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 font-sans">
-            {offices.length === 0 ? (
+            {(props.offices || []).length === 0 ? (
               <tr>
                 <td colSpan={6} class="text-center py-12 text-slate-400 font-medium italic">No offices registered. Create a transport branch/broker office.</td>
               </tr>
             ) : (
-              offices.map((office) => (
+              (props.offices || []).map((office) => (
                 <tr  id={`row-office-${office.id}`} class="hover:bg-slate-50/75 transition">
                   <td class="px-4 py-3.5 pl-6 font-bold text-slate-800">
                     {office.officeName}
@@ -245,7 +244,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                     )}
                   </td>
                   <td class="px-4 py-3.5 text-slate-600 font-medium">
-                    {canViewOffices ? (
+                    {props.canViewOffices ? (
                       office.contactPerson ? (
                         <span class="flex items-center gap-1.5">
                           <User class="w-3.5 h-3.5 text-slate-400" />
@@ -259,7 +258,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                     )}
                   </td>
                   <td class="px-4 py-3.5 font-mono text-slate-600 font-medium">
-                    {canViewOffices ? (
+                    {props.canViewOffices ? (
                       office.phone ? (
                         <a href={`tel:${office.phone}`} class="text-blue-600 hover:underline flex items-center gap-1">
                           <Phone class="w-3.5 h-3.5 text-slate-400" />
@@ -287,7 +286,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                     <div class="flex justify-end gap-2">
                       <button
                         title="Edit Office"
-                        disabled={!canEditOffices}
+                        disabled={!props.canEditOffices}
                         onClick={() => startEdit(office)}
                         class="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-105 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -295,7 +294,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                       </button>
                       <button
                         title="Delete Office"
-                        disabled={!canDeleteOffices}
+                        disabled={!props.canDeleteOffices}
                         onClick={() => {
                           const msg = `Caution! Are you sure you want to permanently delete office branch ${office.officeName}? This can disrupt filters in Trip journal sheets.`;
                           if (confirmAction) {
@@ -319,12 +318,12 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
 
       {/* MOBILE LIST CARD VIEW */}
       <div class="block md:hidden space-y-4">
-        {offices.length === 0 ? (
+        {(props.offices || []).length === 0 ? (
           <div class="bg-white border border-slate-200 rounded-xl p-8 py-12 text-center text-slate-400 italic">
             No offices registered. Create a transport branch/broker office.
           </div>
         ) : (
-          offices.map((office) => (
+          (props.offices || []).map((office) => (
             <div 
               
               class="bg-white border border-slate-200 rounded-xl p-4.5 shadow-3xs flex flex-col justify-between hover:border-blue-300 transition"
@@ -357,7 +356,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                   
                   <div class="flex justify-between items-center">
                     <span class="text-slate-400 font-bold uppercase text-[9px]">Contact Person</span>
-                    {canViewOffices ? (
+                    {props.canViewOffices ? (
                       office.contactPerson ? (
                         <span class="flex items-center gap-1.5">
                           <User class="w-3.5 h-3.5 text-slate-400" />
@@ -373,7 +372,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
 
                   <div class="flex justify-between items-center">
                     <span class="text-slate-400 font-bold uppercase text-[9px]">Phone</span>
-                    {canViewOffices ? (
+                    {props.canViewOffices ? (
                       office.phone ? (
                         <a href={`tel:${office.phone}`} class="text-blue-600 hover:underline flex items-center gap-1 font-mono font-medium">
                           <Phone class="w-3 h-3 text-slate-400" />
@@ -393,7 +392,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
               <div class="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100/60 mt-auto">
                 <button
                   type="button"
-                  disabled={!canEditOffices}
+                  disabled={!props.canEditOffices}
                   onClick={() => startEdit(office)}
                   class="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-[10px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -402,7 +401,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
                 </button>
                 <button
                   type="button"
-                  disabled={!canDeleteOffices}
+                  disabled={!props.canDeleteOffices}
                   onClick={() => {
                     const msg = `Caution! Are you sure you want to permanently delete office branch ${office.officeName}? This can disrupt filters in Trip journal sheets.`;
                     if (confirmAction) {

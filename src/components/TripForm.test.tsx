@@ -1,6 +1,6 @@
 import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
 import TripForm from './TripForm';
 import { Truck, Driver, Office, Account, TripEntry } from '../types';
 
@@ -26,7 +26,7 @@ describe('TripForm Component Tests', () => {
   });
 
   it('should render form inputs correctly when open', () => {
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -37,7 +37,7 @@ describe('TripForm Component Tests', () => {
         existingTripNos={[]}
         onSubmit={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getByText(/Initiate Unified Fleet Journey/i)).toBeInTheDocument();
     expect(screen.getByText('Target Truck')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('TripForm Component Tests', () => {
     const handleSubmit = vi.fn();
     const alertSpy = window.alert;
 
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -59,7 +59,7 @@ describe('TripForm Component Tests', () => {
         existingTripNos={[]}
         onSubmit={handleSubmit}
       />
-    );
+    ));
 
     // Select truck & driver
     fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'MH-12-PQ-1234' } });
@@ -74,10 +74,11 @@ describe('TripForm Component Tests', () => {
     expect(handleSubmit).not.toHaveBeenCalled();
   });
 
-  it('should trigger onSubmit with correct payload when details are valid', () => {
+  it('should alert validation error if ending odometer is lower than starting odometer', () => {
     const handleSubmit = vi.fn();
-    
-    render(
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -88,7 +89,44 @@ describe('TripForm Component Tests', () => {
         existingTripNos={[]}
         onSubmit={handleSubmit}
       />
-    );
+    ));
+
+    fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'MH-12-PQ-1234' } });
+    fireEvent.change(screen.getByLabelText(/Driver Operator/i), { target: { value: 'Ramesh Kumar' } });
+    fireEvent.change(screen.getByLabelText(/Starting Odometer/i), { target: { value: 1500 } });
+    fireEvent.change(screen.getByLabelText(/Ending Odometer/i), { target: { value: 1000 } });
+
+    // Add Cargo Sub-Trip
+    fireEvent.click(screen.getByRole('button', { name: /Add Cargo Segment/i }));
+    fireEvent.change(screen.getByLabelText(/Route Origin/i), { target: { value: 'Mumbai' } });
+    fireEvent.change(screen.getByLabelText(/Route Destination/i), { target: { value: 'Pune' } });
+    fireEvent.change(screen.getByLabelText(/Billed Freight Income/i), { target: { value: 40000 } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    const submitBtn = screen.getByRole('button', { name: /Publish Fleet Record/i });
+    fireEvent.click(submitBtn);
+
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('cannot be lower than starting odometer'));
+    expect(handleSubmit).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('should trigger onSubmit with correct payload when details are valid', () => {
+    const handleSubmit = vi.fn();
+    
+    render(() => (
+      <TripForm
+        isOpen={true}
+        onClose={vi.fn()}
+        trucks={mockTrucks}
+        offices={mockOffices}
+        accounts={mockAccounts}
+        drivers={mockDrivers}
+        existingTripNos={[]}
+        onSubmit={handleSubmit}
+      />
+    ));
 
     // Fill main details
     fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'MH-12-PQ-1234' } });
@@ -150,7 +188,7 @@ describe('TripForm Component Tests', () => {
       ]
     };
 
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -162,14 +200,14 @@ describe('TripForm Component Tests', () => {
         onSubmit={vi.fn()}
         orgProfile={mockOrgProfileWithCards}
       />
-    );
+    ));
 
     // Look for option text
-    expect(screen.getByText('HPCL primary card (Fuel Card)')).toBeInTheDocument();
+    expect(screen.getAllByText('HPCL primary card (Fuel Card)')[0]).toBeInTheDocument();
   });
 
   it('should auto-calculate fuel amounts and rates and allow adding fuel logs', () => {
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -181,7 +219,7 @@ describe('TripForm Component Tests', () => {
         onSubmit={vi.fn()}
         orgProfile={undefined}
       />
-    );
+    ));
 
     const litersInput = screen.getByLabelText(/Liters/i) as HTMLInputElement;
     const rateInput = screen.getByLabelText(/Rate \/ Lit/i) as HTMLInputElement;
@@ -251,7 +289,7 @@ describe('TripForm Component Tests', () => {
       { id: 'tr-2', truckNo: 'KA-51-AB-9999', model: 'Leyland', status: 'Active' as const, isApproved: true, currentKM: 3500 }
     ];
 
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -263,7 +301,7 @@ describe('TripForm Component Tests', () => {
         onSubmit={vi.fn()}
         trips={mockTrips}
       />
-    );
+    ));
 
     const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
 
@@ -308,7 +346,7 @@ describe('TripForm Component Tests', () => {
       status: 'In Progress',
     };
 
-    render(
+    render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -321,7 +359,7 @@ describe('TripForm Component Tests', () => {
         editingEntry={editingTrip}
         trips={mockTrips}
       />
-    );
+    ));
 
     const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
     // When editing, starting KM should remain as the editing entry's value (1800) and not be auto-calculated to 1500
@@ -329,7 +367,7 @@ describe('TripForm Component Tests', () => {
   });
 
   it('should compute and render line item totals in the cargo segments table footer', () => {
-    const { container } = render(
+    const { container } = render(() => (
       <TripForm
         isOpen={true}
         onClose={vi.fn()}
@@ -340,7 +378,7 @@ describe('TripForm Component Tests', () => {
         existingTripNos={[]}
         onSubmit={vi.fn()}
       />
-    );
+    ));
 
     // Add first cargo segment: Mumbai to Pune
     fireEvent.click(screen.getByRole('button', { name: /Add Cargo Segment/i }));

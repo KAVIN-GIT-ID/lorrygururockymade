@@ -36,9 +36,54 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
   const [chatFile, setChatFile] = createSignal<File | null>(null);
   const [isSending, setIsSending] = createSignal(false);
   const [resolvedUrls, setResolvedUrls] = createSignal<Record<string, string>>({});
+  const [typingAgent, setTypingAgent] = createSignal('');
 
   let chatEndRef: HTMLDivElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
+  let typingTimeout: any = null;
+
+  onMount(() => {
+    if (isAppwriteConfigured()) {
+      appwrite.registerPushNotificationTarget().catch(() => {});
+    }
+
+    const handleCustomWsMessage = (e: any) => {
+      const data = e.detail;
+      if (!data) return;
+      if (data.type === 'ttt:typing_start' && data.ticketId === selectedTicketId()) {
+        setTypingAgent(data.senderName || 'Support Agent');
+      } else if (data.type === 'ttt:typing_stop' && data.ticketId === selectedTicketId()) {
+        setTypingAgent('');
+      }
+    };
+    window.addEventListener('ttt_ws_message', handleCustomWsMessage);
+    onCleanup(() => window.removeEventListener('ttt_ws_message', handleCustomWsMessage));
+  });
+
+  const emitTyping = (isTyping: boolean) => {
+    const t = selectedTicket();
+    if (!t) return;
+    const ws = (window as any)._ttt_websocket;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: isTyping ? 'ttt:typing_start' : 'ttt:typing_stop',
+        ticketId: t.id,
+        senderName: 'User',
+        isAgent: false,
+        organizationId: t.organizationId,
+        requesterEmail: t.requesterEmail
+      }));
+    }
+  };
+
+  const handleInputChange = (val: string) => {
+    setChatInput(val);
+    emitTyping(true);
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      emitTyping(false);
+    }, 2500);
+  };
 
   const uniqueTickets = createMemo(() => {
     const seen = new Set<string>();
@@ -53,15 +98,23 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
 
   const selectedTicket = createMemo(() => uniqueTickets().find((t) => t.id === selectedTicketId()));
 
-  // Mark selected ticket as read for the user
+  // Mark selected ticket as read for the user & persist to DB so mobile/other devices sync
   createEffect(() => {
-    if (selectedTicket()) {
-      const msgs = selectedTicket().messages || [];
-      if (msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        localStorage.setItem(`ttt_tkt_read_${selectedTicket().id}`, lastMsg.id);
-      } else {
-        localStorage.setItem(`ttt_tkt_read_${selectedTicket().id}`, 'read');
+    const t = selectedTicket();
+    if (t) {
+      const msgs = t.messages || [];
+      const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      const targetReadId = lastMsg ? lastMsg.id : 'read';
+
+      localStorage.setItem(`ttt_tkt_read_${t.id}`, targetReadId);
+
+      if (t.userLastReadMessageId !== targetReadId) {
+        t.userLastReadMessageId = targetReadId;
+        const updated = { ...t, userLastReadMessageId: targetReadId };
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        if (isAppwriteConfigured()) {
+          appwrite.saveFleetDocument(databaseId, 'support_tickets', t.id, t.organizationId || 'org_default', updated).catch(() => {});
+        }
       }
     }
   });
@@ -71,13 +124,18 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
     const msgs = t.messages || [];
     if (msgs.length === 0) return { count: 0, hasUnread: false };
     
-    const lastReadMsgId = localStorage.getItem(`ttt_tkt_read_${t.id}`);
+    const lastReadMsgId = t.userLastReadMessageId || localStorage.getItem(`ttt_tkt_read_${t.id}`);
     if (!lastReadMsgId) {
       const agentMsgs = msgs.filter(m => m.sender === 'Agent');
       return { count: agentMsgs.length, hasUnread: agentMsgs.length > 0 };
     }
     
     const lastReadIndex = msgs.findIndex(m => m.id === lastReadMsgId);
+    if (lastReadIndex === -1) {
+      const agentMsgs = msgs.filter(m => m.sender === 'Agent');
+      return { count: agentMsgs.length, hasUnread: agentMsgs.length > 0 };
+    }
+
     const unreadAgentMsgs = msgs.slice(lastReadIndex + 1).filter(m => m.sender === 'Agent');
     return { count: unreadAgentMsgs.length, hasUnread: unreadAgentMsgs.length > 0 };
   };
@@ -132,7 +190,8 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
       setCategory('General');
       setCreateFile(null);
       setShowCreateModal(false);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Failed to raise ticket:', err);
       alert('Failed to raise ticket. Please try again.');
     } finally {
       setIsCreating(false);
@@ -149,7 +208,8 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
       setChatInput('');
       setChatFile(null);
       if (fileInputRef) fileInputRef.value = '';
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Failed to send message:', err);
       alert('Failed to send message.');
     } finally {
       setIsSending(false);
@@ -433,7 +493,35 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
                               </span>
                             )}
                           </span>
-                          <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span class="flex items-center gap-1">
+                            <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {isUser && (
+                              <span class="inline-flex items-center ml-0.5 text-[10px]" title={
+                                (() => {
+                                  const lastReadId = selectedTicket()?.agentLastReadMessageId;
+                                  const msgs = selectedTicket()?.messages || [];
+                                  const lastReadIndex = msgs.findIndex(m => m.id === lastReadId);
+                                  const myIndex = msgs.findIndex(m => m.id === msg.id);
+                                  if (lastReadId && lastReadIndex !== -1 && myIndex <= lastReadIndex) return 'Read';
+                                  return 'Delivered';
+                                })()
+                              }>
+                                {(() => {
+                                  const lastReadId = selectedTicket()?.agentLastReadMessageId;
+                                  const msgs = selectedTicket()?.messages || [];
+                                  const lastReadIndex = msgs.findIndex(m => m.id === lastReadId);
+                                  const myIndex = msgs.findIndex(m => m.id === msg.id);
+                                  const isRead = lastReadId && (lastReadId === 'read' || (lastReadIndex !== -1 && myIndex <= lastReadIndex));
+
+                                  if (isRead) {
+                                    return <span class="text-cyan-300 font-extrabold flex items-center -space-x-1 ml-0.5"><span>✓</span><span>✓</span></span>;
+                                  } else {
+                                    return <span class="text-blue-200 opacity-90 flex items-center -space-x-1 ml-0.5"><span>✓</span><span>✓</span></span>;
+                                  }
+                                })()}
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <p class="whitespace-pre-line leading-relaxed font-sans">{msg.content}</p>
 
@@ -471,6 +559,22 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
                   );
                 }}
               </For>
+
+              {/* Typing Indicator Bubble */}
+              {typingAgent() && (
+                <div class="flex justify-start my-1 animate-fade-in">
+                  <div class="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl rounded-tl-none px-3.5 py-2 text-xs flex items-center gap-2 border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <span class="font-bold text-[11px] text-purple-600 dark:text-purple-400">{typingAgent()}</span>
+                    <span class="text-[10px] text-slate-400 italic">is typing...</span>
+                    <span class="flex gap-1 items-center ml-1">
+                      <span class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ "animation-delay": "0ms" }} />
+                      <span class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ "animation-delay": "150ms" }} />
+                      <span class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div ref={chatEndRef} />
             </div>
 
@@ -482,7 +586,8 @@ export default function ProfileSupportTickets(props: ProfileSupportTicketsProps)
                     type="text"
                     placeholder="Type your reply here..."
                     value={chatInput()}
-                    onInput={(e) => setChatInput(e.currentTarget.value)}
+                    onInput={(e) => handleInputChange(e.currentTarget.value)}
+                    onBlur={() => emitTyping(false)}
                     class="w-full h-10 pl-3 pr-24 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-semibold"
                   />
                   

@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount } from 'solid-js';
 import { cryptoService } from '../services/cryptoService';
-import { setDbUnlocked } from '../services/cache';
+import { db, setDbUnlocked } from '../services/cache';
 import { ShieldCheck, ShieldAlert, KeyRound, Fingerprint } from 'lucide-solid';
 
 interface OfflinePinModalProps {
@@ -102,7 +102,12 @@ export default function OfflinePinModal(props: OfflinePinModalProps) {
         const success = await cryptoService.verifyPinAndLoadKey(pin(), salt, verifier);
         console.log("PIN verification result:", success);
         if (success) {
-          console.log("PIN verification successful. Unlocking database...");
+          console.log("PIN verification successful. Prewarming cache and unlocking database...");
+          try {
+            await db.prewarmCache();
+          } catch (cacheErr) {
+            console.warn("Prewarm cache warning:", cacheErr);
+          }
           setDbUnlocked(true);
           console.log("Calling props.onSuccess()...");
           props.onSuccess();

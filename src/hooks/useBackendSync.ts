@@ -1,6 +1,7 @@
 import { createEffect, batch, onMount, onCleanup, untrack } from 'solid-js';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { migrateAuditLogs, migrateUserPermissions, migrateTrucks, migrateTrips, migrateTripsIfNecessary, migrateDrivers, migrateOffices, migrateAccounts, migrateExpenses, migrateTyres } from '../lib/migrations';
+import { reconcileById } from '../utils/reconcileUtils';
 
 export function useBackendSync(
   currentUser: () => any,
@@ -95,7 +96,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_trucks', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'trucks:backendSync');
           });
 
           setTrips((prev: any[]) => {
@@ -110,7 +111,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_trips', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'trips:backendSync');
           });
 
           setDrivers((prev: any[]) => {
@@ -125,7 +126,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_drivers', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'drivers:backendSync');
           });
 
           setOffices((prev: any[]) => {
@@ -140,7 +141,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_offices', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'offices:backendSync');
           });
 
           setAccounts((prev: any[]) => {
@@ -155,7 +156,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_accounts', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'accounts:backendSync');
           });
 
           setExpenses((prev: any[]) => {
@@ -170,7 +171,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_expenses', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'expenses:backendSync');
           });
 
           setTyres((prev: any[]) => {
@@ -185,7 +186,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('ttt_tyres', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'tyres:backendSync');
           });
 
           setAuditLogs((prev: any[]) => {
@@ -200,7 +201,7 @@ export function useBackendSync(
               }
             }
             localStorage.setItem('fleet_audit_logs', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated, 'auditLogs:backendSync');
           });
 
           setSupportTickets((prev: any[]) => {
@@ -219,7 +220,7 @@ export function useBackendSync(
             }
             const updated = Array.from(map.values());
             localStorage.setItem('ttt_support_tickets', JSON.stringify(updated));
-            return updated;
+            return reconcileById(prev, updated);
           });
         });
 

@@ -25,11 +25,11 @@ services:
     environment:
       - PORT=8000
       - GATEWAY_API_KEY= # Change to your chosen secure key
-      - SMTP_HOST=smtp.gmail.com # SMTP host for disconnect alerts
-      - SMTP_PORT=465 # SMTP port (usually 465 or 587)
-      - SMTP_USER=your-email@gmail.com # Sender email
-      - SMTP_PASS=your-gmail-app-password # Sender email password/app token
-      - APPWRITE_ENDPOINT=https://api.lorryguru.in/v1 # Appwrite variables (if applicable)
+      - _APP_SMTP_HOST=${_APP_SMTP_HOST}
+      - _APP_SMTP_PORT=${_APP_SMTP_PORT}
+      - _APP_SMTP_USERNAME=${_APP_SMTP_USERNAME}
+      - _APP_SMTP_PASSWORD=${_APP_SMTP_PASSWORD}
+      - APPWRITE_ENDPOINT=https://api.lorryguru.in/v1
       - APPWRITE_PROJECT_ID=6a1c5f2700246e86a727
       - APPWRITE_API_KEY=standard_...
 

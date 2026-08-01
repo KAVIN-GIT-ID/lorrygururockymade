@@ -1,4 +1,4 @@
-import { Suspense, lazy, mergeProps } from 'solid-js';
+import { Suspense, Show, lazy, mergeProps } from 'solid-js';
 import { useTripsContext } from '../context/TripContext';
 import { useTrucksContext } from '../context/TruckContext';
 import { useDriversContext } from '../context/DriverContext';
@@ -8,13 +8,13 @@ import { useAccountsContext } from '../context/AccountContext';
 import { useTyresContext } from '../context/TyreContext';
 import { Truck, TripEntry, UserPermission, OrganizationProfile, SupportTicket } from '../types';
 
-const ProfileModal = lazy(() => import('./ProfileModal'));
-const MobileChangeWizardModal = lazy(() => import('./MobileChangeWizardModal'));
-const Setup2FAModal = lazy(() => import('./Setup2FAModal'));
-const Disable2FAModal = lazy(() => import('./Disable2FAModal'));
-const ConfirmModal = lazy(() => import('./ConfirmModal'));
-const TripForm = lazy(() => import('./TripForm'));
-const VoiceAssistant = lazy(() => import('./VoiceAssistant'));
+import ProfileModal from './ProfileModal';
+import MobileChangeWizardModal from './MobileChangeWizardModal';
+import Setup2FAModal from './Setup2FAModal';
+import Disable2FAModal from './Disable2FAModal';
+import ConfirmModal from './ConfirmModal';
+import TripForm from './TripForm';
+import VoiceAssistant from './VoiceAssistant';
 
 interface AppModalsProps {
   profileModalOpen: () => boolean;
@@ -23,19 +23,15 @@ interface AppModalsProps {
   setProfileActiveTab: (tab: 'SETTINGS' | 'SUPPORT') => void;
   isBackendTeam: boolean;
   getClientUnreadTicketsCount: () => number;
-  currentUser: () => any;
-  currentUserRights: () => any;
-  organizationProfiles: () => OrganizationProfile[];
-  handleUpdateProfile: (newName: string, newOrgName?: string, newPass?: string, oldPass?: string, kycDetails?: { gst?: string; pan?: string; aadhaar?: string; address?: string }) => Promise<void>;
+  handleUpdateProfile: (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string, kycDetails?: any) => Promise<void>;
   setMobileWizardOpen: (open: boolean) => void;
   setSetup2FAOpen: (open: boolean) => void;
   setDisable2FAOpen: (open: boolean) => void;
   supportTickets: () => SupportTicket[];
   currentUserOrgId: string;
-  handleCreateSupportTicket: (category: 'Technical' | 'Billing' | 'General', title: string, description: string, attachmentFile?: File) => Promise<void>;
-  handleSendSupportTicketMessage: (ticketId: string, message: any) => Promise<any>;
+  handleCreateSupportTicket: (subject: string, category: string, description: string) => Promise<void>;
+  handleSendSupportTicketMessage: (ticketId: string, text: string) => Promise<void>;
   payments: () => any[];
-
   mobileWizardOpen: () => boolean;
   mobileWizardStep: () => number;
   setMobileWizardStep: (step: number) => void;
@@ -44,45 +40,44 @@ interface AppModalsProps {
   mobileWizardNewPhone: () => string;
   setMobileWizardNewPhone: (phone: string) => void;
   mobileWizardPassword: () => string;
-  setMobileWizardPassword: (pass: string) => void;
+  setMobileWizardPassword: (password: string) => void;
   mobileWizardError: () => string | null;
   setMobileWizardError: (err: string | null) => void;
-  mobileWizardGeneratedOtp: () => string;
-  setMobileWizardGeneratedOtp: (otp: string) => void;
-  mobileWizardTimer: any;
-  setMobileWizardTimer: (seconds: number) => void;
+  mobileWizardGeneratedOtp: () => string | null;
+  setMobileWizardGeneratedOtp: (otp: string | null) => void;
+  mobileWizardTimer: () => number;
+  setMobileWizardTimer: (secs: number) => void;
   sendWhatsAppOTP: (phone: string) => Promise<string>;
+  currentUser: () => any;
+  currentUserRights: () => UserPermission | undefined;
+  organizationProfiles: () => OrganizationProfile[];
   userRightsList: () => UserPermission[];
   setUserRightsList: (list: UserPermission[]) => void;
-  pushPermissionsToCloud: (list: UserPermission[]) => Promise<any>;
-  reconcileSession: (user: any, freshRightsList?: UserPermission[]) => Promise<any>;
+  pushPermissionsToCloud: (list: UserPermission[]) => Promise<void>;
+  reconcileSession: (user: any) => Promise<void>;
   setCurrentUser: (user: any) => void;
   showNotification: (msg: string) => void;
-
   setup2FAOpen: () => boolean;
   setup2FASecret: () => string;
   disable2FAOpen: () => boolean;
   confirmModal: () => any;
   setConfirmModal: (val: any) => void;
-
   bookingModalOpen: () => boolean;
   setBookingModalOpen: (open: boolean) => void;
-  setEditingTrip: (trip: any) => void;
-   approvedOrgTrucks?: Truck[];
-   orgDrivers?: any[];
-   orgOffices?: any[];
-   orgAccounts?: any[];
-   orgTrips?: TripEntry[];
-   handlePostTripEntry?: (trip: any) => Promise<any>;
   editingTrip: () => TripEntry | null;
-  currentOrgProfile: OrganizationProfile | undefined;
-   saveTrips?: (trips: TripEntry[]) => void;
-  confirmAction?: (message: string, onConfirm: () => void, title?: string) => void;
-
-  isVoiceAssistantOpen: () => boolean;
-  setIsVoiceAssistantOpen: (open: boolean) => void;
-   addExpense?: (expense: any) => Promise<any>;
-  userVoiceLang: () => string;
+  setEditingTrip: (trip: TripEntry | null) => void;
+  activeTab?: () => string;
+  voiceAssistantOpen?: () => boolean;
+  setVoiceAssistantOpen?: (open: boolean) => void;
+  isVoiceAssistantOpen?: () => boolean;
+  setIsVoiceAssistantOpen?: (open: boolean) => void;
+  onSubmitTrip?: (data: any) => void;
+  onSubmitExpense?: (data: any) => void;
+  currentOrgProfile?: OrganizationProfile;
+  confirmAction?: any;
+  userVoiceLang?: () => string;
+  handlePostTripEntry?: any;
+  addExpense?: any;
 }
 
 export default function AppModals(rawProps: AppModalsProps) {
@@ -124,53 +119,61 @@ export default function AppModals(rawProps: AppModalsProps) {
         />
       )}
 
-      <MobileChangeWizardModal
-        isOpen={props.mobileWizardOpen()}
-        onClose={() => props.setMobileWizardOpen(false)}
-        currentUser={props.currentUser()}
-        currentUserRights={props.currentUserRights() as any}
-        userRightsList={props.userRightsList()}
-        setUserRightsList={props.setUserRightsList}
-        pushPermissionsToCloud={props.pushPermissionsToCloud}
-        reconcileSession={props.reconcileSession as any}
-        setCurrentUser={props.setCurrentUser}
-        showNotification={props.showNotification}
-        mobileWizardStep={props.mobileWizardStep()}
-        setMobileWizardStep={props.setMobileWizardStep}
-        mobileWizardCode={props.mobileWizardCode()}
-        setMobileWizardCode={props.setMobileWizardCode}
-        mobileWizardNewPhone={props.mobileWizardNewPhone()}
-        setMobileWizardNewPhone={props.setMobileWizardNewPhone}
-        mobileWizardPassword={props.mobileWizardPassword()}
-        setMobileWizardPassword={props.setMobileWizardPassword}
-        mobileWizardError={props.mobileWizardError()}
-        setMobileWizardError={props.setMobileWizardError}
-        mobileWizardGeneratedOtp={props.mobileWizardGeneratedOtp()}
-        setMobileWizardGeneratedOtp={props.setMobileWizardGeneratedOtp}
-        mobileWizardTimer={props.mobileWizardTimer}
-        setMobileWizardTimer={props.setMobileWizardTimer}
-        sendWhatsAppOTP={props.sendWhatsAppOTP as any}
-      />
+      {props.mobileWizardOpen() && (
+        <MobileChangeWizardModal
+          isOpen={props.mobileWizardOpen()}
+          onClose={() => props.setMobileWizardOpen(false)}
+          currentUser={props.currentUser()}
+          currentUserRights={props.currentUserRights() as any}
+          userRightsList={props.userRightsList()}
+          setUserRightsList={props.setUserRightsList}
+          pushPermissionsToCloud={props.pushPermissionsToCloud}
+          reconcileSession={props.reconcileSession as any}
+          setCurrentUser={props.setCurrentUser}
+          showNotification={props.showNotification}
+          mobileWizardStep={props.mobileWizardStep()}
+          setMobileWizardStep={props.setMobileWizardStep}
+          mobileWizardCode={props.mobileWizardCode()}
+          setMobileWizardCode={props.setMobileWizardCode}
+          mobileWizardNewPhone={props.mobileWizardNewPhone()}
+          setMobileWizardNewPhone={props.setMobileWizardNewPhone}
+          mobileWizardPassword={props.mobileWizardPassword()}
+          setMobileWizardPassword={props.setMobileWizardPassword}
+          mobileWizardError={props.mobileWizardError()}
+          setMobileWizardError={props.setMobileWizardError}
+          mobileWizardGeneratedOtp={props.mobileWizardGeneratedOtp()}
+          setMobileWizardGeneratedOtp={props.setMobileWizardGeneratedOtp}
+          mobileWizardTimer={props.mobileWizardTimer()}
+          setMobileWizardTimer={props.setMobileWizardTimer}
+          sendWhatsAppOTP={props.sendWhatsAppOTP as any}
+        />
+      )}
 
-      <Setup2FAModal
-        isOpen={props.setup2FAOpen()}
-        onClose={() => props.setSetup2FAOpen(false)}
-        setup2FASecret={props.setup2FASecret()}
-        showNotification={props.showNotification}
-        reconcileSession={props.reconcileSession as any}
-      />
+      {props.setup2FAOpen() && (
+        <Setup2FAModal
+          isOpen={props.setup2FAOpen()}
+          onClose={() => props.setSetup2FAOpen(false)}
+          setup2FASecret={props.setup2FASecret()}
+          showNotification={props.showNotification}
+          reconcileSession={props.reconcileSession as any}
+        />
+      )}
 
-      <Disable2FAModal
-        isOpen={props.disable2FAOpen()}
-        onClose={() => props.setDisable2FAOpen(false)}
-        showNotification={props.showNotification}
-        reconcileSession={props.reconcileSession as any}
-      />
+      {props.disable2FAOpen() && (
+        <Disable2FAModal
+          isOpen={props.disable2FAOpen()}
+          onClose={() => props.setDisable2FAOpen(false)}
+          showNotification={props.showNotification}
+          reconcileSession={props.reconcileSession as any}
+        />
+      )}
 
-      <ConfirmModal
-        confirmModal={props.confirmModal()}
-        onClose={() => props.setConfirmModal(null)}
-      />
+      {props.confirmModal() && (
+        <ConfirmModal
+          confirmModal={props.confirmModal()}
+          onClose={() => props.setConfirmModal(null)}
+        />
+      )}
 
       <Suspense fallback={null}>
         <TripForm
@@ -184,28 +187,28 @@ export default function AppModals(rawProps: AppModalsProps) {
           offices={props.orgOffices}
           accounts={props.orgAccounts}
           existingTripNos={Array.from(new Set(props.orgTrips.map(t => t.tripNo).filter(Boolean)))}
-          onSubmit={props.handlePostTripEntry}
+          onSubmit={(props as any).handlePostTripEntry}
           editingEntry={props.editingTrip()}
-          canViewDrivers={props.currentUserRights().canViewDrivers}
-          orgProfile={props.currentOrgProfile}
+          canViewDrivers={props.currentUserRights()?.canViewDrivers}
+          orgProfile={(props.organizationProfiles ? props.organizationProfiles()[0] : undefined)}
           trips={props.orgTrips}
-          onSaveTrips={props.saveTrips}
-          confirmAction={props.confirmAction}
+          onSaveTrips={tripsCtx.saveTrips}
+          confirmAction={(props as any).confirmAction}
         />
       </Suspense>
 
       <Suspense fallback={null}>
         <VoiceAssistant
-          isOpen={props.isVoiceAssistantOpen()}
-          onClose={() => props.setIsVoiceAssistantOpen(false)}
+          isOpen={rawProps.voiceAssistantOpen ? rawProps.voiceAssistantOpen() : (rawProps.isVoiceAssistantOpen ? rawProps.isVoiceAssistantOpen() : false)}
+          onClose={() => rawProps.setVoiceAssistantOpen ? rawProps.setVoiceAssistantOpen(false) : (rawProps.setIsVoiceAssistantOpen ? rawProps.setIsVoiceAssistantOpen(false) : undefined)}
           trucks={props.approvedOrgTrucks}
           drivers={props.orgDrivers}
           offices={props.orgOffices}
           accounts={props.orgAccounts}
           existingTripNos={Array.from(new Set(props.orgTrips.map(t => t.tripNo).filter(Boolean)))}
-          onSubmitTrip={props.handlePostTripEntry}
-          onSubmitExpense={props.addExpense}
-          voiceLang={props.userVoiceLang()}
+          onSubmitTrip={(props as any).handlePostTripEntry}
+          onSubmitExpense={expenseCtx.addExpense}
+          voiceLang={(props as any).userVoiceLang ? (props as any).userVoiceLang() : 'en-IN'}
         />
       </Suspense>
     </Suspense>

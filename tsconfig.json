@@ -22,10 +22,10 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true
-  },
-  "exclude": [
-    "src/**/*.test.tsx",
-    "src/**/*.test.ts"
-  ]
+    "noEmit": true,
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
+  }
 }

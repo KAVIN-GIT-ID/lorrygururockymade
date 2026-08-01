@@ -27,20 +27,30 @@ import { NotificationManager } from './managers/NotificationManager';
 
 import { isAppwriteConfigured, appwrite } from './lib/appwrite';
 import { cryptoService } from './services/cryptoService';
-import { dbUnlocked, setDbUnlocked } from './services/cache';
+import { db, dbUnlocked, setDbUnlocked } from './services/cache';
 import OfflinePinModal from './components/OfflinePinModal';
 import versionData from './version.json';
 import { trackUniqueVisitor } from './lib/visitorTracker';
 const APP_VERSION = versionData.version;
 
-// Dynamic routes and pages
-const LandingPage = lazy(() => import('./components/LandingPage'));
-const LoginScreen = lazy(() => import('./components/LoginScreen'));
-const LegalPage = lazy(() => import('./components/LegalPage'));
-const PasswordResetScreen = lazy(() => import('./components/PasswordResetScreen'));
-const VerificationRequiredScreen = lazy(() => import('./components/VerificationRequiredScreen'));
-const OrgDisabledScreen = lazy(() => import('./components/OrgDisabledScreen'));
-const PendingApprovalScreen = lazy(() => import('./components/PendingApprovalScreen'));
+// Screen components
+import LandingPage from './components/LandingPage';
+import LoginScreen from './components/LoginScreen';
+import LegalPage from './components/LegalPage';
+import PasswordResetScreen from './components/PasswordResetScreen';
+import VerificationRequiredScreen from './components/VerificationRequiredScreen';
+import OrgDisabledScreen from './components/OrgDisabledScreen';
+import PendingApprovalScreen from './components/PendingApprovalScreen';
+
+import { useTrucksContext } from './context/TruckContext';
+import { useDriversContext } from './context/DriverContext';
+import { useTripsContext } from './context/TripContext';
+import { useExpensesContext } from './context/ExpenseContext';
+import { useOfficesContext } from './context/OfficeContext';
+import { useAccountsContext } from './context/AccountContext';
+import { useTyresContext } from './context/TyreContext';
+import { useAuditLogsContext } from './context/AuditLogContext';
+import AppwriteCloudSync from './components/AppwriteCloudSync';
 
 import { ConsoleAppWrapper } from './components/ConsoleApp';
 
@@ -211,11 +221,13 @@ function AppContent(props: { touchLastModified: () => void }): any {
       const key = await cryptoService.getOrGenerateMobileKey();
       if (key) {
         cryptoService.setKey(key);
+        await db.prewarmCache();
         setDbUnlocked(true);
       }
     } else {
       const unlocked = await cryptoService.tryAutoUnlock();
       if (unlocked) {
+        await db.prewarmCache();
         setDbUnlocked(true);
       }
     }
@@ -297,6 +309,28 @@ function AppContent(props: { touchLastModified: () => void }): any {
     const profile = orgs.organizationProfiles().find((p) => p.organizationId === orgId);
     return profile ? profile.status === 'Disabled' : false;
   });
+
+  const trucksCtx = useTrucksContext();
+  const driversCtx = useDriversContext();
+  const tripsCtx = useTripsContext();
+  const expensesCtx = useExpensesContext();
+  const officesCtx = useOfficesContext();
+  const accountsCtx = useAccountsContext();
+  const tyresCtx = useTyresContext();
+  const auditLogsCtx = useAuditLogsContext();
+
+  const onLoadCloudState = (loaded: any, globalConfig: any, quiet = false) => {
+    let didChange = false;
+    if (globalConfig) {
+      if (globalConfig.userRightsList) { perm.setUserRightsList(globalConfig.userRightsList); didChange = true; }
+      if (globalConfig.organizationProfiles) { orgs.setOrganizationProfiles(globalConfig.organizationProfiles); didChange = true; }
+    }
+    if (typeof (window as any)._onConsoleCloudStateLoaded === 'function') {
+      const consoleChanged = (window as any)._onConsoleCloudStateLoaded(loaded, globalConfig, quiet);
+      if (consoleChanged) didChange = true;
+    }
+    return didChange;
+  };
 
   return (
     <Suspense fallback={<LoadingTab />}>
@@ -470,14 +504,14 @@ function AppContent(props: { touchLastModified: () => void }): any {
             pushPermissionsToCloud={perm.pushPermissions}
             reconcileSession={reconcileSession}
             showNotification={showNotification}
-            toastMessage={toastMessage()}
+            toastMessage={notifications.toastMessage}
             emailTimer={authManager.emailTimer()}
             setEmailTimer={authManager.setEmailTimer}
             phoneTimer={authManager.phoneTimer()}
             setPhoneTimer={authManager.setPhoneTimer}
             verificationOtpSent={authManager.verificationOtpSent()}
             setVerificationOtpSent={authManager.setVerificationOtpSent}
-            showPhoneUpdateModal={dialogs.showPhoneUpdateModal()}
+            showPhoneUpdateModal={dialogs.showPhoneUpdateModal}
             setShowPhoneUpdateModal={dialogs.setShowPhoneUpdateModal}
             whatsappOtpCode={authManager.whatsappOtpCode()}
             setWhatsappOtpCode={authManager.setWhatsappOtpCode}
@@ -491,6 +525,7 @@ function AppContent(props: { touchLastModified: () => void }): any {
         <Match when={isOrgDisabled() && !currentUserRights().isSuperAdmin}>
           <OrgDisabledScreen
             currentUserOrgId={() => currentUserOrgId()}
+            setOrganizationProfiles={orgs.setOrganizationProfiles}
             onLogout={handleLogout}
           />
         </Match>

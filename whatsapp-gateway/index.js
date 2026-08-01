@@ -15,13 +15,18 @@ const smtpUser = process.env.SMTP_USER || process.env._APP_SMTP_USERNAME;
 const smtpPass = process.env.SMTP_PASS || process.env._APP_SMTP_PASSWORD;
 const alertEmailRecipient = 'prasath.sakthi@gmail.com';
 
-let lastAlertSentTime = 0;
+let lastAlertSentTimes = {
+  disconnect: 0,
+  connect: 0,
+  general: 0
+};
 const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
-async function sendEmailAlert(subject, text) {
+async function sendEmailAlert(subject, text, alertType = 'general') {
   const now = Date.now();
-  if (now - lastAlertSentTime < ALERT_COOLDOWN_MS) {
-    console.log('[Alerts] Alert rate limit active. Skipping email dispatch.');
+  const lastSent = lastAlertSentTimes[alertType] || 0;
+  if (now - lastSent < ALERT_COOLDOWN_MS) {
+    console.log(`[Alerts] Alert rate limit active for '${alertType}'. Skipping email dispatch.`);
     return;
   }
   
@@ -48,8 +53,8 @@ async function sendEmailAlert(subject, text) {
       text
     });
 
-    lastAlertSentTime = now;
-    console.log(`[Alerts] Alert email sent successfully to ${alertEmailRecipient}`);
+    lastAlertSentTimes[alertType] = now;
+    console.log(`[Alerts] Alert email sent successfully to ${alertEmailRecipient} (type: ${alertType})`);
   } catch (err) {
     console.error('[Alerts] Failed to send alert email:', err);
   }
@@ -99,7 +104,7 @@ async function connectToWhatsApp() {
     defaultQueryTimeoutMs: 60000, // Extend query timeout to 60 seconds to avoid timed-out booms
   });
 
-  sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -118,9 +123,10 @@ async function connectToWhatsApp() {
 
       // Trigger email alert
       const errorMessage = error ? (error.message || JSON.stringify(error)) : 'Unknown socket closure';
-      sendEmailAlert(
+      await sendEmailAlert(
         `🚨 ALERT: WhatsApp OTP Gateway Disconnected`,
-        `The headless WhatsApp OTP gateway connection has closed.\n\nDetails:\n- Status Code: ${statusCode || 'unknown'}\n- Error: ${errorMessage}\n- Logout: ${isLoggedOut}\n- Will Reconnect: ${shouldReconnect}\n\nTimestamp: ${new Date().toString()}`
+        `The headless WhatsApp OTP gateway connection has closed.\n\nDetails:\n- Status Code: ${statusCode || 'unknown'}\n- Error: ${errorMessage}\n- Logout: ${isLoggedOut}\n- Will Reconnect: ${shouldReconnect}\n\nTimestamp: ${new Date().toString()}`,
+        'disconnect'
       );
 
       if (isLoggedOut) {
@@ -139,6 +145,22 @@ async function connectToWhatsApp() {
       console.log('======================================================');
       console.log('✅ Success: Headless WhatsApp connection active!');
       console.log('======================================================');
+
+      await sendEmailAlert(
+        `✅ NOTICE: WhatsApp OTP Gateway Connected`,
+        `The headless WhatsApp OTP gateway connection is now active and operational.\n\nDetails:\n- Status: Active / Connected\n- Timestamp: ${new Date().toString()}`,
+        'connect'
+      );
+
+      // Send self-notification message to WhatsApp device when connected
+      try {
+        const userJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
+        if (userJid) {
+          sock.sendMessage(userJid, {
+            text: `*WhatsApp Gateway Status*\n\n✅ Gateway successfully connected and active at ${new Date().toLocaleTimeString()}!`
+          }).catch(err => console.warn('[WhatsApp Notification] Self-message warning:', err.message || err));
+        }
+      } catch (selfMsgErr) {}
     }
   });
 
@@ -216,6 +238,43 @@ app.post('/verify-user-phone', async (req, res) => {
   } catch (err) {
     console.error('[Gateway] Failed to update user verification:', err);
     return res.status(500).json({ error: 'Failed to update user verification in Appwrite.', details: err.message });
+  }
+});
+
+// POST /send-email: Send emails via SMTP
+app.post('/send-email', async (req, res) => {
+  const { to, subject, text } = req.body;
+  if (!to || !subject || !text) {
+    return res.status(400).json({ error: 'to, subject, and text parameters are required' });
+  }
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    return res.status(500).json({ error: 'SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) not configured on gateway.' });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      }
+    });
+
+    await transporter.sendMail({
+      from: `"Truck Trip Tracker" <${smtpUser}>`,
+      to,
+      subject,
+      text
+    });
+
+    console.log(`[Email Gateway] Successfully sent email to ${to}`);
+    return res.status(200).json({ success: true, message: `Email dispatched to ${to}` });
+  } catch (err) {
+    console.error('[Email Gateway Error]:', err);
+    return res.status(500).json({ error: 'Failed to send email via SMTP', details: err.message });
   }
 });
 

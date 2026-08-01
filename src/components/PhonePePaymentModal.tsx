@@ -1,7 +1,8 @@
 import { createSignal, createEffect } from 'solid-js';
-
-import { X, CreditCard, Shield, Smartphone, Landmark, CheckCircle, ArrowRight, Loader2, Sparkles, Building2, User, Mail, Phone, ArrowLeft } from 'lucide-solid';
+import { X, CreditCard, Shield, Smartphone, Landmark, CheckCircle, ArrowRight, Loader2, Sparkles, Building2, User, Mail, Phone, ArrowLeft, Tag, Check } from 'lucide-solid';
 import { appwrite } from '../lib/appwrite';
+import { Coupon } from '../types';
+import { useNotifications } from '../context/NotificationContext';
 
 interface PhonePePaymentModalProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ interface PhonePePaymentModalProps {
   defaultCustomerPhone?: string;
   initialTxnId?: string;
   organizationId?: string;
+  coupons?: Coupon[] | (() => Coupon[]);
+  onSaveCoupons?: (coupons: Coupon[], cpnToSave?: Coupon, cpnIdToDelete?: string) => void;
   onSuccess: (paymentDetails: {
     transactionId: string;
     amount: number;
@@ -22,7 +25,8 @@ interface PhonePePaymentModalProps {
     customerPhone: string;
     paymentDate: string;
     status: string;
-    paymentMethod?: 'upi' | 'card' | 'netbanking';
+    paymentMethod?: 'upi' | 'card' | 'netbanking' | 'coupon';
+    couponCode?: string;
   }) => void;
 }
 
@@ -33,25 +37,21 @@ const RENEWAL_PLANS = [
   { id: '1_year', name: '1 Year Premium', duration: '1 Year', price: 4000, label: '₹4,000 (₹333/mo)', popular: true },
 ];
 
-export default function PhonePePaymentModal({
-  isOpen,
-  onClose,
-  truckNo,
-  defaultCustomerName = '',
-  defaultCustomerEmail = '',
-  defaultCustomerPhone = '',
-  initialTxnId,
-  organizationId = 'org_default',
-  onSuccess
-}: PhonePePaymentModalProps) {
+export default function PhonePePaymentModal(props: PhonePePaymentModalProps) {
   const [step, setStep] = createSignal<'plan' | 'billing' | 'gateway' | 'processing' | 'success' | 'verifying' | 'failed'>(
-    initialTxnId ? 'verifying' : 'plan'
+    props.initialTxnId ? 'verifying' : 'plan'
   );
   const [selectedPlan, setSelectedPlan] = createSignal(RENEWAL_PLANS[3]); // Default to 1 Year Premium
-  const [customerName, setCustomerName] = createSignal(defaultCustomerName);
-  const [customerEmail, setCustomerEmail] = createSignal(defaultCustomerEmail);
-  const [customerPhone, setCustomerPhone] = createSignal(defaultCustomerPhone);
+  const [customerName, setCustomerName] = createSignal(props.defaultCustomerName || '');
+  const [customerEmail, setCustomerEmail] = createSignal(props.defaultCustomerEmail || '');
+  const [customerPhone, setCustomerPhone] = createSignal(props.defaultCustomerPhone || '');
   
+  // Coupon state signals
+  const [couponInput, setCouponInput] = createSignal('');
+  const [appliedCoupon, setAppliedCoupon] = createSignal<Coupon | null>(null);
+  const [couponError, setCouponError] = createSignal<string | null>(null);
+  const [couponSuccessMsg, setCouponSuccessMsg] = createSignal<string | null>(null);
+
   // Payment option details
   const [paymentMethod, setPaymentMethod] = createSignal<'upi' | 'card' | 'netbanking'>('upi');
   const [upiProvider, setUpiProvider] = createSignal<'phonepe' | 'gpay' | 'paytm' | 'other'>('phonepe');
@@ -71,20 +71,19 @@ export default function PhonePePaymentModal({
   const [verificationError, setVerificationError] = createSignal<string | null>(null);
 
   createEffect(() => {
-    if (isOpen) {
-      setStep(initialTxnId ? 'verifying' : 'plan');
-      setTransactionId(initialTxnId || ('TXN' + Math.floor(100000000 + Math.random() * 900000000)));
-      // Prefill fields if props updated
-      setCustomerName(defaultCustomerName);
-      setCustomerEmail(defaultCustomerEmail);
-      setCustomerPhone(defaultCustomerPhone);
+    if (props.isOpen) {
+      setStep(props.initialTxnId ? 'verifying' : 'plan');
+      setTransactionId(props.initialTxnId || ('TXN' + Math.floor(100000000 + Math.random() * 900000000)));
+      setCustomerName(props.defaultCustomerName || '');
+      setCustomerEmail(props.defaultCustomerEmail || '');
+      setCustomerPhone(props.defaultCustomerPhone || '');
     }
   });
 
-  if (!isOpen) return null;
+  if (!props.isOpen) return null;
 
   createEffect(() => {
-    if (isOpen && initialTxnId && step() === 'verifying') {
+    if (props.isOpen && props.initialTxnId && step() === 'verifying') {
       const verify = async () => {
         try {
           const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
@@ -94,18 +93,18 @@ export default function PhonePePaymentModal({
           const existingTruckId = sessionStorage.getItem('ttt_temp_payment_truck_id') || '';
 
           const queryParams = new URLSearchParams({
-            truckNo,
-            organizationId: organizationId || 'org_default',
+            truckNo: props.truckNo,
+            organizationId: props.organizationId || 'org_default',
             duration,
-            customerName: customerName() || defaultCustomerName || '',
-            customerEmail: customerEmail() || defaultCustomerEmail || '',
-            customerPhone: customerPhone() || defaultCustomerPhone || '',
+            customerName: customerName() || props.defaultCustomerName || '',
+            customerEmail: customerEmail() || props.defaultCustomerEmail || '',
+            customerPhone: customerPhone() || props.defaultCustomerPhone || '',
             existingTruckId,
             truckPayload: JSON.stringify(tempPayloadObj)
           });
 
           const jwt = await appwrite.createSessionJwt();
-          const response = await fetch(`${serverUrl}/api/payment/status/${initialTxnId}?${queryParams.toString()}`, {
+          const response = await fetch(`${serverUrl}/api/payment/status/${props.initialTxnId}?${queryParams.toString()}`, {
             headers: { Authorization: `Bearer ${jwt}` }
           });
           const data = await response.json();
@@ -113,10 +112,13 @@ export default function PhonePePaymentModal({
           if (response.ok && data.success) {
             const plan = RENEWAL_PLANS.find(p => p.duration === duration) || RENEWAL_PLANS[3];
             setSelectedPlan(plan);
-            setTransactionId(initialTxnId);
+            setTransactionId(props.initialTxnId!);
             playSuccessSound();
+            try {
+              const notify = useNotifications();
+              notify.showNotification(`Payment successful! Vehicle ${props.truckNo} subscription activated.`);
+            } catch (e) {}
             setStep('success');
-            // Clean URL query parameters
             window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
           } else {
             setVerificationError(data.message || 'Transaction was not successful');
@@ -132,50 +134,111 @@ export default function PhonePePaymentModal({
     }
   });
 
-  // Format Card Number (XXXX XXXX XXXX XXXX)
-  const handleCardNumberChange = (e: any) => {
-    const value = e.target.value.replace(/\D/g, '').substring(0, 16);
-    const formatted = value.match(/.{1,4}/g)?.join(' ') || value;
-    setCardNumber(formatted);
-  };
+  // Calculate pricing & discount values
+  const originalPrice = () => selectedPlan().price;
 
-  // Format Expiry (MM/YY)
-  const handleExpiryChange = (e: any) => {
-    let value = e.target.value.replace(/\D/g, '').substring(0, 4);
-    if (value.length > 2) {
-      value = `${value.substring(0, 2)}/${value.substring(2)}`;
-    }
-    setCardExpiry(value);
-  };
-
-  // Validate Billing Details
-  const handleBillingNext = () => {
-    const errors: Record<string, string> = {};
-    if (!customerName().trim()) errors.name = 'Name is required';
-    if (!customerEmail().trim() || !/\S+@\S+\.\S+/.test(customerEmail())) errors.email = 'Valid email is required';
-
-    let cleanedPhone = customerPhone().replace(/\D/g, '');
-    if (cleanedPhone.length === 12 && cleanedPhone.startsWith('91')) {
-      cleanedPhone = cleanedPhone.slice(2);
-    } else if (cleanedPhone.length > 10) {
-      cleanedPhone = cleanedPhone.slice(-10);
-    }
-
-    if (!cleanedPhone || !/^\d{10}$/.test(cleanedPhone)) {
-      errors.phone = 'Valid 10-digit phone is required';
+  const discountAmount = () => {
+    const cpn = appliedCoupon();
+    if (!cpn) return 0;
+    const orig = originalPrice();
+    if (cpn.discountType === 'PERCENT') {
+      const val = Math.round(orig * (cpn.discountValue / 100));
+      return cpn.maxDiscountAmount ? Math.min(val, cpn.maxDiscountAmount) : val;
     } else {
-      setCustomerPhone(cleanedPhone);
+      return Math.min(orig, cpn.discountValue);
+    }
+  };
+
+  const finalPayable = () => Math.max(0, originalPrice() - discountAmount());
+
+  const getCouponsList = (): Coupon[] => {
+    let list: Coupon[] = [];
+    if (props.coupons) {
+      if (typeof props.coupons === 'function') {
+        const res = (props.coupons as any)();
+        if (Array.isArray(res)) list = res;
+      } else if (Array.isArray(props.coupons)) {
+        list = props.coupons;
+      }
     }
 
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
+    try {
+      const stored = localStorage.getItem('ttt_coupons');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const ids = new Set(list.map(c => c.id));
+          for (const item of parsed) {
+            if (item && item.id && !ids.has(item.id)) {
+              list.push(item);
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    return list;
+  };
+
+  const handleApplyCoupon = () => {
+    setCouponError(null);
+    setCouponSuccessMsg(null);
+    const code = couponInput().trim().toUpperCase();
+    if (!code) {
+      setCouponError("Please enter a coupon code.");
       return;
     }
-    setFormErrors({});
-    setStep('gateway');
+
+    const allCoupons = getCouponsList();
+    const match = allCoupons.find(c => c && (
+      (c.code && c.code.trim().toUpperCase() === code) ||
+      (c.id && c.id.trim().toUpperCase() === code)
+    ));
+    if (!match) {
+      setCouponError(`Invalid coupon code "${code}".`);
+      return;
+    }
+
+    if (match.status !== 'Active') {
+      setCouponError(`Coupon code "${code}" is no longer active.`);
+      return;
+    }
+
+    // Validate Organization binding
+    if (match.organizationId && 
+        match.organizationId.toLowerCase() !== 'all' && 
+        props.organizationId && 
+        match.organizationId.toLowerCase() !== props.organizationId.toLowerCase()) {
+      setCouponError(`Coupon code "${code}" is reserved for Organization "${match.organizationId}" (Current Org: "${props.organizationId}").`);
+      return;
+    }
+
+    if (match.usageLimit && match.usageLimit > 0 && match.usedCount >= match.usageLimit) {
+      setCouponError(`Coupon code "${code}" has reached its maximum usage limit.`);
+      return;
+    }
+
+    if (match.expiryDate) {
+      const today = new Date().toISOString().split('T')[0];
+      if (match.expiryDate < today) {
+        setCouponError(`Coupon code "${code}" expired on ${match.expiryDate}.`);
+        return;
+      }
+    }
+
+    setAppliedCoupon(match);
+    const text = match.discountType === 'PERCENT' ? `${match.discountValue}% OFF` : `₹${match.discountValue} OFF`;
+    setCouponSuccessMsg(`Coupon "${match.code}" applied! (${text})`);
   };
 
-  // Trigger simulated payment success audio and flow
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponError(null);
+    setCouponSuccessMsg(null);
+  };
+
+  // Trigger simulated payment success audio
   const playSuccessSound = () => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -186,7 +249,6 @@ export default function PhonePePaymentModal({
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       
-      // PhonePe style clean double beep
       const now = audioCtx.currentTime;
       osc.frequency.setValueAtTime(587.33, now); // D5
       gain.gain.setValueAtTime(0, now);
@@ -201,27 +263,65 @@ export default function PhonePePaymentModal({
       osc.start(now);
       osc.stop(now + 0.5);
     } catch (e) {
-      // Audio context might be blocked or unsupported
       console.warn('Audio check could not be played:', e);
     }
   };
 
-  const startPaymentSimulation = async () => {
-    // Basic verification for gateway inputs
-    if (paymentMethod() === 'card') {
-      const errors: Record<string, string> = {};
-      if (cardNumber().replace(/\s/g, '').length !== 16) errors.cardNo = 'Enter valid 16-digit card number';
-      if (!/^\d{2}\/\d{2}$/.test(cardExpiry())) errors.expiry = 'Enter valid expiry (MM/YY)';
-      if (cardCvv().length !== 3) errors.cvv = 'Enter valid 3-digit CVV';
-      if (!cardName().trim()) errors.cardName = 'Name on Card is required';
-      
-      if (Object.keys(errors).length > 0) {
-        setFormErrors(errors);
-        return;
-      }
+  const handleBillingNext = async () => {
+    const errors: Record<string, string> = {};
+    if (!customerName().trim()) errors.name = 'Customer name is required';
+    if (!customerEmail().trim() || !customerEmail().includes('@')) errors.email = 'Valid email is required';
+    if (!customerPhone().trim() || customerPhone().trim().length < 10) errors.phone = 'Valid 10-digit mobile phone is required';
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
     }
     
     setFormErrors({});
+
+    // Handle 100% Free Activation when finalPayable is 0!
+    if (finalPayable() === 0) {
+      const cpn = appliedCoupon();
+      const txnId = 'CPN' + Date.now();
+      setTransactionId(txnId);
+      
+      try {
+        const allCoupons = getCouponsList();
+        const updatedCoupons = allCoupons.map(c => {
+          if (c.id === cpn?.id) {
+            const newCount = (c.usedCount || 0) + 1;
+            const isLimitReached = c.usageLimit && c.usageLimit > 0 && newCount >= c.usageLimit;
+            return {
+              ...c,
+              usedCount: newCount,
+              status: isLimitReached ? ('Disabled' as const) : c.status
+            };
+          }
+          return c;
+        });
+        localStorage.setItem('ttt_coupons', JSON.stringify(updatedCoupons));
+        
+        const updatedCpn = updatedCoupons.find(c => c.id === cpn?.id);
+        if (updatedCpn) {
+          if (props.onSaveCoupons) {
+            props.onSaveCoupons(updatedCoupons, updatedCpn);
+          } else {
+            const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+            appwrite.saveFleetDocument(databaseId, 'coupons', updatedCpn.id, updatedCpn.organizationId || 'org_backend', updatedCpn).catch(() => {});
+          }
+        }
+      } catch (e) {}
+
+      playSuccessSound();
+      try {
+        const notify = useNotifications();
+        notify.showNotification(`Coupon "${cpn?.code}" applied! Truck ${props.truckNo} successfully activated for 100% free!`);
+      } catch (e) {}
+      setStep('success');
+      return;
+    }
+
     setStep('processing');
     setProcessingStatus('Connecting to PhonePe secure gateway...');
     sessionStorage.setItem('ttt_temp_payment_duration', selectedPlan().duration);
@@ -236,14 +336,15 @@ export default function PhonePePaymentModal({
           'Authorization': `Bearer ${jwt}`
         },
         body: JSON.stringify({
-          truckNo,
-          amount: selectedPlan().price,
+          truckNo: props.truckNo,
+          amount: finalPayable(),
           duration: selectedPlan().duration,
           planName: selectedPlan().name,
           customerName: customerName(),
           customerEmail: customerEmail(),
           customerPhone: customerPhone(),
-          organizationId: organizationId || 'org_default'
+          organizationId: props.organizationId || 'org_default',
+          couponCode: appliedCoupon()?.code
         })
       });
 
@@ -263,9 +364,39 @@ export default function PhonePePaymentModal({
   };
 
   const handleFinalize = () => {
-    onSuccess({
+    const cpn = appliedCoupon();
+    if (cpn) {
+      try {
+        const allCoupons = getCouponsList();
+        const updatedCoupons = allCoupons.map(c => {
+          if (c.id === cpn.id) {
+            const newCount = (c.usedCount || 0) + 1;
+            const isLimitReached = c.usageLimit && c.usageLimit > 0 && newCount >= c.usageLimit;
+            return {
+              ...c,
+              usedCount: newCount,
+              status: isLimitReached ? ('Disabled' as const) : c.status
+            };
+          }
+          return c;
+        });
+        localStorage.setItem('ttt_coupons', JSON.stringify(updatedCoupons));
+
+        const updatedCpn = updatedCoupons.find(c => c.id === cpn.id);
+        if (updatedCpn) {
+          if (props.onSaveCoupons) {
+            props.onSaveCoupons(updatedCoupons, updatedCpn);
+          } else {
+            const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+            appwrite.saveFleetDocument(databaseId, 'coupons', updatedCpn.id, updatedCpn.organizationId || 'org_backend', updatedCpn).catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }
+
+    props.onSuccess({
       transactionId: transactionId(),
-      amount: selectedPlan().price,
+      amount: finalPayable(),
       duration: selectedPlan().duration,
       planName: selectedPlan().name,
       customerName: customerName(),
@@ -273,7 +404,8 @@ export default function PhonePePaymentModal({
       customerPhone: customerPhone(),
       paymentDate: new Date().toISOString(),
       status: 'Success',
-      paymentMethod: paymentMethod()
+      paymentMethod: finalPayable() === 0 ? 'coupon' : paymentMethod(),
+      couponCode: appliedCoupon()?.code
     });
   };
 
@@ -281,7 +413,7 @@ export default function PhonePePaymentModal({
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
         
-        {/* Header (Hidden in Success Step to look like standard PhonePe receipt) */}
+        {/* Header */}
         {step() !== 'success' && (
           <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/40">
             <div class="flex items-center gap-2">
@@ -292,7 +424,7 @@ export default function PhonePePaymentModal({
             </div>
             {step() !== 'processing' && step() !== 'verifying' && (
               <button 
-                onClick={onClose} 
+                onClick={props.onClose} 
                 class="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
               >
                 <X class="w-5 h-5" />
@@ -315,7 +447,7 @@ export default function PhonePePaymentModal({
                   Select Subscription Plan
                 </h3>
                 <p class="text-sm text-slate-500 dark:text-slate-450 mt-1">
-                  Choose a subscription plan to extend validity for Truck <span class="font-bold text-slate-700 dark:text-slate-350">{truckNo}</span>
+                  Choose a subscription plan to extend validity for Truck <span class="font-bold text-slate-700 dark:text-slate-350">{props.truckNo}</span>
                 </p>
               </div>
 
@@ -324,7 +456,6 @@ export default function PhonePePaymentModal({
                   const isSelected = selectedPlan().id === plan.id;
                   return (
                     <button
-                      
                       onClick={() => setSelectedPlan(plan)}
                       class={`relative flex items-center justify-between p-4 rounded-xl border transition-all text-left cursor-pointer ${
                         isSelected
@@ -441,14 +572,70 @@ export default function PhonePePaymentModal({
                   {formErrors().phone && <p class="text-xs text-rose-500 mt-1">{formErrors().phone}</p>}
                 </div>
 
-                <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60">
-                  <div class="flex justify-between items-center text-sm">
+                {/* COUPON CODE PROMO WIDGET */}
+                <div class="bg-amber-500/5 dark:bg-amber-500/10 p-4 rounded-xl border border-amber-500/20 space-y-2">
+                  <label class="block text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Tag class="w-3.5 h-3.5" /> Have a Coupon Code?
+                  </label>
+                  {appliedCoupon() ? (
+                    <div class="flex items-center justify-between bg-white dark:bg-slate-900 border border-emerald-500/40 p-2.5 rounded-lg text-xs">
+                      <div class="flex items-center gap-2">
+                        <Check class="w-4 h-4 text-emerald-500" />
+                        <div>
+                          <span class="font-mono font-black text-emerald-600 dark:text-emerald-400 uppercase">{appliedCoupon()?.code}</span>
+                          <span class="text-[10px] text-slate-500 dark:text-slate-400 block">
+                            {appliedCoupon()?.discountType === 'PERCENT' ? `${appliedCoupon()?.discountValue}% Discount Applied` : `₹${appliedCoupon()?.discountValue} Discount Applied`}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        class="text-rose-500 hover:text-rose-700 text-[11px] font-bold p-1 rounded transition cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput()}
+                        onInput={(e) => setCouponInput(e.currentTarget.value.toUpperCase())}
+                        placeholder="Enter Promo / Coupon Code"
+                        class="flex-1 bg-white dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition cursor-pointer shrink-0"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                  {couponError() && <p class="text-xs text-rose-500 font-medium">{couponError()}</p>}
+                  {couponSuccessMsg() && <p class="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{couponSuccessMsg()}</p>}
+                </div>
+
+                <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60 space-y-1.5">
+                  <div class="flex justify-between items-center text-xs">
                     <span class="text-slate-500 dark:text-slate-400">Selected Plan:</span>
                     <span class="font-bold text-slate-800 dark:text-slate-200">{selectedPlan().name} ({selectedPlan().duration})</span>
                   </div>
-                  <div class="flex justify-between items-center text-sm mt-1">
-                    <span class="text-slate-500 dark:text-slate-400">Amount Due:</span>
-                    <span class="font-extrabold text-[#5f259f] dark:text-purple-400 text-lg">₹{selectedPlan().price.toLocaleString()}</span>
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-slate-500 dark:text-slate-400">Original Price:</span>
+                    <span class="font-semibold text-slate-700 dark:text-slate-300 font-mono">₹{originalPrice().toLocaleString()}</span>
+                  </div>
+                  {appliedCoupon() && (
+                    <div class="flex justify-between items-center text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                      <span>Discount ({appliedCoupon()?.code}):</span>
+                      <span class="font-mono">-₹{discountAmount().toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div class="pt-1 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-sm">
+                    <span class="font-bold text-slate-700 dark:text-slate-300">Final Amount Due:</span>
+                    <span class="font-black text-[#5f259f] dark:text-purple-400 text-lg font-mono">₹{finalPayable().toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -456,358 +643,99 @@ export default function PhonePePaymentModal({
               <div class="pt-4">
                 <button
                   onClick={handleBillingNext}
-                  class="w-full h-11 bg-gradient-to-r from-[#5f259f] to-[#7f39d8] hover:from-[#521e8a] hover:to-[#6f2ec2] text-white font-bold rounded-xl shadow-lg shadow-[#5f259f]/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  class={`w-full h-11 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    finalPayable() === 0
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/20'
+                      : 'bg-gradient-to-r from-[#5f259f] to-[#7f39d8] hover:from-[#521e8a] hover:to-[#6f2ec2] shadow-[#5f259f]/20'
+                  }`}
                 >
-                  <span>Proceed to Payment Gateway</span>
-                  <ArrowRight class="w-4 h-4" />
+                  {finalPayable() === 0 ? (
+                    <>
+                      <Sparkles class="w-4 h-4" />
+                      <span>Complete 100% Free Activation (Pay ₹0)</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Proceed to Payment Gateway</span>
+                      <ArrowRight class="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3: PAYMENT GATEWAY SELECTION */}
-          {step() === 'gateway' && (
-            <div class="space-y-5">
-              <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/40">
-                <div>
-                  <div class="text-xs text-slate-400 dark:text-slate-505 font-bold uppercase tracking-wider">Merchant</div>
-                  <div class="font-extrabold text-slate-850 dark:text-slate-200 text-sm">Lorry Guru Technologies</div>
-                  <div class="text-[10px] text-slate-400 dark:text-slate-500">Salem, Tamil Nadu</div>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Amount Due</div>
-                  <div class="font-black text-2xl text-[#5f259f] dark:text-purple-400">₹{selectedPlan().price.toLocaleString()}</div>
-                </div>
-              </div>
-
-              {/* Payment Tabs */}
-              <div class="flex border-b border-slate-200 dark:border-slate-800">
-                <button
-                  onClick={() => setPaymentMethod('upi')}
-                  class={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
-                    paymentMethod() === 'upi'
-                      ? 'border-[#5f259f] text-[#5f259f] dark:text-purple-400'
-                      : 'border-transparent text-slate-400 dark:text-slate-500'
-                  }`}
-                >
-                  <Smartphone class="w-4 h-4" />
-                  <span>UPI Apps</span>
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('card')}
-                  class={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
-                    paymentMethod() === 'card'
-                      ? 'border-[#5f259f] text-[#5f259f] dark:text-purple-400'
-                      : 'border-transparent text-slate-400 dark:text-slate-500'
-                  }`}
-                >
-                  <CreditCard class="w-4 h-4" />
-                  <span>Card</span>
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('netbanking')}
-                  class={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${
-                    paymentMethod() === 'netbanking'
-                      ? 'border-[#5f259f] text-[#5f259f] dark:text-purple-400'
-                      : 'border-transparent text-slate-400 dark:text-slate-500'
-                  }`}
-                >
-                  <Landmark class="w-4 h-4" />
-                  <span>Net Banking</span>
-                </button>
-              </div>
-
-              {/* Payment Tab Panels */}
-              <div class="py-2 min-h-[200px]">
-                {/* UPI Panel */}
-                {paymentMethod() === 'upi' && (
-                  <div class="space-y-4">
-                    <div class="grid grid-cols-3 gap-3">
-                      <button
-                        onClick={() => { setUpiProvider('phonepe'); setCustomUpiId(''); }}
-                        class={`p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                          upiProvider() === 'phonepe' && !customUpiId()
-                            ? 'border-[#5f259f] bg-purple-50/20 dark:bg-purple-950/10'
-                            : 'border-slate-200 dark:border-slate-800'
-                        }`}
-                      >
-                        <div class="bg-[#5f259f] text-white w-7 h-7 rounded-lg font-black text-[10px] flex items-center justify-center mb-1">PP</div>
-                        <span class="text-xs font-bold text-slate-700 dark:text-slate-350">PhonePe</span>
-                      </button>
-
-                      <button
-                        onClick={() => { setUpiProvider('gpay'); setCustomUpiId(''); }}
-                        class={`p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                          upiProvider() === 'gpay' && !customUpiId()
-                            ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/10'
-                            : 'border-slate-200 dark:border-slate-800'
-                        }`}
-                      >
-                        <div class="bg-blue-500 text-white w-7 h-7 rounded-lg font-bold text-xs flex items-center justify-center mb-1">G</div>
-                        <span class="text-xs font-bold text-slate-700 dark:text-slate-350">Google Pay</span>
-                      </button>
-
-                      <button
-                        onClick={() => { setUpiProvider('paytm'); setCustomUpiId(''); }}
-                        class={`p-3 rounded-xl border flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                          upiProvider() === 'paytm' && !customUpiId()
-                            ? 'border-sky-500 bg-sky-50/20 dark:bg-sky-950/10'
-                            : 'border-slate-200 dark:border-slate-800'
-                        }`}
-                      >
-                        <div class="bg-sky-500 text-white w-7 h-7 rounded-lg font-bold text-[9px] flex items-center justify-center mb-1">Paytm</div>
-                        <span class="text-xs font-bold text-slate-700 dark:text-slate-350">Paytm</span>
-                      </button>
-                    </div>
-
-                    <div class="relative flex items-center py-2">
-                      <div class="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-                      <span class="flex-shrink mx-4 text-xs font-bold text-slate-400 uppercase">Or Pay via UPI ID</span>
-                      <div class="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-                    </div>
-
-                    <div>
-                      <input
-                        type="text"
-                        value={customUpiId()}
-                        onChange={(e) => { setCustomUpiId(e.target.value); setUpiProvider('other'); }}
-                        placeholder="e.g. customer@ybl"
-                        class="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#5f259f]"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Card Panel */}
-                {paymentMethod() === 'card' && (
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Card Number</label>
-                      <input
-                        type="text"
-                        value={cardNumber()}
-                        onChange={handleCardNumberChange}
-                        placeholder="XXXX XXXX XXXX XXXX"
-                        class="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#5f259f]"
-                      />
-                      {formErrors().cardNo && <p class="text-xs text-rose-500 mt-1">{formErrors().cardNo}</p>}
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                      <div>
-                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expiry (MM/YY)</label>
-                        <input
-                          type="text"
-                          value={cardExpiry()}
-                          onChange={handleExpiryChange}
-                          placeholder="MM/YY"
-                          class="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm text-center focus:outline-none focus:border-[#5f259f]"
-                        />
-                        {formErrors().expiry && <p class="text-xs text-rose-500 mt-1">{formErrors().expiry}</p>}
-                      </div>
-                      <div>
-                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CVV</label>
-                        <input
-                          type="password"
-                          maxLength={3}
-                          value={cardCvv()}
-                          onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
-                          placeholder="***"
-                          class="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm text-center focus:outline-none focus:border-[#5f259f]"
-                        />
-                        {formErrors().cvv && <p class="text-xs text-rose-500 mt-1">{formErrors().cvv}</p>}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Name on Card</label>
-                      <input
-                        type="text"
-                        value={cardName()}
-                        onChange={(e) => setCardName(e.target.value)}
-                        placeholder="NAME ON CARD"
-                        class="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-955 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#5f259f]"
-                      />
-                      {formErrors().cardName && <p class="text-xs text-rose-500 mt-1">{formErrors().cardName}</p>}
-                    </div>
-                  </div>
-                )}
-
-                {/* NetBanking Panel */}
-                {paymentMethod() === 'netbanking' && (
-                  <div class="space-y-4">
-                    <label class="block text-xs font-bold text-slate-450 mb-1">Select Bank from Popular Banks</label>
-                    <div class="grid grid-cols-2 gap-2">
-                      {[
-                        { id: 'sbi', name: 'State Bank of India' },
-                        { id: 'hdfc', name: 'HDFC Bank' },
-                        { id: 'icici', name: 'ICICI Bank' },
-                        { id: 'axis', name: 'Axis Bank' }
-                      ].map((bank) => (
-                        <button
-                          
-                          onClick={() => setSelectedBank(bank.id)}
-                          class={`p-3 rounded-lg border text-left text-xs font-bold transition-all cursor-pointer ${
-                            selectedBank() === bank.id
-                              ? 'border-[#5f259f] bg-purple-50/15 dark:bg-purple-950/10 text-[#5f259f] dark:text-purple-400'
-                              : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400'
-                          }`}
-                        >
-                          {bank.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div class="border-t border-slate-150 dark:border-slate-800/80 pt-4 flex gap-3">
-                <button
-                  onClick={() => setStep('billing')}
-                  class="flex-1 h-11 border border-slate-250 dark:border-slate-750 text-slate-600 dark:text-slate-400 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850 cursor-pointer transition-all"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={startPaymentSimulation}
-                  class="flex-[2] h-11 bg-gradient-to-r from-[#5f259f] to-[#7f39d8] hover:from-[#521e8a] hover:to-[#6f2ec2] text-white font-bold rounded-xl shadow-lg shadow-[#5f259f]/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
-                >
-                  <Shield class="w-4.5 h-4.5" />
-                  <span>Pay Securely ₹{selectedPlan().price.toLocaleString()}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: PROCESSING TRANSACTION */}
-          {step() === 'processing' && (
-            <div class="py-12 flex flex-col items-center justify-center space-y-6 text-center">
-              <div class="relative">
-                <div class="w-20 h-20 border-4 border-purple-200 dark:border-purple-950 rounded-full animate-pulse"></div>
-                <Loader2 class="w-10 h-10 text-[#5f259f] dark:text-purple-400 animate-spin absolute top-5 left-5" />
-              </div>
-              <div class="space-y-2 max-w-sm">
-                <h4 class="font-extrabold text-slate-900 dark:text-white text-lg">Transaction Processing</h4>
-                <p class="text-sm text-slate-400 dark:text-slate-505 animate-pulse">{processingStatus()}</p>
-              </div>
-              <div class="text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-900 px-3 py-1 rounded-full border border-slate-100 dark:border-slate-800">
-                Do not refresh the page or click back button.
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: SUCCESS RECEIPT */}
+          {/* STEP 3: SUCCESS STEP */}
           {step() === 'success' && (
-            <div class="py-2 flex flex-col items-center justify-center space-y-5">
-              <div class="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-lg shadow-emerald-500/10 scale-100 animate-bounce">
+            <div class="text-center py-6 space-y-4 animate-fade-in">
+              <div class="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
                 <CheckCircle class="w-10 h-10" />
               </div>
-              
-              <div class="text-center space-y-1">
-                <h3 class="text-xl font-black text-slate-900 dark:text-white">Payment Successful</h3>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Invoice details below have been sent to your email.</p>
+              <div>
+                <h3 class="text-xl font-black text-slate-900 dark:text-white">Subscription Activated!</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Validity successfully extended for Truck <span class="font-bold text-slate-700 dark:text-slate-350">{props.truckNo}</span>.
+                </p>
               </div>
 
-              {/* Digital Receipt Card */}
-              <div class="w-full bg-slate-50 dark:bg-slate-950 rounded-xl p-5 border border-slate-200/60 dark:border-slate-800/80 space-y-4">
-                <div class="flex items-center justify-between border-b border-slate-200/50 dark:border-slate-800/60 pb-3">
-                  <div class="flex items-center gap-2">
-                    <Building2 class="w-4 h-4 text-purple-600" />
-                    <span class="text-xs font-bold text-slate-650 dark:text-slate-400">Lorry Guru Technologies</span>
-                  </div>
-                  <span class="bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[9px] font-black px-2 py-0.5 rounded uppercase">Paid</span>
+              <div class="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-100 dark:border-slate-800 text-left space-y-2 text-xs">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Transaction ID:</span>
+                  <span class="font-mono font-bold text-slate-700 dark:text-slate-300">{transactionId()}</span>
                 </div>
-
-                <div class="grid grid-cols-2 gap-y-3 gap-x-4 text-xs">
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Truck Reg No</span>
-                    <span class="font-bold text-slate-800 dark:text-slate-200">{truckNo}</span>
-                  </div>
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Transaction ID</span>
-                    <span class="font-mono font-semibold text-slate-800 dark:text-slate-200">{transactionId()}</span>
-                  </div>
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Selected Plan</span>
-                    <span class="font-bold text-slate-800 dark:text-slate-200">{selectedPlan().name}</span>
-                  </div>
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Validity Duration</span>
-                    <span class="font-bold text-slate-800 dark:text-slate-200 text-emerald-600 dark:text-emerald-400">{selectedPlan().duration}</span>
-                  </div>
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Customer Name</span>
-                    <span class="font-bold text-slate-800 dark:text-slate-200">{customerName()}</span>
-                  </div>
-                  <div>
-                    <span class="text-slate-400 dark:text-slate-505 block mb-0.5">Registered Phone</span>
-                    <span class="font-bold text-slate-800 dark:text-slate-200">{customerPhone()}</span>
-                  </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Amount Paid:</span>
+                  <span class="font-bold text-emerald-600 dark:text-emerald-400 font-mono">₹{finalPayable().toLocaleString()}</span>
                 </div>
-
-                <div class="border-t border-slate-200/50 dark:border-slate-800/60 pt-3 flex justify-between items-center">
-                  <span class="text-xs font-bold text-slate-450 dark:text-slate-505">Amount Paid:</span>
-                  <span class="text-xl font-black text-slate-900 dark:text-white">₹{selectedPlan().price.toLocaleString()}</span>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Plan Duration:</span>
+                  <span class="font-bold text-slate-700 dark:text-slate-300">{selectedPlan().duration}</span>
                 </div>
               </div>
 
               <button
                 onClick={handleFinalize}
-                class="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                class="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition cursor-pointer"
               >
-                <span>Continue & Activate Truck</span>
-                <ArrowRight class="w-4 h-4" />
+                Return to Dashboard
               </button>
             </div>
           )}
 
-          {/* STEP: VERIFYING */}
-          {step() === 'verifying' && (
-            <div class="py-12 flex flex-col items-center justify-center space-y-6 text-center">
-              <div class="relative animate-fade-in">
-                <div class="w-20 h-20 border-4 border-purple-200 dark:border-purple-955 rounded-full animate-pulse"></div>
-                <Loader2 class="w-10 h-10 text-[#5f259f] dark:text-purple-400 animate-spin absolute top-5 left-5" />
-              </div>
-              <div class="space-y-2 max-w-sm">
-                <h4 class="font-extrabold text-slate-900 dark:text-white text-lg">Verifying Payment</h4>
-                <p class="text-sm text-slate-405 dark:text-slate-550 animate-pulse">Checking transaction status with PhonePe secure gateway...</p>
-              </div>
+          {/* STEP 4: PROCESSING */}
+          {step() === 'processing' && (
+            <div class="text-center py-12 space-y-4">
+              <Loader2 class="w-10 h-10 text-[#5f259f] animate-spin mx-auto" />
+              <h3 class="text-base font-bold text-slate-800 dark:text-white">{processingStatus()}</h3>
+              <p class="text-xs text-slate-400">Please do not refresh or close this window.</p>
             </div>
           )}
 
-          {/* STEP: FAILED */}
-          {step() === 'failed' && (
-            <div class="py-2 flex flex-col items-center justify-center space-y-5 animate-fade-in">
-              <div class="w-16 h-16 bg-rose-100 dark:bg-rose-950/40 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-455 shadow-lg shadow-rose-500/10">
-                <X class="w-10 h-10" />
-              </div>
-              
-              <div class="text-center space-y-1">
-                <h3 class="text-xl font-black text-slate-900 dark:text-white">Payment Failed / Canceled</h3>
-                <p class="text-sm text-slate-500 dark:text-slate-400 max-w-xs leading-normal mx-auto">
-                  {verificationError() || 'Transaction was not successful or was canceled by user.'}
-                </p>
-              </div>
+          {/* STEP 5: VERIFYING */}
+          {step() === 'verifying' && (
+            <div class="text-center py-12 space-y-4">
+              <Loader2 class="w-10 h-10 text-[#5f259f] animate-spin mx-auto" />
+              <h3 class="text-base font-bold text-slate-800 dark:text-white">Verifying Payment Status...</h3>
+              <p class="text-xs text-slate-400">Confirming transaction receipt from gateway server...</p>
+            </div>
+          )}
 
-              <div class="w-full pt-4 flex gap-3">
-                <button
-                  onClick={onClose}
-                  class="flex-1 h-11 border border-slate-250 dark:border-slate-750 text-slate-650 dark:text-slate-400 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850 cursor-pointer transition-all active:scale-[0.98] text-xs uppercase tracking-wider"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setVerificationError(null);
-                    setStep('plan');
-                    window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-                  }}
-                  class="flex-[2] h-11 bg-gradient-to-r from-[#5f259f] to-[#7f39d8] hover:from-[#521e8a] hover:to-[#6f2ec2] text-white font-bold rounded-xl shadow-lg shadow-[#5f259f]/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] text-xs uppercase tracking-wider"
-                >
-                  <span>Retry Payment</span>
-                  <ArrowRight class="w-4 h-4" />
-                </button>
+          {/* STEP 6: FAILED */}
+          {step() === 'failed' && (
+            <div class="text-center py-8 space-y-4">
+              <div class="w-14 h-14 bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto">
+                <X class="w-8 h-8" />
               </div>
+              <div>
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">Payment Failed or Cancelled</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{verificationError() || 'Transaction could not be completed.'}</p>
+              </div>
+              <button
+                onClick={() => setStep('plan')}
+                class="w-full h-11 bg-[#5f259f] hover:bg-[#521e8a] text-white font-bold rounded-xl shadow-lg transition cursor-pointer"
+              >
+                Try Again
+              </button>
             </div>
           )}
 

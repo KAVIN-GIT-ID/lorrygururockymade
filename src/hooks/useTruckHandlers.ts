@@ -85,13 +85,24 @@ export function useTruckHandlers(
     const startTime = performance.now();
     console.log(`[Timer] Start updating truck ${updatedTruck.truckNo} at ${new Date().toISOString()}`);
 
-    const oldTruck = trucks.find(t => t.id === updatedTruck.id);
+    const cleanTruckNo = (updatedTruck.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const currentTrucks = typeof trucks === 'function' ? (trucks as any)() : trucks;
+    const oldTruck = currentTrucks.find((t: Truck) =>
+      (updatedTruck.id && t.id === updatedTruck.id) ||
+      (t.truckNo && (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanTruckNo)
+    );
     const mutatedTruck = oldTruck
-      ? mutateRecord(oldTruck, updatedTruck, currentUserId())
+      ? mutateRecord(oldTruck, { ...updatedTruck, id: oldTruck.id, organizationId: targetOrgId }, currentUserId())
       : createRecord<Truck>({ ...updatedTruck, organizationId: targetOrgId } as any, currentUserId());
 
     setTrucks(prev => {
-      const next = prev.map(t => t.id === mutatedTruck.id ? mutatedTruck : t);
+      const matchIdx = prev.findIndex(t =>
+        t.id === mutatedTruck.id ||
+        (t.truckNo && (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanTruckNo)
+      );
+      const next = matchIdx > -1
+        ? prev.map((t, idx) => idx === matchIdx ? mutatedTruck : t)
+        : [...prev, mutatedTruck];
       localStorage.setItem('ttt_trucks', JSON.stringify(next));
       return next;
     });

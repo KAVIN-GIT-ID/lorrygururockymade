@@ -39,15 +39,14 @@ export default function AccountMaster(rawProps: AccountMasterProps) {
     get canDeleteAccounts() { return permissionCtx.currentUserRights().canDeleteAccounts; }
   });
   const {
-    accounts,
+    
     onAddAccount,
     onUpdateAccount,
     onDeleteAccount,
     confirmAction,
-    canViewAccounts,
-    canEditAccounts,
-    canDeleteAccounts
-  } = props;
+    
+    
+      } = props;
 
 
   const [isEditing, setIsEditing] = createSignal<string | null>(null);
@@ -164,7 +163,7 @@ export default function AccountMaster(rawProps: AccountMasterProps) {
           <h2 class="text-lg font-bold text-slate-800 tracking-tight">Available Accounts</h2>
           <p class="text-xs text-slate-500 mt-0.5">Register and manage banks, cash vaults, and digital wallets where advances are received.</p>
         </div>
-        {canEditAccounts && (
+        {props.canEditAccounts && (
           <button
             id="btn-add-account"
             onClick={() => {
@@ -300,13 +299,13 @@ export default function AccountMaster(rawProps: AccountMasterProps) {
         </form>
       )}
 
-      {accounts.length === 0 ? (
+      {(props.accounts || []).length === 0 ? (
         <div class="text-center py-12 text-slate-400 font-medium italic border border-slate-200 rounded-xl bg-slate-50/50">
           No accounting ledgers mapped. Please create one to process transactions.
         </div>
       ) : (
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {accounts.map((account) => {
+          {(props.accounts || []).map((account) => {
             const cardClasses = getCardClasses(account.type);
             const icon = getSmallIcon(account.type);
             return (
@@ -402,7 +401,7 @@ export default function AccountMaster(rawProps: AccountMasterProps) {
                   )}
                   <button
                     title="Edit Account"
-                    disabled={!canEditAccounts}
+                    disabled={!props.canEditAccounts}
                     onClick={() => startEdit(account)}
                     class="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 hover:text-slate-855 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
@@ -411,7 +410,7 @@ export default function AccountMaster(rawProps: AccountMasterProps) {
                   </button>
                   <button
                     title="Delete Account"
-                    disabled={!canDeleteAccounts}
+                    disabled={!props.canDeleteAccounts}
                     onClick={() => {
                       const msg = `Are you sure you want to delete account ${account.accountName}?`;
                       if (confirmAction) {

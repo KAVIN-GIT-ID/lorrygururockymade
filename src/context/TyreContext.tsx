@@ -1,9 +1,9 @@
 import { createContext, useContext, createMemo, createEffect, JSX, createSignal } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, reconcile } from 'solid-js/store';
 import { Tyre, TyreMovementLog } from '../types';
 import { migrateTyres } from '../lib/migrations';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { db, dbUnlocked } from '../services/cache';
+import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { usePermissions } from './PermissionContext';
 import { useNotifications } from './NotificationContext';
 import { useExpensesContext } from './ExpenseContext';
@@ -20,7 +20,14 @@ interface TyreContextType {
       paymentMode?: string;
     }
   ) => Promise<void>;
-  updateTyre: (updated: Tyre) => Promise<void>;
+  updateTyre: (
+    updated: Tyre,
+    expenseDetails?: {
+      createExpense?: boolean;
+      truckNo?: string;
+      paymentMode?: string;
+    }
+  ) => Promise<void>;
   deleteTyre: (id: string) => Promise<void>;
 }
 
@@ -29,13 +36,17 @@ const TyreContext = createContext<TyreContextType>();
 export function TyreProvider(props: { children: JSX.Element }) {
   const { currentUserOrgId } = usePermissions();
   const { showNotification } = useNotifications();
-  const { expenses, saveExpenses } = useExpensesContext();
+  const { expenses, saveExpenses, addExpense, updateExpense: updateExpenseRecord, deleteExpense: deleteExpenseRecord } = useExpensesContext();
 
   const [tyresStore, setTyresStore] = createStore<Tyre[]>([]);
   const [loadedFromDB, setLoadedFromDB] = createSignal(false);
 
   createEffect(() => {
     if (!dbUnlocked()) return;
+    if (prewarmedData.tyres && prewarmedData.tyres.length > 0) {
+      setTyresStore(prewarmedData.tyres);
+      setLoadedFromDB(true);
+    }
     db.tyres.toArray().then(cached => {
       setTyresStore(cached || []);
       setLoadedFromDB(true);
@@ -45,7 +56,11 @@ export function TyreProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
     const list = [...tyresStore];
-    db.tyres.clear().then(() => db.tyres.bulkPut(list));
+    if (list.length === 0) {
+      db.tyres.clear();
+    } else {
+      db.tyres.bulkPut(list);
+    }
   });
 
   const saveTyres = (newTyres: Tyre[] | ((prev: Tyre[]) => Tyre[])) => {
@@ -56,7 +71,7 @@ export function TyreProvider(props: { children: JSX.Element }) {
 
   const orgTyres = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return orgId === 'org_backend' ? tyresStore : tyresStore.filter(t => t.organizationId === orgId);
+    return tyresStore.filter(t => t.organizationId === orgId);
   });
 
   const addTyre = async (
@@ -75,12 +90,33 @@ export function TyreProvider(props: { children: JSX.Element }) {
     }
 
     const isMountedImmediately = tyreInput.status === 'Active' && tyreInput.currentTruckNo;
+    const tyreId = 'tyre_' + Date.now();
+    let purchaseExpenseId: string | undefined = undefined;
 
-    const n = {
+    if (expenseDetails?.createExpense && tyreInput.purchaseAmount && tyreInput.purchaseAmount > 0) {
+      purchaseExpenseId = 'EXP_' + Date.now();
+      const newExpense = {
+        id: purchaseExpenseId,
+        truckNo: expenseDetails.truckNo || 'YARD / WH',
+        expenseType: 'Tyre Purchase',
+        shopName: `${tyreInput.manufacturer} (Tyre Serial: ${tyreInput.tyreNo})`,
+        amount: tyreInput.purchaseAmount,
+        paymentMode: expenseDetails.paymentMode || 'Cash',
+        date: tyreInput.purchaseDate || '2026-05-23',
+        notes: `Automatically generated expense entry for purchasing Tyre ${tyreInput.tyreNo}.`,
+        status: 'Paid' as const,
+        organizationId: orgId,
+        tyreId: tyreId
+      };
+      await addExpense(newExpense);
+    }
+
+    const n: Tyre = {
       ...tyreInput,
-      id: 'tyre_' + Date.now(),
+      id: tyreId,
       organizationId: orgId,
       accumulatedKM: 0,
+      purchaseExpenseId: purchaseExpenseId,
       movementHistory: [
         {
           id: 'mvt_init',
@@ -104,31 +140,77 @@ export function TyreProvider(props: { children: JSX.Element }) {
       }
     }
 
-    saveTyres([...tyresStore, n as any]);
+    saveTyres([...tyresStore, n]);
     showNotification(`Tyre ${n.tyreNo} registered in stock registry.`);
+  };
 
-    if (expenseDetails?.createExpense && tyreInput.purchaseAmount && tyreInput.purchaseAmount > 0) {
+  const updateTyre = async (
+    updated: Tyre,
+    expenseDetails?: {
+      createExpense?: boolean;
+      truckNo?: string;
+      paymentMode?: string;
+    }
+  ) => {
+    const orgId = currentUserOrgId() || 'org_default';
+    const oldTyre = tyresStore.find(t => t.id === updated.id);
+    let purchaseExpenseId = updated.purchaseExpenseId || oldTyre?.purchaseExpenseId;
+
+    // Look up matching expense by ID first, or fallback to serial matching if missing
+    let existingExp = purchaseExpenseId
+      ? expenses.find(e => e.id === purchaseExpenseId && !e.deletedAt)
+      : undefined;
+
+    if (!existingExp) {
+      const oldSerial = oldTyre?.tyreNo;
+      const newSerial = updated.tyreNo;
+      existingExp = expenses.find(e =>
+        !e.deletedAt &&
+        e.organizationId === orgId &&
+        (e.expenseType === 'Tyre Purchase' || (e.notes || '').toLowerCase().includes('tyre')) &&
+        (
+          (e.tyreId && e.tyreId === updated.id) ||
+          (oldSerial && ((e.notes || '').includes(oldSerial) || (e.shopName || '').includes(oldSerial))) ||
+          (newSerial && ((e.notes || '').includes(newSerial) || (e.shopName || '').includes(newSerial)))
+        )
+      );
+    }
+
+    if (existingExp) {
+      purchaseExpenseId = existingExp.id;
+      const updatedExp = {
+        ...existingExp,
+        tyreId: updated.id,
+        amount: updated.purchaseAmount ?? existingExp.amount,
+        date: updated.purchaseDate || existingExp.date,
+        shopName: `${updated.manufacturer} (Tyre Serial: ${updated.tyreNo})`,
+        notes: `Automatically generated expense entry for purchasing Tyre ${updated.tyreNo}.`,
+        paymentMode: expenseDetails?.paymentMode || existingExp.paymentMode || 'Cash',
+        truckNo: expenseDetails?.truckNo !== undefined ? (expenseDetails.truckNo || 'YARD / WH') : existingExp.truckNo
+      };
+      await updateExpenseRecord(updatedExp);
+    } else if (expenseDetails?.createExpense && updated.purchaseAmount && updated.purchaseAmount > 0) {
       const expNo = 'EXP_' + Date.now();
+      purchaseExpenseId = expNo;
       const newExpense = {
         id: expNo,
         truckNo: expenseDetails.truckNo || 'YARD / WH',
         expenseType: 'Tyre Purchase',
-        shopName: `${tyreInput.manufacturer} (Tyre Serial: ${tyreInput.tyreNo})`,
-        amount: tyreInput.purchaseAmount,
+        shopName: `${updated.manufacturer} (Tyre Serial: ${updated.tyreNo})`,
+        amount: updated.purchaseAmount,
         paymentMode: expenseDetails.paymentMode || 'Cash',
-        date: tyreInput.purchaseDate || '2026-05-23',
-        notes: `Automatically generated expense entry for purchasing Tyre ${tyreInput.tyreNo}.`,
+        date: updated.purchaseDate || '2026-05-23',
+        notes: `Automatically generated expense entry for purchasing Tyre ${updated.tyreNo}.`,
         status: 'Paid' as const,
-        organizationId: orgId
+        organizationId: orgId,
+        tyreId: updated.id
       };
-      saveExpenses([...expenses, newExpense]);
+      await addExpense(newExpense);
     }
-  };
 
-  const updateTyre = async (updated: Tyre) => {
-    const orgId = currentUserOrgId() || 'org_default';
-    const oldTyre = tyresStore.find(t => t.id === updated.id);
-    const merged = oldTyre ? { ...oldTyre, ...updated } : { ...updated, organizationId: orgId };
+    const merged: Tyre = oldTyre
+      ? { ...oldTyre, ...updated, purchaseExpenseId }
+      : { ...updated, organizationId: orgId, purchaseExpenseId };
 
     if (isAppwriteConfigured()) {
       try {
@@ -165,6 +247,20 @@ export function TyreProvider(props: { children: JSX.Element }) {
         alert("Error: Failed to delete tyre from server database. Connection offline or permissions missing.");
         return;
       }
+    }
+
+    const expId = tyre.purchaseExpenseId;
+    const serial = tyre.tyreNo;
+    const existingExp = expId
+      ? expenses.find(e => e.id === expId)
+      : expenses.find(e =>
+          !e.deletedAt &&
+          (e.expenseType === 'Tyre Purchase' || (e.notes || '').toLowerCase().includes('tyre')) &&
+          (e.tyreId === id || (serial && ((e.notes || '').includes(serial) || (e.shopName || '').includes(serial))))
+        );
+
+    if (existingExp) {
+      await deleteExpenseRecord(existingExp.id);
     }
 
     const next = tyresStore.filter(x => x.id !== id);

@@ -1,4 +1,4 @@
-import { createSignal, onMount, createEffect, createMemo } from 'solid-js';
+import { createSignal, onMount, createEffect, createMemo, mergeProps } from 'solid-js';
 
 import { TripEntry, Truck, Office, Account, TripStatus, getTripMetrics, calculateBalance, TripAdvance, OrganizationProfile, importLegacyCargoExpenses, AuditLog, UserRights } from '../types';
 import {
@@ -33,23 +33,36 @@ interface TripListProps {
   orgProfile?: OrganizationProfile;
 }
 
-export default function TripList({
-  trips,
-  trucks,
-  offices,
-  accounts,
-  onEditEntry,
-  onDeleteEntry,
-  confirmAction,
-  canViewTrips = true,
-  canEditTrips = true,
-  canDeleteTrips = true,
-  organizationId,
-  onSaveTrips,
-  auditLogs = [],
-  currentUserRights,
-  orgProfile
-}: TripListProps) {
+export default function TripList(rawProps: TripListProps) {
+  const props = mergeProps(
+    {
+      trips: [],
+      trucks: [],
+      offices: [],
+      accounts: [],
+      canViewTrips: true,
+      canEditTrips: true,
+      canDeleteTrips: true,
+      auditLogs: []
+    },
+    rawProps
+  );
+
+  const trips = () => props.trips;
+  const trucks = () => props.trucks;
+  const offices = () => props.offices;
+  const accounts = () => props.accounts;
+  const onEditEntry = props.onEditEntry;
+  const onDeleteEntry = props.onDeleteEntry;
+  const confirmAction = props.confirmAction;
+  const canViewTrips = () => props.canViewTrips;
+  const canEditTrips = () => props.canEditTrips;
+  const canDeleteTrips = () => props.canDeleteTrips;
+  const organizationId = () => props.organizationId;
+  const onSaveTrips = props.onSaveTrips;
+  const auditLogs = () => props.auditLogs;
+  const currentUserRights = () => props.currentUserRights;
+  const orgProfile = () => props.orgProfile;
   // Mouse hover scroll redirection for horizontal overflow
   let scrollRef: HTMLDivElement | undefined;
   onMount(() => {
@@ -127,7 +140,7 @@ export default function TripList({
   const filteredAndSortedTrips = createMemo(() => {
     if (online) return [];
 
-    const filtered = trips.filter(trip => {
+    const filtered = trips().filter(trip => {
       if (!trip.tripNo || trip.tripNo.trim() === '') return false;
       const matchesSearch = !search() ? true : (
         trip.tripNo.toLowerCase().includes(search().toLowerCase()) ||
@@ -258,11 +271,12 @@ export default function TripList({
   // Online Appwrite logic
   createEffect(() => {
     if (online) {
+      const _reactiveTrips = trips();
       const fetchServerTrips = async () => {
         setLoading(true);
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
+          const orgId = organizationId() || localStorage.getItem('ttt_organization_id') || 'org_default';
 
           let serverSortField = 'filterStartDate';
           if (['tripNo', 'truckNo', 'filterStartDate', 'status'].includes(sortField())) {
@@ -309,11 +323,14 @@ export default function TripList({
         }
       };
 
-      const delayDebounce = setTimeout(() => {
+      if (search() && search().length > 1) {
+        const delayDebounce = setTimeout(() => {
+          fetchServerTrips();
+        }, 300);
+        return () => clearTimeout(delayDebounce);
+      } else {
         fetchServerTrips();
-      }, 300);
-
-      return () => clearTimeout(delayDebounce);
+      }
     }
   });
 
@@ -375,7 +392,7 @@ export default function TripList({
 
 
   // Calculate totals of matched items for footer reporting
-  const totals = (online ? displayedTrips() : trips.filter(trip => {
+  const totals = (online ? displayedTrips() : trips().filter(trip => {
     const matchesSearch = !search() ? true : (
       trip.tripNo.toLowerCase().includes(search().toLowerCase()) ||
       trip.truckNo.toLowerCase().includes(search().toLowerCase()) ||
@@ -416,7 +433,7 @@ export default function TripList({
 
   // CSV Exporter reflecting the new flat 23-column schema
   const handleExportCSV = () => {
-    const localFiltered = trips.filter(trip => {
+    const localFiltered = trips().filter(trip => {
       const matchesSearch = !search() ? true : (
         trip.tripNo.toLowerCase().includes(search().toLowerCase()) ||
         trip.truckNo.toLowerCase().includes(search().toLowerCase()) ||
@@ -497,9 +514,9 @@ export default function TripList({
 
   const getAccountName = (id: string) => {
     if (id === 'paid_to_driver_advance') return 'Paid to Driver Advance';
-    const fuelCard = orgProfile?.fuelCards?.find(fc => fc.id === id);
+    const fuelCard = orgProfile()?.fuelCards?.find(fc => fc.id === id);
     if (fuelCard) return `${fuelCard.cardName} (Fuel Card)`;
-    return accounts.find(a => a.id === id)?.accountName || id || 'Unmapped';
+    return accounts().find(a => a.id === id)?.accountName || id || 'Unmapped';
   };
 
   // Date styling helper
@@ -620,7 +637,7 @@ export default function TripList({
               class="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 text-xs font-mono focus:outline-none focus:border-blue-500 focus:bg-white font-semibold"
             >
               <option value="">&mdash; Choose Truck &mdash;</option>
-              {trucks.map(t => (
+              {trucks().map(t => (
                 <option  value={t.truckNo}>{t.truckNo}</option>
               ))}
             </select>
@@ -792,7 +809,7 @@ export default function TripList({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const html = generateTripPDF(trip, accounts, orgProfile);
+                              const html = generateTripPDF(trip, accounts(), orgProfile());
                               setPreviewHtml(html);
                               setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                             }}
@@ -813,7 +830,7 @@ export default function TripList({
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  generateDriverReportPDF(trip, accounts, orgProfile);
+                                  generateDriverReportPDF(trip, accounts(), orgProfile());
                                 }}
                                 class="text-slate-400 hover:text-blue-600 transition ml-1 cursor-pointer flex items-center"
                                 title="Download Driver Report"
@@ -903,7 +920,7 @@ export default function TripList({
                             {/* MODIFY SPEC ROW */}
                             <button
                               title="Modify Cargo Entry specs"
-                              disabled={!canEditTrips || trip.status === 'Deleted'}
+                              disabled={!canEditTrips() || trip.status === 'Deleted'}
                               onClick={() => onEditEntry(trip)}
                               class="p-1 px-2.5 bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center h-8"
                             >
@@ -912,7 +929,7 @@ export default function TripList({
                             {/* DELETE ENTRY */}
                             <button
                               title="Wipe Cargo Entry record"
-                              disabled={!canDeleteTrips || trip.status === 'Deleted'}
+                              disabled={!canDeleteTrips() || trip.status === 'Deleted'}
                               onClick={() => {
                                 const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
                                 if (confirmAction) {
@@ -987,7 +1004,7 @@ export default function TripList({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const html = generateTripPDF(trip, accounts, orgProfile);
+                          const html = generateTripPDF(trip, accounts(), orgProfile());
                           setPreviewHtml(html);
                           setPreviewTitle(`Trip Report - ${trip.tripNo}`);
                         }}
@@ -1013,7 +1030,7 @@ export default function TripList({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const html = generateDriverReportPDF(trip, accounts, orgProfile);
+                            const html = generateDriverReportPDF(trip, accounts(), orgProfile());
                             setPreviewHtml(html);
                             setPreviewTitle(`Driver Settlement - ${trip.tripNo}`);
                           }}
@@ -1125,7 +1142,7 @@ export default function TripList({
                     </button>
                     <button
                       type="button"
-                      disabled={!canEditTrips || trip.status === 'Deleted'}
+                      disabled={!canEditTrips() || trip.status === 'Deleted'}
                       onClick={() => {
                         onEditEntry(trip);
                         setActiveSpeedDialId(null);
@@ -1137,7 +1154,7 @@ export default function TripList({
                     </button>
                     <button
                       type="button"
-                      disabled={!canDeleteTrips || trip.status === 'Deleted'}
+                      disabled={!canDeleteTrips() || trip.status === 'Deleted'}
                       onClick={() => {
                         const msg = `Are you sure you want to permanently delete trip record ${trip.tripNo}? This wipes all linked payments, diesel, and driver expenses.`;
                         const onDeleteAction = () => {
@@ -1256,7 +1273,7 @@ export default function TripList({
                 <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
                   <button
                     onClick={() => {
-                      const html = generateTripPDF(viewingEntry(), accounts, orgProfile);
+                      const html = generateTripPDF(viewingEntry(), accounts(), orgProfile());
                       setPreviewHtml(html);
                       setPreviewTitle(`Trip Report - ${viewingEntry().tripNo}`);
                     }}
@@ -1266,7 +1283,7 @@ export default function TripList({
                   </button>
                   <button
                     onClick={() => {
-                      const html = generateDriverReportPDF(viewingEntry(), accounts, orgProfile);
+                      const html = generateDriverReportPDF(viewingEntry(), accounts(), orgProfile());
                       setPreviewHtml(html);
                       setPreviewTitle(`Driver Settlement - ${viewingEntry().tripNo}`);
                     }}
@@ -1274,7 +1291,7 @@ export default function TripList({
                   >
                     <FileText class="w-3.5 h-3.5" /> Driver Report PDF
                   </button>
-                  {canEditTrips && viewingEntry().status !== 'Deleted' && (
+                  {canEditTrips() && viewingEntry().status !== 'Deleted' && (
                     <button
                       onClick={() => {
                         onEditEntry(viewingEntry());
@@ -1285,7 +1302,7 @@ export default function TripList({
                       <Edit2 class="w-3.5 h-3.5" /> Edit
                     </button>
                   )}
-                  {canDeleteTrips && viewingEntry().status !== 'Deleted' && (
+                  {canDeleteTrips() && viewingEntry().status !== 'Deleted' && (
                     <button
                       onClick={() => {
                         const msg = `Caution! Deleting Master Trip ${viewingEntry().tripNo} will permanently delete all ${viewingEntry().subTrips?.length || 0} sub-trip segments and advanced payments receipt sheets. Continue?`;
@@ -1484,7 +1501,7 @@ export default function TripList({
                     const balanceAmt = Math.abs(m.driverBalance);
                     const activeMode = selectedFwdMode();
 
-                    const eligibleFwdTrips = trips.filter(
+                    const eligibleFwdTrips = trips().filter(
                       t => t.id !== viewingEntry().id &&
                         t.status !== 'Settled'
                     ).sort((a, b) => {
@@ -1592,7 +1609,7 @@ export default function TripList({
                                         alert("Please select a target trip first.");
                                         return;
                                       }
-                                      const destTrip = trips.find(t => t.id === selectedFwdTripId());
+                                      const destTrip = trips().find(t => t.id === selectedFwdTripId());
                                       if (!destTrip) return;
 
                                       const confirmMsg = isDeficit
@@ -1636,13 +1653,13 @@ export default function TripList({
                                           updatedAt: new Date().toISOString()
                                         };
 
-                                        const updatedTrips = trips.map(t => {
+                                        const updatedTrips = trips().map(t => {
                                           if (t.id === updatedSource.id) return updatedSource;
                                           if (t.id === updatedDest.id) return updatedDest;
                                           return t;
                                         });
 
-                                        onSaveTrips(updatedTrips);
+                                        onSaveTrips?.(updatedTrips);
                                         setViewingEntry(updatedSource);
                                         setSelectedFwdTripId('');
                                         alert(`Successfully carried forward ₹${balanceAmt.toLocaleString('en-IN')} to ${destTrip.tripNo}.`);
@@ -1665,8 +1682,8 @@ export default function TripList({
                         })()}
 
                         {activeMode === 'account' && (() => {
-                          const activeAccounts = accounts.filter(a => a.status === 'Active');
-                          const targetAccount = accounts.find(a => a.id === selectedFwdAccountId());
+                          const activeAccounts = accounts().filter(a => a.status === 'Active');
+                          const targetAccount = accounts().find(a => a.id === selectedFwdAccountId());
                           const accountName = targetAccount ? targetAccount.accountName : selectedFwdAccountId();
 
                           const confirmMsg = isDeficit
@@ -1690,12 +1707,12 @@ export default function TripList({
                               advances: [...(viewingEntry().advances || []), settleAdvance]
                             };
 
-                            const updatedTrips = trips.map(t => {
+                            const updatedTrips = trips().map(t => {
                               if (t.id === updatedSource.id) return updatedSource;
                               return t;
                             });
 
-                            onSaveTrips(updatedTrips);
+                            onSaveTrips?.(updatedTrips);
                             setViewingEntry(updatedSource);
                             setSelectedFwdAccountId('');
                             alert(isDeficit
@@ -2074,7 +2091,7 @@ export default function TripList({
                 )}
 
                 {/* Audit Trail Log View (Only for Admins) */}
-                {currentUserRights?.isAdmin && (
+                {currentUserRights()?.isAdmin && (
                   <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-3xs">
                     <div class="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
                       <span class="text-[10px] text-blue-655 uppercase tracking-wider font-extrabold flex items-center gap-1.5">
@@ -2087,7 +2104,7 @@ export default function TripList({
                     </div>
                     <div class="p-4 space-y-4 max-h-72 overflow-y-auto">
                       {(() => {
-                        const tripLogs = (auditLogs || [])
+                        const tripLogs = (auditLogs() || [])
                           .filter(log => log.category === 'Trip' && log.reference === viewingEntry().tripNo)
                           .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
@@ -2207,7 +2224,7 @@ export default function TripList({
 
                   {/* Tab Selector */}
                   <div class="flex border-b border-slate-200/50 mt-1.5 gap-2 text-xs font-semibold overflow-x-auto scrollbar-none py-1">
-                    {(currentUserRights?.isAdmin ? (['loads', 'profit', 'driver', 'actions', 'audit'] as const) : (['loads', 'profit', 'driver', 'actions'] as const)).map((tab) => {
+                    {(currentUserRights()?.isAdmin ? (['loads', 'profit', 'driver', 'actions', 'audit'] as const) : (['loads', 'profit', 'driver', 'actions'] as const)).map((tab) => {
                       const isActive = activeTab() === tab;
                       const label = {
                         loads: 'Journey & Loads',
@@ -2476,7 +2493,7 @@ export default function TripList({
                         <div class="grid grid-cols-2 gap-2 text-xs">
                           <button
                             onClick={() => {
-                              const html = generateTripPDF(viewingEntry(), accounts, orgProfile);
+                              const html = generateTripPDF(viewingEntry(), accounts(), orgProfile());
                               setPreviewHtml(html);
                               setPreviewTitle(`Trip Report - ${viewingEntry().tripNo}`);
                             }}
@@ -2487,7 +2504,7 @@ export default function TripList({
                           </button>
                           <button
                             onClick={() => {
-                              const html = generateDriverReportPDF(viewingEntry(), accounts, orgProfile);
+                              const html = generateDriverReportPDF(viewingEntry(), accounts(), orgProfile());
                               setPreviewHtml(html);
                               setPreviewTitle(`Driver Settlement - ${viewingEntry().tripNo}`);
                             }}
@@ -2503,7 +2520,7 @@ export default function TripList({
                       <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-3xs space-y-3">
                         <h5 class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-sans">Administration Options</h5>
                         <div class="space-y-2">
-                          {canEditTrips && viewingEntry().status !== 'Deleted' && (
+                          {canEditTrips() && viewingEntry().status !== 'Deleted' && (
                             <button
                               onClick={() => {
                                 onEditEntry(viewingEntry());
@@ -2514,7 +2531,7 @@ export default function TripList({
                               <Edit2 class="w-3.5 h-3.5" /> Modify Journey Records
                             </button>
                           )}
-                          {canDeleteTrips && viewingEntry().status !== 'Deleted' && (
+                          {canDeleteTrips() && viewingEntry().status !== 'Deleted' && (
                             <button
                               onClick={() => {
                                 const msg = `Caution! Deleting Master Trip ${viewingEntry().tripNo} will permanently delete all sub-trip segments and payments. Continue?`;
@@ -2538,16 +2555,16 @@ export default function TripList({
                     </div>
                   )}
 
-                  {activeTab() === 'audit' && currentUserRights?.isAdmin && (
+                  {activeTab() === 'audit' && currentUserRights()?.isAdmin && (
                     <div class="space-y-4 animate-fade-in">
                       <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs space-y-4 relative overflow-hidden">
                         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
                         <h5 class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-2">Trip Audit History ({
-                          (auditLogs || []).filter(log => log.category === 'Trip' && log.reference === viewingEntry().tripNo).length
+                          (auditLogs() || []).filter(log => log.category === 'Trip' && log.reference === viewingEntry().tripNo).length
                         })</h5>
                         
                         {(() => {
-                          const tripLogs = (auditLogs || [])
+                          const tripLogs = (auditLogs() || [])
                             .filter(log => log.category === 'Trip' && log.reference === viewingEntry().tripNo)
                             .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
