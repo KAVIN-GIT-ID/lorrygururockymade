@@ -3,6 +3,9 @@ import App from './App.tsx';
 import { Router, Route } from '@solidjs/router';
 import './index.css';
 import { cryptoService } from './services/cryptoService';
+import { setupAutoScrollOnHover } from './utils/autoScroll';
+
+setupAutoScrollOnHover();
 
 // Bypassed keys that should not be encrypted
 const BYPASS_KEYS = [

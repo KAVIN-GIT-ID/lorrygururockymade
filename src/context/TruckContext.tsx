@@ -48,9 +48,14 @@ export function TruckProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...trucksStore];
+    const list = JSON.parse(JSON.stringify(trucksStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.trucks.clear();
     } else {
@@ -69,16 +74,12 @@ export function TruckProvider(props: { children: JSX.Element }) {
   const orgTrucks = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
     const isSuper = !!currentUserRights()?.isSuperAdmin || currentUserOrgId() === 'org_backend';
-    console.log(`[TruckContext Debug] orgId="${orgId}", storeCount=${trucksStore.length}, isSuper=${isSuper}`);
-    console.log('[TruckContext Debug] Store trucks:', trucksStore.map(t => ({ id: t.id, truckNo: t.truckNo, orgId: t.organizationId, isApproved: t.isApproved, status: t.status })));
-    
     const rawFiltered = trucksStore.filter(t => {
       if (t.deletedAt) return false;
       if (isSuper) return true;
       if (!t.organizationId || t.organizationId === 'org_default') return true;
       return (t.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
     });
-    console.log(`[TruckContext Debug] rawFiltered count=${rawFiltered.length}:`, rawFiltered.map(t => t.truckNo));
     const tripsList = orgTrips();
     const seen = new Set<string>();
     const filtered: Truck[] = [];
@@ -131,7 +132,7 @@ export function TruckProvider(props: { children: JSX.Element }) {
   });
 
   const approvedOrgTrucks = createMemo(() => {
-    return orgTrucks().filter(t => t.isApproved !== false);
+    return orgTrucks().filter(t => !t.deletedAt && t.status !== 'Admin Disabled');
   });
 
   const addTruck = async (truckInput: Omit<Truck, 'id'>) => {

@@ -181,6 +181,21 @@ export class FleetDatabase extends Dexie {
         this.organizationProfiles.toArray()
       ]);
 
+      console.log("%c[Dexie IndexedDB Raw Counts]", "color: #3b82f6; font-weight: bold;", {
+        trucks: trucks?.length || 0,
+        drivers: drivers?.length || 0,
+        offices: offices?.length || 0,
+        accounts: accounts?.length || 0,
+        trips: trips?.length || 0,
+        expenses: expenses?.length || 0,
+        tyres: tyres?.length || 0,
+        auditLogs: auditLogs?.length || 0
+      });
+      console.log("[Dexie IndexedDB Sample Objects]:", {
+        sampleTruck: trucks?.[0] || 'NONE',
+        sampleTrip: trips?.[0] || 'NONE'
+      });
+
       prewarmedData.trucks = trucks || [];
       prewarmedData.drivers = drivers || [];
       prewarmedData.offices = offices || [];

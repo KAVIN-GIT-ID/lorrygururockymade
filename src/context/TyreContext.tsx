@@ -53,9 +53,14 @@ export function TyreProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...tyresStore];
+    const list = JSON.parse(JSON.stringify(tyresStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.tyres.clear();
     } else {

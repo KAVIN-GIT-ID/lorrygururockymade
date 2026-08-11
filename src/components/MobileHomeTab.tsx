@@ -1,22 +1,11 @@
-import { createSignal, createEffect, onMount } from 'solid-js';
-
+import { createMemo } from 'solid-js';
 import { 
-  Truck, 
-  BookOpen, 
   Plus, 
-  FileText, 
   Mic, 
-  Landmark, 
-  MapPin, 
-  Wrench, 
-  ShieldCheck, 
-  Users, 
-  CreditCard, 
+  AlertTriangle,
   ChevronRight,
-  ArrowRight,
-  Coins,
-  Sparkles,
-  Info
+  TrendingUp,
+  DollarSign
 } from 'lucide-solid';
 import { TripEntry, Truck as TruckType, Driver } from '../types';
 
@@ -30,350 +19,264 @@ interface MobileHomeTabProps {
   onQuickAction: (action: 'ADD_TRIP' | 'ADD_EXPENSE' | 'VOICE') => void;
 }
 
-export default function MobileHomeTab({
-  currentUser,
-  orgTrips,
-  orgTrucks,
-  orgDrivers,
-  setActiveTab,
-  onNavigateToSubTab,
-  onQuickAction
-}: MobileHomeTabProps) {
-  // Calculations
-  const runningTrips = orgTrips.filter(t => t.status !== 'Settled');
-  const activeTripsCount = runningTrips.length;
-  const totalTrucks = orgTrucks.length;
-  
-  // Calculate total outstanding loans from drivers
-  const totalOutstandingLoans = orgDrivers.reduce((acc, driver) => {
-    const loans = Array.isArray((driver as any).loans) ? (driver as any).loans : [];
-    const unpaidLoans = loans.filter(l => l.status !== 'Paid');
-    const unpaidSum = unpaidLoans.reduce((sum, l) => sum + (Number(l.amount) - Number(l.repaid || 0)), 0);
-    return acc + unpaidSum;
-  }, 0);
+export default function MobileHomeTab(props: MobileHomeTabProps) {
+  // SolidJS Rule 1 & 4: Use createMemo for derived reactive state
+  const userName = createMemo(() => {
+    const user = props.currentUser;
+    return user?.name || user?.email?.split('@')[0] || 'User';
+  });
 
-  // Welcome user name
-  const userName = currentUser?.name || currentUser?.email?.split('@')[0] || 'User';
+  const runningTrips = createMemo(() => props.orgTrips.filter(t => t.status !== 'Settled'));
+  const activeTripsCount = createMemo(() => runningTrips().length);
+  const totalTrucksCount = createMemo(() => props.orgTrucks.length);
 
-  // Promo Banner State
-  const [activeBanner, setActiveBanner] = createSignal(0);
-  const banners = [
-    {
-      title: "Voice Assistant Active",
-      subtitle: "Hands-free operations on Alt+V",
-      desc: "Log journeys, expenses, and check logs using smart speech recognition.",
-      badge: "Alt + V",
-      gradient: "from-violet-600 via-indigo-600 to-blue-600"
-    },
-    {
-      title: "Real-time Synchronization",
-      subtitle: "Cloud fleet status online",
-      desc: "Instant live backups synced across admin panels and driver registers.",
-      badge: "Synced",
-      gradient: "from-emerald-600 via-teal-600 to-cyan-600"
-    }
-  ];
+  // Calculated Monthly Net Profit using exact TripEntry properties
+  const monthlyProfit = createMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-  onMount(() => {
-    const timer = setInterval(() => {
-      setActiveBanner(prev => (prev + 1) % banners.length);
-    }, 6000);
-    return () => clearInterval(timer);
+    return props.orgTrips.reduce((acc, t) => {
+      const d = new Date(t.createdAt || t.startDate || '');
+      if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+        const totalFreight = (t.subTrips || []).reduce((sum, st) => sum + Number(st.income || 0), 0);
+        const commonExp = Number(t.dieselAmount || 0) + 
+                          Number(t.rtoExpense || 0) + 
+                          Number(t.fastagExpense || 0) + 
+                          Number(t.addBlueExpense || 0) + 
+                          Number(t.otherExpense || 0);
+        const subExp = (t.subTrips || []).reduce((sum, st) => {
+          return sum + Number(st.loadingExpense || 0) + 
+                       Number(st.unloadingExpense || 0) + 
+                       Number(st.brokerageExpense || 0) + 
+                       Number(st.rmcExpense || 0);
+        }, 0);
+        
+        return acc + (totalFreight - (commonExp + subExp));
+      }
+      return acc;
+    }, 0);
+  });
+
+  // Calculate Receivables (Pending Freight Balances from Customers)
+  const pendingReceivables = createMemo(() => {
+    return props.orgTrips.reduce((acc, t) => {
+      if (t.status !== 'Settled') {
+        const totalFreight = (t.subTrips || []).reduce((sum, st) => sum + Number(st.income || 0), 0);
+        const totalPaid = (t.payments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        return acc + Math.max(0, totalFreight - totalPaid);
+      }
+      return acc;
+    }, 0);
+  });
+
+  // Expiring Documents Alert Count (Tax, Fitness, Insurance expiring in <= 30 days)
+  const expiringDocsCount = createMemo(() => {
+    const today = new Date().getTime();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+
+    let count = 0;
+    props.orgTrucks.forEach(tr => {
+      ['fcDate', 'insuranceDate', 'qTaxDate', 'greenTaxDate', 'npTaxDate'].forEach(field => {
+        const val = (tr as any)[field];
+        if (val) {
+          const expTime = new Date(val).getTime();
+          if (expTime - today <= thirtyDaysMs) {
+            count++;
+          }
+        }
+      });
+    });
+    return count;
   });
 
   return (
-    <div class="flex-1 overflow-y-auto px-4 py-5 space-y-6 pb-24 select-none bg-slate-50 dark:bg-slate-950">
-      
-      {/* Header Profile Panel */}
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-650 flex items-center justify-center text-white font-extrabold text-sm shadow-md">
-            {userName.substring(0, 2).toUpperCase()}
-          </div>
-          <div>
-            <h1 class="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1">
-              Hi {userName} <Sparkles class="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-            </h1>
-            <p class="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
-              LorryGuru Fleet Manager
-            </p>
-          </div>
-        </div>
-        <div class="flex items-center justify-center w-8 h-8 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 rounded-full shadow-xs border border-slate-200/60 dark:border-slate-800/80">
-          <Info class="w-4 h-4" />
-        </div>
-      </div>
-
-      {/* Swipeable Promo Banner */}
-      <div class="relative overflow-hidden rounded-3xl shadow-md cursor-pointer transition active:scale-[0.98]">
-        <div class={`p-5 text-white bg-gradient-to-r ${banners[activeBanner()].gradient} transition-all duration-700 ease-in-out relative min-h-[120px] flex flex-col justify-between`}>
-          {/* Decorative background shapes */}
-          <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
-          <div class="absolute -bottom-5 -left-5 w-24 h-24 bg-black/10 rounded-full blur-lg pointer-events-none"></div>
-
-          <div class="flex justify-between items-start gap-4">
-            <div>
-              <span class="bg-white/20 text-white text-[8px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                {banners[activeBanner()].badge}
-              </span>
-              <h3 class="text-base font-black mt-1.5 leading-snug">
-                {banners[activeBanner()].title}
-              </h3>
-              <p class="text-[10px] text-white/80 font-semibold">
-                {banners[activeBanner()].subtitle}
-              </p>
-            </div>
-            <div class="bg-white/10 p-2.5 rounded-2xl border border-white/10 shrink-0">
-              <Mic class="w-5 h-5 text-white animate-bounce" />
-            </div>
-          </div>
-          <p class="text-[9px] text-white/70 leading-relaxed mt-3 border-t border-white/10 pt-2 font-medium">
-            {banners[activeBanner()].desc}
-          </p>
-        </div>
-
-        {/* Carousel Dots */}
-        <div class="absolute bottom-2.5 right-4 flex gap-1">
-          {banners.map((_, idx) => (
-            <div
-              
-              class={`h-1 rounded-full transition-all duration-300 ${
-                activeBanner() === idx ? 'w-3 bg-white' : 'w-1 bg-white/40'
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Quick Action Operations (circular icons row) */}
-      <div class="space-y-3">
-        <h2 class="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 px-1">
-          Quick Operations
+    <div class="flex flex-col gap-4 pb-20 bg-slate-50 min-h-screen text-slate-900 px-4 pt-2">
+      {/* 1. Greeting & Subtitle */}
+      <div class="flex flex-col gap-0.5">
+        <h2 class="text-xl font-extrabold tracking-tight text-slate-900">
+          Good afternoon, {userName()} 👋
         </h2>
-        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-5 grid grid-cols-4 gap-2.5 shadow-xs">
-          
-          <button
-            onClick={() => onQuickAction('ADD_TRIP')}
-            class="flex flex-col items-center gap-2 group active:scale-95 transition-transform"
-          >
-            <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 flex items-center justify-center border border-indigo-500/20 hover:bg-indigo-500/20 transition duration-200">
-              <Plus class="w-5 h-5" />
-            </div>
-            <span class="text-[9px] font-extrabold text-slate-700 dark:text-slate-300 text-center leading-tight">
-              New Trip
-            </span>
-          </button>
-
-          <button
-            onClick={() => onQuickAction('ADD_EXPENSE')}
-            class="flex flex-col items-center gap-2 group active:scale-95 transition-transform"
-          >
-            <div class="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20 hover:bg-emerald-500/20 transition duration-200">
-              <Coins class="w-5 h-5" />
-            </div>
-            <span class="text-[9px] font-extrabold text-slate-700 dark:text-slate-300 text-center leading-tight">
-              Add Expense
-            </span>
-          </button>
-
-          <button
-            onClick={() => onQuickAction('VOICE')}
-            class="flex flex-col items-center gap-2 group active:scale-95 transition-transform"
-          >
-            <div class="w-12 h-12 rounded-full bg-violet-500/10 text-violet-605 dark:text-violet-400 flex items-center justify-center border border-violet-500/20 hover:bg-violet-500/20 transition duration-200">
-              <Mic class="w-5 h-5" />
-            </div>
-            <span class="text-[9px] font-extrabold text-slate-700 dark:text-slate-300 text-center leading-tight">
-              Voice Admin
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('DRIVERS');
-            }}
-            class="flex flex-col items-center gap-2 group active:scale-95 transition-transform"
-          >
-            <div class="w-12 h-12 rounded-full bg-amber-500/10 text-amber-650 dark:text-amber-450 flex items-center justify-center border border-amber-500/20 hover:bg-amber-500/20 transition duration-200">
-              <Landmark class="w-5 h-5" />
-            </div>
-            <span class="text-[9px] font-extrabold text-slate-700 dark:text-slate-300 text-center leading-tight">
-              Active Loans
-            </span>
-          </button>
-
-        </div>
+        <p class="text-xs font-semibold text-slate-500">
+          {totalTrucksCount()} Fleet Trucks • {activeTripsCount()} Trips Currently In-Transit
+        </p>
       </div>
 
-      {/* Fleet Registers Center (rounded square card grid) */}
-      <div class="space-y-3">
-        <div class="flex justify-between items-center px-1">
-          <h2 class="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Fleet Masters
-          </h2>
-          <button
-            onClick={() => setActiveTab('REGISTRY')}
-            class="text-[9px] font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 hover:underline"
-          >
-            View All <ChevronRight class="w-3 h-3" />
-          </button>
-        </div>
-        <div class="grid grid-cols-4 gap-3">
-          
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('TRUCKS');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center border border-blue-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <Truck class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Trucks</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">{totalTrucks} Active</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('DRIVERS');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <Users class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Drivers</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">{orgDrivers.length} Mapped</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('OFFICES');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-rose-500/10 text-rose-600 dark:text-rose-455 rounded-xl flex items-center justify-center border border-rose-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <MapPin class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Offices</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Branches</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('TYRES');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-amber-500/10 text-amber-600 dark:text-amber-450 rounded-xl flex items-center justify-center border border-amber-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <Wrench class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Tyres</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Inventory</span>
-          </button>
-
-        </div>
-      </div>
-
-      {/* Financials & Ledger Audits (rounded square card grid) */}
-      <div class="space-y-3">
-        <h2 class="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 px-1">
-          Financials & Logs
-        </h2>
-        <div class="grid grid-cols-4 gap-3">
-          
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('ACCOUNTS');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl flex items-center justify-center border border-purple-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <CreditCard class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Ledgers</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Accounts</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('OUTSTANDING');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl flex items-center justify-center border border-cyan-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <FileText class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Outstanding</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Reporting</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('REPORTS');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <FileText class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Monthly</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Reports</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('REGISTRY');
-              onNavigateToSubTab('AUDIT');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-slate-500/10 text-slate-600 dark:text-slate-400 rounded-xl flex items-center justify-center border border-slate-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <ShieldCheck class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Audits</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Security</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('ACCOUNT');
-            }}
-            class="flex flex-col items-center p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs transition hover:shadow-sm active:scale-95 text-center group"
-          >
-            <div class="w-9 h-9 bg-pink-500/10 text-pink-600 dark:text-pink-400 rounded-xl flex items-center justify-center border border-pink-500/15 mb-2 group-hover:scale-105 transition-transform">
-              <BookOpen class="w-4 h-4" />
-            </div>
-            <span class="text-[9px] font-black text-slate-800 dark:text-slate-200 leading-tight">Profile</span>
-            <span class="text-[8px] font-bold text-slate-400 dark:text-slate-500 mt-1">Settings</span>
-          </button>
-
-        </div>
-      </div>
-
-      {/* Outstanding Summary / Balance Banner */}
-      <div class="bg-gradient-to-tr from-slate-900 to-indigo-950 dark:from-slate-900/60 dark:to-slate-950/60 text-white p-4 rounded-3xl border border-slate-800 flex justify-between items-center shadow-md">
-        <div class="space-y-1">
-          <span class="text-[9px] uppercase tracking-widest text-slate-400 font-extrabold">Driver Loans Summary</span>
-          <p class="text-sm font-black text-amber-450">₹ {totalOutstandingLoans.toLocaleString('en-IN')}</p>
-        </div>
-        <button
-          onClick={() => setActiveTab('TRIPS')}
-          class="bg-white/10 hover:bg-white/15 border border-white/10 text-white text-[9px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1 active:scale-95"
+      {/* 2. Clean 2x2 Utility KPI Grid */}
+      <div class="grid grid-cols-2 gap-2.5">
+        {/* Active Trips Card */}
+        <div 
+          onClick={() => props.setActiveTab('TRIPS')}
+          class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-xs active:bg-slate-100 cursor-pointer"
         >
-          <span>View Journeys</span>
-          <ArrowRight class="w-3 h-3" />
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-500">Active Trips</span>
+            <span class="bg-sky-100 text-sky-700 text-[10px] font-bold px-1.5 py-0.5 rounded">In-Transit</span>
+          </div>
+          <div class="text-lg font-black text-slate-900">{activeTripsCount()} Trips</div>
+          <span class="text-[10px] font-semibold text-slate-400">Tap to view trips ›</span>
+        </div>
+
+        {/* This Month Profit Card */}
+        <div 
+          onClick={() => props.onNavigateToSubTab('MONTHLY_REPORT')}
+          class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-xs active:bg-slate-100 cursor-pointer"
+        >
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-500">This Month Profit</span>
+            <TrendingUp class="w-3.5 h-3.5 text-emerald-600" />
+          </div>
+          <div class="text-lg font-black text-emerald-600">
+            +₹{monthlyProfit().toLocaleString('en-IN')}
+          </div>
+          <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded self-start">
+            Current Month P&L
+          </span>
+        </div>
+
+        {/* Customer Receivables Card */}
+        <div 
+          onClick={() => props.onNavigateToSubTab('OUTSTANDING')}
+          class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-xs active:bg-slate-100 cursor-pointer"
+        >
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-500">Receivables</span>
+            <DollarSign class="w-3.5 h-3.5 text-amber-600" />
+          </div>
+          <div class="text-lg font-black text-amber-600">
+            ₹{pendingReceivables().toLocaleString('en-IN')}
+          </div>
+          <span class="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">
+            Pending Freight
+          </span>
+        </div>
+
+        {/* Document Alerts Card */}
+        <div 
+          onClick={() => props.setActiveTab('REGISTRY')}
+          class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-xs active:bg-slate-100 cursor-pointer"
+        >
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-500">Document Alerts</span>
+            <AlertTriangle class="w-3.5 h-3.5 text-red-600" />
+          </div>
+          <div class="text-lg font-black text-slate-900">{expiringDocsCount()} Alerts</div>
+          <span class="text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded self-start">
+            {expiringDocsCount() > 0 ? 'Tax & Fitness Due' : 'All Docs Clean'}
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Floating Quick Action Pills Bar */}
+      <div class="flex gap-2 items-center pt-1">
+        {/* Primary Dispatch Trip CTA */}
+        <button
+          onClick={() => props.onQuickAction('ADD_TRIP')}
+          class="flex-1.3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] transition-all"
+        >
+          <Plus class="w-4 h-4 stroke-[3]" />
+          <span>+ Dispatch Trip</span>
+        </button>
+
+        {/* Add Expense Button */}
+        <button
+          onClick={() => props.onQuickAction('ADD_EXPENSE')}
+          class="flex-1 bg-white border border-slate-300 text-slate-800 font-bold text-xs py-3 px-2 rounded-xl flex items-center justify-center gap-1 shadow-2xs active:bg-slate-100 transition-all"
+        >
+          <Plus class="w-3.5 h-3.5 text-slate-600" />
+          <span>Expense</span>
+        </button>
+
+        {/* AI Voice Entry Button */}
+        <button
+          onClick={() => props.onQuickAction('VOICE')}
+          class="flex-1 bg-white border border-slate-300 text-slate-800 font-bold text-xs py-3 px-2 rounded-xl flex items-center justify-center gap-1 shadow-2xs active:bg-slate-100 transition-all"
+        >
+          <Mic class="w-3.5 h-3.5 text-emerald-600" />
+          <span>Voice</span>
         </button>
       </div>
 
+      {/* 4. Live Active Fleet Section */}
+      <div class="flex flex-col gap-2 pt-2">
+        <div class="flex justify-between items-center">
+          <h3 class="text-sm font-bold text-slate-900">Live Active Fleet</h3>
+          <button 
+            onClick={() => props.setActiveTab('REGISTRY')} 
+            class="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-0.5"
+          >
+            <span>View All ({totalTrucksCount()})</span>
+            <ChevronRight class="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Fleet List Cards */}
+        <div class="flex flex-col gap-2">
+          {props.orgTrucks.length === 0 ? (
+            <div class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-500 text-xs font-semibold">
+              No trucks registered in fleet yet. Tap "+ Dispatch Trip" or go to Trucks to register.
+            </div>
+          ) : (
+            props.orgTrucks.slice(0, 4).map((truck) => {
+              const activeTrip = props.orgTrips.find(
+                t => t.truckNo === truck.truckNo && t.status !== 'Settled'
+              );
+              const firstSubTrip = activeTrip?.subTrips?.[0];
+
+              return (
+                <div 
+                  onClick={() => {
+                    if (activeTrip) {
+                      props.setActiveTab('TRIPS');
+                    } else {
+                      props.onQuickAction('ADD_TRIP');
+                    }
+                  }}
+                  class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2 shadow-2xs active:bg-slate-50 cursor-pointer transition-colors"
+                >
+                  <div class="flex justify-between items-start">
+                    <div class="flex flex-col">
+                      <span class="font-extrabold text-sm text-slate-900 tracking-tight">
+                        {truck.truckNo}
+                      </span>
+                      <span class="text-[11px] font-semibold text-slate-500">
+                        {truck.type || '10-Wheeler'} {truck.make || 'Truck'} • Driver: {activeTrip?.driverName || 'Unassigned'}
+                      </span>
+                    </div>
+
+                    <span class={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      activeTrip ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {activeTrip ? 'In-Transit' : 'Available'}
+                    </span>
+                  </div>
+
+                  {/* Route & Progress Info */}
+                  {activeTrip ? (
+                    <div class="flex items-center justify-between pt-1 border-t border-slate-100 text-xs font-bold text-slate-700">
+                      <div class="flex items-center gap-1.5 text-slate-800">
+                        <span class="text-slate-400">📍</span>
+                        <span>{firstSubTrip?.routeFrom || 'Origin'}</span>
+                        <span class="text-slate-400">➔</span>
+                        <span>{firstSubTrip?.routeTo || 'Destination'}</span>
+                      </div>
+
+                      <span class="text-[11px] font-bold text-emerald-600">
+                        Freight: ₹{Number(firstSubTrip?.income || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div class="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
+                      <span>Ready for new booking</span>
+                      <span class="text-emerald-600 font-bold hover:underline">+ Book Trip ›</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }

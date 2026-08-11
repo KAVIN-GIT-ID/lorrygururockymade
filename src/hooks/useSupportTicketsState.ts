@@ -104,7 +104,7 @@ export function useSupportTicketsState(
     try {
       showNotification("Initiating refund via PhonePe gateway...");
 
-      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const serverUrl = import.meta.env.VITE_BACKEND_URL || 'https://appwrite.lorryguru.in/truck-backend';
       const jwt = await appwrite.createSessionJwt();
       const response = await fetch(`${serverUrl}/api/payment/refund`, {
         method: 'POST',
@@ -283,7 +283,12 @@ export function useSupportTicketsState(
   };
 
   const getClientUnreadTicketsCount = () => {
-    const myTickets = supportTickets().filter(st => currentUserOrgId() === 'org_backend' || st.organizationId === currentUserOrgId());
+    const isBackend = currentUserOrgId() === 'org_backend' || !!currentUserRights()?.isSuperAdmin;
+    const myTickets = supportTickets().filter(st => {
+      if (isBackend) return true;
+      if (!st.organizationId || st.organizationId === 'org_default') return true;
+      return (st.organizationId || '').toLowerCase().trim() === (currentUserOrgId() || 'org_default').toLowerCase().trim();
+    });
     let totalUnread = 0;
     myTickets.forEach(t => {
       if (t.status === 'Closed') return;

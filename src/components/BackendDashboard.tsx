@@ -395,7 +395,7 @@ export default function BackendDashboard(props: BackendDashboardProps) {
     const discountText = cpn.discountType === 'PERCENT' ? `${cpn.discountValue}% OFF` : `₹${cpn.discountValue} FLAT OFF`;
 
     try {
-      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const serverUrl = import.meta.env.VITE_BACKEND_URL || (import.meta.env.DEV ? '' : 'https://appwrite.lorryguru.in/truck-backend');
       const jwt = await appwrite.createSessionJwt();
       const res = await fetch(`${serverUrl}/api/payment/send-coupon-email`, {
         method: 'POST',
@@ -421,7 +421,8 @@ export default function BackendDashboard(props: BackendDashboardProps) {
         throw new Error(data.error || 'Server returned error');
       }
     } catch (e: any) {
-      console.warn('Backend coupon email API warning, opening fallback mail client:', e);
+      console.warn('Backend coupon email API warning:', e);
+      alert(`Coupon Email Delivery Notice:\n\n${e.message || e}\n\nOpening system mail client fallback...`);
       const subject = encodeURIComponent(`Exclusive Subscription Discount Coupon for ${orgName}: ${cpn.code}`);
       const body = encodeURIComponent(
         `Hello ${orgName} Team,\n\n` +
@@ -435,7 +436,6 @@ export default function BackendDashboard(props: BackendDashboardProps) {
         `Truck Trip Tracker Team`
       );
       window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
-      alert(`Opened email client for ${targetEmail} with coupon details!`);
     }
   };
 

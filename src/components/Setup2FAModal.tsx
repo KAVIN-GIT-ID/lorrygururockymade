@@ -5,6 +5,7 @@ import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { verifyTOTP } from '../utils/totp';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Setup2FAModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface Setup2FAModalProps {
 export default function Setup2FAModal(props: Setup2FAModalProps) {
   const auth = useAuth();
   const perm = usePermissions();
+  const { t } = useLanguage();
 
   const [setup2FACode, setSetup2FACode] = createSignal('');
   const [setup2FAPassword, setSetup2FAPassword] = createSignal('');
@@ -30,7 +32,7 @@ export default function Setup2FAModal(props: Setup2FAModalProps) {
         <div class="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
           <h3 class="font-bold text-white text-base flex items-center gap-2">
             <ShieldCheck class="w-5 h-5 text-blue-500" />
-            Enable 2FA Protection
+            {t('2fa.setup_title', 'Enable 2FA Protection')}
           </h3>
           <button
             onClick={props.onClose}

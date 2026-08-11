@@ -40,9 +40,14 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...expensesStore];
+    const list = JSON.parse(JSON.stringify(expensesStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.expenses.clear();
     } else {
@@ -58,7 +63,11 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
 
   const orgExpenses = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return expensesStore.filter(e => e.organizationId === orgId && !e.deletedAt);
+    return expensesStore.filter(e => {
+      if (e.deletedAt) return false;
+      if (!e.organizationId || e.organizationId === 'org_default') return true;
+      return (e.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
   });
 
   const addExpense = async (expenseInput: Omit<ExpenseEntry, 'id'>) => {

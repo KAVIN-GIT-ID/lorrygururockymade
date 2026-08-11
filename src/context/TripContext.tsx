@@ -94,9 +94,14 @@ export function TripProvider(props: { children: JSX.Element }) {
   });
 
   // Sync back to Dexie cache reactively
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...tripsStore];
+    const list = JSON.parse(JSON.stringify(tripsStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.trips.clear();
     } else {
@@ -106,25 +111,30 @@ export function TripProvider(props: { children: JSX.Element }) {
 
   const saveTrips = (newTrips: TripEntry[] | ((prev: TripEntry[]) => TripEntry[])) => {
     const list = typeof newTrips === 'function' ? newTrips(tripsStore) : newTrips;
-    // Sync to Appwrite if configured
+    // Sync to Appwrite if configured and user is authenticated in an active organization
     if (isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-      const orgId = currentUserOrgId() || 'org_default';
-      list.forEach(async (newT) => {
-        if (newT.syncState === 'synced') return;
-        const oldT = tripsStore.find(t => t.id === newT.id);
-        if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
-          try {
-            await appwrite.saveFleetDocument(databaseId, 'trips', newT.id, orgId, newT);
-            const index = tripsStore.findIndex(t => t.id === newT.id);
-            if (index !== -1) {
-              setTripsStore(index, 'syncState', 'synced');
+      const orgId = currentUserOrgId();
+      if (orgId && orgId !== 'org_default') {
+        list.forEach(async (newT) => {
+          if (newT.syncState === 'synced') return;
+          const targetOrg = newT.organizationId || orgId;
+          if (targetOrg === 'org_default') return; // Skip saving unmigrated default items directly
+
+          const oldT = tripsStore.find(t => t.id === newT.id);
+          if (!oldT || JSON.stringify(oldT) !== JSON.stringify(newT)) {
+            try {
+              await appwrite.saveFleetDocument(databaseId, 'trips', newT.id, targetOrg, newT);
+              const index = tripsStore.findIndex(t => t.id === newT.id);
+              if (index !== -1) {
+                setTripsStore(index, 'syncState', 'synced');
+              }
+            } catch (err) {
+              console.error(`Failed to save trip ${newT.tripNo || newT.id} to Appwrite in saveTrips:`, err);
             }
-          } catch (err) {
-            console.error(`Failed to save trip ${newT.tripNo} to Appwrite in saveTrips:`, err);
           }
-        }
-      });
+        });
+      }
     }
 
     setTripsStore(list);
@@ -134,8 +144,13 @@ export function TripProvider(props: { children: JSX.Element }) {
 
   const orgTrips = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return tripsStore.filter(t => t.organizationId === orgId)
-      .map(t => t.deletedAt ? { ...t, status: 'Deleted' as any } : t);
+    const isSuper = !!currentUserRights()?.isSuperAdmin || currentUserOrgId() === 'org_backend';
+    return tripsStore.filter(t => {
+      if (t.deletedAt) return false;
+      if (isSuper) return true;
+      if (!t.organizationId || t.organizationId === 'org_default') return true;
+      return (t.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
   });
 
   const postTripEntry = async (entryInput: Omit<TripEntry, 'id'>, editingTrip: TripEntry | null) => {

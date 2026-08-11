@@ -13,6 +13,7 @@ import MobileBottomTabBar from './MobileBottomTabBar';
 
 const MobileHomeTab = lazy(() => import('./MobileHomeTab'));
 const MobileAccountTab = lazy(() => import('./MobileAccountTab'));
+const MobileTripsTab = lazy(() => import('./MobileTripsTab'));
 const MobileOutstandingView = lazy(() => import('./MobileOutstandingView'));
 
 const TripList = lazy(() => import('./TripList'));
@@ -347,21 +348,18 @@ export default function MobileViewport(rawProps: MobileViewportProps) {
           )}
 
           {props.mobileTab() === 'TRIPS' && (
-            <div class="flex-1 overflow-y-auto p-4 pb-20 space-y-4">
-              <TripList
-                trips={props.orgTrips}
-                trucks={props.approvedOrgTrucks}
-                offices={props.orgOffices}
-                accounts={props.orgAccounts}
-                onEditEntry={props.handleEditTripTrigger}
-                onDeleteEntry={props.deleteTripEntry}
-                confirmAction={props.confirmAction}
-                canViewTrips={props.currentUserRights().canViewTrips}
-                canEditTrips={props.currentUserRights().canEditTrips}
-                canDeleteTrips={props.currentUserRights().canDeleteTrips}
-                organizationId={props.currentUserOrgId}
-                onSaveTrips={props.saveTrips}
-                orgProfile={props.currentOrgProfile}
+            <div class="flex-1 overflow-y-auto pb-20">
+              <MobileTripsTab
+                trips={props.orgTrips || []}
+                trucks={props.approvedOrgTrucks || []}
+                drivers={props.orgDrivers || []}
+                accounts={props.orgAccounts || []}
+                onSelectTrip={props.handleEditTripTrigger}
+                onOpenQuickDispatch={() => {
+                  props.setEditingTrip(null);
+                  props.setBookingModalOpen(true);
+                }}
+                onSaveTrips={tripsCtx.saveTrips}
               />
             </div>
           )}

@@ -13,6 +13,7 @@ import { Driver, TripEntry, ExpenseEntry, Account, OrganizationProfile, getTripM
 import { Plus, Edit2, Trash2, User, Phone, FileText, CheckCircle, XCircle, Calculator, Coins, TrendingUp, Wallet, ArrowUpRight, ArrowDownLeft, Receipt, Loader2, X, MoreVertical, Settings, AlertCircle, ArrowRightLeft } from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import CountryCodePhoneInput from './CountryCodePhoneInput';
+import { useLanguage } from '../context/LanguageContext';
 
 interface DriverMasterProps {
   drivers: Driver[];
@@ -35,6 +36,7 @@ interface DriverMasterProps {
 }
 
 export default function DriverMaster(rawProps: DriverMasterProps) {
+  const { t } = useLanguage();
   const tripsCtx = useTripsContext();
   const driversCtx = useDriversContext();
   const expenseCtx = useExpensesContext();
@@ -194,8 +196,8 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
     <div id="driver-master-panel" class="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in text-slate-850">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h2 class="text-lg font-bold text-slate-800 tracking-tight">Driver Registry</h2>
-          <p class="text-xs text-slate-500 mt-0.5">Manage operator drivers database sheets for transport allocations.</p>
+          <h2 class="text-lg font-bold text-slate-800 tracking-tight">{t('driver.title', 'Driver Registry')}</h2>
+          <p class="text-xs text-slate-500 mt-0.5">{t('driver.subtitle', 'Manage operator drivers database sheets for transport allocations.')}</p>
         </div>
         {props.canEditDrivers && (
           <button
@@ -206,9 +208,9 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
             }}
             class="flex items-center gap-2 bg-blue-600 hover:bg-blue-750 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer"
           >
-            {showAddForm() ? 'Close Form' : (
+            {showAddForm() ? t('btn.close', 'Close Form') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> Add New Driver
+                <Plus class="w-3.5 h-3.5" /> {t('btn.new_driver', '+ Add Driver')}
               </>
             )}
           </button>

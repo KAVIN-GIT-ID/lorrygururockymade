@@ -46,9 +46,14 @@ export function AuditLogProvider(props: { children: JSX.Element }) {
   });
 
   // Sync back to Dexie cache reactively
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...auditLogsStore];
+    const list = JSON.parse(JSON.stringify(auditLogsStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.auditLogs.clear();
     } else {

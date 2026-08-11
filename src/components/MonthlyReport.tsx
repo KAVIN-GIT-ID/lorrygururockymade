@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Truck as TruckIcon
 } from 'lucide-solid';
+import { useLanguage } from '../context/LanguageContext';
 
 
 interface MonthlyReportProps {
@@ -27,6 +28,7 @@ interface MonthlyReportProps {
 }
 
 export default function MonthlyReport(props: MonthlyReportProps) {
+  const { t } = useLanguage();
   // Query Filter state
   const [showActiveOnly, setShowActiveOnly] = createSignal(false);
   const [selectedTruck, setSelectedTruck] = createSignal('');
@@ -224,7 +226,7 @@ export default function MonthlyReport(props: MonthlyReportProps) {
             class="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
           >
             <Printer class="w-3.5 h-3.5 text-slate-450" />
-            <span>Print Report</span>
+            <span>{t('btn.print', 'Print Report')}</span>
           </button>
 
           <button
@@ -234,7 +236,7 @@ export default function MonthlyReport(props: MonthlyReportProps) {
             class="p-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg border border-slate-800 text-xs flex items-center gap-1.5 font-bold shadow-2xs cursor-pointer active:scale-95 duration-100"
           >
             <Download class="w-3.5 h-3.5 text-slate-300" />
-            <span>Export CSV</span>
+            <span>{t('btn.export_csv', 'Export CSV')}</span>
           </button>
         </div>
       </div>

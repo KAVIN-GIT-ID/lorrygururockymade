@@ -156,24 +156,7 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
   });
 
   onMount(() => {
-    const handleResume = () => {
-      if (isConfigured && dbUnlocked()) {
-        handlePullFromDB(true, true);
-      }
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') handleResume();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('resume', handleResume);
-    window.addEventListener('focus', handleResume);
-
-    onCleanup(() => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('resume', handleResume);
-      window.removeEventListener('focus', handleResume);
-    });
+    // Rely exclusively on WebSocket realtime connection instead of page focus re-fetches
   });
 
   // 5. INSTANT support ticket sync on message send (event-triggered)

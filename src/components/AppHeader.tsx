@@ -16,6 +16,7 @@ import {
   LogOut
 } from 'lucide-solid';
 import { UserPermission, TripEntry, Truck, Office, Account, Driver, ExpenseEntry, Tyre, AuditLog, SupportTicket, UserRights } from '../types';
+import { useLanguage, SUPPORTED_LANGUAGES } from '../context/LanguageContext';
 
 
 interface AppHeaderProps {
@@ -76,6 +77,7 @@ interface AppHeaderProps {
 }
 
 export const AppHeader: Component<AppHeaderProps> = (props) => {
+  const langCtx = useLanguage();
   const activeTab = () => props.activeTab;
   const orgTrips = () => props.orgTrips;
   const orgTrucks = () => props.orgTrucks;
@@ -130,7 +132,7 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
   const auditLogs = () => props.auditLogs;
   const logAction = props.logAction;
   return (
-    <header class="min-h-16 h-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-2 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
+    <header class="hidden md:flex min-h-16 h-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-2 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
       <div class="flex items-center gap-4 self-stretch sm:self-auto">
         <h1 class="text-xl font-bold text-slate-800 dark:text-white tracking-tight">
           {activeTab() === 'DASHBOARD' && 'Operations Dashboard'}
@@ -290,6 +292,22 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
           </span>
         </button>
 
+        {/* LANGUAGE SELECTOR (TARGETING TAMIL FLEET OPERATORS) */}
+        <div class="relative shrink-0">
+          <select
+            value={langCtx.language()}
+            onChange={(e) => langCtx.setLanguage(e.target.value as any)}
+            class="h-9 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs font-bold focus:outline-none focus:border-blue-500 cursor-pointer shadow-xs transition"
+            title="Select Application Language / மொழியைத் தேர்ந்தெடுக்கவும்"
+          >
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <option value={lang.code}>
+                {lang.flag} {lang.nativeName}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* USER PROFILE INITIALS AVATAR */}
         <div ref={profileDropdownRef} class="relative shrink-0">
           <button
@@ -371,77 +389,76 @@ export const AppHeader: Component<AppHeaderProps> = (props) => {
                 onClick={() => {
                   setProfileDropdownOpen(false);
                   handleLogout();
-                }}
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg text-left transition cursor-pointer font-semibold"
-              >
-                <LogOut class="w-3.5 h-3.5" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-
-
-        {currentUserRights()?.isAdmin && (
-          <button
-            id="btn-clear-data"
-            onClick={triggerClearAllLocalData}
-            title="Wipe all local database logs and start fresh"
-            class="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
-          >
-            <Trash2 class="w-3.5 h-3.5 text-rose-500" />
-            <span class="hidden lg:inline text-rose-500">Clear Data</span>
-          </button>
-        )}
-        {currentUserRights()?.isAdmin && (
-          <button
-            id="btn-backup-download"
-            onClick={handleTriggerDownloadBackup}
-            title="Download Snapshot Backup File (.json)"
-            class="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
-          >
-            <Download class="w-3.5 h-3.5 text-slate-400" />
-            <span class="hidden lg:inline">Backup</span>
-          </button>
-        )}
-        {currentUserRights()?.isAdmin && (
-          <label class="p-2 bg-white dark:bg-slate-855 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0 select-none">
-            <Upload class="w-3.5 h-3.5 text-slate-400" />
-            <span class="hidden lg:inline">Restore</span>
-            <input
-              id="file-restore-input"
-              type="file"
-              accept=".json"
-              onChange={handleUploadBackupChange}
-              class="hidden"
-            />
-          </label>
-        )}
-
-        {currentUserRights()?.isAdmin && (
-          <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 self-center hidden sm:block" />
-        )}
-
-        {currentUserRights().canEditTrips && (
-          <button
-            id="btn-quick-post-trip"
-            onClick={() => {
-              if (orgTrucks().length === 0 || orgOffices().length === 0) {
-                alert("Hold on! Register Trucks and Offices in their master sheets before booking cargo entries.");
-                return;
-              }
-              setEditingTrip(null);
-              setBookingModalOpen(true);
+              handleLogout();
             }}
-            class="bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-colors shrink-0"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg text-left transition cursor-pointer font-semibold"
           >
-            <Plus class="w-4 h-4" /> <span class="hidden sm:inline">New Entry</span>
+            <LogOut class="w-3.5 h-3.5" />
+            <span>Sign Out</span>
           </button>
-        )}
-      </div>
-    </header>
-  );
+        </div>
+      )}
+    </div>
+
+    {currentUserRights()?.isAdmin && (
+      <button
+        id="btn-clear-data"
+        onClick={triggerClearAllLocalData}
+        title="Wipe all local database logs and start fresh"
+        class="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
+      >
+        <Trash2 class="w-3.5 h-3.5 text-rose-500" />
+        <span class="hidden lg:inline text-rose-500">{langCtx.t('btn.clear_data', 'Clear Data')}</span>
+      </button>
+    )}
+    {currentUserRights()?.isAdmin && (
+      <button
+        id="btn-backup-download"
+        onClick={handleTriggerDownloadBackup}
+        title="Download Snapshot Backup File (.json)"
+        class="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0"
+      >
+        <Download class="w-3.5 h-3.5 text-slate-400" />
+        <span class="hidden lg:inline">{langCtx.t('btn.backup', 'Backup')}</span>
+      </button>
+    )}
+    {currentUserRights()?.isAdmin && (
+      <label class="p-2 bg-white dark:bg-slate-855 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-lg transition border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer shrink-0 select-none">
+        <Upload class="w-3.5 h-3.5 text-slate-400" />
+        <span class="hidden lg:inline">{langCtx.t('btn.restore', 'Restore')}</span>
+        <input
+          id="file-restore-input"
+          type="file"
+          accept=".json"
+          onChange={handleUploadBackupChange}
+          class="hidden"
+        />
+      </label>
+    )}
+
+    {currentUserRights()?.isAdmin && (
+      <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 self-center hidden sm:block" />
+    )}
+
+    {currentUserRights().canEditTrips && (
+      <button
+        id="btn-quick-post-trip"
+        onClick={() => {
+          if (orgTrucks().length === 0 || orgOffices().length === 0) {
+            alert("Hold on! Register Trucks and Offices in their master sheets before booking cargo entries.");
+            return;
+          }
+          setEditingTrip(null);
+          setBookingModalOpen(true);
+        }}
+        class="bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-colors shrink-0"
+      >
+        <Plus class="w-4 h-4" /> <span class="hidden sm:inline">{langCtx.t('btn.new_trip', 'New Entry')}</span>
+      </button>
+    )}
+  </div>
+</header>
+);
 };
 
 export default AppHeader;

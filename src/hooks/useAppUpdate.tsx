@@ -96,31 +96,17 @@ export function useAppUpdate(appVersion: string) {
       }
     };
 
-    const handleResume = () => {
+    const isMobileEnv = typeof window !== 'undefined' && 
+      (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || window.innerWidth < 768);
+
+    if (isMobileEnv) {
       fetchAppVersion();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        handleResume();
-      }
-    };
-
-    fetchAppVersion();
+    }
 
     window.addEventListener('ttt_app_update_event', handleUpdateEvent);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('resume', handleResume);
-    window.addEventListener('focus', handleResume);
-
-    const interval = setInterval(fetchAppVersion, 3 * 60 * 1000);
 
     onCleanup(() => {
       window.removeEventListener('ttt_app_update_event', handleUpdateEvent);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('resume', handleResume);
-      window.removeEventListener('focus', handleResume);
-      clearInterval(interval);
     });
   });
 

@@ -157,34 +157,141 @@
 }
 
 /* Touch Slide/Fade animations for Tab Switches */
-@keyframes slideInRight {
-  from {
-    transform: translateX(24px);
+/* Full off-screen Slide In / Out animations for Toasts */
+@keyframes slideInFromRight {
+  0% {
+    transform: translateX(120%);
     opacity: 0;
   }
-  to {
+  70% {
+    transform: translateX(-4px);
+    opacity: 1;
+  }
+  100% {
     transform: translateX(0);
     opacity: 1;
   }
 }
 
-@keyframes slideInLeft {
-  from {
-    transform: translateX(-24px);
-    opacity: 0;
-  }
-  to {
+@keyframes slideOutToRight {
+  0% {
     transform: translateX(0);
     opacity: 1;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
+@keyframes slideInFromLeft {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  70% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToLeft {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+}
+
+@keyframes slideInFromTop {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToTop {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+}
+
+@keyframes slideInFromBottom {
+  0% {
+    transform: translateY(120%);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToBottom {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(120%);
+    opacity: 0;
   }
 }
 
 .animate-slide-in-right {
-  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideInFromRight 0.45s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+}
+
+.animate-slide-out-right {
+  animation: slideOutToRight 0.35s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
 }
 
 .animate-slide-in-left {
-  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideInFromLeft 0.45s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+}
+
+.animate-slide-out-left {
+  animation: slideOutToLeft 0.35s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+}
+
+.animate-slide-in-top {
+  animation: slideInFromTop 0.45s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+}
+
+.animate-slide-out-top {
+  animation: slideOutToTop 0.35s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+}
+
+.animate-slide-in-bottom {
+  animation: slideInFromBottom 0.45s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+}
+
+.animate-slide-out-bottom {
+  animation: slideOutToBottom 0.35s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

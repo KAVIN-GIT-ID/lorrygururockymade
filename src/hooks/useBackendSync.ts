@@ -1,4 +1,5 @@
 import { createEffect, batch, onMount, onCleanup, untrack } from 'solid-js';
+import { Query } from 'appwrite';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { migrateAuditLogs, migrateUserPermissions, migrateTrucks, migrateTrips, migrateTripsIfNecessary, migrateDrivers, migrateOffices, migrateAccounts, migrateExpenses, migrateTyres } from '../lib/migrations';
 import { reconcileById } from '../utils/reconcileUtils';
@@ -35,6 +36,13 @@ export function useBackendSync(
     const userEmail = email;
 
     const reloadBackendData = async () => {
+      // Zero-HTTP Startup Guard: Skip routine background HTTP queries when local cache exists
+      const existingTrucks = untrack(() => (setTrucks ? (typeof setTrucks === 'function' ? setTrucks : []) : []));
+      const existingRights = untrack(userRightsList);
+      if ((existingRights?.length || 0) > 0) {
+        return;
+      }
+
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
         const rawConfigs = await appwrite.listGlobalConfigs(databaseId);
@@ -56,21 +64,15 @@ export function useBackendSync(
 
         const orgFleetData: Record<string, any> = {};
         const categories = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets'];
-        
-        await Promise.all(categories.map(async (col) => {
-          try {
-            const docs = await appwrite.listFleetDocuments(databaseId, col, 'org_backend');
-            for (const doc of docs) {
-              const oId = doc.organizationId || 'org_default';
-              if (!orgFleetData[oId]) {
-                orgFleetData[oId] = { trucks: [], drivers: [], offices: [], accounts: [], trips: [], expenses: [], tyres: [], auditLogs: [], supportTickets: [] };
-              }
-              const parsedRecord = appwrite.reconstructRecord(doc);
-              const targetKey = col === 'audit_logs' ? 'auditLogs' : col === 'support_tickets' ? 'supportTickets' : col;
-              orgFleetData[oId][targetKey].push(parsedRecord);
-            }
-          } catch (_) {}
-        }));
+        const lastSyncTime = Number(localStorage.getItem('appwrite_last_sync_time') || '0');
+        const extraQueries: string[] = [];
+        if (lastSyncTime > 0) {
+          extraQueries.push(Query.greaterThan('$updatedAt', new Date(lastSyncTime).toISOString()));
+        }
+
+        if (userRightsData.userRightsList.length > 0 || userRightsData.organizationProfiles.length > 0) {
+          return;
+        }
 
         batch(() => {
           if (userRightsData.userRightsList.length > 0) {

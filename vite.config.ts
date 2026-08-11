@@ -45,17 +45,36 @@ export default defineConfig(() => {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,
           secure: false,
+          configure: (proxy) => {
+            proxy.on('error', (_err, _req, res) => {
+              if (res && !res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Local backend server offline' }));
+              }
+            });
+          }
         },
         '/api/database': {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,
           secure: false,
+          configure: (proxy) => {
+            proxy.on('error', (_err, _req, res) => {
+              if (res && !res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Local backend server offline' }));
+              }
+            });
+          }
         },
         '/realtime': {
           target: 'http://127.0.0.1:5000',
           ws: true,
           changeOrigin: true,
           secure: false,
+          configure: (proxy) => {
+            proxy.on('error', () => {});
+          }
         }
       }
     },

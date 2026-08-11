@@ -42,9 +42,14 @@ export function DriverProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...driversStore];
+    const list = JSON.parse(JSON.stringify(driversStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.drivers.clear();
     } else {
@@ -60,7 +65,11 @@ export function DriverProvider(props: { children: JSX.Element }) {
 
   const orgDrivers = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return driversStore.filter(d => d.organizationId === orgId && !d.deletedAt);
+    return driversStore.filter(d => {
+      if (d.deletedAt) return false;
+      if (!d.organizationId || d.organizationId === 'org_default') return true;
+      return (d.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
   });
 
   const addDriver = async (driverInput: Omit<Driver, 'id'>) => {

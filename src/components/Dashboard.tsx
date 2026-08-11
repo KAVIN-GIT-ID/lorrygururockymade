@@ -528,7 +528,8 @@ export default function Dashboard(props: DashboardProps) {
       const currentKM = truck.currentKM || 0;
 
       // 1. Loan alerts
-      const activeLoans = getTruckLoans(truck).filter(l => l.loanStatus !== 'Closed');
+      const rawLoansList = getTruckLoans(truck);
+      const activeLoans = (Array.isArray(rawLoansList) ? rawLoansList : []).filter(l => l && l.loanStatus !== 'Closed');
       activeLoans.forEach(loan => {
         const stats = calculateSingleLoanStats(loan, truck.truckNo, props.expenses || []);
         if (stats && stats.nextDueDateStr !== 'Fully Settled') {

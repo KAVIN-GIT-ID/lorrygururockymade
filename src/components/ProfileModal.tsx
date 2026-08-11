@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
 import { useOrganizations } from '../context/OrganizationContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useLanguage } from '../context/LanguageContext';
 import { SupportTicket } from '../types';
 
 const ProfileSupportTickets = lazy(() => import('./ProfileSupportTickets'));
@@ -38,6 +39,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
   const perm = usePermissions();
   const orgs = useOrganizations();
   const notifications = useNotifications();
+  const { t } = useLanguage();
 
   const currentUser = auth.currentUser;
   const currentUserRights = perm.currentUserRights;
@@ -88,7 +90,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
           {/* Modal Sidebar */}
           <div class="w-full md:w-64 bg-slate-50 dark:bg-slate-900/50 p-4 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0">
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-extrabold uppercase tracking-wider text-slate-400">User Settings</span>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-slate-400">{t('profile.title', 'User Settings')}</span>
               <button
                 onClick={props.onClose}
                 class="md:hidden text-slate-400 hover:text-slate-655 text-sm font-bold p-1 cursor-pointer"
@@ -106,7 +108,7 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
               }`}
             >
               <User class="w-4 h-4" />
-              <span>Profile & Security</span>
+              <span>{t('profile.tab_settings', 'Profile & Security')}</span>
             </button>
 
             {!isBackendTeam() && (
@@ -199,7 +201,13 @@ export const ProfileModal: Component<ProfileModalProps> = (props) => {
                   tickets={createMemo(() => {
                     const raw = typeof props.supportTickets === 'function' ? props.supportTickets() : (props.supportTickets || []);
                     const orgId = currentUserOrgId();
-                    return raw.filter(st => orgId === 'org_backend' || st.organizationId === orgId || st.organizationId === 'org_default' || !st.organizationId);
+                    const isBackend = orgId === 'org_backend' || !!currentUserRights()?.isSuperAdmin;
+                    return raw.filter(st => {
+                      if (!st || !st.id) return false;
+                      if (isBackend) return true;
+                      if (!st.organizationId || st.organizationId === 'org_default') return true;
+                      return (st.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+                    });
                   })}
                   onCreateTicket={props.handleCreateSupportTicket}
                   onSendMessage={props.handleSendSupportTicketMessage}

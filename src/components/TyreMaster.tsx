@@ -32,6 +32,7 @@ import {
   Edit2
 } from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { useLanguage } from '../context/LanguageContext';
 
 interface TyreMasterProps {
   showNotification?: (msg: string) => void;
@@ -70,6 +71,7 @@ interface TyreMasterProps {
 }
 
 export default function TyreMaster(rawProps: TyreMasterProps) {
+  const { t } = useLanguage();
   let tyreCtx: any; try { tyreCtx = useTyresContext(); } catch (_) {}
   let trucksCtx: any; try { trucksCtx = useTrucksContext(); } catch (_) {}
   let driversCtx: any; try { driversCtx = useDriversContext(); } catch (_) {}
@@ -444,9 +446,9 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
             }}
             class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer self-start md:self-auto"
           >
-            {showAddForm() ? 'Close panel' : (
+            {showAddForm() ? t('btn.close', 'Close panel') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> Register New Tyre
+                <Plus class="w-3.5 h-3.5" /> {t('tyre.add_btn', '+ Register New Tyre')}
               </>
             )}
           </button>

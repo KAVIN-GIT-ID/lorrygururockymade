@@ -1007,8 +1007,8 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
   const limitReached = createMemo(() => approvedCount() >= (props.maxTrucksAllowed || 9999));
 
   const filteredTrucks = createMemo(() => (props.trucks || []).filter(truck => {
-    const matchesSearch = truck.truckNo.toLowerCase().includes(searchQuery().toLowerCase().trim());
-    const matchesStatus = statusFilter() === 'All' || truck.status === statusFilter();
+    const matchesSearch = (truck?.truckNo || '').toLowerCase().includes(searchQuery().toLowerCase().trim());
+    const matchesStatus = statusFilter() === 'All' || !truck?.status || truck?.status === statusFilter();
     return matchesSearch && matchesStatus;
   }));
 

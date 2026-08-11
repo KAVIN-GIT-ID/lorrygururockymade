@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Component } from 'solid-js';
 
 import { AlertCircle } from 'lucide-solid';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ConfirmModalProps {
   confirmModal: {
@@ -13,6 +14,7 @@ interface ConfirmModalProps {
 }
 
 export const ConfirmModal: Component<ConfirmModalProps> = (props) => {
+  const { t } = useLanguage();
   if (!props.confirmModal || !props.confirmModal.isOpen) return null;
 
   return (
@@ -33,14 +35,14 @@ export const ConfirmModal: Component<ConfirmModalProps> = (props) => {
             onClick={props.onClose}
             class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40"
           >
-            Cancel
+            {t('btn.cancel', 'Cancel')}
           </button>
           <button
             type="button"
             onClick={props.confirmModal.onConfirm}
             class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-rose-600/10 hover:shadow-rose-600/20 cursor-pointer"
           >
-            Confirm Action
+            {t('btn.save', 'Confirm Action')}
           </button>
         </div>
       </div>

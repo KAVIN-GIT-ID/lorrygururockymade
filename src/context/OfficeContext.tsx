@@ -40,9 +40,14 @@ export function OfficeProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...officesStore];
+    const list = JSON.parse(JSON.stringify(officesStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.offices.clear();
     } else {
@@ -58,7 +63,10 @@ export function OfficeProvider(props: { children: JSX.Element }) {
 
   const orgOffices = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return officesStore.filter(o => o.organizationId === orgId);
+    return officesStore.filter(o => {
+      if (!o.organizationId || o.organizationId === 'org_default') return true;
+      return (o.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
   });
 
   const addOffice = async (officeInput: Omit<Office, 'id'>) => {

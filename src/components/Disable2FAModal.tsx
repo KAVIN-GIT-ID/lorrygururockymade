@@ -5,6 +5,7 @@ import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { verifyTOTP } from '../utils/totp';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Disable2FAModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ interface Disable2FAModalProps {
 export default function Disable2FAModal(props: Disable2FAModalProps) {
   const auth = useAuth();
   const perm = usePermissions();
+  const { t } = useLanguage();
 
   const [disable2FACode, setDisable2FACode] = createSignal('');
   const [disable2FAPassword, setDisable2FAPassword] = createSignal('');
@@ -29,7 +31,7 @@ export default function Disable2FAModal(props: Disable2FAModalProps) {
         <div class="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
           <h3 class="font-bold text-white text-base flex items-center gap-2">
             <AlertCircle class="w-5 h-5 text-red-500" />
-            Disable 2FA Protection
+            {t('2fa.disable_title', 'Disable 2FA Protection')}
           </h3>
           <button
             onClick={props.onClose}

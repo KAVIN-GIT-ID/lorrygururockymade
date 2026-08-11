@@ -260,6 +260,9 @@ app.post('/send-email', async (req, res) => {
       auth: {
         user: smtpUser,
         pass: smtpPass
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
 

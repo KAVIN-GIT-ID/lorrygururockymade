@@ -238,18 +238,19 @@ export const cryptoService = {
     try {
       const ip = await fetchPublicIP();
       const encryptedBytes = cryptWithIP(key, ip);
+      localStorage.setItem('ttt_session_active_key', bytesToHex(encryptedBytes));
       sessionStorage.setItem('ttt_session_active_key', bytesToHex(encryptedBytes));
-      console.log(`[cryptoService] Successfully cached key in sessionStorage bound to IP: ${ip}`);
+      console.log(`[cryptoService] Successfully cached key in localStorage bound to IP: ${ip}`);
     } catch (e) {
-      console.warn('[cryptoService] Failed to cache key in sessionStorage:', e);
+      console.warn('[cryptoService] Failed to cache key in storage:', e);
     }
   },
 
   async tryAutoUnlock(): Promise<boolean> {
     try {
-      const cached = sessionStorage.getItem('ttt_session_active_key');
+      const cached = localStorage.getItem('ttt_session_active_key') || sessionStorage.getItem('ttt_session_active_key');
       if (!cached) {
-        console.log('[cryptoService] No cached key found in sessionStorage.');
+        console.log('[cryptoService] No cached key found in storage.');
         return false;
       }
       console.log('[cryptoService] Found cached key. Fetching current IP...');
@@ -277,8 +278,9 @@ export const cryptoService = {
     activeKey = null;
     setHasActiveKey(false);
     try {
+      localStorage.removeItem('ttt_session_active_key');
       sessionStorage.removeItem('ttt_session_active_key');
-    } catch (e) {}
+    } catch (_) {}
   },
 
   // Derive a key from a PIN using standard PBKDF2 (asynchronous, secure)

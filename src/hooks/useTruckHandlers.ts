@@ -1,6 +1,7 @@
 import { Accessor } from 'solid-js';
 import { Truck, AuditLog, TruckRequest, createRecord, mutateRecord } from '../types';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
+import { getActiveBackendUrl } from '../lib/backendUrlHelper';
 
 export function useTruckHandlers(
   trucks: Truck[],
@@ -23,7 +24,7 @@ export function useTruckHandlers(
   const handleVerifyPhonePePayment = async (txnId: string, truckNo: string) => {
     try {
       showNotification("Verifying PhonePe payment status...");
-      const serverUrl = import.meta.env.DEV ? '' : 'https://api.lorryguru.in/truck-backend';
+      const serverUrl = await getActiveBackendUrl();
 
       const tempPayloadStr = sessionStorage.getItem('ttt_temp_payment_payload');
       const tempPayloadObj = tempPayloadStr ? JSON.parse(tempPayloadStr) : null;

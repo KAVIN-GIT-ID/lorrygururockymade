@@ -4,6 +4,7 @@ import { SupportTicket } from '../types';
 import ReportPreviewModal from './ReportPreviewModal';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { MessageSquare, Plus, Paperclip, Send, X, FileText, Download, CheckCircle, Loader2 } from 'lucide-solid';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ProfileSupportTicketsProps {
   tickets: SupportTicket[] | (() => SupportTicket[]);

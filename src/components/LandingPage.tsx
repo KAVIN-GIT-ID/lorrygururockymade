@@ -80,11 +80,6 @@ export default function LandingPage({ onEnterConsole, onRaisePublicTicket }: Lan
   return (
     <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans select-none overflow-x-hidden selection:bg-blue-600/10">
 
-      {/* TOP ANNOUNCEMENT BANNER */}
-      <div class="bg-slate-900 dark:bg-slate-950 text-slate-300 text-xs md:text-sm font-medium py-1.5 px-4 text-center border-b border-slate-800 tracking-wide select-none">
-        This Site in Beta test mode - the database maybe deleted once site on live
-      </div>
-
       {/* HEADER */}
       <header class="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">

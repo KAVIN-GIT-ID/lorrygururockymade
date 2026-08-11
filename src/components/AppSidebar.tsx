@@ -20,6 +20,7 @@ import {
   Receipt
 } from 'lucide-solid';
 import { UserPermission, UserRights } from '../types';
+import { useLanguage } from '../context/LanguageContext';
 
 interface AppSidebarProps {
   logo: string;
@@ -41,6 +42,7 @@ interface AppSidebarProps {
 }
 
 export const AppSidebar: Component<AppSidebarProps> = (props) => {
+  const { t } = useLanguage();
   const logo = () => props.logo;
   const isMobileMenuOpen = () => props.isMobileMenuOpen;
   const setIsMobileMenuOpen = props.setIsMobileMenuOpen;
@@ -58,7 +60,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
   const setProfileActiveTab = props.setProfileActiveTab;
   const setProfileModalOpen = props.setProfileModalOpen;
   return (
-    <aside class="w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
+    <aside class="hidden md:flex w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
       {/* Header Panel (Logo & Mobile Toggle Button) */}
       <div class="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
         <div class="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
@@ -96,7 +98,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                 }`}
             >
               <BarChart3 class="w-4 h-4" />
-              <span>Dashboard</span>
+              <span>{t('nav.dashboard', 'Dashboard')}</span>
             </button>
             {currentUserRights()?.canViewTrips && (
               <button
@@ -108,7 +110,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <BookOpen class="w-4 h-4" />
-                <span>Trip Management</span>
+                <span>{t('nav.trips', 'Trip Management')}</span>
               </button>
             )}
             {currentUserRights()?.canViewTrucks && (
@@ -121,7 +123,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <TruckIcon class="w-4 h-4" />
-                <span>Truck Registry</span>
+                <span>{t('nav.trucks', 'Truck Registry')}</span>
               </button>
             )}
             {currentUserRights()?.canViewOffices && (
@@ -134,7 +136,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <MapPin class="w-4 h-4" />
-                <span>Offices</span>
+                <span>{t('nav.offices', 'Offices')}</span>
               </button>
             )}
             {currentUserRights()?.canViewAccounts && (
@@ -147,7 +149,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <Coins class="w-4 h-4" />
-                <span>Account Ledger</span>
+                <span>{t('nav.accounts', 'Account Ledger')}</span>
               </button>
             )}
             {currentUserRights()?.canViewDrivers && (
@@ -160,7 +162,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <UserCheck class="w-4 h-4" />
-                <span>Drivers Database</span>
+                <span>{t('nav.drivers', 'Driver Master')}</span>
               </button>
             )}
             {currentUserRights()?.canViewExpenses && (
@@ -173,7 +175,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <FileSpreadsheet class="w-4 h-4" />
-                <span>Expense Ledger</span>
+                <span>{t('nav.expenses', 'Expense Ledger')}</span>
               </button>
             )}
             {(currentUserRights()?.isAdmin || currentUserRights()?.isSuperAdmin) && (
@@ -186,7 +188,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <Receipt class="w-4 h-4" />
-                <span>Billing & Invoices</span>
+                <span>{t('nav.billing', 'Billing & Invoices')}</span>
               </button>
             )}
             {currentUserRights()?.canViewTrips && (
@@ -199,7 +201,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <FileText class="w-4 h-4" />
-                <span>Monthly Reports</span>
+                <span>{t('nav.reports', 'Monthly Reports')}</span>
               </button>
             )}
             {currentUserRights()?.isAdmin && (
@@ -212,7 +214,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <History class="w-4 h-4" />
-                <span>System Audit Logs</span>
+                <span>{t('nav.audit', 'System Audit Logs')}</span>
               </button>
             )}
             {currentUserRights()?.canViewTyres && (
@@ -225,7 +227,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <Disc class="w-4 h-4" />
-                <span>Tyre Ledger & ODO</span>
+                <span>{t('nav.tyres', 'Tyre Ledger & ODO')}</span>
               </button>
             )}
             {hasUsersTabAccess() && (
@@ -238,7 +240,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
                   }`}
               >
                 <Users class="w-4 h-4" />
-                <span>Access Control</span>
+                <span>{t('nav.users', 'Access Control')}</span>
               </button>
             )}
 

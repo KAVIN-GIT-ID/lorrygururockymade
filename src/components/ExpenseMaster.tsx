@@ -13,6 +13,7 @@ import { ExpenseEntry, Truck, Account, Driver, OrganizationProfile } from '../ty
 import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings } from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import SearchableSelect from './SearchableSelect';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ExpenseMasterProps {
   expenses: ExpenseEntry[];
@@ -33,6 +34,7 @@ interface ExpenseMasterProps {
 }
 
 export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
+  const { t } = useLanguage();
   const expenseCtx = useExpensesContext();
   const trucksCtx = useTrucksContext();
   const driversCtx = useDriversContext();
@@ -344,10 +346,10 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
         <div>
           <h2 class="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2">
             <FileSpreadsheet class="w-5 h-5 text-indigo-600" />
-            <span>Voucher & Expenses Ledger</span>
+            <span>{t('exp.title', 'Voucher & Expenses Ledger')}</span>
             {loading() && <span class="inline-block w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>}
           </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Register, manage, and monitor general shop and temporary truck maintenance props.expenses.</p>
+          <p class="text-xs text-slate-500 mt-0.5">{t('exp.subtitle', 'Register, manage, and monitor general shop and temporary truck maintenance expenses.')}</p>
         </div>
         
         {props.canEditExpenses && (
@@ -359,9 +361,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
             }}
             class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer active:scale-95"
           >
-            {showForm() ? 'Cancel & Close' : (
+            {showForm() ? t('btn.close', 'Cancel & Close') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> Register New Expense
+                <Plus class="w-3.5 h-3.5" /> {t('exp.add_btn', '+ Record Expense')}
               </>
             )}
           </button>

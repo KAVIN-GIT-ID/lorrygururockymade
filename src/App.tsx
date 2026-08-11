@@ -60,41 +60,45 @@ const LoadingTab = () => (
   </div>
 );
 
+import { LanguageProvider } from './context/LanguageContext';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <PermissionProvider>
-        <OrganizationProvider>
-          <NotificationProvider>
-            <ThemeProvider>
-              <SettingsManager>
-                <DialogManager>
-                  <NavigationManager>
-                    <TripProvider>
-                      <TruckProvider>
-                        <DriverProvider>
-                          <ExpenseProvider>
-                            <OfficeProvider>
-                              <AccountProvider>
-                                <TyreProvider>
-                                  <AuditLogProvider>
-                                    <AppContentWrapper />
-                                  </AuditLogProvider>
-                                </TyreProvider>
-                              </AccountProvider>
-                            </OfficeProvider>
-                          </ExpenseProvider>
-                        </DriverProvider>
-                      </TruckProvider>
-                    </TripProvider>
-                  </NavigationManager>
-                </DialogManager>
-              </SettingsManager>
-            </ThemeProvider>
-          </NotificationProvider>
-        </OrganizationProvider>
-      </PermissionProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <PermissionProvider>
+          <OrganizationProvider>
+            <NotificationProvider>
+              <ThemeProvider>
+                <SettingsManager>
+                  <DialogManager>
+                    <NavigationManager>
+                      <TripProvider>
+                        <TruckProvider>
+                          <DriverProvider>
+                            <ExpenseProvider>
+                              <OfficeProvider>
+                                <AccountProvider>
+                                  <TyreProvider>
+                                    <AuditLogProvider>
+                                      <AppContentWrapper />
+                                    </AuditLogProvider>
+                                  </TyreProvider>
+                                </AccountProvider>
+                              </OfficeProvider>
+                            </ExpenseProvider>
+                          </DriverProvider>
+                        </TruckProvider>
+                      </TripProvider>
+                    </NavigationManager>
+                  </DialogManager>
+                </SettingsManager>
+              </ThemeProvider>
+            </NotificationProvider>
+          </OrganizationProvider>
+        </PermissionProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

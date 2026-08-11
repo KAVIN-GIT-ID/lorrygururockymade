@@ -40,9 +40,14 @@ export function AccountProvider(props: { children: JSX.Element }) {
     });
   });
 
+  let initialLoadCompleted = false;
   createEffect(() => {
     if (!dbUnlocked() || !loadedFromDB()) return;
-    const list = [...accountsStore];
+    const list = JSON.parse(JSON.stringify(accountsStore));
+    if (!initialLoadCompleted) {
+      if (list.length > 0) initialLoadCompleted = true;
+      else return;
+    }
     if (list.length === 0) {
       db.accounts.clear();
     } else {
@@ -58,7 +63,10 @@ export function AccountProvider(props: { children: JSX.Element }) {
 
   const orgAccounts = createMemo(() => {
     const orgId = currentUserOrgId() || 'org_default';
-    return accountsStore.filter(a => a.organizationId === orgId);
+    return accountsStore.filter(a => {
+      if (!a.organizationId || a.organizationId === 'org_default') return true;
+      return (a.organizationId || '').toLowerCase().trim() === orgId.toLowerCase().trim();
+    });
   });
 
   const addAccount = async (accountInput: Omit<Account, 'id'>) => {
