@@ -55,6 +55,7 @@ import DesktopViewport from './DesktopViewport';
 import MobileViewport from './MobileViewport';
 import AppwriteCloudSync from './AppwriteCloudSync';
 import AppModals from './AppModals';
+import { PendingApprovalScreen } from './PendingApprovalScreen';
 
 const LoadingTab = () => (
   <div class="flex items-center justify-center p-12 h-64">
@@ -394,15 +395,8 @@ export default function ConsoleApp() {
   const currentUserOrgId = createMemo(() => currentUserRights()?.organizationId || '');
   const hasUsersTabAccess = createMemo(() => currentUserOrgId() === 'org_backend' ? !!currentUserRights().canViewBackendTeam : !!currentUserRights().isAdmin);
 
-  // Live Appwrite team membership list (fetched when admin opens USERS tab)
+  // Live Appwrite team membership list (managed via OrganizationManager)
   const [teamMembersList, setTeamMembersList] = createSignal<any[]>([]);
-
-  // Fetch live Appwrite memberships
-  createEffect(() => {
-    if (activeTab() === 'USERS' && hasUsersTabAccess() && currentUserOrgId() && isAppwriteConfigured()) {
-      orgManager.teamMembers();
-    }
-  });
 
   // Redirect restricted tabs
   createEffect(() => {
@@ -792,7 +786,19 @@ export default function ConsoleApp() {
   prevTabIdxRef = currentTabIdx;
   const slideClassName = isSlideRight ? 'animate-slide-in-right' : 'animate-slide-in-left';
 
-  const isBackendTeam = currentUserOrgId() === 'org_backend' || currentUserRights().isSuperAdmin;
+  const isBackendTeam = currentUserOrgId() === 'org_backend' || currentUserRights()?.isSuperAdmin;
+  const currentRole = () => (currentUserRights() as any)?.role || '';
+
+  if (currentRole() === 'Pending' || currentRole() === 'Disabled' || (!currentUserOrgId() && !currentUserRights()?.isSuperAdmin)) {
+    return (
+      <PendingApprovalScreen
+        currentUserRights={currentUserRights() as any}
+        onLogout={handleLogout}
+        onRequestToJoinOrganization={handleRequestToJoinOrganization}
+        showNotification={showNotification}
+      />
+    );
+  }
 
   return (
     <div class="h-screen bg-slate-50 text-slate-800 flex flex-col font-sans select-none selection:bg-blue-600/10 overflow-hidden">

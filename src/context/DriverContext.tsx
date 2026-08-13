@@ -106,9 +106,16 @@ export function DriverProvider(props: { children: JSX.Element }) {
     const orgId = currentUserOrgId() || 'org_default';
     const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
     const oldDriver = driversStore.find(d => d.id === updated.id);
+
     const merged: Driver = oldDriver
       ? mutateRecord(oldDriver, updated, currentUserId)
       : createRecord<Driver>({ ...updated, organizationId: orgId } as any, currentUserId);
+
+    if (oldDriver && !getDriverDiff(oldDriver, merged)) {
+      console.log(`[DriverContext] Zero modifications for Driver ${merged.driverName}. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Driver ${merged.driverName}. Record unchanged.`);
+      return;
+    }
 
     if (isAppwriteConfigured()) {
       try {

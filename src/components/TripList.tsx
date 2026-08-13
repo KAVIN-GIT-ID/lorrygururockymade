@@ -62,10 +62,10 @@ export default function TripList(rawProps: TripListProps) {
   const canEditTrips = () => props.canEditTrips;
   const canDeleteTrips = () => props.canDeleteTrips;
   const organizationId = () => props.organizationId;
+  const orgProfile = () => props.orgProfile || null;
   const onSaveTrips = props.onSaveTrips;
   const auditLogs = () => props.auditLogs;
   const currentUserRights = () => props.currentUserRights;
-  const orgProfile = () => props.orgProfile;
   // Mouse hover scroll redirection for horizontal overflow
   let scrollRef: HTMLDivElement | undefined;
   onMount(() => {
@@ -470,21 +470,45 @@ export default function TripList(rawProps: TripListProps) {
     return <span class="font-mono font-bold text-slate-800">{showSign ? '₹' : ''}{val.toLocaleString('en-IN')}</span>;
   };
 
-  const getStatusBadge = (status: TripStatus) => {
-    switch (status) {
-      case 'Pending':
-        return <span class="px-2.5 py-1 text-xs font-semibold rounded-full border border-slate-200 bg-slate-50 text-slate-600">Pending</span>;
-      case 'In Progress':
-        return <span class="px-2.5 py-1 text-xs font-semibold rounded-full border border-amber-200 bg-amber-50 text-amber-700">In Progress</span>;
-      case 'Completed':
-        return <span class="px-2.5 py-1 text-xs font-semibold rounded-full border border-blue-200 bg-blue-50 text-blue-700">Completed</span>;
-      case 'Settled':
-        return <span class="px-2.5 py-1 text-xs font-semibold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">Settled</span>;
-      case 'Deleted':
-        return <span class="px-2.5 py-1 text-xs font-semibold rounded-full border border-rose-200 bg-rose-50 text-rose-700">Deleted</span>;
-      default:
-        return null;
+  const handleUpdateTripStatus = (trip: TripEntry, newStatus: TripStatus, e?: Event) => {
+    if (e) e.stopPropagation();
+    if (!props.onSaveTrips || !canEditTrips()) return;
+    const updated = props.trips.map(t => t.id === trip.id ? { ...t, status: newStatus } : t);
+    props.onSaveTrips(updated);
+  };
+
+  const getStatusBadge = (trip: TripEntry) => {
+    const status = trip.status || 'Pending';
+    const isEditable = canEditTrips() && props.onSaveTrips && status !== 'Deleted';
+
+    const colorClass =
+      status === 'Pending' ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100' :
+      status === 'In Progress' ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' :
+      status === 'Completed' ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100' :
+      status === 'Settled' ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' :
+      'bg-rose-50 text-rose-700 border-rose-200';
+
+    if (!isEditable) {
+      return (
+        <span class={`px-2.5 py-1 text-xs font-extrabold rounded-full border ${colorClass}`}>
+          {status}
+        </span>
+      );
     }
+
+    return (
+      <select
+        value={status}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => handleUpdateTripStatus(trip, e.target.value as TripStatus, e)}
+        class={`px-2.5 py-1 text-xs font-extrabold rounded-full border ${colorClass} cursor-pointer focus:outline-none transition shadow-2xs`}
+      >
+        <option value="Pending">Pending</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Completed">Completed</option>
+        <option value="Settled">Settled</option>
+      </select>
+    );
   };
 
   const handleResetFilters = () => {
@@ -837,7 +861,7 @@ export default function TripList(rawProps: TripListProps) {
 
                         {/* GENERAL STATUS */}
                         <td class="px-4 py-4 text-center">
-                          {getStatusBadge(trip.status)}
+                          {getStatusBadge(trip)}
                         </td>
 
                         {/* OPTIONS BAR */}
@@ -948,7 +972,7 @@ export default function TripList(rawProps: TripListProps) {
                         <Download class="w-3.5 h-3.5" /> Download Report
                       </button>
                     </div>
-                    {getStatusBadge(trip.status)}
+                    {getStatusBadge(trip)}
                   </div>
 
                   {/* Truck & Driver */}

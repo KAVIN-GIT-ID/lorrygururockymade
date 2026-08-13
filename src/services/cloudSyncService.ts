@@ -222,9 +222,14 @@ export const cloudSyncService = {
           return existingOrgIds.has(ur.organizationId);
         });
 
+        const combinedProfiles = [
+          ...(states.organizationProfiles || []),
+          ...(cloudProfiles || [])
+        ];
+
         const reconciled = organizationService.reconcileOrganizationProfiles(
           filteredActiveRights,
-          cloudProfiles
+          combinedProfiles
         );
         nextOrganizationProfiles = reconciled;
         localStorage.setItem('ttt_organization_profiles', JSON.stringify(reconciled));

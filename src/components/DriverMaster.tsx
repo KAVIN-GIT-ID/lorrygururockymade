@@ -210,7 +210,7 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
           >
             {showAddForm() ? t('btn.close', 'Close Form') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> {t('btn.new_driver', '+ Add Driver')}
+                <Plus class="w-3.5 h-3.5" /> {t('btn.new_driver', 'Add Driver')}
               </>
             )}
           </button>

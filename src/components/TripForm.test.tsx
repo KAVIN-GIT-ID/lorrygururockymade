@@ -93,8 +93,8 @@ describe('TripForm Component Tests', () => {
 
     fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'MH-12-PQ-1234' } });
     fireEvent.change(screen.getByLabelText(/Driver Operator/i), { target: { value: 'Ramesh Kumar' } });
-    fireEvent.change(screen.getByLabelText(/Starting Odometer/i), { target: { value: 1500 } });
-    fireEvent.change(screen.getByLabelText(/Ending Odometer/i), { target: { value: 1000 } });
+    fireEvent.change(screen.getByLabelText(/Starting KM/i), { target: { value: 1500 } });
+    fireEvent.change(screen.getByLabelText(/Ending KM/i), { target: { value: 1000 } });
 
     // Add Cargo Sub-Trip
     fireEvent.click(screen.getByRole('button', { name: /Add Cargo Segment/i }));
@@ -131,8 +131,8 @@ describe('TripForm Component Tests', () => {
     // Fill main details
     fireEvent.change(screen.getByLabelText(/Target Truck/i), { target: { value: 'MH-12-PQ-1234' } });
     fireEvent.change(screen.getByLabelText(/Driver Operator/i), { target: { value: 'Ramesh Kumar' } });
-    fireEvent.change(screen.getByLabelText(/Starting Odometer/i), { target: { value: 1000 } });
-    fireEvent.change(screen.getByLabelText(/Ending Odometer/i), { target: { value: 1500 } });
+    fireEvent.change(screen.getByLabelText(/Starting KM/i), { target: { value: 1000 } });
+    fireEvent.change(screen.getByLabelText(/Ending KM/i), { target: { value: 1500 } });
 
     // Click Add Cargo Sub-Trip
     const addSubTripBtn = screen.getByRole('button', { name: /Add Cargo Segment/i });
@@ -303,7 +303,7 @@ describe('TripForm Component Tests', () => {
       />
     ));
 
-    const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
+    const startingKMInput = screen.getByLabelText(/Starting KM/i) as HTMLInputElement;
 
     // Default truck MH-12-PQ-1234 is selected first on load.
     // The max of last trip endingKM (2200) and truck's currentKM (2000) is 2200.
@@ -361,7 +361,7 @@ describe('TripForm Component Tests', () => {
       />
     ));
 
-    const startingKMInput = screen.getByLabelText(/Starting Odometer/i) as HTMLInputElement;
+    const startingKMInput = screen.getByLabelText(/Starting KM/i) as HTMLInputElement;
     // When editing, starting KM should remain as the editing entry's value (1800) and not be auto-calculated to 1500
     expect(startingKMInput.value).toBe('1800');
   });

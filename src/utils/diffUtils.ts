@@ -4,13 +4,15 @@ export const generateDiffText = <T extends Record<string, any>>(
   oldObj: T,
   newObj: T,
   labels: Partial<Record<keyof T, string>>,
-  ignoreKeys: string[] = ['id']
+  ignoreKeys: string[] = ['id', '$id', '$createdAt', '$updatedAt', '$databaseId', '$collectionId', '$permissions', 'createdAt', 'updatedAt', 'syncState', 'sequence', 'version', 'updatedBy']
 ): string => {
   const changes: string[] = [];
+  const defaultIgnore = ['id', '$id', '$createdAt', '$updatedAt', '$databaseId', '$collectionId', '$permissions', 'createdAt', 'updatedAt', 'syncState', 'sequence', 'version', 'updatedBy'];
+  const activeIgnore = Array.from(new Set([...ignoreKeys, ...defaultIgnore]));
   const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)])) as Array<keyof T & string>;
 
   for (const key of allKeys) {
-    if (ignoreKeys.includes(key)) continue;
+    if (activeIgnore.includes(key)) continue;
 
     const oldValue = oldObj[key];
     const newValue = newObj[key];
@@ -89,7 +91,7 @@ export const getDriverDiff = (oldDriver: Driver, newDriver: Driver): string => {
     licenseNo: 'License Number',
     status: 'Active Status'
   };
-  return generateDiffText(oldDriver, newDriver, labels);
+  return generateDiffText(oldDriver, newDriver, labels, ['id', 'organizationId', 'syncState', 'data', 'licenseFileId']);
 };
 
 export const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
@@ -122,7 +124,7 @@ export const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
     loanStatus: 'Loan Status',
     loanNotes: 'Loan Notes'
   };
-  return generateDiffText(oldTruck, newTruck, labels);
+  return generateDiffText(oldTruck, newTruck, labels, ['id', 'organizationId', 'truckRequests', 'activationPayments', 'syncState', 'data']);
 };
 
 export const getOfficeDiff = (oldOffice: Office, newOffice: Office): string => {
@@ -133,7 +135,7 @@ export const getOfficeDiff = (oldOffice: Office, newOffice: Office): string => {
     phone: 'Phone No',
     status: 'Active Status'
   };
-  return generateDiffText(oldOffice, newOffice, labels);
+  return generateDiffText(oldOffice, newOffice, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getAccountDiff = (oldAccount: Account, newAccount: Account): string => {
@@ -143,7 +145,7 @@ export const getAccountDiff = (oldAccount: Account, newAccount: Account): string
     holderName: 'Account Holder Name',
     status: 'Ledger Status'
   };
-  return generateDiffText(oldAccount, newAccount, labels);
+  return generateDiffText(oldAccount, newAccount, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getExpenseDiff = (oldExpense: ExpenseEntry, newExpense: ExpenseEntry): string => {
@@ -158,7 +160,7 @@ export const getExpenseDiff = (oldExpense: ExpenseEntry, newExpense: ExpenseEntr
     accountType: 'Payer Type',
     driverName: 'Paid By Operator'
   };
-  return generateDiffText(oldExpense, newExpense, labels);
+  return generateDiffText(oldExpense, newExpense, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {

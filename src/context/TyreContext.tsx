@@ -159,6 +159,7 @@ export function TyreProvider(props: { children: JSX.Element }) {
   ) => {
     const orgId = currentUserOrgId() || 'org_default';
     const oldTyre = tyresStore.find(t => t.id === updated.id);
+
     let purchaseExpenseId = updated.purchaseExpenseId || oldTyre?.purchaseExpenseId;
 
     // Look up matching expense by ID first, or fallback to serial matching if missing
@@ -216,6 +217,22 @@ export function TyreProvider(props: { children: JSX.Element }) {
     const merged: Tyre = oldTyre
       ? { ...oldTyre, ...updated, purchaseExpenseId }
       : { ...updated, organizationId: orgId, purchaseExpenseId };
+
+    const isUnchanged = oldTyre &&
+      (oldTyre.tyreNo === merged.tyreNo) &&
+      (oldTyre.manufacturer === merged.manufacturer) &&
+      (oldTyre.size === merged.size) &&
+      (oldTyre.status === merged.status) &&
+      (oldTyre.currentTruckNo === merged.currentTruckNo) &&
+      (oldTyre.purchaseDate === merged.purchaseDate) &&
+      (Number(oldTyre.accumulatedKM || 0) === Number(merged.accumulatedKM || 0)) &&
+      (JSON.stringify(oldTyre.movementHistory || []) === JSON.stringify(merged.movementHistory || []));
+
+    if (isUnchanged && !expenseDetails?.createExpense) {
+      console.log(`[TyreContext] Zero modifications for Tyre ${merged.tyreNo}. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Tyre ${merged.tyreNo}. Record unchanged.`);
+      return;
+    }
 
     if (isAppwriteConfigured()) {
       try {

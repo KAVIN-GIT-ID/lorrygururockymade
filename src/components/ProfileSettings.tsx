@@ -5,6 +5,7 @@ import { UserRights, OrganizationProfile } from '../types';
 import { cryptoService } from '../services/cryptoService';
 import OfflinePinModal from './OfflinePinModal';
 import { useNotifications } from '../context/NotificationContext';
+import { useLanguage, SUPPORTED_LANGUAGES } from '../context/LanguageContext';
 
 interface ProfileSettingsProps {
   currentUser: any;
@@ -63,6 +64,8 @@ export default function ProfileSettings(props: ProfileSettingsProps) {
       localStorage.removeItem('ttt_use_biometrics');
     }
   };
+
+  const langCtx = useLanguage();
 
   let notificationsCtx: any;
   try {
@@ -365,6 +368,25 @@ export default function ProfileSettings(props: ProfileSettingsProps) {
         {/* TAB 4: APP SETTINGS & NOTIFICATIONS */}
         {activeSubTab() === 'APP' && (
           <div class="space-y-4 animate-in fade-in duration-150">
+            {/* APP INTERFACE LANGUAGE */}
+            <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Application Default Language</label>
+              <p class="text-[10px] text-slate-400 leading-normal">
+                Select the default language used across buttons, menus, and reports.
+              </p>
+              <select
+                value={langCtx.language()}
+                onChange={(e) => langCtx.setLanguage(e.target.value as any)}
+                class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option value={lang.code}>
+                    {lang.flag} {lang.nativeName} ({lang.name})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* VOICE ASSISTANT LANGUAGE */}
             <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2">
               <label for="voice-lang-select" class="block text-xs font-bold text-slate-800 dark:text-slate-200">Voice Assistant Language</label>
@@ -374,7 +396,14 @@ export default function ProfileSettings(props: ProfileSettingsProps) {
               <select
                 id="voice-lang-select"
                 value={props.profileVoiceLang}
-                onChange={(e) => props.setProfileVoiceLang(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  props.setProfileVoiceLang(val);
+                  const langCode = val.split('-')[0] as any;
+                  if (SUPPORTED_LANGUAGES.some(l => l.code === langCode)) {
+                    langCtx.setLanguage(langCode);
+                  }
+                }}
                 class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
               >
                 <option value="en-IN">English (India) - en-IN</option>

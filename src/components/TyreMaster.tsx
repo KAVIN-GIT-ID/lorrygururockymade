@@ -448,7 +448,7 @@ export default function TyreMaster(rawProps: TyreMasterProps) {
           >
             {showAddForm() ? t('btn.close', 'Close panel') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> {t('tyre.add_btn', '+ Register New Tyre')}
+                <Plus class="w-3.5 h-3.5" /> {t('tyre.add_btn', 'Register New Tyre')}
               </>
             )}
           </button>

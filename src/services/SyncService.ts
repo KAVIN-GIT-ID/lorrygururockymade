@@ -89,9 +89,20 @@ export const SyncService = {
       { key: 'coupons', collection: 'coupons' }
     ];
 
+    // First attempt 1 single consolidated batch HTTP pull for all collections
+    let batchState: any = null;
+    try {
+      batchState = await appwrite.pullAllCollections(orgId);
+    } catch (_) {}
+
     const fetchPromises = categories.map(async (cat) => {
       try {
-        const docs = await wrapAbort(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal, `fetch_${cat.collection}`);
+        let docs: any[] = [];
+        if (batchState && batchState[cat.key]) {
+          docs = batchState[cat.key];
+        } else {
+          docs = await wrapAbort(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal, `fetch_${cat.collection}`);
+        }
         verifiedCollections.push(cat.collection);
         
         const updatedCollection = [...(loadedState[cat.key] || [])];

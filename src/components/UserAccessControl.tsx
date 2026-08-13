@@ -1,7 +1,7 @@
 import { createSignal, createEffect, For, mergeProps } from 'solid-js';
 
 import { UserPermission, OrganizationProfile, UserRights } from '../types';
-import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone } from 'lucide-solid';
+import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone, Sparkles } from 'lucide-solid';
 
 interface TeamMember {
   $id: string;
@@ -136,6 +136,69 @@ export default function UserAccessControl(rawProps: UserAccessControlProps) {
 
   const [newExpenseType, setNewExpenseType] = createSignal('');
   const [newShopName, setNewShopName] = createSignal('');
+
+  const handlePopulateStandardDefaults = () => {
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!updater) return;
+
+    const defaultFuelCards = [
+      { id: 'fc_iocl_1', cardName: 'IOCL Fuel Card', cardNumber: '7089-XXXX-1002', status: 'Active' as const },
+      { id: 'fc_hpcl_2', cardName: 'HPCL DriveTrack Plus', cardNumber: '5021-XXXX-3004', status: 'Active' as const },
+      { id: 'fc_bpcl_3', cardName: 'BPCL SmartFleet Card', cardNumber: '6011-XXXX-8009', status: 'Active' as const }
+    ];
+
+    const defaultExpenseTypes = [
+      'Loading / Unloading Wages',
+      'Mamul & RMC Charges',
+      'Brokerage / Commission',
+      'Crossing Expense',
+      'Police & RTO Checkpost',
+      'FASTag / Toll Plaza',
+      'Water Wash & Maintenance',
+      'AdBlue / Def Refill'
+    ];
+
+    const defaultShopNames = [
+      'Indian Oil Corporation',
+      'Bharat Petroleum Bunk',
+      'Hindustan Petroleum (HPCL)',
+      'Nayara Energy Bunk',
+      'Royal Auto Spares',
+      'Premier Tyres & Wheel Alignment'
+    ];
+
+    const baseProf: OrganizationProfile = prof || {
+      organizationId: currentUserOrgId() || 'org_default',
+      organizationName: 'Fleet Transport Management',
+      ownerEmail: currentUserEmail() || 'admin@fleet.com',
+      status: 'Active',
+      maxTrucksAllowed: 50,
+      truckRequests: [],
+      approvedTrucks: [],
+      fuelCards: [],
+      customExpenseTypes: [],
+      shopNames: []
+    };
+
+    const existingCards = baseProf.fuelCards || [];
+    const mergedCards = existingCards.length > 0 ? existingCards : defaultFuelCards;
+
+    const existingTypes = baseProf.customExpenseTypes || [];
+    const mergedTypes = Array.from(new Set([...existingTypes, ...defaultExpenseTypes]));
+
+    const existingShops = baseProf.shopNames || [];
+    const mergedShops = Array.from(new Set([...existingShops, ...defaultShopNames]));
+
+    updater({
+      ...baseProf,
+      fuelCards: mergedCards,
+      customExpenseTypes: mergedTypes,
+      shopNames: mergedShops
+    });
+
+    showNotification("Standard transport default cards, expense types, and suppliers populated successfully!");
+  };
 
   const handleAddExpenseType = (e: Event) => {
     e.preventDefault();
@@ -707,19 +770,29 @@ export default function UserAccessControl(rawProps: UserAccessControlProps) {
                   Organization Fuel Cards (Accounts)
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFuelCardName('');
-                  setFuelCardNo('');
-                  setFuelCardStatus('Active');
-                  setEditingFuelCardId(null);
-                  setShowFuelCardForm(!showFuelCardForm());
-                }}
-                class="bg-white hover:bg-slate-50 border border-slate-350 text-slate-705 font-bold text-[10px] py-1.5 px-2.5 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1"
-              >
-                {showFuelCardForm() ? 'Close Form' : '+ Add Fuel Card'}
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePopulateStandardDefaults}
+                  class="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold text-[10px] py-1.5 px-2.5 rounded-lg shadow-2xs cursor-pointer inline-flex items-center gap-1 transition"
+                  title="Populate standard fuel cards, expense types, and supplier names"
+                >
+                  <Sparkles class="w-3 h-3 text-emerald-600" /> Populate Standard Defaults
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFuelCardName('');
+                    setFuelCardNo('');
+                    setFuelCardStatus('Active');
+                    setEditingFuelCardId(null);
+                    setShowFuelCardForm(!showFuelCardForm());
+                  }}
+                  class="bg-white hover:bg-slate-50 border border-slate-350 text-slate-705 font-bold text-[10px] py-1.5 px-2.5 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  {showFuelCardForm() ? 'Close Form' : '+ Add Fuel Card'}
+                </button>
+              </div>
             </div>
 
             {showFuelCardForm() && (
@@ -783,7 +856,16 @@ export default function UserAccessControl(rawProps: UserAccessControlProps) {
 
             {/* List of Fuel Cards */}
             {(!orgProfile()?.fuelCards || orgProfile()?.fuelCards?.length === 0) ? (
-              <p class="text-[11px] text-slate-400 italic text-center py-2">No fuel cards configured for this organization.</p>
+              <div class="py-4 text-center space-y-2 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-4">
+                <p class="text-[11px] text-slate-500 font-medium">No fuel cards configured for this organization.</p>
+                <button
+                  type="button"
+                  onClick={handlePopulateStandardDefaults}
+                  class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Sparkles class="w-3.5 h-3.5" /> Populate Standard Defaults (IOCL, HPCL, BPCL Fuel Cards)
+                </button>
+              </div>
             ) : (
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <For each={orgProfile()?.fuelCards || []}>
@@ -860,7 +942,16 @@ export default function UserAccessControl(rawProps: UserAccessControlProps) {
                 </form>
 
                 {(!orgProfile()?.customExpenseTypes || orgProfile()?.customExpenseTypes?.length === 0) ? (
-                  <p class="text-[11px] text-slate-400 italic py-1">No custom expense types configured. Standard defaults will be used.</p>
+                  <div class="py-2.5 text-center space-y-1 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-3">
+                    <p class="text-[11px] text-slate-500 font-medium">No custom expense types configured.</p>
+                    <button
+                      type="button"
+                      onClick={handlePopulateStandardDefaults}
+                      class="text-[10.5px] text-emerald-700 font-extrabold hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Sparkles class="w-3 h-3 text-emerald-600" /> Load Standard Expense Types (Loading, Unloading, RMC, Brokerage, FASTag)
+                    </button>
+                  </div>
                 ) : (
                   <div class="flex flex-wrap gap-2">
                     <For each={orgProfile()?.customExpenseTypes || []}>
@@ -913,7 +1004,16 @@ export default function UserAccessControl(rawProps: UserAccessControlProps) {
                 </form>
 
                 {(!orgProfile()?.shopNames || orgProfile()?.shopNames?.length === 0) ? (
-                  <p class="text-[11px] text-slate-400 italic py-1">No custom shop names configured. Users can type any name().</p>
+                  <div class="py-2.5 text-center space-y-1 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-3">
+                    <p class="text-[11px] text-slate-500 font-medium">No custom supplier names configured.</p>
+                    <button
+                      type="button"
+                      onClick={handlePopulateStandardDefaults}
+                      class="text-[10.5px] text-emerald-700 font-extrabold hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Sparkles class="w-3 h-3 text-emerald-600" /> Load Standard Suppliers (Indian Oil, BPCL, HPCL, Nayara Bunks)
+                    </button>
+                  </div>
                 ) : (
                   <div class="flex flex-wrap gap-2">
                     <For each={orgProfile()?.shopNames || []}>

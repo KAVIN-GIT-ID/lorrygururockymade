@@ -179,9 +179,16 @@ export function TruckProvider(props: { children: JSX.Element }) {
       t.id === updated.id ||
       (t.truckNo && (t.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanTruckNo)
     );
+
     const merged: Truck = oldTruck
       ? mutateRecord(oldTruck, { ...updated, id: oldTruck.id, organizationId: orgId }, currentUserId)
       : createRecord<Truck>({ ...updated, organizationId: orgId } as any, currentUserId);
+
+    if (oldTruck && !getTruckDiff(oldTruck, merged)) {
+      console.log(`[TruckContext] Zero modifications for Truck ${merged.truckNo}. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Truck ${merged.truckNo}. Record unchanged.`);
+      return;
+    }
 
     if (isAppwriteConfigured()) {
       try {

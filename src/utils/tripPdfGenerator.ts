@@ -522,10 +522,11 @@ export function generateDriverReportPDF(trip: TripEntry, accounts: Account[], or
   // 1. Driver Wages
   const wagesHtml = [...(trip.subTrips || [])].sort((a, b) => (a.loadingDate || '').localeCompare(b.loadingDate || '')).map((s, idx) => {
     if (!s.driverWages) return '';
+    const rentalText = s.income ? ` • Freight Rental: ${formatCurrency(s.income)}` : '';
     return `
       <tr>
         <td style="text-align: center;">${formatDate(s.loadingDate)}</td>
-        <td>Wages: ${s.routeFrom || '—'} &rarr; ${s.routeTo || '—'} (${s.material || 'Material'})</td>
+        <td>Wages: ${s.routeFrom || '—'} &rarr; ${s.routeTo || '—'} (${s.material || 'Material'}${rentalText})</td>
         <td style="text-align: right;">${formatCurrency(s.driverWages)}</td>
       </tr>
     `;

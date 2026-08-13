@@ -741,6 +741,7 @@ export interface OrganizationProfile {
   pinpushIntervalKM?: number;      // Org-wide default for pinpush grease
   wheelGreaseIntervalKM?: number;  // Org-wide default for wheel grease
   brokeragePolicy?: 'OrgBears' | 'DriverBears'; // Org-wide default brokerage policy
+  defaultDriverWagePercent?: number;            // Org-wide default driver wage percentage
   fuelCards?: FuelCard[];
   gstNo?: string;
   panNo?: string;

@@ -363,7 +363,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
           >
             {showForm() ? t('btn.close', 'Cancel & Close') : (
               <>
-                <Plus class="w-3.5 h-3.5" /> {t('exp.add_btn', '+ Record Expense')}
+                <Plus class="w-3.5 h-3.5" /> {t('exp.add_btn', 'Record Expense')}
               </>
             )}
           </button>

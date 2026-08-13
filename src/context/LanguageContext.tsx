@@ -222,7 +222,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     // Expenses & Vouchers
     'exp.title': 'செலவு கணக்குகள் மற்றும் வவுச்சர்கள்',
     'exp.subtitle': 'டீசல், பராமரிப்பு, டிரைவர் சம்பளம் மற்றும் அலுவலக செலவுகள் பதிவு செய்தல்.',
-    'exp.add_btn': '+ செலவு பதிவு',
+    'exp.add_btn': 'செலவு பதிவு',
     'exp.type': 'செலவு வகை (Category)',
     'exp.amount': 'தொகை (Amount)',
     'exp.date': 'செலவு செய்யப்பட்ட தேதி',
@@ -298,10 +298,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.users': 'User Access Control',
     'nav.console': 'Console Control Room',
 
-    'btn.new_trip': '+ New Trip Entry',
-    'btn.new_truck': '+ Add Truck',
-    'btn.new_driver': '+ Add Driver',
-    'btn.add_expense': '+ Record Expense',
+    'btn.new_trip': 'New Trip Entry',
+    'btn.new_truck': 'Add Truck',
+    'btn.new_driver': 'Add Driver',
+    'btn.add_expense': 'Record Expense',
     'btn.save': 'Save Changes',
     'btn.cancel': 'Cancel',
     'btn.delete': 'Delete',
@@ -348,10 +348,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.users': 'उपयोगकर्ता पहुंच',
     'nav.console': 'कंट्रोल रूम',
 
-    'btn.new_trip': '+ नई ट्रिप दर्ज करें',
-    'btn.new_truck': '+ ट्रक जोड़ें',
-    'btn.new_driver': '+ ड्राइवर जोड़ें',
-    'btn.add_expense': '+ खर्च दर्ज करें',
+    'btn.new_trip': 'नई ट्रिप दर्ज करें',
+    'btn.new_truck': 'ट्रक जोड़ें',
+    'btn.new_driver': 'ड्राइवर जोड़ें',
+    'btn.add_expense': 'खर्च दर्ज करें',
     'btn.save': 'सहेजें',
     'btn.cancel': 'रद्द करें',
     'btn.delete': 'हटाएं',
@@ -398,10 +398,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.users': 'యూజర్ యాక్సెస్',
     'nav.console': 'కంట్రోల్ రూమ్',
 
-    'btn.new_trip': '+ కొత్త ట్రిప్ ఎంట్రీ',
-    'btn.new_truck': '+ లారీ జోడించండి',
-    'btn.new_driver': '+ డ్రైవర్ జోడించండి',
-    'btn.add_expense': '+ ఖర్చు నమోదు',
+    'btn.new_trip': 'కొత్త ట్రిప్ ఎంట్రీ',
+    'btn.new_truck': 'లారీ జోడించండి',
+    'btn.new_driver': 'డ్రైవర్ జోడించండి',
+    'btn.add_expense': 'ఖర్చు నమోదు',
     'btn.save': 'సేవ్ చేయండి',
     'btn.cancel': 'రద్దు చేయి',
     'btn.delete': 'తొలగించు',
@@ -448,10 +448,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.users': 'ಬಳಕೆದಾರರ ಪ್ರವೇಶ',
     'nav.console': 'ನಿಯಂತ್ರಣ ಕೊಠಡಿ',
 
-    'btn.new_trip': '+ ಹೊಸ ಟ್ರಿಪ್',
-    'btn.new_truck': '+ ಟ್ರಕ್ ಸೇರಿಸಿ',
-    'btn.new_driver': '+ ಚಾಲಕ ಸೇರಿಸಿ',
-    'btn.add_expense': '+ ಖರ್ಚು ನಮೂದಿಸಿ',
+    'btn.new_trip': 'ಹೊಸ ಟ್ರಿಪ್',
+    'btn.new_truck': 'ಟ್ರಕ್ ಸೇರಿಸಿ',
+    'btn.new_driver': 'ಚಾಲಕ ಸೇರಿಸಿ',
+    'btn.add_expense': 'ಖರ್ಚು ನಮೂದಿಸಿ',
     'btn.save': 'ಉಳಿಸಿ',
     'btn.cancel': 'ರದ್ದುಗೊಳಿಸಿ',
     'btn.delete': 'ಅಳಿಸಿ',
@@ -498,10 +498,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.users': 'वापरकर्ता प्रवेश',
     'nav.console': 'नियंत्रण कक्ष',
 
-    'btn.new_trip': '+ नवीन ट्रिप नोंदवा',
-    'btn.new_truck': '+ ट्रक जोडा',
-    'btn.new_driver': '+ ड्रायव्हर जोडा',
-    'btn.add_expense': '+ खर्च नोंदवा',
+    'btn.new_trip': 'नवीन ट्रिप नोंदवा',
+    'btn.new_truck': 'ट्रक जोडा',
+    'btn.new_driver': 'ड्रायव्हर जोडा',
+    'btn.add_expense': 'खर्च नोंदवा',
     'btn.save': 'जतन करा',
     'btn.cancel': 'रद्द करा',
     'btn.delete': 'हटवा',
@@ -545,7 +545,19 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType>();
 
 export function LanguageProvider(props: { children: JSX.Element }) {
-  const [language, setLanguageSignal] = createSignal<LanguageCode>('ta'); // Default to Tamil as targeted for regional fleet operators
+  const getInitialLanguage = (): LanguageCode => {
+    try {
+      const saved = localStorage.getItem('ttt_app_language') as LanguageCode;
+      if (saved && TRANSLATIONS[saved]) {
+        return saved;
+      }
+    } catch {
+      // Ignore SSR / localStorage restriction
+    }
+    return 'en';
+  };
+
+  const [language, setLanguageSignal] = createSignal<LanguageCode>(getInitialLanguage());
 
   onMount(() => {
     const saved = localStorage.getItem('ttt_app_language') as LanguageCode;

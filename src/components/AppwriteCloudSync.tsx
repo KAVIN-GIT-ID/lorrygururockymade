@@ -132,7 +132,17 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
       }
     } catch (err: any) {
       console.error('handlePullFromDB failed:', err);
-      if (!quiet) {
+      const isForbidden = err.message && (err.message.includes('403') || err.message.includes('Forbidden') || err.message.includes('permission'));
+      if (isForbidden) {
+        showNotification('Your organization access has been revoked by the Administrator.');
+        localStorage.removeItem('ttt_user_rights');
+        localStorage.removeItem('ttt_organization_profiles');
+        localStorage.removeItem('ttt_trips');
+        localStorage.removeItem('ttt_trucks');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else if (!quiet) {
         setErrorMsg(`Database retrieval failed: ${err.message || 'Unknown error'}. \n\nBootstrap: node scripts/bootstrap-db.js`);
       }
     } finally {
@@ -141,14 +151,34 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
     }
   };
 
-  // 3. Initial pull and visibility listeners
+  // 3. Initial pull and visibility listeners (Instant Offline-First Boot + Version Check)
   createEffect(() => {
     if (!dbUnlocked()) return;
     if (isConfigured && !initialPullDone()) {
-      handlePullFromDB(true, false).finally(() => {
-        setInitialPullDone(true);
-        if (onInitialSyncComplete) onInitialSyncComplete(true);
-      });
+      setInitialPullDone(true);
+      if (onInitialSyncComplete) onInitialSyncComplete(true);
+
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const hasLocalData = (currentState?.trucks && currentState.trucks.length > 0) ||
+                           (currentState?.trips && currentState.trips.length > 0) ||
+                           (currentState?.drivers && currentState.drivers.length > 0);
+
+      const localLastModified = Number(localStorage.getItem('ttt_last_modified_at') || '0');
+
+      if (!hasLocalData) {
+        handlePullFromDB(true, false);
+      } else {
+        // Fast 10ms version check: compare local timestamp with server timestamp
+        appwrite.checkDatabaseVersion(orgId(), localLastModified).then(v => {
+          if (!v.isUpToDate) {
+            console.log(`[AppwriteCloudSync] Cloud server has newer changes (server: ${v.serverLastModified}, local: ${localLastModified}). Syncing delta...`);
+            handlePullFromDB(true, true);
+          } else {
+            console.log('[AppwriteCloudSync] Fast Boot: Local IndexedDB up to date (0 requests needed). Relying on WebSocket Realtime.');
+          }
+        }).catch(() => {});
+      }
+
       if (window.navigator.onLine) {
         appwrite.flushSyncQueue(showNotification);
       }
@@ -218,31 +248,12 @@ export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
       teardown();
       try {
         await appwrite.initSession();
-        const baseList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets']
-          .filter(col => allowedCollectionsRef.includes(col));
+        const verifiedCols = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets', 'global_configs'];
 
-        const verifiedCols: string[] = [];
-        await Promise.all(baseList.map(async (col) => {
-          try {
-            await appwrite.listFleetDocuments(databaseId(), col, orgId());
-            verifiedCols.push(col);
-          } catch (_) {}
-        }));
-
-        if (orgId() === 'org_backend') {
-          try {
-            await appwrite.listGlobalConfigs(databaseId());
-            verifiedCols.push('global_configs');
-          } catch (_) {}
-        } else {
-          verifiedCols.push('global_configs');
-        }
-
-        if (verifiedCols.length === 0) {
-          setRealtimeConnected(false);
-          return;
-        }
-
+        console.log(`[Appwrite Realtime] Subscribing to WebSocket channels for ${verifiedCols.length} collections...`);
+        const channels = verifiedCols.map(col =>
+          `databases.${databaseId()}.collections.${col}.documents`
+        );
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const jwt = await appwrite.createSessionJwt();
         const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime`;

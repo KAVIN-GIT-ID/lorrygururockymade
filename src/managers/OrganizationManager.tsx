@@ -49,11 +49,15 @@ export function OrganizationManager(props: { children: any; activeTab: () => str
   const setUserRightsList = perm.setUserRightsList;
   const pushPermissionsToCloud = perm.pushPermissions;
 
-  // Fetch live Appwrite memberships whenever admin opens the USERS panel
+  // Fetch live Appwrite memberships once when admin opens the USERS panel (cached)
+  let fetchedMembershipsOrgId = '';
   createEffect(() => {
-    if (props.activeTab() === 'USERS' && props.hasUsersTabAccess() && currentUserOrgId() && isAppwriteConfigured()) {
+    const currentOrg = currentUserOrgId();
+    if (props.activeTab() === 'USERS' && props.hasUsersTabAccess() && currentOrg && isAppwriteConfigured()) {
+      if (fetchedMembershipsOrgId === currentOrg && teamMembers().length > 0) return;
+      fetchedMembershipsOrgId = currentOrg;
       setLoadingTeamMembers(true);
-      appwrite.getTeamMemberships(currentUserOrgId())
+      appwrite.getTeamMemberships(currentOrg)
         .then(members => setTeamMembers(members))
         .catch(err => console.warn('Could not fetch team memberships:', err))
         .finally(() => setLoadingTeamMembers(false));

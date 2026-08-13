@@ -20,24 +20,44 @@ interface TripContextType {
 
 const TripContext = createContext<TripContextType>();
 
+function parseArraySafely(val: any): any[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+  return [];
+}
+
 function autoHealAdvances(list: TripEntry[]): TripEntry[] {
+  if (!Array.isArray(list)) return [];
   const activeFwdInLinkIds = new Set<string>();
   const activeFwdInTripNos = new Set<string>();
 
-  list.forEach(t => {
+  const normalizedList = list.map(t => {
+    const advances = parseArraySafely(t.advances);
+    const payments = parseArraySafely(t.payments);
+    const subTrips = parseArraySafely(t.subTrips);
+    const fuels = parseArraySafely(t.fuels);
+    return { ...t, advances, payments, subTrips, fuels };
+  });
+
+  normalizedList.forEach(t => {
     if (t.deletedAt) return;
-    (t.advances || []).forEach(a => {
-      if (a.id.startsWith('fwd_in_')) {
+    t.advances.forEach(a => {
+      if (a && typeof a === 'object' && a.id && String(a.id).startsWith('fwd_in_')) {
         if (a.linkId) activeFwdInLinkIds.add(a.linkId);
         activeFwdInTripNos.add(t.tripNo);
       }
     });
   });
 
-  return list.map(t => {
-    if (t.deletedAt || !t.advances) return t;
+  return normalizedList.map(t => {
+    if (t.deletedAt || !t.advances || t.advances.length === 0) return t;
     const hasOrphanFwdOut = t.advances.some(a => {
-      if (!a.id.startsWith('fwd_out_')) return false;
+      if (!a || typeof a !== 'object' || !a.id || !String(a.id).startsWith('fwd_out_')) return false;
       if (a.linkId) return !activeFwdInLinkIds.has(a.linkId);
       const targetTripNoMatch = a.notes?.match(/TRIP-[A-Z0-9-]+/i)?.[0];
       if (targetTripNoMatch) {
@@ -48,7 +68,7 @@ function autoHealAdvances(list: TripEntry[]): TripEntry[] {
 
     if (hasOrphanFwdOut) {
       const cleaned = t.advances.filter(a => {
-        if (!a.id.startsWith('fwd_out_')) return true;
+        if (!a || typeof a !== 'object' || !a.id || !String(a.id).startsWith('fwd_out_')) return true;
         if (a.linkId) return activeFwdInLinkIds.has(a.linkId);
         const targetTripNoMatch = a.notes?.match(/TRIP-[A-Z0-9-]+/i)?.[0];
         if (targetTripNoMatch) {
@@ -75,8 +95,11 @@ export function TripProvider(props: { children: JSX.Element }) {
   createEffect(() => {
     if (!dbUnlocked()) return;
     if (prewarmedData.trips && prewarmedData.trips.length > 0) {
-      const healed = autoHealAdvances(prewarmedData.trips);
-      saveTrips(healed);
+      // Mark as synced — these already exist on server, no need to re-push
+      const healed = autoHealAdvances(
+        prewarmedData.trips.map(t => ({ ...t, syncState: t.syncState || ('synced' as const) }))
+      );
+      saveTrips(healed, true); // skipCloudSync = true on initial cache load
       setLoadedFromDB(true);
     }
     db.trips.toArray().then(cached => {
@@ -87,8 +110,11 @@ export function TripProvider(props: { children: JSX.Element }) {
           try { raw = JSON.parse(localTrips); } catch (e) {}
         }
       }
-      const healed = autoHealAdvances(raw);
-      saveTrips(healed);
+      // Mark as synced — these already exist on server, no need to re-push
+      const healed = autoHealAdvances(
+        raw.map((t: TripEntry) => ({ ...t, syncState: t.syncState || ('synced' as const) }))
+      );
+      saveTrips(healed, true); // skipCloudSync = true on initial cache load
       setLoadedFromDB(true);
     });
   });
@@ -109,10 +135,10 @@ export function TripProvider(props: { children: JSX.Element }) {
     }
   });
 
-  const saveTrips = (newTrips: TripEntry[] | ((prev: TripEntry[]) => TripEntry[])) => {
+  const saveTrips = (newTrips: TripEntry[] | ((prev: TripEntry[]) => TripEntry[]), skipCloudSync = false) => {
     const list = typeof newTrips === 'function' ? newTrips(tripsStore) : newTrips;
     // Sync to Appwrite if configured and user is authenticated in an active organization
-    if (isAppwriteConfigured()) {
+    if (!skipCloudSync && isAppwriteConfigured()) {
       const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
       const orgId = currentUserOrgId();
       if (orgId && orgId !== 'org_default') {
@@ -187,6 +213,36 @@ export function TripProvider(props: { children: JSX.Element }) {
     };
 
     if (editingTrip) {
+      // Check if zero changes were made to skip unnecessary server network requests
+      const isUnchanged =
+        (editingTrip.tripNo === finalEntryInput.tripNo) &&
+        (editingTrip.truckNo === finalEntryInput.truckNo) &&
+        (editingTrip.driverName === finalEntryInput.driverName) &&
+        (editingTrip.startDate === finalEntryInput.startDate) &&
+        (editingTrip.endDate === finalEntryInput.endDate) &&
+        (Number(editingTrip.startingKM || 0) === Number(finalEntryInput.startingKM || 0)) &&
+        (Number(editingTrip.endingKM || 0) === Number(finalEntryInput.endingKM || 0)) &&
+        (editingTrip.status === finalEntryInput.status) &&
+        ((editingTrip.notes || '') === (finalEntryInput.notes || '')) &&
+        (Number(editingTrip.rtoExpense || 0) === Number(finalEntryInput.rtoExpense || 0)) &&
+        (!!editingTrip.rtoPaidByDriver === !!finalEntryInput.rtoPaidByDriver) &&
+        (Number(editingTrip.addBlueExpense || 0) === Number(finalEntryInput.addBlueExpense || 0)) &&
+        (!!editingTrip.addBluePaidByDriver === !!finalEntryInput.addBluePaidByDriver) &&
+        (Number(editingTrip.fastagExpense || 0) === Number(finalEntryInput.fastagExpense || 0)) &&
+        (!!editingTrip.fastagPaidByDriver === !!finalEntryInput.fastagPaidByDriver) &&
+        (Number(editingTrip.otherExpense || 0) === Number(finalEntryInput.otherExpense || 0)) &&
+        (!!editingTrip.otherPaidByDriver === !!finalEntryInput.otherPaidByDriver) &&
+        (JSON.stringify(editingTrip.subTrips || []) === JSON.stringify(finalEntryInput.subTrips || [])) &&
+        (JSON.stringify(editingTrip.advances || []) === JSON.stringify(finalEntryInput.advances || [])) &&
+        (JSON.stringify(editingTrip.payments || []) === JSON.stringify(finalEntryInput.payments || [])) &&
+        (JSON.stringify(editingTrip.fuels || []) === JSON.stringify(finalEntryInput.fuels || []));
+
+      if (isUnchanged) {
+        console.log(`[TripContext] Zero modifications detected for Trip ${editingTrip.tripNo}. Skipping Appwrite write.`);
+        showNotification(`No changes detected for Trip ${editingTrip.tripNo}. Record unchanged.`);
+        return;
+      }
+
       const updated = mutateRecord(editingTrip, {
         ...finalEntryInput,
         organizationId: editingTrip.organizationId || orgId
@@ -244,16 +300,26 @@ export function TripProvider(props: { children: JSX.Element }) {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated);
-          updated.syncState = 'synced';
           
+          // Save main trip & any modified associated trips in parallel for instant response
+          const savePromises = [
+            appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated).then(() => {
+              updated.syncState = 'synced';
+            })
+          ];
+
           for (const mId of modifiedTripIds) {
             const mTrip = next.find(x => x.id === mId);
             if (mTrip) {
-              await appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip);
-              mTrip.syncState = 'synced';
+              savePromises.push(
+                appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip).then(() => {
+                  mTrip.syncState = 'synced';
+                })
+              );
             }
           }
+
+          await Promise.all(savePromises);
         } catch (err) {
           console.error("Failed to update trip in Appwrite:", err);
           alert("Error: Failed to save trip changes to server database. Please check your connection or permissions.");

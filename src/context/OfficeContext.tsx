@@ -103,6 +103,12 @@ export function OfficeProvider(props: { children: JSX.Element }) {
     const oldOffice = officesStore.find(o => o.id === updated.id);
     const merged = oldOffice ? { ...oldOffice, ...updated } : { ...updated, organizationId: orgId };
 
+    if (oldOffice && !getOfficeDiff(oldOffice, merged)) {
+      console.log(`[OfficeContext] Zero modifications for Office ${merged.officeName}. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Office ${merged.officeName}. Record unchanged.`);
+      return;
+    }
+
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';

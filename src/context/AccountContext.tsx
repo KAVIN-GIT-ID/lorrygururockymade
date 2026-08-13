@@ -103,6 +103,12 @@ export function AccountProvider(props: { children: JSX.Element }) {
     const oldAccount = accountsStore.find(a => a.id === updated.id);
     const merged = oldAccount ? { ...oldAccount, ...updated } : { ...updated, organizationId: orgId };
 
+    if (oldAccount && !getAccountDiff(oldAccount, merged)) {
+      console.log(`[AccountContext] Zero modifications for Account ${merged.accountName}. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Account ${merged.accountName}. Record unchanged.`);
+      return;
+    }
+
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';

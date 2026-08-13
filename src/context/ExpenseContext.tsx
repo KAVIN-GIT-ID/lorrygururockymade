@@ -103,6 +103,12 @@ export function ExpenseProvider(props: { children: JSX.Element }) {
       ? mutateRecord(oldExpense, updated, currentUserId)
       : createRecord<ExpenseEntry>({ ...updated, organizationId: orgId } as any, currentUserId);
 
+    if (oldExpense && !getExpenseDiff(oldExpense, merged)) {
+      console.log(`[ExpenseContext] Zero modifications for Expense. Skipping Appwrite write.`);
+      showNotification(`No changes detected for Expense record. Record unchanged.`);
+      return;
+    }
+
     if (isAppwriteConfigured()) {
       try {
         const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';

@@ -599,6 +599,58 @@ class AppwriteService {
   }
 
   /**
+   * Subscribe to Appwrite Realtime events on the given channels.
+   * Returns the unsubscribe function.
+   */
+  subscribe(channels: string[], callback: (response: any) => void): () => void {
+    if (!isAppwriteConfigured()) return () => {};
+    try {
+      return this.client.subscribe(channels, callback);
+    } catch (err) {
+      console.warn('[AppwriteService] Realtime subscribe failed:', err);
+      return () => {};
+    }
+  }
+
+  /**
+   * Fetch documents updated after `lastCursor` and before `syncStartedAt` for delta sync.
+   */
+  async fetchDeltaDocuments(
+    dbId: string,
+    collectionId: string,
+    orgId: string,
+    lastCursor: string | null,
+    syncStartedAt: string
+  ): Promise<any[]> {
+    await this.initSession();
+    try {
+      const queries: string[] = [];
+      if (orgId !== 'org_backend') {
+        queries.push(Query.equal('organizationId', orgId));
+      }
+      if (lastCursor) {
+        queries.push(Query.greaterThan('$updatedAt', lastCursor));
+      }
+      queries.push(Query.lessThanEqual('$updatedAt', syncStartedAt));
+      queries.push(Query.limit(5000));
+      queries.push(Query.orderAsc('$updatedAt'));
+
+      const response = await this.databases.listDocuments(dbId, collectionId, queries);
+      return (response.documents || []).map((doc: any) => this.reconstructRecord(doc));
+    } catch (err: any) {
+      const isNotFound =
+        err.code === 404 ||
+        err.type === 'collection_not_found' ||
+        (err.message && err.message.toLowerCase().includes('not found'));
+      if (isNotFound) {
+        return [];
+      }
+      console.warn(`[AppwriteService] fetchDeltaDocuments failed for ${collectionId}:`, err);
+      return [];
+    }
+  }
+
+  /**
    * Fetch all records for the active organization in a dynamic collection.
    */
   async listFleetDocuments(dbId: string, collectionId: string, orgId: string, extraQueries: string[] = []): Promise<any[]> {
@@ -848,6 +900,34 @@ class AppwriteService {
     }
   }
 
+  /**
+   * Batch pull all collections for active organization in a single HTTP request.
+   */
+  async pullAllCollections(orgId: string): Promise<any> {
+    try {
+      const res = await this.proxyRequest('/api/database/pull', { orgId });
+      return res?.loadedState || null;
+    } catch (err: any) {
+      console.warn("Batch database pull failed, falling back to individual queries:", err.message || err);
+      return null;
+    }
+  }
+
+  /**
+   * Lightweight version check to compare local cache timestamp with server latest timestamp.
+   */
+  async checkDatabaseVersion(orgId: string, localLastModified: number): Promise<{ isUpToDate: boolean; serverLastModified: number }> {
+    try {
+      const res = await this.proxyRequest('/api/database/version', { orgId, localLastModified });
+      return {
+        isUpToDate: !!res?.isUpToDate,
+        serverLastModified: res?.serverLastModified || Date.now()
+      };
+    } catch (err: any) {
+      return { isUpToDate: false, serverLastModified: Date.now() };
+    }
+  }
+
   getEmailDocId(email: string): string {
     const clean = email.trim().toLowerCase();
     const sanitized = clean.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24);
@@ -1021,8 +1101,9 @@ class AppwriteService {
   async getUserTeams(): Promise<any[]> {
     if (!isAppwriteConfigured()) return [];
     try {
-      const result = await this.teams.list();
-      return result.teams || [];
+      const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 800));
+      const fetchPromise = this.teams.list().then(res => res.teams || []).catch(() => []);
+      return await Promise.race([fetchPromise, timeoutPromise]);
     } catch (err) {
       console.warn('Appwrite getUserTeams failed:', err);
       return [];
@@ -1036,12 +1117,15 @@ class AppwriteService {
   async getTeamMemberships(teamId: string): Promise<any[]> {
     if (!isAppwriteConfigured()) return [];
     try {
-      const result = await this.teams.listMemberships(teamId);
-      console.log('Appwrite getTeamMemberships raw response:', result);
-      if (Array.isArray(result)) return result;
-      if (result && Array.isArray(result.memberships)) return result.memberships;
-      if (result && Array.isArray((result as any).members)) return (result as any).members;
-      return [];
+      const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000));
+      const fetchPromise = (async () => {
+        const result = await this.teams.listMemberships(teamId);
+        if (Array.isArray(result)) return result;
+        if (result && Array.isArray(result.memberships)) return result.memberships;
+        if (result && Array.isArray((result as any).members)) return (result as any).members;
+        return [];
+      })();
+      return await Promise.race([fetchPromise, timeoutPromise]);
     } catch (err) {
       console.warn('Appwrite getTeamMemberships failed:', err);
       return [];
