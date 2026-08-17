@@ -124,7 +124,7 @@ describe('ExpenseMaster Component Tests', () => {
       />
     ));
 
-    expect(screen.getByText(/Voucher & Expenses Ledger/i)).toBeInTheDocument();
+    expect(screen.getByText(/Voucher & Expenses Ledger|செலவு கணக்குகள்/i)).toBeInTheDocument();
     
     // Total expenses sum = 1500 + 5000 = 6,500
     expect(screen.getByText('₹6,500')).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe('ExpenseMaster Component Tests', () => {
     ));
 
     // Open form
-    const toggleBtn = screen.getByRole('button', { name: /Register New Expense/i });
+    const toggleBtn = screen.getByRole('button', { name: /Register New Expense|செலவு பதிவு/i });
     fireEvent.click(toggleBtn);
 
     // Fill required form fields

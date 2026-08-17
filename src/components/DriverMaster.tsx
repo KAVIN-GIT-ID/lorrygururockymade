@@ -45,10 +45,10 @@ export default function DriverMaster(rawProps: DriverMasterProps) {
 
   const props = mergeProps(
     {
-      get drivers() { return rawProps.drivers !== undefined ? rawProps.drivers : (driversCtx ? driversCtx.orgDrivers() : []); },
-      get trips() { return rawProps.trips !== undefined ? rawProps.trips : (tripsCtx ? tripsCtx.orgTrips() : []); },
-      get expenses() { return rawProps.expenses !== undefined ? rawProps.expenses : (expenseCtx ? expenseCtx.orgExpenses() : []); },
-      get accounts() { return rawProps.accounts !== undefined ? rawProps.accounts : (accountCtx ? accountCtx.orgAccounts() : []); },
+      get drivers() { return (rawProps.drivers && rawProps.drivers.length > 0) ? rawProps.drivers : (driversCtx ? driversCtx.orgDrivers() : []); },
+      get trips() { return (rawProps.trips && rawProps.trips.length > 0) ? rawProps.trips : (tripsCtx ? tripsCtx.orgTrips() : []); },
+      get expenses() { return (rawProps.expenses && rawProps.expenses.length > 0) ? rawProps.expenses : (expenseCtx ? expenseCtx.orgExpenses() : []); },
+      get accounts() { return (rawProps.accounts && rawProps.accounts.length > 0) ? rawProps.accounts : (accountCtx ? accountCtx.orgAccounts() : []); },
       get selectedDriverId() { return rawProps.selectedDriverId !== undefined ? rawProps.selectedDriverId : ''; },
       onAddDriver: rawProps.onAddDriver || driversCtx?.addDriver,
       onUpdateDriver: rawProps.onUpdateDriver || driversCtx?.updateDriver,

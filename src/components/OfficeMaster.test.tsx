@@ -67,7 +67,7 @@ describe('OfficeMaster Component Integration Tests', () => {
       />
     ));
 
-    expect(screen.getByText('Office Datasheet')).toBeInTheDocument();
+    expect(screen.getByText('Office Branch Directory')).toBeInTheDocument();
     expect(screen.getAllByText('Mumbai HQ')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Delhi Hub')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Rahul Sharma')[0]).toBeInTheDocument();
@@ -138,18 +138,15 @@ describe('OfficeMaster Component Integration Tests', () => {
     render(() => (
       <OfficeMaster
         offices={[]}
-        onAddOffice={vi.fn()}
-        onUpdateOffice={vi.fn()}
-        onDeleteOffice={vi.fn()}
       />
     ));
 
     fireEvent.click(screen.getByRole('button', { name: /Add New Office/i }));
 
-    fireEvent.change(screen.getByLabelText(/Office Name/i), { target: { value: 'Bangalore Branch' } });
-    fireEvent.change(screen.getByLabelText(/City\/Branch Location/i), { target: { value: 'Bangalore' } });
-    fireEvent.change(screen.getByLabelText(/Contact Person/i), { target: { value: 'Sanjay Kumar' } });
-    fireEvent.change(screen.getByLabelText(/Contact Phone/i), { target: { value: '7654321098' } });
+    fireEvent.input(screen.getByLabelText(/Office Name/i), { target: { value: 'Bangalore Branch' } });
+    fireEvent.input(screen.getByLabelText(/City\/Branch Location/i), { target: { value: 'Bangalore' } });
+    fireEvent.input(screen.getByLabelText(/Contact Person/i), { target: { value: 'Sanjay Kumar' } });
+    fireEvent.input(screen.getByLabelText(/Contact Phone/i), { target: { value: '7654321098' } });
     fireEvent.change(screen.getByLabelText(/Office Status/i), { target: { value: 'Active' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Office' }));
@@ -168,9 +165,6 @@ describe('OfficeMaster Component Integration Tests', () => {
     render(() => (
       <OfficeMaster
         offices={[]}
-        onAddOffice={vi.fn()}
-        onUpdateOffice={vi.fn()}
-        onDeleteOffice={vi.fn()}
       />
     ));
 
@@ -182,7 +176,7 @@ describe('OfficeMaster Component Integration Tests', () => {
     const nameInput = screen.getByLabelText(/Office Name/i) as HTMLInputElement;
     expect(nameInput.value).toBe('Mumbai HQ');
 
-    fireEvent.change(nameInput, { target: { value: 'Mumbai Headquarters' } });
+    fireEvent.input(nameInput, { target: { value: 'Mumbai Headquarters' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update Office' }));
 
     expect(mockUpdateOffice).toHaveBeenCalledTimes(1);
@@ -198,9 +192,6 @@ describe('OfficeMaster Component Integration Tests', () => {
     render(() => (
       <OfficeMaster
         offices={[]}
-        onAddOffice={vi.fn()}
-        onUpdateOffice={vi.fn()}
-        onDeleteOffice={vi.fn()}
         confirmAction={handleConfirm}
       />
     ));

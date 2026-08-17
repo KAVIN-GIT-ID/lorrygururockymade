@@ -14,13 +14,21 @@ export const generateDiffText = <T extends Record<string, any>>(
   for (const key of allKeys) {
     if (activeIgnore.includes(key)) continue;
 
-    const oldValue = oldObj[key];
-    const newValue = newObj[key];
+    let oldValue: any = oldObj[key];
+    let newValue: any = newObj[key];
+
+    // Normalize empty strings, null, and undefined
+    if (oldValue === undefined || oldValue === null || oldValue === '') oldValue = undefined;
+    if (newValue === undefined || newValue === null || newValue === '') newValue = undefined;
+
+    // Normalize numeric values (e.g. 100 vs "100")
+    if (oldValue !== undefined && !isNaN(Number(oldValue)) && typeof oldValue !== 'boolean') oldValue = Number(oldValue);
+    if (newValue !== undefined && !isNaN(Number(newValue)) && typeof newValue !== 'boolean') newValue = Number(newValue);
 
     if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
       const label = labels[key] || (key as string);
-      const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-      const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
+      const oldStr = oldValue === undefined ? '(None)' : String(oldValue);
+      const newStr = newValue === undefined ? '(None)' : String(newValue);
       changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
     }
   }
@@ -372,3 +380,140 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   }
   return changes.join(" | ");
 };
+
+export interface CollectionDiffResult<T> {
+  toCreate: T[];
+  toUpdate: T[];
+  toDelete: T[];
+  hasChanges: boolean;
+}
+
+/**
+ * Generic stable-ID diffing for collections (sub_trips, fuels, advances, etc.)
+ */
+export function diffCollection<T extends { id?: string; $id?: string }>(
+  previousItemsInput: T[] = [],
+  currentItemsInput: T[] = [],
+  isEqual: (a: T, b: T) => boolean = (a, b) => {
+    const sanitize = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return {};
+      const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, tripId, organizationId, ...rest } = obj;
+      const cleaned: Record<string, any> = {};
+      Object.keys(rest).sort().forEach(k => {
+        const val = rest[k];
+        if (val !== undefined && val !== null && val !== '') {
+          if (typeof val === 'number' && val === 0) return;
+          if (typeof val === 'boolean' && !val) return;
+          cleaned[k] = typeof val === 'number' ? String(val) : val;
+        }
+      });
+      return cleaned;
+    };
+    return JSON.stringify(sanitize(a)) === JSON.stringify(sanitize(b));
+  }
+): CollectionDiffResult<T> {
+  const parseArray = (val: any): T[] => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return [];
+  };
+
+  const previousItems = parseArray(previousItemsInput);
+  const currentItems = parseArray(currentItemsInput);
+
+  const getId = (item: T): string | undefined => item.$id || item.id;
+
+  const prevMap = new Map<string, T>();
+  previousItems.forEach(item => {
+    const id = getId(item);
+    if (id) prevMap.set(id, item);
+  });
+
+  const currMap = new Map<string, T>();
+  const toCreate: T[] = [];
+  const toUpdate: T[] = [];
+
+  currentItems.forEach(item => {
+    const id = getId(item);
+    if (id && prevMap.has(id)) {
+      currMap.set(id, item);
+      const prevItem = prevMap.get(id)!;
+      if (!isEqual(prevItem, item)) {
+        toUpdate.push(item);
+      }
+    } else {
+      toCreate.push(item);
+    }
+  });
+
+  const toDelete: T[] = [];
+  previousItems.forEach(item => {
+    const id = getId(item);
+    if (id && !currMap.has(id)) {
+      toDelete.push(item);
+    }
+  });
+
+  const hasChanges = toCreate.length > 0 || toUpdate.length > 0 || toDelete.length > 0;
+
+  return {
+    toCreate,
+    toUpdate,
+    toDelete,
+    hasChanges
+  };
+}
+
+/**
+ * Extract parent trip metadata for decoupled diffing
+ */
+export function getTripMetadata(trip: Record<string, any> | null | undefined): Record<string, any> {
+  if (!trip) return {};
+  const {
+    subTrips,
+    fuels,
+    advances,
+    payments,
+    syncState,
+    $id,
+    $sequence,
+    $createdAt,
+    $updatedAt,
+    $permissions,
+    $databaseId,
+    $collectionId,
+    createdAt,
+    updatedAt,
+    updatedBy,
+    createdBy,
+    data,
+    organizationId,
+    id,
+    version,
+    _v,
+    ...metadata
+  } = trip;
+
+  const cleaned: Record<string, any> = {};
+  Object.keys(metadata).sort().forEach(key => {
+    const val = metadata[key];
+    if (val !== undefined && val !== null && val !== '') {
+      const numVal = Number(val);
+      if (!isNaN(numVal) && typeof val !== 'boolean') {
+        if (numVal === 0) return;
+        cleaned[key] = numVal;
+      } else {
+        if (typeof val === 'boolean' && !val) return;
+        cleaned[key] = String(val).trim();
+      }
+    }
+  });
+
+  return cleaned;
+}
+

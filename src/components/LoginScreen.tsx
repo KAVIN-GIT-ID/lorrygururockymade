@@ -332,7 +332,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
 
         {/* Brand header */}
         <div class="text-center space-y-2">
-          <img src={logo} alt="LorryGuru Logo" class="h-12 mx-auto shrink-0 mb-2" />
+          <img src={logo} alt="LorryGuru Logo" width="48" height="48" class="h-12 w-auto mx-auto shrink-0 mb-2" />
           <h2 class="text-2xl font-bold tracking-tight text-white">LorryGuru</h2>
           <p class="text-xs text-slate-400">Enterprise Transport & Logistics Fleet Manager</p>
         </div>

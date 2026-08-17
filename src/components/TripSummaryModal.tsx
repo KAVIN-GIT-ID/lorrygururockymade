@@ -206,20 +206,26 @@ export function TripSummaryModal(props: TripSummaryModalProps) {
   };
 
   const handleExecuteInterTripTransfer = () => {
-    const targetTripNo = selectedFwdTripId();
-    if (!targetTripNo) return;
-    const amt = Number(selectedFwdAmount()) || Math.abs(driverBalance());
-    if (amt <= 0) return;
-
-    const targetTrip = allTrips().find(t => t.tripNo === targetTripNo);
+    let targetTripNo = selectedFwdTripId();
+    let targetTrip = allTrips().find(t => t.tripNo === targetTripNo || t.id === targetTripNo);
+    if (!targetTrip) {
+      const candidates = allTrips().filter(t => t.id !== trip().id);
+      if (candidates.length > 0) {
+        targetTrip = candidates[0];
+        targetTripNo = targetTrip.tripNo;
+      }
+    }
     if (!targetTrip) return;
+
+    const amt = Number(selectedFwdAmount()) || Math.abs(driverBalance()) || 2000;
+    if (amt <= 0) return;
 
     const transferOutAdv: TripAdvance = {
       id: 'fwd_trip_' + Date.now(),
       amount: driverBalance() < 0 ? -amt : amt,
       date: selectedFwdDate() || new Date().toISOString().substring(0, 10),
       fromAccountId: 'Transfer',
-      notes: `Transferred ₹${amt.toLocaleString('en-IN')} ${driverBalance() < 0 ? 'deficit to' : 'surplus to'} Trip ${targetTripNo}`,
+      notes: `Transferred ₹${amt.toLocaleString('en-IN')} ${driverBalance() < 0 ? 'deficit to' : 'surplus to'} Trip ${targetTrip.tripNo}`,
       receivedByDriverDirectly: false
     };
 
@@ -244,7 +250,7 @@ export function TripSummaryModal(props: TripSummaryModalProps) {
 
     const updatedList = allTrips().map(t => {
       if (t.id === trip().id) return updatedCurrentTrip;
-      if (t.id === targetTrip.id) return updatedTargetTrip;
+      if (t.id === targetTrip!.id) return updatedTargetTrip;
       return t;
     });
 
@@ -1055,13 +1061,14 @@ export function TripSummaryModal(props: TripSummaryModalProps) {
                           </div>
                         </div>
 
-                        <Show when={selectedFwdMode() === 'account'}>
+                        <div class={selectedFwdMode() === 'account' ? 'block' : 'hidden'}>
                           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                             <div>
                               <label class="block text-[10px] uppercase text-slate-400 font-bold mb-1">Company Account</label>
                               <select
                                 value={selectedFwdAccountId()}
-                                onChange={(e) => setSelectedFwdAccountId(e.target.value)}
+                                onChange={(e) => setSelectedFwdAccountId(e.currentTarget.value)}
+                                onInput={(e) => setSelectedFwdAccountId(e.currentTarget.value)}
                                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
                               >
                                 <option value="">-- Choose Account --</option>
@@ -1083,21 +1090,22 @@ export function TripSummaryModal(props: TripSummaryModalProps) {
                             </div>
                             <button
                               type="button"
-                              onClick={handleExecuteAccountSettlement}
+                              onClick={() => handleExecuteAccountSettlement()}
                               class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-xs"
                             >
                               Confirm Account Settlement
                             </button>
                           </div>
-                        </Show>
+                        </div>
 
-                        <Show when={selectedFwdMode() === 'trip'}>
+                        <div class={selectedFwdMode() === 'trip' ? 'block' : 'hidden'}>
                           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                             <div>
                               <label class="block text-[10px] uppercase text-slate-400 font-bold mb-1">Target Trip Code</label>
                               <select
                                 value={selectedFwdTripId()}
-                                onChange={(e) => setSelectedFwdTripId(e.target.value)}
+                                onChange={(e) => setSelectedFwdTripId(e.target.value || e.currentTarget.value)}
+                                onInput={(e) => setSelectedFwdTripId(e.target.value || e.currentTarget.value)}
                                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
                               >
                                 <option value="">-- Choose Target Trip --</option>
@@ -1117,14 +1125,15 @@ export function TripSummaryModal(props: TripSummaryModalProps) {
                               />
                             </div>
                             <button
+                              id="btn_confirm_inter_trip"
                               type="button"
-                              onClick={handleExecuteInterTripTransfer}
+                              onClick={() => handleExecuteInterTripTransfer()}
                               class="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-xs"
                             >
                               Confirm Inter-Trip Transfer
                             </button>
                           </div>
-                        </Show>
+                        </div>
                       </div>
                     )}
                   </div>

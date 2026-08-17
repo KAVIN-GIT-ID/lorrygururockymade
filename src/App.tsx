@@ -225,14 +225,14 @@ function AppContent(props: { touchLastModified: () => void }): any {
       const key = await cryptoService.getOrGenerateMobileKey();
       if (key) {
         cryptoService.setKey(key);
-        await db.prewarmCache();
         setDbUnlocked(true);
+        db.prewarmCache().catch(() => {});
       }
     } else {
       const unlocked = await cryptoService.tryAutoUnlock();
       if (unlocked) {
-        await db.prewarmCache();
         setDbUnlocked(true);
+        db.prewarmCache().catch(() => {});
       }
     }
     setAutoUnlocking(false);

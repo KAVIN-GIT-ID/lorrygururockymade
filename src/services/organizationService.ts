@@ -188,9 +188,9 @@ export const organizationService = {
             maxTrucksAllowed: 50,
             truckRequests: [],
             brokeragePolicy: 'DriverBears',
-            fuelCards: [...defaultFuelCards],
-            customExpenseTypes: [...defaultExpenseTypes],
-            shopNames: [...defaultShopNames]
+            fuelCards: defaultFuelCards.length > 0 ? [...defaultFuelCards] : [],
+            customExpenseTypes: defaultExpenseTypes.length > 0 ? [...defaultExpenseTypes] : [],
+            shopNames: defaultShopNames.length > 0 ? [...defaultShopNames] : []
           };
           profiles.push(existing);
         }
@@ -221,13 +221,13 @@ export const organizationService = {
       }
 
       if (existing) {
-        if (!existing.fuelCards || existing.fuelCards.length === 0) {
+        if (existing.fuelCards === undefined) {
           existing.fuelCards = [...defaultFuelCards];
         }
-        if (!existing.customExpenseTypes || existing.customExpenseTypes.length === 0) {
+        if (existing.customExpenseTypes === undefined) {
           existing.customExpenseTypes = [...defaultExpenseTypes];
         }
-        if (!existing.shopNames || existing.shopNames.length === 0) {
+        if (existing.shopNames === undefined) {
           existing.shopNames = [...defaultShopNames];
         }
       }

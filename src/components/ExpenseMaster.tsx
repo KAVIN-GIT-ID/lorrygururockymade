@@ -42,9 +42,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
   const props = mergeProps(
     {
-      get expenses() { return expenseCtx ? expenseCtx.orgExpenses() : []; },
-      get trucks() { return trucksCtx ? trucksCtx.orgTrucks() : []; },
-      get drivers() { return driversCtx ? driversCtx.orgDrivers() : []; },
+      get expenses() { return (rawProps.expenses && rawProps.expenses.length > 0) ? rawProps.expenses : (expenseCtx ? expenseCtx.orgExpenses() : []); },
+      get trucks() { return (rawProps.trucks && rawProps.trucks.length > 0) ? rawProps.trucks : (trucksCtx ? trucksCtx.orgTrucks() : []); },
+      get drivers() { return (rawProps.drivers && rawProps.drivers.length > 0) ? rawProps.drivers : (driversCtx ? driversCtx.orgDrivers() : []); },
       onAddExpense: expenseCtx?.addExpense,
       onUpdateExpense: expenseCtx?.updateExpense,
       onDeleteExpense: expenseCtx?.deleteExpense,

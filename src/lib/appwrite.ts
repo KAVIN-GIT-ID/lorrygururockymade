@@ -669,30 +669,53 @@ class AppwriteService {
       );
       const docs = response.documents || [];
 
-      // If we are listing trips, also list sub_trips and stitch them together
+      // If we are listing trips, also list sub_trips, fuels, and advances to stitch them together
       if (collectionId === 'trips') {
         let subDocs: any[] = [];
+        let fuelDocs: any[] = [];
+        let advDocs: any[] = [];
         try {
           subDocs = await this.listFleetDocuments(dbId, 'sub_trips', orgId);
-        } catch (subErr) {
-          console.warn("Failed to load sub-trips for stitching, returning trips without sub-trips:", subErr);
-        }
+        } catch (_) {}
+        try {
+          fuelDocs = await this.listFleetDocuments(dbId, 'fuels', orgId);
+        } catch (_) {}
+        try {
+          advDocs = await this.listFleetDocuments(dbId, 'advances', orgId);
+        } catch (_) {}
 
         const subTripsByTripId: Record<string, any[]> = {};
         for (const subDoc of subDocs) {
-          const subTripRecord = subDoc;
           const tripId = subDoc.tripId;
           if (tripId) {
-            if (!subTripsByTripId[tripId]) {
-              subTripsByTripId[tripId] = [];
-            }
-            subTripsByTripId[tripId].push(subTripRecord);
+            if (!subTripsByTripId[tripId]) subTripsByTripId[tripId] = [];
+            subTripsByTripId[tripId].push(subDoc);
+          }
+        }
+
+        const fuelsByTripId: Record<string, any[]> = {};
+        for (const fuelDoc of fuelDocs) {
+          const tripId = fuelDoc.tripId;
+          if (tripId) {
+            if (!fuelsByTripId[tripId]) fuelsByTripId[tripId] = [];
+            fuelsByTripId[tripId].push(fuelDoc);
+          }
+        }
+
+        const advancesByTripId: Record<string, any[]> = {};
+        for (const advDoc of advDocs) {
+          const tripId = advDoc.tripId;
+          if (tripId) {
+            if (!advancesByTripId[tripId]) advancesByTripId[tripId] = [];
+            advancesByTripId[tripId].push(advDoc);
           }
         }
 
         return docs.map(doc => {
           const tripRecord = this.reconstructRecord(doc);
-          tripRecord.subTrips = subTripsByTripId[doc.$id] || tripRecord.subTrips || [];
+          if (subTripsByTripId[doc.$id]?.length) tripRecord.subTrips = subTripsByTripId[doc.$id];
+          if (fuelsByTripId[doc.$id]?.length) tripRecord.fuels = fuelsByTripId[doc.$id];
+          if (advancesByTripId[doc.$id]?.length) tripRecord.advances = advancesByTripId[doc.$id];
           return this.normalizeTrip(tripRecord);
         });
       }

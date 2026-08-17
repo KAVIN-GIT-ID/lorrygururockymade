@@ -102,15 +102,14 @@ export default function OfflinePinModal(props: OfflinePinModalProps) {
         const success = await cryptoService.verifyPinAndLoadKey(pin(), salt, verifier);
         console.log("PIN verification result:", success);
         if (success) {
-          console.log("PIN verification successful. Prewarming cache and unlocking database...");
-          try {
-            await db.prewarmCache();
-          } catch (cacheErr) {
-            console.warn("Prewarm cache warning:", cacheErr);
-          }
+          console.log("PIN verification successful. Unlocking UI immediately...");
           setDbUnlocked(true);
-          console.log("Calling props.onSuccess()...");
           props.onSuccess();
+          setTimeout(() => {
+            db.prewarmCache().catch((cacheErr) => {
+              console.warn("Prewarm cache warning:", cacheErr);
+            });
+          }, 0);
         } else {
           setErrorMsg('Incorrect PIN. Please try again.');
         }

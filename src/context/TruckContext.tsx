@@ -96,9 +96,11 @@ export function TruckProvider(props: { children: JSX.Element }) {
           if (tr.deletedAt) return;
           const trCleanNo = normalizeTruckNo(tr.truckNo);
           if (trCleanNo === cleanNo) {
-            if (tr.endingKM && tr.endingKM > maxTripKM) maxTripKM = tr.endingKM;
+            const trEnding = Number(tr.endingKM) || 0;
+            if (trEnding > maxTripKM) maxTripKM = trEnding;
             (tr.subTrips || []).forEach(st => {
-              if (st.endingKM && st.endingKM > maxTripKM) maxTripKM = st.endingKM;
+              const stEnding = Number(st.endingKM) || 0;
+              if (stEnding > maxTripKM) maxTripKM = stEnding;
             });
           }
         });
@@ -116,18 +118,37 @@ export function TruckProvider(props: { children: JSX.Element }) {
     if (!loadedFromDB()) return;
     const currentOrgTrucks = orgTrucks();
     let updatedAny = false;
+    const changedTrucks: Truck[] = [];
     const nextStore = trucksStore.map(t => {
       const cleanNo = normalizeTruckNo(t.truckNo);
       const match = currentOrgTrucks.find(ot => ot.id === t.id || (cleanNo && normalizeTruckNo(ot.truckNo) === cleanNo));
       if (match && match.currentKM !== undefined && match.currentKM !== t.currentKM && match.currentKM > (t.currentKM || 0)) {
         updatedAny = true;
-        return { ...t, currentKM: match.currentKM };
+        const updatedT = { ...t, currentKM: match.currentKM };
+        changedTrucks.push(updatedT);
+        return updatedT;
       }
       return t;
     });
 
     if (updatedAny) {
       saveTrucks(nextStore);
+
+      // Sync auto-updated truck odometer to Appwrite Cloud DB so server & multi-device sessions stay in sync
+      if (isAppwriteConfigured()) {
+        const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+        const orgId = currentUserOrgId();
+        changedTrucks.forEach(async (t) => {
+          const targetOrg = t.organizationId || orgId;
+          if (targetOrg && targetOrg !== 'org_default') {
+            try {
+              await appwrite.saveFleetDocument(databaseId, 'trucks', t.id, targetOrg, { ...t, syncState: 'synced' });
+            } catch (err) {
+              console.error(`Failed to sync updated truck odometer to Appwrite for ${t.truckNo}:`, err);
+            }
+          }
+        });
+      }
     }
   });
 

@@ -21,7 +21,7 @@ export default function OfficeMaster(rawProps: OfficeMasterProps) {
   const permissionCtx = usePermissions();
 
   const props = mergeProps(rawProps, {
-    get offices() { return rawProps.offices !== undefined ? rawProps.offices : (officeCtx ? officeCtx.orgOffices() : []); },
+    get offices() { return (rawProps.offices && rawProps.offices.length > 0) ? rawProps.offices : (officeCtx ? officeCtx.orgOffices() : []); },
     onAddOffice: rawProps.onAddOffice || officeCtx?.addOffice,
     onUpdateOffice: rawProps.onUpdateOffice || officeCtx?.updateOffice,
     onDeleteOffice: rawProps.onDeleteOffice || officeCtx?.deleteOffice,

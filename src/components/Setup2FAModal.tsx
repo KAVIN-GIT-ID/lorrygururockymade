@@ -62,6 +62,8 @@ export default function Setup2FAModal(props: Setup2FAModalProps) {
                   `otpauth://totp/FleetTrack:${auth.currentUser()?.email || ''}?secret=${props.setup2FASecret}&issuer=FleetTrack`
                 )}`}
                 alt="Scan with Authenticator App"
+                width="144"
+                height="144"
                 class="w-36 h-36 border border-slate-200"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';

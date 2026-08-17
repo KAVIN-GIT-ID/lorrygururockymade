@@ -258,6 +258,23 @@ export function TripForm(props: TripFormProps) {
     }
   });
 
+  // Auto-populate starting KM when truckNo changes in new trip mode
+  createEffect(() => {
+    const tNo = truckNo();
+    if (!editingEntry() && tNo) {
+      const selectedTruck = trucks().find(t => t.truckNo === tNo);
+      const tripList = typeof props.trips === 'function' ? props.trips() : (props.trips || []);
+      const truckTrips = tripList.filter((t: any) => t.truckNo === tNo);
+      let maxEndingKM = 0;
+      truckTrips.forEach((t: any) => {
+        if (t.endingKM && t.endingKM > maxEndingKM) maxEndingKM = t.endingKM;
+      });
+      const truckCurrentKM = selectedTruck?.currentKM || 0;
+      const autoKM = Math.max(maxEndingKM, truckCurrentKM);
+      if (autoKM > 0) setStartingKM(autoKM);
+    }
+  });
+
   function resetMasterForm() {
     setTripNo('TRIP-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000));
     setTruckNo('');
@@ -728,8 +745,9 @@ export function TripForm(props: TripFormProps) {
 
                     {/* TARGET TRUCK */}
                     <div>
-                      <label class="h-6 flex items-end text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">{t('trip.target_truck', 'Target Truck')} <span class="text-red-500 ml-0.5">*</span></label>
+                      <label for="input_target_truck" class="h-6 flex items-end text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">{t('trip.target_truck', 'Target Truck')} <span class="text-red-500 ml-0.5">*</span></label>
                       <select
+                        id="input_target_truck"
                         value={truckNo()}
                         onChange={(e) => setTruckNo(e.target.value)}
                         required
@@ -808,8 +826,9 @@ export function TripForm(props: TripFormProps) {
                       />
                     </div>
                     <div>
-                      <label class="h-7 flex items-end text-[10px] text-slate-500 font-extrabold uppercase tracking-wider mb-1.5">{t('trip.start_km', 'Starting KM')}</label>
+                      <label for="input_starting_km" class="h-7 flex items-end text-[10px] text-slate-500 font-extrabold uppercase tracking-wider mb-1.5">{t('trip.start_km', 'Starting KM')}</label>
                       <input
+                        id="input_starting_km"
                         type="number"
                         min="0"
                         required
@@ -820,8 +839,9 @@ export function TripForm(props: TripFormProps) {
                       />
                     </div>
                     <div>
-                      <label class="h-7 flex items-end text-[10px] text-slate-500 font-extrabold uppercase tracking-wider mb-1.5">{t('trip.end_km', 'Ending KM')}</label>
+                      <label for="input_ending_km" class="h-7 flex items-end text-[10px] text-slate-500 font-extrabold uppercase tracking-wider mb-1.5">{t('trip.end_km', 'Ending KM')}</label>
                       <input
+                        id="input_ending_km"
                         type="number"
                         min="0"
                         value={endingKM() || ''}
@@ -1394,16 +1414,16 @@ export function TripForm(props: TripFormProps) {
                           <input ref={fuelDateInputRef} type="date" value={newFuelDate()} onChange={(e) => setNewFuelDate(e.target.value)} class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-emerald-500 transition" />
                         </div>
                         <div>
-                          <label class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Liters <span class="text-red-500 ml-0.5">*</span></label>
-                          <input type="number" min="0" step="any" placeholder="e.g. 100" value={newFuelLiters()} onChange={(e) => handleLitersChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-bold focus:outline-none focus:border-emerald-500 transition" />
+                          <label for="input_fuel_liters" class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Liters <span class="text-red-500 ml-0.5">*</span></label>
+                          <input id="input_fuel_liters" type="number" min="0" step="any" placeholder="e.g. 100" value={newFuelLiters()} onChange={(e) => handleLitersChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-bold focus:outline-none focus:border-emerald-500 transition" />
                         </div>
                         <div>
-                          <label class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Rate / Lit (₹) <span class="text-red-500 ml-0.5">*</span></label>
-                          <input type="number" min="0" step="any" placeholder="e.g. 100" value={newFuelRate()} onChange={(e) => handleRateChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-bold focus:outline-none focus:border-emerald-500 transition" />
+                          <label for="input_fuel_rate" class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Rate / Lit (₹) <span class="text-red-500 ml-0.5">*</span></label>
+                          <input id="input_fuel_rate" type="number" min="0" step="any" placeholder="e.g. 100" value={newFuelRate()} onChange={(e) => handleRateChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-bold focus:outline-none focus:border-emerald-500 transition" />
                         </div>
                         <div>
-                          <label class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Total Amount (₹)</label>
-                          <input type="number" min="0" step="any" placeholder="0" value={newFuelAmount()} onChange={(e) => handleAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-slate-100/80 border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-black text-slate-900 focus:outline-none" />
+                          <label for="input_fuel_amount" class="h-5 flex items-end text-[10px] text-slate-500 font-extrabold mb-1">Total Amount (₹)</label>
+                          <input id="input_fuel_amount" type="number" min="0" step="any" placeholder="0" value={newFuelAmount()} onChange={(e) => handleAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))} class="w-full h-10 bg-slate-100/80 border border-slate-200 rounded-xl px-3 text-xs text-right font-mono font-black text-slate-900 focus:outline-none" />
                           <span class="text-[9px] text-slate-400 block text-right mt-0.5 font-medium">Auto calculated</span>
                         </div>
                       </div>
@@ -2146,10 +2166,11 @@ export function TripForm(props: TripFormProps) {
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label class="block text-[11px] font-extrabold text-slate-650 mb-1.5">Route From <span class="text-red-500">*</span></label>
+                    <label for="input_st_route_from" class="block text-[11px] font-extrabold text-slate-650 mb-1.5">Route From <span class="text-red-500">*</span></label>
                     <div class="relative">
                       <MapPin class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
                       <input
+                        id="input_st_route_from"
                         type="text"
                         list="suggested-places-list"
                         value={stRouteFrom()}
@@ -2160,10 +2181,11 @@ export function TripForm(props: TripFormProps) {
                     </div>
                   </div>
                   <div>
-                    <label class="block text-[11px] font-extrabold text-slate-650 mb-1.5">Route To <span class="text-red-500">*</span></label>
+                    <label for="input_st_route_to" class="block text-[11px] font-extrabold text-slate-650 mb-1.5">Route To <span class="text-red-500">*</span></label>
                     <div class="relative">
                       <MapPin class="w-4 h-4 text-emerald-600 absolute left-3.5 top-3.5 pointer-events-none" />
                       <input
+                        id="input_st_route_to"
                         type="text"
                         list="suggested-places-list"
                         value={stRouteTo()}
@@ -2260,10 +2282,11 @@ export function TripForm(props: TripFormProps) {
                 <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 pt-2">
                   {/* Freight Income */}
                   <div class="bg-white border border-emerald-300 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 rounded-2xl p-3 shadow-2xs flex-1 min-w-[150px] transition">
-                    <label class="block text-[10px] font-extrabold text-slate-650 mb-1">Freight Income (₹) <span class="text-red-500">*</span></label>
+                    <label for="input_st_income" class="block text-[10px] font-extrabold text-slate-650 mb-1">Freight Income (₹) <span class="text-red-500">*</span></label>
                     <div class="flex items-center gap-2">
                       <Coins class="w-4 h-4 text-emerald-600 shrink-0" />
                       <input
+                        id="input_st_income"
                         type="number"
                         min="0"
                         step="1"

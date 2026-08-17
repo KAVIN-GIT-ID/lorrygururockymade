@@ -227,7 +227,7 @@ export default function MobileViewport(rawProps: MobileViewportProps) {
       {/* Dynamic Mobile Header */}
       <div class="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 p-4 shrink-0 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <img src={props.logo} alt="LorryGuru Logo" class="h-7 w-auto" />
+          <img src={props.logo} alt="LorryGuru Logo" width="28" height="28" class="h-7 w-auto" />
           <span class="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">LorryGuru</span>
         </div>
         <div class="flex items-center gap-2.5">

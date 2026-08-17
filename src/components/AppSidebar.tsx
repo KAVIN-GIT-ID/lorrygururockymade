@@ -64,7 +64,7 @@ export const AppSidebar: Component<AppSidebarProps> = (props) => {
       {/* Header Panel (Logo & Mobile Toggle Button) */}
       <div class="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
         <div class="flex items-center gap-3 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
-          <img src={logo()} alt="LorryGuru Logo" class="h-8 w-auto shrink-0" />
+          <img src={logo()} alt="LorryGuru Logo" width="32" height="32" class="h-8 w-auto shrink-0" />
           <span>LorryGuru</span>
         </div>
 

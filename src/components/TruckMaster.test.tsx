@@ -16,7 +16,7 @@ const mockTrucksData = vi.hoisted(() => [
     make: 'TATA',
     model: '3118',
     type: '12 Wheeler',
-    insuranceDate: '2026-08-15', // Near expiry (~19 days from 2026-07-27)
+    insuranceDate: '2026-08-30', // Near expiry (~15 days from 2026-08-15)
     fcDate: '2026-04-20',        // Expired relative to 2026-05-23
     currentKM: 100000,
     engineOilKM: 105000,
@@ -131,8 +131,8 @@ describe('TruckMaster Component Tests', () => {
     const fcCell = screen.getAllByText('20-04-2026')[0];
     expect(fcCell).toHaveClass('bg-rose-50');
 
-    // Insurance is 2026-08-15, which is near expiry (~19 days from 2026-07-27)
-    const insCell = screen.getAllByText('15-08-2026')[0];
+    // Insurance is 2026-08-30, which is near expiry (~15 days from 2026-08-15)
+    const insCell = screen.getAllByText('30-08-2026')[0];
     expect(insCell).toHaveClass('bg-amber-50');
   });
 

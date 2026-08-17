@@ -2,7 +2,7 @@ import { createContext, useContext, createMemo, createEffect, JSX, createSignal 
 import { createStore } from 'solid-js/store';
 import { TripEntry, createRecord, mutateRecord } from '../types';
 import { migrateTrips, migrateTripsIfNecessary } from '../lib/migrations';
-import { getTripDiff } from '../utils/diffUtils';
+import { getTripDiff, getTripMetadata, diffCollection } from '../utils/diffUtils';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import { db, dbUnlocked, prewarmedData } from '../services/cache';
 import { useAuth } from './AuthContext';
@@ -184,21 +184,25 @@ export function TripProvider(props: { children: JSX.Element }) {
     const currentUserId = currentUser()?.$id || currentUser()?.email || 'system';
     const tripId = editingTrip ? editingTrip.id : 't_id_' + Date.now();
 
+    const subTripsList = Array.isArray(entryInput.subTrips) ? entryInput.subTrips : parseArraySafely(entryInput.subTrips);
+    const paymentsList = Array.isArray(entryInput.payments) ? entryInput.payments : parseArraySafely(entryInput.payments);
+    const advancesList = Array.isArray(entryInput.advances) ? entryInput.advances : parseArraySafely(entryInput.advances);
+
     const idMap: Record<string, string> = {};
-    const mappedSubTrips = (entryInput.subTrips || []).map((sub, idx) => {
-      const newSubId = `sub_${tripId}_${idx}`;
-      idMap[sub.id] = newSubId;
+    const mappedSubTrips = subTripsList.map((sub: any, idx: number) => {
+      const newSubId = sub.id || `sub_${tripId}_${idx}`;
+      if (sub.id) idMap[sub.id] = newSubId;
       return { ...sub, id: newSubId };
     });
 
-    const mappedPayments = (entryInput.payments || []).map(p => {
+    const mappedPayments = paymentsList.map((p: any) => {
       if (p.subTripId && idMap[p.subTripId]) {
         return { ...p, subTripId: idMap[p.subTripId] };
       }
       return p;
     });
 
-    const mappedAdvances = (entryInput.advances || []).map(adv => {
+    const mappedAdvances = advancesList.map((adv: any) => {
       if (adv.subTripId && idMap[adv.subTripId]) {
         return { ...adv, subTripId: idMap[adv.subTripId] };
       }
@@ -213,32 +217,39 @@ export function TripProvider(props: { children: JSX.Element }) {
     };
 
     if (editingTrip) {
-      // Check if zero changes were made to skip unnecessary server network requests
-      const isUnchanged =
-        (editingTrip.tripNo === finalEntryInput.tripNo) &&
-        (editingTrip.truckNo === finalEntryInput.truckNo) &&
-        (editingTrip.driverName === finalEntryInput.driverName) &&
-        (editingTrip.startDate === finalEntryInput.startDate) &&
-        (editingTrip.endDate === finalEntryInput.endDate) &&
-        (Number(editingTrip.startingKM || 0) === Number(finalEntryInput.startingKM || 0)) &&
-        (Number(editingTrip.endingKM || 0) === Number(finalEntryInput.endingKM || 0)) &&
-        (editingTrip.status === finalEntryInput.status) &&
-        ((editingTrip.notes || '') === (finalEntryInput.notes || '')) &&
-        (Number(editingTrip.rtoExpense || 0) === Number(finalEntryInput.rtoExpense || 0)) &&
-        (!!editingTrip.rtoPaidByDriver === !!finalEntryInput.rtoPaidByDriver) &&
-        (Number(editingTrip.addBlueExpense || 0) === Number(finalEntryInput.addBlueExpense || 0)) &&
-        (!!editingTrip.addBluePaidByDriver === !!finalEntryInput.addBluePaidByDriver) &&
-        (Number(editingTrip.fastagExpense || 0) === Number(finalEntryInput.fastagExpense || 0)) &&
-        (!!editingTrip.fastagPaidByDriver === !!finalEntryInput.fastagPaidByDriver) &&
-        (Number(editingTrip.otherExpense || 0) === Number(finalEntryInput.otherExpense || 0)) &&
-        (!!editingTrip.otherPaidByDriver === !!finalEntryInput.otherPaidByDriver) &&
-        (JSON.stringify(editingTrip.subTrips || []) === JSON.stringify(finalEntryInput.subTrips || [])) &&
-        (JSON.stringify(editingTrip.advances || []) === JSON.stringify(finalEntryInput.advances || [])) &&
-        (JSON.stringify(editingTrip.payments || []) === JSON.stringify(finalEntryInput.payments || [])) &&
-        (JSON.stringify(editingTrip.fuels || []) === JSON.stringify(finalEntryInput.fuels || []));
+      // 1. Calculate diffs using stable IDs and clean metadata extraction
+      const subTripsDiff = diffCollection(editingTrip.subTrips || [], finalEntryInput.subTrips || []);
+      const fuelsDiff = diffCollection(editingTrip.fuels || [], finalEntryInput.fuels || []);
+      const advancesDiff = diffCollection(editingTrip.advances || [], finalEntryInput.advances || []);
+      
+      const prevMeta = getTripMetadata(editingTrip);
+      const nextMeta = getTripMetadata(finalEntryInput);
+      
+      const metaDiffKeys: string[] = [];
+      const allMetaKeys = Array.from(new Set([...Object.keys(prevMeta), ...Object.keys(nextMeta)]));
+      allMetaKeys.forEach(k => {
+        if (JSON.stringify(prevMeta[k]) !== JSON.stringify(nextMeta[k])) {
+          metaDiffKeys.push(`${k}: [prev=${JSON.stringify(prevMeta[k])} (${typeof prevMeta[k]}) vs next=${JSON.stringify(nextMeta[k])} (${typeof nextMeta[k]})]`);
+        }
+      });
+      const metadataChanged = metaDiffKeys.length > 0;
 
-      if (isUnchanged) {
-        console.log(`[TripContext] Zero modifications detected for Trip ${editingTrip.tripNo}. Skipping Appwrite write.`);
+      const hasAnyChanges = metadataChanged || subTripsDiff.hasChanges || fuelsDiff.hasChanges || advancesDiff.hasChanges;
+
+      console.group(`🔍 [TRIP SAVE INSPECTOR] Trip ${editingTrip.tripNo}`);
+      console.log('📦 Existing local record (editingTrip):', editingTrip);
+      console.log('📝 Form submission payload (finalEntryInput):', finalEntryInput);
+      console.log('🏷️ Extracted Prev Metadata:', prevMeta);
+      console.log('🏷️ Extracted Next Metadata:', nextMeta);
+      console.log('⚡ metadataChanged:', metadataChanged, 'Diff keys:', metaDiffKeys);
+      console.log('🚛 subTripsDiff:', subTripsDiff);
+      console.log('⛽ fuelsDiff:', fuelsDiff);
+      console.log('💰 advancesDiff:', advancesDiff);
+      console.log('🎯 HAS ANY CHANGES?:', hasAnyChanges);
+      console.groupEnd();
+
+      if (!hasAnyChanges) {
+        console.log(`[TripContext] Zero modifications detected for Trip ${editingTrip.tripNo}. Skipping Appwrite writes.`);
         showNotification(`No changes detected for Trip ${editingTrip.tripNo}. Record unchanged.`);
         return;
       }
@@ -300,19 +311,76 @@ export function TripProvider(props: { children: JSX.Element }) {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          
-          // Save main trip & any modified associated trips in parallel for instant response
-          const savePromises = [
-            appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, updated).then(() => {
-              updated.syncState = 'synced';
-            })
-          ];
+          const savePromises: Promise<any>[] = [];
 
+          // 2. Micro-patch sub_trips collection
+          subTripsDiff.toCreate.concat(subTripsDiff.toUpdate).forEach(sub => {
+            savePromises.push(
+              appwrite.saveFleetDocument(databaseId, 'sub_trips', sub.id || (sub as any).$id, orgId, {
+                ...sub,
+                tripId: updated.id,
+                organizationId: orgId
+              })
+            );
+          });
+          subTripsDiff.toDelete.forEach(sub => {
+            const subId = sub.id || (sub as any).$id;
+            if (subId) {
+              savePromises.push(appwrite.deleteFleetDocument(databaseId, 'sub_trips', subId));
+            }
+          });
+
+          // 3. Micro-patch fuels collection
+          fuelsDiff.toCreate.concat(fuelsDiff.toUpdate).forEach(fuel => {
+            savePromises.push(
+              appwrite.saveFleetDocument(databaseId, 'fuels', fuel.id || (fuel as any).$id, orgId, {
+                ...fuel,
+                tripId: updated.id,
+                organizationId: orgId
+              })
+            );
+          });
+          fuelsDiff.toDelete.forEach(fuel => {
+            const fuelId = fuel.id || (fuel as any).$id;
+            if (fuelId) {
+              savePromises.push(appwrite.deleteFleetDocument(databaseId, 'fuels', fuelId));
+            }
+          });
+
+          // 4. Micro-patch advances collection
+          advancesDiff.toCreate.concat(advancesDiff.toUpdate).forEach(adv => {
+            savePromises.push(
+              appwrite.saveFleetDocument(databaseId, 'advances', adv.id || (adv as any).$id, orgId, {
+                ...adv,
+                tripId: updated.id,
+                organizationId: orgId
+              })
+            );
+          });
+          advancesDiff.toDelete.forEach(adv => {
+            const advId = adv.id || (adv as any).$id;
+            if (advId) {
+              savePromises.push(appwrite.deleteFleetDocument(databaseId, 'advances', advId));
+            }
+          });
+
+          // 5. Save parent trip document metadata ONLY if metadata changed
+          if (metadataChanged) {
+            const { subTrips, fuels, advances, payments, ...parentPayload } = updated;
+            savePromises.push(
+              appwrite.saveFleetDocument(databaseId, 'trips', updated.id, orgId, parentPayload).then(() => {
+                updated.syncState = 'synced';
+              })
+            );
+          }
+
+          // 6. Handle any modified associated trips (carry forward advances)
           for (const mId of modifiedTripIds) {
             const mTrip = next.find(x => x.id === mId);
             if (mTrip) {
+              const { subTrips, fuels, advances, payments, ...parentPayload } = mTrip;
               savePromises.push(
-                appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, mTrip).then(() => {
+                appwrite.saveFleetDocument(databaseId, 'trips', mId, orgId, parentPayload).then(() => {
                   mTrip.syncState = 'synced';
                 })
               );
@@ -327,11 +395,8 @@ export function TripProvider(props: { children: JSX.Element }) {
         }
       }
 
-      saveTrips(next);
+      saveTrips(next, true);
       const diff = getTripDiff(editingTrip, updated);
-      if (diff) {
-        // Log action can be handled via logAction or a LoggingService
-      }
       showNotification(`Trip ${updated.tripNo} changes successfully committed.`);
     } else {
       const isDup = tripsStore
@@ -351,8 +416,57 @@ export function TripProvider(props: { children: JSX.Element }) {
       if (isAppwriteConfigured()) {
         try {
           const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          await appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, newEntry);
-          newEntry.syncState = 'synced';
+          const { subTrips, fuels, advances, payments, ...parentPayload } = newEntry;
+          const createPromises: Promise<any>[] = [
+            appwrite.saveFleetDocument(databaseId, 'trips', newEntry.id, orgId, parentPayload).then(() => {
+              newEntry.syncState = 'synced';
+            })
+          ];
+
+          const formattedSubTrips = (newEntry.subTrips || []).map((sub, idx) => ({
+            ...sub,
+            id: sub.id || `sub_${newEntry.id}_${idx}`,
+            tripId: newEntry.id,
+            organizationId: orgId
+          }));
+
+          const formattedFuels = (newEntry.fuels || []).map((fuel, idx) => ({
+            ...fuel,
+            id: fuel.id || `fuel_${newEntry.id}_${idx}`,
+            tripId: newEntry.id,
+            organizationId: orgId
+          }));
+
+          const formattedAdvances = (newEntry.advances || []).map((adv, idx) => ({
+            ...adv,
+            id: adv.id || `adv_${newEntry.id}_${idx}`,
+            tripId: newEntry.id,
+            organizationId: orgId
+          }));
+
+          newEntry.subTrips = formattedSubTrips;
+          newEntry.fuels = formattedFuels;
+          newEntry.advances = formattedAdvances;
+
+          formattedSubTrips.forEach(sub => {
+            createPromises.push(
+              appwrite.saveFleetDocument(databaseId, 'sub_trips', sub.id, orgId, sub)
+            );
+          });
+
+          formattedFuels.forEach(fuel => {
+            createPromises.push(
+              appwrite.saveFleetDocument(databaseId, 'fuels', fuel.id, orgId, fuel)
+            );
+          });
+
+          formattedAdvances.forEach(adv => {
+            createPromises.push(
+              appwrite.saveFleetDocument(databaseId, 'advances', adv.id, orgId, adv)
+            );
+          });
+
+          await Promise.all(createPromises);
         } catch (err) {
           console.error("Failed to create trip in Appwrite:", err);
           alert("Error: Failed to register new trip in server database. Please check your connection or permissions.");
@@ -360,7 +474,7 @@ export function TripProvider(props: { children: JSX.Element }) {
         }
       }
 
-      saveTrips([...tripsStore, newEntry]);
+      saveTrips([...tripsStore, newEntry], true);
       showNotification(`Saved segment load posted as master trip.`);
     }
   };
