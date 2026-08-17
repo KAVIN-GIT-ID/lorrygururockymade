@@ -87,8 +87,10 @@ export const calculateSingleLoanStats = (
   const startM = parseInt(parts[1], 10) - 1;
   const startD = parseInt(parts[2], 10);
   
-  // Parse registered date or default to loan start date if not specified
-  const registeredDateStr = loan.loanRegisteredDate || loan.loanStartDate;
+  // Parse registered date or default to today if not specified in DB
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isRegisteredDateMissing = !loan.loanRegisteredDate;
+  const registeredDateStr = loan.loanRegisteredDate || todayStr;
   const regParts = registeredDateStr.split('-');
   const regY = parseInt(regParts[0], 10);
   const regM = parseInt(regParts[1], 10) - 1;
@@ -175,7 +177,9 @@ export const calculateSingleLoanStats = (
     totalPaid,
     totalRemaining,
     nextDueDateStr,
-    isOverdue
+    isOverdue,
+    isRegisteredDateMissing,
+    registeredDateStr
   };
 };
 
@@ -2414,10 +2418,19 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
                                 <span class="text-slate-400 font-bold uppercase text-[9px] block">First EMI Date & Tenure</span>
                                 <span class="font-semibold text-slate-800">{loan.loanStartDate} ({loan.loanTenureMonths} Months)</span>
                               </div>
-                              {loan.loanRegisteredDate && (
+                              {loan.loanRegisteredDate ? (
                                 <div class="col-span-3 border-t border-slate-200/40 pt-1">
                                   <span class="text-slate-400 font-bold uppercase text-[9px] block">Loan Registered Date</span>
                                   <span class="font-semibold text-slate-800 font-mono text-[11px]">{loan.loanRegisteredDate}</span>
+                                </div>
+                              ) : (
+                                <div class="col-span-3 border-t border-amber-200/60 pt-1.5 pb-1 px-2.5 bg-amber-50 dark:bg-amber-900/20 rounded-md flex items-center justify-between text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                                  <span>⚠️ Loan Registration Date missing — defaulting to Today ({stats.registeredDateStr}) for auto-clearing past EMIs.</span>
+                                  {canEditLoans && (
+                                    <button type="button" onClick={handleOpenEditModal} class="underline font-semibold hover:text-amber-950 dark:hover:text-amber-100 cursor-pointer ml-2 shrink-0">
+                                      Set Date
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
