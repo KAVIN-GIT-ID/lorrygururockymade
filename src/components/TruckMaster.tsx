@@ -19,9 +19,19 @@ import PayEmiModal from './PayEmiModal';
 import PhonePePaymentModal from './PhonePePaymentModal';
 
 export const getTruckLoans = (truck: Truck): LoanEntry[] => {
+  if (!truck) return [];
+  let rawLoans: any = truck.loans;
+  if (typeof rawLoans === 'string') {
+    try {
+      rawLoans = JSON.parse(rawLoans);
+    } catch {
+      rawLoans = [];
+    }
+  }
+
   let list: LoanEntry[] = [];
-  if (truck.loans && truck.loans.length > 0) {
-    list = truck.loans.map((l, idx) => {
+  if (Array.isArray(rawLoans) && rawLoans.length > 0) {
+    list = rawLoans.map((l, idx) => {
       if (idx === 0) {
         return {
           ...l,
