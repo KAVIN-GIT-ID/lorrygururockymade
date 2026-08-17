@@ -59,17 +59,18 @@ export const SyncService = {
       extraQueries.push(Query.greaterThan('$updatedAt', new Date(lastSyncTime).toISOString()));
     }
 
+    const isIncrementalSync = lastSyncTime > 0;
     const loadedState: any = {
-      trucks: [...(currentLocalState.trucks || [])],
-      drivers: [...(currentLocalState.drivers || [])],
-      offices: [...(currentLocalState.offices || [])],
-      accounts: [...(currentLocalState.accounts || [])],
-      trips: [...(currentLocalState.trips || [])],
-      expenses: [...(currentLocalState.expenses || [])],
-      tyres: [...(currentLocalState.tyres || [])],
-      auditLogs: [...(currentLocalState.auditLogs || [])],
-      supportTickets: [...(currentLocalState.supportTickets || [])],
-      coupons: [...(currentLocalState.coupons || [])]
+      trucks: isIncrementalSync ? [...(currentLocalState.trucks || [])] : [],
+      drivers: isIncrementalSync ? [...(currentLocalState.drivers || [])] : [],
+      offices: isIncrementalSync ? [...(currentLocalState.offices || [])] : [],
+      accounts: isIncrementalSync ? [...(currentLocalState.accounts || [])] : [],
+      trips: isIncrementalSync ? [...(currentLocalState.trips || [])] : [],
+      expenses: isIncrementalSync ? [...(currentLocalState.expenses || [])] : [],
+      tyres: isIncrementalSync ? [...(currentLocalState.tyres || [])] : [],
+      auditLogs: isIncrementalSync ? [...(currentLocalState.auditLogs || [])] : [],
+      supportTickets: isIncrementalSync ? [...(currentLocalState.supportTickets || [])] : [],
+      coupons: isIncrementalSync ? [...(currentLocalState.coupons || [])] : []
     };
 
     let userRightsData: any = null;
