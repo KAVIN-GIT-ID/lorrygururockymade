@@ -65,14 +65,19 @@ export const calculateSingleLoanStats = (
   const startM = parseInt(parts[1], 10) - 1;
   const startD = parseInt(parts[2], 10);
   
-  // Parse registered date or default to loan start date if not specified
-  const registeredDateStr = loan.loanRegisteredDate || loan.loanStartDate;
-  const regParts = registeredDateStr.split('-');
-  const regY = parseInt(regParts[0], 10);
-  const regM = parseInt(regParts[1], 10) - 1;
-  const regD = parseInt(regParts[2], 10);
-  const regDate = new Date(regY, regM, regD);
-  regDate.setHours(0,0,0,0);
+  // Parse registered date if explicitly set by user (do not default to today or start date)
+  const registeredDateStr = loan.loanRegisteredDate || '';
+  let regDate: Date | null = null;
+  if (registeredDateStr) {
+    const regParts = registeredDateStr.split('-');
+    if (regParts.length === 3) {
+      const regY = parseInt(regParts[0], 10);
+      const regM = parseInt(regParts[1], 10) - 1;
+      const regD = parseInt(regParts[2], 10);
+      regDate = new Date(regY, regM, regD);
+      regDate.setHours(0,0,0,0);
+    }
+  }
   
   const dueDates: string[] = [];
   const today = new Date();
@@ -121,9 +126,9 @@ export const calculateSingleLoanStats = (
     const isPaidInExpenses = checkIsPaidInExpenses(dueDateStr);
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    const isPast = dueD < regDate;
+    const isPast = regDate ? (dueD < regDate) : false;
     
-    if (isPaidInExpenses || isPast || dueDateStr === startDateStr) {
+    if (isPaidInExpenses || isPast) {
       paidInstallments++;
     }
   }
@@ -140,8 +145,8 @@ export const calculateSingleLoanStats = (
     const isPaidInExpenses = checkIsPaidInExpenses(dueDateStr);
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    const isPast = dueD < regDate;
-    const isPaid = isPaidInExpenses || isPast || dueDateStr === startDateStr;
+    const isPast = regDate ? (dueD < regDate) : false;
+    const isPaid = isPaidInExpenses || isPast;
     if (!isPaid) {
       nextDueDateStr = dueDateStr;
       isOverdue = dueD <= today;
