@@ -617,9 +617,11 @@ export default function Dashboard(props: DashboardProps) {
           const daysLeft = calculateDaysLeft(doc.date, anchor);
           if (daysLeft !== null && daysLeft <= doc.warningDays) {
             let metadata: any = undefined;
-            if (['Insurance Expiry', 'Quarterly Tax (Q Tax)', 'National Permit Tax', '5 Year Permit Date'].includes(doc.label)) {
+            if (['Insurance Expiry', 'Fitness Cert (FC)', 'Quarterly Tax (Q Tax)', 'Green Tax Cert', 'National Permit Tax', '5 Year Permit Date'].includes(doc.label)) {
               const taxType = doc.label === 'Insurance Expiry' ? 'Insurance'
+                            : doc.label === 'Fitness Cert (FC)' ? 'Fitness Cert'
                             : doc.label === 'Quarterly Tax (Q Tax)' ? 'Quarterly Tax'
+                            : doc.label === 'Green Tax Cert' ? 'Green Tax'
                             : doc.label === 'National Permit Tax' ? 'National Permit Tax'
                             : '5 Year Permit';
               metadata = {
@@ -778,7 +780,9 @@ export default function Dashboard(props: DashboardProps) {
                       onClick={() => setPayTaxTarget(alert.metadata)}
                       class="ml-3 shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg transition shadow-3xs cursor-pointer uppercase tracking-wider"
                     >
-                      {alert.metadata.taxType === 'Insurance' ? 'Pay Insurance' : 'Pay Tax'}
+                      {alert.metadata.taxType === 'Insurance' ? 'Pay Insurance'
+                      : alert.metadata.taxType === 'Fitness Cert' ? 'Update FC'
+                      : 'Pay Tax'}
                     </button>
                   )}
                 </div>
@@ -1213,6 +1217,10 @@ export default function Dashboard(props: DashboardProps) {
                 const updatedTruck = { ...truckToUpdate };
                 if (payTaxTarget().taxType === 'Insurance') {
                   updatedTruck.insuranceDate = nextExpiryDate;
+                } else if (payTaxTarget().taxType === 'Fitness Cert') {
+                  updatedTruck.fcDate = nextExpiryDate;
+                } else if (payTaxTarget().taxType === 'Green Tax') {
+                  updatedTruck.greenTaxDate = nextExpiryDate;
                 } else if (payTaxTarget().taxType === 'Quarterly Tax') {
                   updatedTruck.qTaxDate = nextExpiryDate;
                 } else if (payTaxTarget().taxType === 'National Permit Tax') {
