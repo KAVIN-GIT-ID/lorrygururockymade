@@ -7,6 +7,19 @@ import { calculateLoanStats, calculateSingleLoanStats, getTruckLoans } from './T
 import PayEmiModal from './PayEmiModal';
 import PayTaxModal from './PayTaxModal';
 
+function safeArray<T = any>(val: any): T[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 interface DashboardProps {
   trips: TripEntry[];
   allTrips?: TripEntry[];
@@ -233,7 +246,7 @@ export default function Dashboard(props: DashboardProps) {
   const fundsByAccount = createMemo(() => {
     const accountFundsMap: { [key: string]: number } = {};
     trips().forEach(t => {
-      (t.payments || []).forEach(p => {
+      safeArray(t.payments).forEach(p => {
         if (p.amount > 0 && p.receivedBy) {
           accountFundsMap[p.receivedBy] = (accountFundsMap[p.receivedBy] || 0) + Number(p.amount);
         }
@@ -268,7 +281,7 @@ export default function Dashboard(props: DashboardProps) {
       const m = getTripMetrics(t);
       if (m.outstandingBalance > 0) {
         const segDetails: { office: string; balance: number }[] = [];
-        const subTrips = t.subTrips || [];
+        const subTrips = safeArray(t.subTrips);
         subTrips.forEach(st => {
           let segDeductions = 0;
           let segOfficeBears = 0;
@@ -295,7 +308,7 @@ export default function Dashboard(props: DashboardProps) {
             }
           });
 
-          const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+          const segPayments = safeArray(t.payments).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
           const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
 
           segDetails.push({
@@ -304,7 +317,7 @@ export default function Dashboard(props: DashboardProps) {
           });
         });
 
-        const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+        const unassignedPayments = safeArray(t.payments).filter(p => !p.subTripId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         if (unassignedPayments > 0 && segDetails.length > 0) {
           const share = Math.round(unassignedPayments / segDetails.length);
           segDetails.forEach(item => {
@@ -338,7 +351,7 @@ export default function Dashboard(props: DashboardProps) {
       const m = getTripMetrics(t);
       if (m.outstandingBalance > 0) {
         // Find segment info
-        (t.subTrips || []).forEach(st => {
+        safeArray(t.subTrips).forEach(st => {
           if (st.officeName) officesUsed.add(st.officeName);
           
           // Calculate segment-specific OrgRental deductions & Office Bears
@@ -368,7 +381,7 @@ export default function Dashboard(props: DashboardProps) {
           });
 
           // Calculate segment-specific payments if possible (subTripId matches)
-          const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+          const segPayments = safeArray(t.payments).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
           const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
 
           detailsList.push({
@@ -385,7 +398,7 @@ export default function Dashboard(props: DashboardProps) {
         });
 
         // Let's also look at general payments block (unassigned payments)
-        const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+        const unassignedPayments = safeArray(t.payments).filter(p => !p.subTripId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         if (unassignedPayments > 0 && detailsList.length > 0) {
           const share = Math.round(unassignedPayments / detailsList.length);
           detailsList.forEach(item => {
@@ -425,7 +438,7 @@ export default function Dashboard(props: DashboardProps) {
       if (m.outstandingBalance > 0) {
         const matchingSegs: { st: any; segDeductions: number; segOfficeBears: number; segPayments: number; segBalance: number }[] = [];
         
-        (t.subTrips || []).forEach(st => {
+        safeArray(t.subTrips).forEach(st => {
           const stOffice = st.officeName || 'Indirect/General';
           if (stOffice === oName) {
             trucksUsed.add(t.truckNo);
@@ -455,7 +468,7 @@ export default function Dashboard(props: DashboardProps) {
               }
             });
 
-            const segPayments = (t.payments || []).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + p.amount, 0);
+            const segPayments = safeArray(t.payments).filter(p => p.subTripId === st.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
             const segBalance = st.income - segDeductions + segOfficeBears - segPayments;
 
             matchingSegs.push({
@@ -469,9 +482,9 @@ export default function Dashboard(props: DashboardProps) {
         });
 
         // We also need to calculate proportional share of unassigned payments if this trip has any matching segments
-        const tripTotalSegs = (t.subTrips || []).length;
+        const tripTotalSegs = safeArray(t.subTrips).length;
         if (matchingSegs.length > 0 && tripTotalSegs > 0) {
-          const unassignedPayments = (t.payments || []).filter(p => !p.subTripId).reduce((sum, p) => sum + p.amount, 0);
+          const unassignedPayments = safeArray(t.payments).filter(p => !p.subTripId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
           const sharePerSeg = Math.round(unassignedPayments / tripTotalSegs);
           
           matchingSegs.forEach(item => {
@@ -1695,7 +1708,7 @@ export default function Dashboard(props: DashboardProps) {
                     if (t.id === quickPayTarget().tripId) {
                       return {
                         ...t,
-                        payments: [...(t.payments || []), newPayment]
+                        payments: [...safeArray(t.payments), newPayment]
                       };
                     }
                     return t;

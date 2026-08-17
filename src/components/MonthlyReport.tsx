@@ -77,22 +77,16 @@ export default function MonthlyReport(props: MonthlyReportProps) {
       ? parseFloat((truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).millage || 0), 0) / tripsCount).toFixed(2))
       : 0;
 
-    const freightRevenue = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).income || 0), 0);
-    const otherRevenue = truckTrips.reduce((sum, t) => {
-      const extra = (t.subTrips || []).reduce((s, st) => s + (st.income || 0), 0);
-      return sum + extra;
-    }, 0);
-    const totalIncome = freightRevenue + otherRevenue;
+    const totalIncome = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).income || 0), 0);
 
-    const driverSalary = truckTrips.reduce((sum, t) => sum + (getTripMetrics(t).driverWages || 0), 0);
-    const fuelExpenses = truckExpenses.filter(e => e.expenseType === 'Fuel').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const tollExpenses = truckExpenses.filter(e => e.expenseType === 'Toll').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const maintenanceExpenses = truckExpenses.filter(e => e.expenseType === 'Maintenance').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const adhocExpenses = truckExpenses.filter(e => e.expenseType === 'Adhoc').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const otherExpenses = truckExpenses.filter(e => !['Fuel', 'Toll', 'Maintenance', 'Adhoc'].includes(e.expenseType)).reduce((sum, e) => sum + (e.amount || 0), 0);
-    
-    const totalTripExpense = driverSalary + fuelExpenses + tollExpenses;
-    const totalGeneralExpense = maintenanceExpenses + adhocExpenses + otherExpenses;
+    // Sum trip-level operational expenses (diesel, toll/fastag, rto, loading, unloading, rmc, etc.) PLUS driver wages
+    const totalTripExpense = truckTrips.reduce((sum, t) => {
+      const metrics = getTripMetrics(t);
+      return sum + (metrics.totalExpense || 0) + (metrics.driverWages || 0);
+    }, 0);
+
+    // General shop/maintenance voucher expenses outside of trip registers
+    const totalGeneralExpense = truckExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const totalExpense = totalTripExpense + totalGeneralExpense;
     const truckNetProfit = totalIncome - totalExpense;
     const marginPct = totalIncome > 0 ? (truckNetProfit / totalIncome) * 100 : 0;

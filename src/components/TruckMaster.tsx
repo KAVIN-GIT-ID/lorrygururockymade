@@ -65,8 +65,8 @@ export const calculateSingleLoanStats = (
   const startM = parseInt(parts[1], 10) - 1;
   const startD = parseInt(parts[2], 10);
   
-  // Parse registered date or default to today's date if not specified
-  const registeredDateStr = loan.loanRegisteredDate || new Date().toISOString().split('T')[0];
+  // Parse registered date or default to loan start date if not specified
+  const registeredDateStr = loan.loanRegisteredDate || loan.loanStartDate;
   const regParts = registeredDateStr.split('-');
   const regY = parseInt(regParts[0], 10);
   const regM = parseInt(regParts[1], 10) - 1;
@@ -93,19 +93,32 @@ export const calculateSingleLoanStats = (
     dueDates.push(dueDateStr);
   }
   
+  const cleanTargetTruckNo = (targetTruckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const checkIsPaidInExpenses = (dueDateStr: string) => {
+    return expenses.some(e => {
+      const eCleanNo = (e.truckNo || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (eCleanNo !== cleanTargetTruckNo) return false;
+      const isEmiType = e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment' || (e.category && e.category.toLowerCase().includes('emi'));
+      if (!isEmiType) return false;
+      const isSettled = e.status === 'Paid' || e.status === 'Settled';
+      if (!isSettled) return false;
+
+      // 1. Direct due date note match
+      if (e.notes && e.notes.includes(dueDateStr)) return true;
+      // 2. Structured attribute match
+      if ((e as any).emiDueDate === dueDateStr) return true;
+      // 3. Fallback: Expense date falls in the same YYYY-MM as the due date
+      if (e.date && e.date.substring(0, 7) === dueDateStr.substring(0, 7)) {
+        return true;
+      }
+      return false;
+    });
+  };
+
   let paidInstallments = 0;
   for (let i = 1; i <= tenure; i++) {
     const dueDateStr = dueDates[i-1];
-    
-    // Check if paid in expenses
-    const isPaidInExpenses = expenses.some(e => 
-      e.truckNo === targetTruckNo && 
-      (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
-      (e.status === 'Paid' || e.status === 'Settled') && 
-      e.notes?.includes(dueDateStr) &&
-      (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
-    );
-    
+    const isPaidInExpenses = checkIsPaidInExpenses(dueDateStr);
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const isPast = dueD < regDate;
@@ -124,13 +137,7 @@ export const calculateSingleLoanStats = (
   
   for (let i = 1; i <= tenure; i++) {
     const dueDateStr = dueDates[i-1];
-    const isPaidInExpenses = expenses.some(e => 
-      e.truckNo === targetTruckNo && 
-      (e.expenseType === 'Loan EMI' || e.expenseType === 'EMI Payment') && 
-      (e.status === 'Paid' || e.status === 'Settled') && 
-      e.notes?.includes(dueDateStr) &&
-      (loan.id === 'legacy-loan' || !loan.loanType || e.notes?.includes(loan.loanType))
-    );
+    const isPaidInExpenses = checkIsPaidInExpenses(dueDateStr);
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const isPast = dueD < regDate;
@@ -334,7 +341,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
       loanType: finalType,
       loanBankName: tempLoanBank().trim() || undefined,
       loanStartDate: tempLoanStart(),
-      loanRegisteredDate: tempLoanRegisteredDate() || new Date().toISOString().split('T')[0],
+      loanRegisteredDate: tempLoanRegisteredDate() || tempLoanStart(),
       loanTenureMonths: Number(tempLoanTenure()),
       loanEmiAmount: Number(tempLoanEmi()),
       loanStatus: tempLoanStatus(),
@@ -572,7 +579,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
         loanType: finalType,
         loanBankName: tempLoanBank().trim() || undefined,
         loanStartDate: tempLoanStart(),
-        loanRegisteredDate: tempLoanRegisteredDate() || new Date().toISOString().split('T')[0],
+        loanRegisteredDate: tempLoanRegisteredDate() || tempLoanStart(),
         loanTenureMonths: Number(tempLoanTenure()),
         loanEmiAmount: Number(tempLoanEmi()),
         loanStatus: tempLoanStatus(),
@@ -583,7 +590,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
     const primaryLoan = finalLoans[0];
     const legacyLoanFields = primaryLoan ? {
       loanStartDate: primaryLoan.loanStartDate || undefined,
-      loanRegisteredDate: primaryLoan.loanRegisteredDate || undefined,
+      loanRegisteredDate: primaryLoan.loanRegisteredDate || primaryLoan.loanStartDate || undefined,
       loanTenureMonths: primaryLoan.loanTenureMonths || undefined,
       loanEmiAmount: primaryLoan.loanEmiAmount || undefined,
       loanBankName: primaryLoan.loanBankName || undefined,
@@ -747,7 +754,7 @@ export default function TruckMaster(rawProps: TruckMasterProps) {
         loanType: 'Chassis Loan',
         loanBankName: truck.loanBankName || '',
         loanStartDate: truck.loanStartDate || '',
-        loanRegisteredDate: truck.loanRegisteredDate || '',
+        loanRegisteredDate: truck.loanRegisteredDate || truck.loanStartDate || '',
         loanTenureMonths: truck.loanTenureMonths !== undefined ? truck.loanTenureMonths : 0,
         loanEmiAmount: truck.loanEmiAmount !== undefined ? truck.loanEmiAmount : 0,
         loanStatus: truck.loanStatus || 'Active',
