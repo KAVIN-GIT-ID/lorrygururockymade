@@ -19,11 +19,23 @@ import PayEmiModal from './PayEmiModal';
 import PhonePePaymentModal from './PhonePePaymentModal';
 
 export const getTruckLoans = (truck: Truck): LoanEntry[] => {
+  let list: LoanEntry[] = [];
   if (truck.loans && truck.loans.length > 0) {
-    return truck.loans;
-  }
-  const list: LoanEntry[] = [];
-  if (truck.loanStartDate || truck.loanEmiAmount || truck.loanTenureMonths) {
+    list = truck.loans.map((l, idx) => {
+      if (idx === 0) {
+        return {
+          ...l,
+          loanStartDate: l.loanStartDate || truck.loanStartDate,
+          loanRegisteredDate: l.loanRegisteredDate || truck.loanRegisteredDate,
+          loanTenureMonths: l.loanTenureMonths || truck.loanTenureMonths,
+          loanEmiAmount: l.loanEmiAmount || truck.loanEmiAmount,
+          loanBankName: l.loanBankName || truck.loanBankName,
+          loanStatus: l.loanStatus || truck.loanStatus
+        };
+      }
+      return l;
+    });
+  } else if (truck.loanStartDate || truck.loanEmiAmount || truck.loanTenureMonths) {
     list.push({
       id: 'legacy-loan',
       loanType: 'Chassis Loan',
