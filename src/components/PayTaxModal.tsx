@@ -7,7 +7,7 @@ interface PayTaxModalProps {
   isOpen: boolean;
   onClose: () => void;
   truckNo: string;
-  taxType: 'Insurance' | 'Quarterly Tax' | 'National Permit Tax' | '5 Year Permit';
+  taxType: 'Insurance' | 'Quarterly Tax' | 'National Permit Tax' | '5 Year Permit' | 'Fitness Cert' | 'Green Tax';
   currentExpiryDate: string;
   accounts: Account[];
   onConfirm: (paymentDate: string, amount: number, nextExpiryDate: string, accountId: string) => void;
