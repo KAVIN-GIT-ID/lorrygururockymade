@@ -524,6 +524,7 @@ export interface ExpenseEntry extends BaseRecord {
   notes?: string;      // Optional service notes (e.g. early service reason)
   organizationId?: string;
   tyreId?: string;     // Reference to Tyre ID if generated from Tyre purchase
+  category?: string;   // Optional category classification (e.g. Loan EMI)
 }
 
 export interface AuditLog extends BaseRecord {
