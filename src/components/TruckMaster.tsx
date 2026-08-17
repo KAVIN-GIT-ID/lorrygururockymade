@@ -149,8 +149,9 @@ export const calculateSingleLoanStats = (
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const isPast = regDate ? (dueD < regDate) : false;
+    const isUpfrontFirstEmi = dueDateStr === startDateStr;
     
-    if (isPaidInExpenses || isPast) {
+    if (isPaidInExpenses || isPast || isUpfrontFirstEmi) {
       paidInstallments++;
     }
   }
@@ -168,7 +169,8 @@ export const calculateSingleLoanStats = (
     const parts = dueDateStr.split('-');
     const dueD = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     const isPast = regDate ? (dueD < regDate) : false;
-    const isPaid = isPaidInExpenses || isPast;
+    const isUpfrontFirstEmi = dueDateStr === startDateStr;
+    const isPaid = isPaidInExpenses || isPast || isUpfrontFirstEmi;
     if (!isPaid) {
       nextDueDateStr = dueDateStr;
       isOverdue = dueD <= today;
