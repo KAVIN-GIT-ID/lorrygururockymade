@@ -449,36 +449,37 @@ export default function ExpenseMaster({
           </div>
         </form>
       )}
-      <div className="bg-slate-50 border border-slate-200 p-3.5 mb-5 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-center">
+      {/* FILTER & SEARCH TOOLBAR */}
+      <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3.5 mb-5 rounded-2xl flex flex-wrap items-center gap-2.5">
         
-        <div>
+        <div className="flex-1 min-w-[220px]">
           <input
             type="text"
-            placeholder="Search shop name or expense type..."
+            placeholder="Search shop name, expense type or truck..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-semibold"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-semibold transition"
           />
         </div>
 
-        <div>
+        <div className="w-full sm:w-44">
           <select
             value={selectedTruckFilter}
             onChange={(e) => setSelectedTruckFilter(e.target.value)}
-            className="w-full bg-white border border-slate-205 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold transition cursor-pointer"
           >
-            <option value="">By Truck Filter (All)</option>
+            <option value="">By Truck (All)</option>
             {trucks.map(tk => (
               <option key={tk.id} value={tk.truckNo}>{tk.truckNo}</option>
             ))}
           </select>
         </div>
 
-        <div>
+        <div className="w-full sm:w-44">
           <select
             value={selectedTypeFilter}
             onChange={(e) => setSelectedTypeFilter(e.target.value)}
-            className="w-full bg-white border border-slate-205 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold transition cursor-pointer"
           >
             <option value="">By Expense Type (All)</option>
             <option value="Temporary">Temporary</option>
@@ -495,25 +496,26 @@ export default function ExpenseMaster({
         </div>
 
         {/* Date inputs */}
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <input
             type="date"
             title="Start Date"
             value={startDateFilter}
             onChange={(e) => setStartDateFilter(e.target.value)}
-            className="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+            className="w-full sm:w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold transition"
           />
+          <span className="text-slate-400 text-xs">-</span>
           <input
             type="date"
             title="End Date"
             value={endDateFilter}
             onChange={(e) => setEndDateFilter(e.target.value)}
-            className="w-full bg-white border border-slate-205 text-slate-850 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+            className="w-full sm:w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold transition"
           />
         </div>
 
         {/* Refresh / Clear Button */}
-        <div className="flex gap-1 justify-end">
+        {(searchQuery || selectedTruckFilter || selectedTypeFilter || startDateFilter || endDateFilter) && (
           <button
             onClick={() => {
               setSearchQuery('');
@@ -522,11 +524,11 @@ export default function ExpenseMaster({
               setStartDateFilter('');
               setEndDateFilter('');
             }}
-            className="bg-white border border-slate-250/70 hover:bg-slate-100 text-slate-605 text-slate-600 font-bold px-3 py-1.5 rounded-lg transition duration-150 text-xs cursor-pointer active:scale-95 w-full text-center"
+            className="bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-bold px-3.5 py-2 rounded-xl transition text-xs cursor-pointer active:scale-95 shrink-0 shadow-xs"
           >
             Reset Filters
           </button>
-        </div>
+        )}
 
       </div>
 
