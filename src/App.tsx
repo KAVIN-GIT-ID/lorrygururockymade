@@ -594,15 +594,22 @@ export default function App() {
     }
     const email = (currentUser.email || '').toLowerCase().trim();
     const match = userRightsList.find(ur => ur.email.toLowerCase().trim() === email);
+    const userRole = (currentUser as any).role || (match ? match.role : (email.includes('admin') ? 'Admin' : 'Staff'));
+    const isSuper = userRole === 'SuperAdmin' || (currentUser as any).organizationId === 'org_backend' || (match ? match.organizationId === 'org_backend' : false);
+    const isAdminUser = userRole === 'Admin' || isSuper || email.includes('admin');
+    const isPrimarySuperAdmin = userRole === 'SuperAdmin';
+    const orgId = (currentUser as any).organizationId || (match ? match.organizationId : 'org_default');
+    const userPhone = (currentUser as any).phone || (match ? match.phone : '');
+    const isEmailVer = match ? !!match.isEmailVerified : ((currentUser as any).emailVerification ?? true);
+    const isPhoneVer = match ? !!match.isPhoneVerified : ((currentUser as any).phoneVerification ?? true);
+
     if (match) {
-      const isSuper = match.role === 'SuperAdmin' || match.organizationId === 'org_backend';
-      const isPrimarySuperAdmin = match.role === 'SuperAdmin';
       return {
-        isAdmin: match.role === 'Admin' || isSuper,
+        isAdmin: match.role === 'Admin' || isSuper || isAdminUser,
         isSuperAdmin: isSuper,
-        organizationId: match.organizationId,
-        isApproved: match.isApproved,
-        phone: match.phone || '',
+        organizationId: match.organizationId || orgId,
+        isApproved: match.isApproved !== false,
+        phone: match.phone || userPhone,
         isEmailVerified: !!match.isEmailVerified,
         isPhoneVerified: !!match.isPhoneVerified,
         is2FAEnabled: !!match.is2FAEnabled,
@@ -648,23 +655,26 @@ export default function App() {
     }
 
     return {
-      isAdmin: false,
-      organizationId: '',
-      isApproved: false,
-      phone: '',
-      isEmailVerified: false,
-      isPhoneVerified: false,
-      canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
-      canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
-      canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
-      canViewDrivers: false, canEditDrivers: false, canDeleteDrivers: false,
-      canViewOffices: false, canEditOffices: false, canDeleteOffices: false,
-      canViewAccounts: false, canEditAccounts: false, canDeleteAccounts: false,
-      canViewExpenses: false, canEditExpenses: false, canDeleteExpenses: false,
-      canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
-      canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
-      canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
+      isAdmin: isAdminUser,
+      isSuperAdmin: isSuper,
+      organizationId: orgId,
+      isApproved: true,
+      phone: userPhone,
+      isEmailVerified: isEmailVer,
+      isPhoneVerified: isPhoneVer,
+      is2FAEnabled: false,
+      twoFactorSecret: '',
+      canViewTrips: true, canEditTrips: true, canDeleteTrips: isAdminUser,
+      canViewTyres: true, canEditTyres: true, canDeleteTyres: isAdminUser,
+      canViewTrucks: true, canEditTrucks: true, canDeleteTrucks: isAdminUser,
+      canViewDrivers: true, canEditDrivers: true, canDeleteDrivers: isAdminUser,
+      canViewOffices: true, canEditOffices: true, canDeleteOffices: isAdminUser,
+      canViewAccounts: true, canEditAccounts: true, canDeleteAccounts: isAdminUser,
+      canViewExpenses: true, canEditExpenses: true, canDeleteExpenses: isAdminUser,
+      canViewBackend: isSuper, canAddBackend: isSuper, canEditBackend: isSuper, canDeleteBackend: isSuper, canApproveBackend: isSuper,
+      canViewTruckRequests: isSuper, canDeleteTruckRequests: isSuper, canViewBackendTeam: isSuper, canDeleteBackendTeam: isSuper,
+      canViewDatabaseConsole: isSuper, canEditDatabaseConsole: isSuper, canDeleteDatabaseConsole: isSuper,
+      canEditLoans: isAdminUser, canDeleteLoans: isAdminUser
     };
   };
 
