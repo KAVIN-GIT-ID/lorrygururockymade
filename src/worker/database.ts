@@ -594,9 +594,11 @@ export async function handleDatabase(request: Request, env: Env, pathname: strin
             targetOrg, targetOrg, targetOrg, targetOrg,
             targetOrg, targetOrg, targetOrg, targetOrg
           );
-      const row = await stmt.first() as any;
       if (row && row.latest) {
-        maxUpdatedTime = new Date(row.latest).getTime();
+        const raw = String(row.latest).trim();
+        const iso = raw.includes('T') ? raw : (raw.replace(' ', 'T') + (raw.endsWith('Z') ? '' : 'Z'));
+        const parsed = new Date(iso).getTime();
+        maxUpdatedTime = !isNaN(parsed) ? parsed : (new Date(raw).getTime() || 0);
       }
     } catch (err: any) {
       console.warn('Version check query error:', err.message);
