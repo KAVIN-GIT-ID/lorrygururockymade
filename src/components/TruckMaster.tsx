@@ -1959,6 +1959,7 @@ export default function TruckMaster({
                         onDeleteTruck(truck.id);
                       }
                     }}
+                    title="Delete Truck"
                     className="flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-150 bg-rose-50/20 hover:bg-rose-50/50 text-rose-600 hover:text-rose-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-[10px] font-bold"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

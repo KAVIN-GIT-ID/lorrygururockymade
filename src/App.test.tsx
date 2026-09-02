@@ -10,11 +10,18 @@ describe('App Component Root Integration Tests', () => {
     vi.clearAllMocks();
   });
 
-  it('should render the LoginScreen when no session exists on startup', async () => {
+  it('should render the LandingPage and allow navigation to LoginScreen when no session exists on startup', async () => {
     render(<App />);
 
-    // By default, since no user session is mocked, it should display the LoginScreen
-    expect(screen.getByText('FleetTrack Pro')).toBeInTheDocument();
+    // By default, since no user session is mocked, it should display the LandingPage
+    expect(screen.getByText('Drive Your Business')).toBeInTheDocument();
+    expect(screen.getByText('Forward')).toBeInTheDocument();
+    
+    // Click on Access Console to open LoginScreen
+    const accessConsoleBtn = screen.getAllByRole('button', { name: /Access Console/i })[0];
+    fireEvent.click(accessConsoleBtn);
+
+    expect(screen.getByText('LorryGuru')).toBeInTheDocument();
     expect(screen.getByText('Log In to System')).toBeInTheDocument();
   });
 
@@ -76,7 +83,8 @@ describe('App Component Root Integration Tests', () => {
     });
 
     // Check header logo text and user initials
-    expect(screen.getByText('FleetTrack Pro')).toBeInTheDocument();
+    expect(screen.getByAltText('LorryGuru Logo')).toBeInTheDocument();
+    expect(screen.getByText('Lorry')).toBeInTheDocument();
     expect(screen.getByText('TA')).toBeInTheDocument(); // initials for "Test Admin"
 
     // Sidebar navigation tabs should render
@@ -620,18 +628,18 @@ describe('App Component Root Integration Tests', () => {
     expect(screen.getByText('Add / Update Mobile Number')).toBeInTheDocument();
 
     // Enter phone and password in form
-    const phoneInput = screen.getByPlaceholderText('+919876543210');
+    const phoneInput = screen.getByPlaceholderText('Enter mobile number');
     const passwordInput = screen.getByPlaceholderText('••••••••');
     const saveVerifyBtn = screen.getByRole('button', { name: 'Save & Verify' });
 
     // Test validation error first
-    fireEvent.change(phoneInput, { target: { value: 'invalidphone' } });
+    fireEvent.change(phoneInput, { target: { value: '12' } });
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
     fireEvent.click(saveVerifyBtn);
     expect(alertSpy).toHaveBeenLastCalledWith("Invalid phone number format. It must start with '+' and follow E.164 standards (e.g. +919876543210).");
 
     // Test successful phone number submission
-    fireEvent.change(phoneInput, { target: { value: '+919876543210' } });
+    fireEvent.change(phoneInput, { target: { value: '9876543210' } });
     fireEvent.click(saveVerifyBtn);
 
     await waitFor(() => {
@@ -841,13 +849,13 @@ describe('App Component Root Integration Tests', () => {
     });
 
     // Enter invalid phone first
-    const newPhoneInput = screen.getByPlaceholderText('+919876543210');
-    fireEvent.change(newPhoneInput, { target: { value: 'invalid-number' } });
+    const newPhoneInput = screen.getByPlaceholderText('Enter mobile number');
+    fireEvent.change(newPhoneInput, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP Verification' }));
     expect(screen.getByText('Mobile number must be in E.164 format (e.g. +919876543210).')).toBeInTheDocument();
 
     // Enter valid new phone and send
-    fireEvent.change(newPhoneInput, { target: { value: '+919999999999' } });
+    fireEvent.change(newPhoneInput, { target: { value: '9999999999' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP Verification' }));
 
     // Now Step 3 should be active

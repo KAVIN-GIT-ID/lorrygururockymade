@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TruckMaster from './TruckMaster';
 import { Truck } from '../types';
@@ -22,6 +22,14 @@ const mockTrucks: Truck[] = [
 ];
 
 describe('TruckMaster Component Tests', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-05-23T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it('should render the list of trucks and show specifications', () => {
     render(
       <TruckMaster
@@ -51,12 +59,12 @@ describe('TruckMaster Component Tests', () => {
       />
     );
 
-    // FC is 2026-04-20, which is expired (displayText is 20-04-2026)
-    const fcCell = screen.getAllByText('20-04-2026')[0];
+    // FC is 2026-04-20, which is expired
+    const fcCell = screen.getAllByText(/2026-04-20/)[0];
     expect(fcCell).toHaveClass('bg-rose-50');
 
-    // Insurance is 2026-06-20, which is near expiry (displayText is 20-06-2026)
-    const insCell = screen.getAllByText('20-06-2026')[0];
+    // Insurance is 2026-06-20, which is near expiry
+    const insCell = screen.getAllByText(/2026-06-20/)[0];
     expect(insCell).toHaveClass('bg-amber-50');
   });
 

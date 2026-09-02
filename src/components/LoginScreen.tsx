@@ -9,26 +9,31 @@ import {
   Loader2,
   Database,
   ArrowRight,
-  ShieldCheck,
-  HelpCircle,
   Phone,
-  ArrowLeft
+  ArrowLeft,
+  X,
+  FileText,
+  Shield,
+  RefreshCw
 } from 'lucide-react';
 
 import { verifyTOTP } from '../utils/totp';
+import CountryPhoneInput from './CountryPhoneInput';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
   checkUserApproval: (email: string) => { approved: boolean; orgId: string; registered: boolean };
   onRegisterUserPermissions: (name: string, email: string, phone: string, orgId: string, orgName?: string, dryRun?: boolean) => Promise<{ approved: boolean; orgId: string; error?: string }>;
+  onBackToHome?: () => void;
 }
 
-export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegisterUserPermissions }: LoginScreenProps) {
+export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegisterUserPermissions, onBackToHome }: LoginScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState('+91');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [orgId, setOrgId] = useState('');
@@ -37,7 +42,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [showConfigDetails, setShowConfigDetails] = useState(false);
+  const [policyModal, setPolicyModal] = useState<'terms' | 'privacy' | 'refund' | null>(null);
 
   // 2FA state variables
   const [is2FAInterception, setIs2FAInterception] = useState(false);
@@ -90,20 +95,38 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
       return;
     }
 
+    let normalizedPhone = phone.trim();
     if (!isLogin) {
-      if (!phone.trim()) {
+      if (!normalizedPhone || normalizedPhone === '+91') {
         setErrorMsg('Please enter your mobile number.');
         return;
       }
+
+      if (!normalizedPhone.startsWith('+')) {
+        const clean = normalizedPhone.replace(/[^0-9]/g, '');
+        if (clean.length === 10) {
+          normalizedPhone = `+91${clean}`;
+        } else if (clean.length === 12 && clean.startsWith('91')) {
+          normalizedPhone = `+${clean}`;
+        } else if (clean.length > 0) {
+          normalizedPhone = `+${clean}`;
+        }
+      }
+
       const e164Regex = /^\+[1-9]\d{6,14}$/;
-      if (!e164Regex.test(phone.trim())) {
-        setErrorMsg('Mobile number must be in E.164 format (e.g. +1234567890, starts with + and country code).');
+      if (!e164Regex.test(normalizedPhone)) {
+        setErrorMsg('Mobile number must be in E.164 format (e.g. +919876543210, starts with + and country code).');
         return;
       }
     }
 
     if (password.length < 8) {
       setErrorMsg('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (!isLogin && !agreedToTerms) {
+      setErrorMsg('You must agree to the Terms & Conditions and Privacy Policy to register.');
       return;
     }
 
@@ -115,7 +138,6 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
         if (configured) {
           user = await appwrite.login(email, password);
         } else {
-          // Mock login user object for offline mode
           user = {
             $id: 'mock_user_' + Date.now(),
             name: email.split('@')[0],
@@ -136,7 +158,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
               twoFactorSecret = rights.twoFactorSecret || '';
             }
           } catch (err) {
-            console.warn("Could not check 2FA status from cloud:", err);
+            console.warn('Could not check 2FA status from cloud:', err);
           }
         } else {
           const stored = localStorage.getItem('ttt_user_rights');
@@ -172,11 +194,11 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
           return;
         }
 
-        // Dry-run validate the organization name, existence, and email uniqueness before making changes in Appwrite
+        // Dry-run validate the organization name, existence, and email uniqueness
         const dryRunResult = await onRegisterUserPermissions(
           name.trim(),
           email.trim(),
-          phone.trim(),
+          normalizedPhone,
           regPath === 'JOIN' ? 'JOIN_REQUEST' : '',
           orgName.trim(),
           true
@@ -188,73 +210,58 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
           return;
         }
 
-        // ── CORRECT REGISTRATION ORDER ──────────────────────────────────────
-        // Step 1: Create the Appwrite user account
+        // Step 1: Create the user account
         if (configured) {
           await appwrite.register(email, password, name);
         }
 
-        // Step 2: Log them in immediately so subsequent Appwrite API calls
-        //         (createTeam, createMembership) run under THIS user's session.
-        //         This is critical — createTeam() called while logged in
-        //         automatically adds the caller as the team owner (1 member shown).
         let user: any = null;
         if (configured) {
           user = await appwrite.login(email, password);
-
-          // Step 2b: Update phone number under user's session
-          if (phone.trim()) {
+          if (normalizedPhone) {
             try {
-              await appwrite.updatePhone(phone.trim(), password);
+              await appwrite.updatePhone(normalizedPhone, password);
             } catch (phoneErr: any) {
-              console.error('Appwrite updatePhone failed:', phoneErr);
+              console.error('updatePhone failed:', phoneErr);
               throw new Error(`Failed to associate phone number: ${phoneErr.message || phoneErr}`);
             }
           }
         } else {
-          // Mock login user object for offline mode
           user = {
             $id: 'mock_user_' + Date.now(),
             name: name.trim(),
             email: email.trim(),
-            phone: phone.trim(),
+            phone: normalizedPhone,
             emailVerification: false,
             phoneVerification: false
           };
         }
 
-        // Step 3: Now register permissions + create/join team (user is now authenticated)
-        const permResult = await onRegisterUserPermissions(
+        // Step 3: Register organization permissions
+        const regResult = await onRegisterUserPermissions(
           name.trim(),
           email.trim(),
-          phone.trim(),
+          normalizedPhone,
           regPath === 'JOIN' ? 'JOIN_REQUEST' : '',
           orgName.trim(),
           false
         );
 
-        if (permResult.error) {
-          // Permission/org error — clean up by logging back out
-          if (configured) {
-            await appwrite.logout();
-          }
-          setErrorMsg(permResult.error);
+        if (regResult.error) {
+          if (configured) await appwrite.logout();
+          setErrorMsg(regResult.error);
           setLoading(false);
           return;
         }
-        // ── END REGISTRATION ORDER ───────────────────────────────────────────
 
-        if (permResult.approved) {
-          setSuccessMsg(`Organization "${orgName.trim() || permResult.orgId}" created! Logging you in as Admin...`);
+        if (regResult.approved) {
+          setSuccessMsg(`Organization "${orgName.trim() || regResult.orgId}" created! Logging you in as Admin...`);
           setTimeout(() => {
             onLoginSuccess(user);
           }, 1000);
         } else {
-          // User joined an existing org — must wait for admin approval
-          if (configured) {
-            await appwrite.logout();
-          }
-          setSuccessMsg(`Account registered! Your request has been sent to the Admin of organization ${permResult.orgId}. You'll be able to log in once approved.`);
+          if (configured) await appwrite.logout();
+          setSuccessMsg(`Account registered! Your request has been sent to the Admin of organization ${regResult.orgId}. You'll be able to log in once approved.`);
           setLoading(false);
           setTimeout(() => {
             setIsLogin(true);
@@ -263,7 +270,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
         }
       }
     } catch (err: any) {
-      console.error('Appwrite Auth Error:', err);
+      console.error('Auth Error:', err);
       setErrorMsg(err.message || 'Authentication failed. Please verify credentials or configurations.');
     } finally {
       setLoading(false);
@@ -281,15 +288,13 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
     }
 
     setLoading(true);
-
     try {
       if (configured) {
-        const recoveryUrl = `${window.location.origin}?mode=recovery`;
-        await appwrite.createRecovery(forgotEmail.trim(), recoveryUrl);
+        const redirectUrl = `${window.location.origin}${window.location.pathname}?mode=recovery`;
+        await appwrite.createRecovery(forgotEmail.trim(), redirectUrl);
         setSuccessMsg('Recovery link sent! Please check your email inbox.');
       } else {
-        // Mock offline fallback
-        setSuccessMsg('Mock Recovery link sent! (In local mode, simulated link would trigger password reset).');
+        setSuccessMsg('Recovery link sent! (In local mode, simulated link would trigger password reset).');
       }
     } catch (err: any) {
       console.error('ForgotPassword Error:', err);
@@ -299,7 +304,6 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
     }
   };
 
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 font-sans select-none overflow-auto p-4">
       {/* Background glowing decorations */}
@@ -307,13 +311,30 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
       <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6 relative">
+        {/* Back to Home Navigation */}
+        {onBackToHome && (
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider transition cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Home</span>
+          </button>
+        )}
 
         {/* Brand header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl shadow-lg shadow-blue-500/15 mb-2">
-            <ShieldCheck className="w-7 h-7 text-white animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">FleetTrack Pro</h2>
+        <div className="text-center space-y-2 pt-2">
+          <img
+            src="/assets/logo-CkJqcrTB.png"
+            alt="LorryGuru Logo"
+            className="h-12 mx-auto shrink-0 mb-2 object-contain"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
+          />
+          <h2 className="text-2xl font-bold tracking-tight text-white">LorryGuru</h2>
           <p className="text-xs text-slate-400">Enterprise Transport & Logistics Fleet Manager</p>
         </div>
 
@@ -327,10 +348,9 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 setErrorMsg(null);
                 setSuccessMsg(null);
               }}
-              className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all ${isLogin
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
-                : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all ${
+                isLogin ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               Log In
             </button>
@@ -341,10 +361,9 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 setErrorMsg(null);
                 setSuccessMsg(null);
               }}
-              className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all ${!isLogin
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10'
-                : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all ${
+                !isLogin ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               Create Account
             </button>
@@ -402,7 +421,6 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
             <button
               type="button"
               onClick={async () => {
-                // Logout to clear active Appwrite session
                 if (configured) {
                   try {
                     await appwrite.logout();
@@ -465,11 +483,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/10 hover:shadow-blue-600/25 transition cursor-pointer disabled:opacity-50"
             >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <span>Send Reset Link</span>
-              )}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Send Reset Link</span>}
             </button>
 
             <button
@@ -507,36 +521,29 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Mobile Number (E.164)</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="tel"
-                      placeholder="e.g. +1234567890"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      disabled={loading}
-                      className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-600"
-                    />
-                  </div>
+                  <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Mobile Number</label>
+                  <CountryPhoneInput
+                    value={phone}
+                    onChange={(val) => setPhone(val)}
+                    placeholder="Enter mobile number"
+                    disabled={loading}
+                    className="w-full bg-slate-950/80 border-slate-800"
+                  />
                 </div>
 
                 {/* REGISTRATION PATH SELECTION */}
                 <div className="space-y-1.5">
                   <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Registration Mode</label>
-                  <div className="flex bg-slate-950/40 p-1 rounded-lg border border-slate-850">
+                  <div className="flex bg-slate-950/60 p-1 rounded-xl border border-slate-800">
                     <button
                       type="button"
                       onClick={() => {
                         setRegPath('CREATE');
                         setErrorMsg(null);
                       }}
-                      className={`flex-1 py-1 text-center text-[10px] font-bold rounded transition-all ${regPath === 'CREATE'
-                        ? 'bg-slate-850 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-350'
-                        }`}
+                      className={`flex-1 py-1.5 text-center text-[10px] font-bold rounded-lg transition-all ${
+                        regPath === 'CREATE' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                      }`}
                     >
                       Create New Organization
                     </button>
@@ -546,51 +553,31 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                         setRegPath('JOIN');
                         setErrorMsg(null);
                       }}
-                      className={`flex-1 py-1 text-center text-[10px] font-bold rounded transition-all ${regPath === 'JOIN'
-                        ? 'bg-slate-850 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-350'
-                        }`}
+                      className={`flex-1 py-1.5 text-center text-[10px] font-bold rounded-lg transition-all ${
+                        regPath === 'JOIN' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                      }`}
                     >
                       Join Existing Organization
                     </button>
                   </div>
                 </div>
 
-                {regPath === 'CREATE' ? (
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Organization Name</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                        <User className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. Sakthi Logistics"
-                        value={orgName}
-                        onChange={(e) => setOrgName(e.target.value)}
-                        disabled={loading}
-                        className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-650"
-                      />
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Organization Name</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                      <User className="w-4 h-4 text-slate-500" />
                     </div>
+                    <input
+                      type="text"
+                      placeholder={regPath === 'CREATE' ? 'e.g. Sakthi Logistics' : 'e.g. Sakthi Logistics'}
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      disabled={loading}
+                      className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-650"
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Organization Name</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. Sakthi Logistics"
-                        value={orgName}
-                        onChange={(e) => setOrgName(e.target.value)}
-                        disabled={loading}
-                        className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-650"
-                      />
-                    </div>
-                  </div>
-                )}
+                </div>
               </>
             )}
 
@@ -614,9 +601,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="block text-[11px] text-slate-400 font-bold uppercase tracking-wider">Password</label>
-                {isLogin && (
-                  <span className="text-[10px] text-slate-500">Min 8 chars</span>
-                )}
+                {isLogin && <span className="text-[10px] text-slate-500">Min 8 chars</span>}
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -647,6 +632,37 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
                 </div>
               )}
             </div>
+
+            {!isLogin && (
+              <div className="flex items-start gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="terms-checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="w-3.5 h-3.5 mt-0.5 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <label htmlFor="terms-checkbox" className="text-[11px] text-slate-400 leading-tight select-none cursor-pointer">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPolicyModal('terms')}
+                    className="text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+                  >
+                    Terms & Conditions
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPolicyModal('privacy')}
+                    className="text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+                  >
+                    Privacy Policy
+                  </button>
+                  .
+                </label>
+              </div>
+            )}
 
             {/* Feedback banners */}
             {errorMsg && (
@@ -682,7 +698,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
         )}
 
         {/* System parameters indicator */}
-        <div className="border-t border-slate-800 pt-4 flex flex-col items-center gap-2">
+        <div className="border-t border-slate-800 pt-4 flex flex-col items-center gap-3">
           <div className="flex items-center justify-between w-full text-[10px] text-slate-500">
             <span className="flex items-center gap-1">
               <Database className="w-3.5 h-3.5" />
@@ -693,30 +709,82 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
             </span>
           </div>
 
-          {/* <button
-            type="button"
-            onClick={() => setShowConfigDetails(!showConfigDetails)}
-            className="text-[9px] text-slate-500 hover:text-slate-350 underline inline-flex items-center gap-1"
-          >
-            <HelpCircle className="w-3 h-3" />
-            {showConfigDetails ? 'Hide backend connection details' : 'Show connection parameters'}
-          </button>
+          <div className="border-t border-slate-800/60 w-full pt-3 flex items-center justify-center gap-3 text-[10px] text-slate-500 font-semibold">
+            <button type="button" onClick={() => setPolicyModal('terms')} className="hover:text-slate-300 transition cursor-pointer">
+              Terms & Conditions
+            </button>
+            <span>•</span>
+            <button type="button" onClick={() => setPolicyModal('privacy')} className="hover:text-slate-300 transition cursor-pointer">
+              Privacy Policy
+            </button>
+            <span>•</span>
+            <button type="button" onClick={() => setPolicyModal('refund')} className="hover:text-slate-300 transition cursor-pointer">
+              Refund Policy
+            </button>
+          </div>
+        </div>
+      </div>
 
-          {showConfigDetails && (
-            <div className="w-full bg-slate-950/80 p-2.5 rounded-lg border border-slate-850 font-mono text-[9px] text-slate-400 space-y-1 text-left leading-relaxed">
-              <div><b>Endpoint:</b> {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}</div>
-              <div><b>Project ID:</b> {import.meta.env.VITE_APPWRITE_PROJECT_ID || '(Not Configured)'}</div>
-              <div><b>Database:</b> {import.meta.env.VITE_APPWRITE_PROJECT_NAME || 'truck'}</div>
-              {!configured && (
-                <div className="text-amber-500 border-t border-slate-850 mt-1.5 pt-1.5 leading-relaxed font-sans">
-                  <b>Troubleshooting Notice:</b> Create a `.env` file containing these keys inside the project workspace directory to connect your specific backend database.
-                </div>
+      {/* POLICY MODALS */}
+      {policyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in text-left">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                {policyModal === 'terms' && <FileText className="w-5 h-5 text-blue-500" />}
+                {policyModal === 'privacy' && <Shield className="w-5 h-5 text-emerald-500" />}
+                {policyModal === 'refund' && <RefreshCw className="w-5 h-5 text-amber-500" />}
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  {policyModal === 'terms' && 'Terms & Conditions'}
+                  {policyModal === 'privacy' && 'Privacy Policy'}
+                  {policyModal === 'refund' && 'Refund & Cancellation Policy'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setPolicyModal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-3 leading-relaxed">
+              {policyModal === 'terms' && (
+                <>
+                  <p>Welcome to LorryGuru (lorryguru.in). By accessing our services, you agree to comply with our platform terms.</p>
+                  <p><b>1. Account Responsibilities:</b> Users must provide authentic credentials and keep 2FA configurations secure.</p>
+                  <p><b>2. Operational Accuracy:</b> All trip vouchers, fuel entries, and axle logs uploaded represent verified commercial freight records.</p>
+                  <p><b>3. Service Uptime:</b> We maintain high availability across edge nodes but schedule occasional maintenance windows.</p>
+                </>
+              )}
+              {policyModal === 'privacy' && (
+                <>
+                  <p>Your privacy and freight data security are our top priorities at LorryGuru.</p>
+                  <p><b>1. Data Ownership:</b> All fleet manifests, driver details, and financial logs remain solely the property of your organization.</p>
+                  <p><b>2. Encryption:</b> All data in transit and at rest is secured via TLS 1.3 and edge encrypted databases.</p>
+                  <p><b>3. Zero Data Sharing:</b> We never sell or share commercial dispatch records with third parties.</p>
+                </>
+              )}
+              {policyModal === 'refund' && (
+                <>
+                  <p>We strive for complete satisfaction with our logistics platform services.</p>
+                  <p><b>1. Subscriptions:</b> Platform access subscriptions can be cancelled at any time from your organization settings.</p>
+                  <p><b>2. Refunds:</b> Unused subscription balances within 7 days of billing cycle renewal are eligible for prorated refunds.</p>
+                </>
               )}
             </div>
-          )} */}
-        </div>
 
-      </div>
+            <div className="pt-2 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setPolicyModal(null)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1245,7 +1245,7 @@ export default function TripList({
                               <div className="text-slate-600">
                                 <span className="text-amber-800 font-extrabold uppercase text-[9px] tracking-wider block">Carry Forward Driver Deficit</span>
                                 <span className="block mt-0.5">
-                                  No other active/in-progress trips are currently registered in FleetTrack Pro. Create another active trip first to carry forward this deficit.
+                                  No other active/in-progress trips are currently registered in LorryGuru. Create another active trip first to carry forward this deficit.
                                 </span>
                               </div>
                             );

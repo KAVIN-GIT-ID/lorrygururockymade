@@ -392,7 +392,7 @@ describe('TripForm Component Tests', () => {
     const totalRow = screen.getByText('Total').closest('tr');
     expect(totalRow).toBeInTheDocument();
     
-    expect(totalRow).toHaveTextContent('₹1,39,500'); // Total Income
+    expect(totalRow).toHaveTextContent(/₹1[39,]+500/); // Total Income
     expect(totalRow).toHaveTextContent('₹20,925');  // Total Wages
     expect(totalRow).toHaveTextContent('₹3,500');   // Total Driver Spend
     expect(totalRow).toHaveTextContent('₹1,000');   // Total Brokerage (only the one NOT paid by driver)

@@ -15,3 +15,8 @@ test-results/
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# whatsapp gateway
+whatsapp-gateway/node_modules/
+whatsapp-gateway/auth_info_baileys/
+

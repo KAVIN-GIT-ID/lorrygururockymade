@@ -281,7 +281,7 @@ export default function MonthlyReport({
 
       {/* HEADER SECTION IN PRINT FORMAT */}
       <div className="hidden printing:block border-b border-slate-350 pb-4 mb-6">
-        <h2 className="text-2xl font-black text-slate-900 font-mono tracking-tight uppercase">FleetTrack Pro - Monthly Audit Document</h2>
+        <h2 className="text-2xl font-black text-slate-900 font-mono tracking-tight uppercase">LorryGuru - Monthly Audit Document</h2>
         <p className="text-xs text-slate-500 mt-1 uppercase font-mono font-bold">
           Accounting Period: {selectedMonthObj?.label} {selectedYear} | Generated on {new Date().toLocaleDateString()}
         </p>
