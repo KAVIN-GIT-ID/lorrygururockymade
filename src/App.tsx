@@ -257,6 +257,9 @@ export default function App() {
       if (path === '/login' || path === '/console' || window.location.search.includes('mode=login')) {
         return 'login';
       }
+      if (localStorage.getItem('ttt_cf_jwt')) {
+        return 'login';
+      }
     }
     return 'landing';
   });
@@ -4028,7 +4031,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
+    <div className="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
 
       {/* GLOBAL TOAST BANNER */}
       {toastMessage && (
