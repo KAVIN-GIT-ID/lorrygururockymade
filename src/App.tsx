@@ -1878,14 +1878,57 @@ export default function App() {
 
 
 
-  // Navigation / Tabs State
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND'>('DASHBOARD');
+  type AppTab = 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND';
+  const VALID_TABS: AppTab[] = ['DASHBOARD', 'TRIPS', 'TRUCKS', 'OFFICES', 'ACCOUNTS', 'DRIVERS', 'EXPENSES', 'REPORTS', 'AUDIT', 'TYRES', 'USERS', 'BACKEND'];
+
+  // Navigation / Tabs State with local persistence & URL Hash sync across page refreshes
+  const [activeTab, setActiveTab] = useState<AppTab>(() => {
+    if (typeof window !== 'undefined') {
+      const hashTab = window.location.hash.replace('#', '').toUpperCase() as AppTab;
+      if (VALID_TABS.includes(hashTab)) {
+        return hashTab;
+      }
+      const savedTab = localStorage.getItem('ttt_active_tab') as AppTab;
+      if (savedTab && VALID_TABS.includes(savedTab)) {
+        return savedTab;
+      }
+    }
+    return 'DASHBOARD';
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const selectTab = (tab: 'DASHBOARD' | 'TRIPS' | 'TRUCKS' | 'OFFICES' | 'ACCOUNTS' | 'DRIVERS' | 'EXPENSES' | 'REPORTS' | 'AUDIT' | 'TYRES' | 'USERS' | 'BACKEND') => {
+  const selectTab = (tab: AppTab) => {
     setActiveTab(tab);
     setIsMobileMenuOpen(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ttt_active_tab', tab);
+      try {
+        window.history.replaceState(null, '', `#${tab.toLowerCase()}`);
+      } catch (_) {}
+    }
   };
+
+  // Sync activeTab changes to localStorage and URL hash
+  useEffect(() => {
+    if (typeof window !== 'undefined' && activeTab) {
+      localStorage.setItem('ttt_active_tab', activeTab);
+      try {
+        window.history.replaceState(null, '', `#${activeTab.toLowerCase()}`);
+      } catch (_) {}
+    }
+  }, [activeTab]);
+
+  // Listen to browser hash changes (e.g. browser back/forward or direct deep links)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hashTab = window.location.hash.replace('#', '').toUpperCase() as AppTab;
+      if (VALID_TABS.includes(hashTab) && hashTab !== activeTab) {
+        setActiveTab(hashTab);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeTab]);
 
   // Live Appwrite team membership list (fetched when admin opens USERS tab)
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
