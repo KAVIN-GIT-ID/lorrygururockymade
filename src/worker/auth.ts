@@ -11,6 +11,61 @@ export async function extractUser(request: Request, env: Env): Promise<UserClaim
   return await verifyJWT(token, secret);
 }
 
+export async function sendTwilioMessage(
+  env: Env,
+  rawPhone: string,
+  bodyText: string,
+  isWhatsApp: boolean = true
+): Promise<{ success: boolean; sid?: string; error?: string }> {
+  const accountSid = env.TWILIO_ACCOUNT_SID;
+  const authToken = env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    return { success: false, error: 'Twilio credentials not configured' };
+  }
+
+  // Clean and format phone number with E.164 standard
+  let cleanPhone = String(rawPhone).replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  if (!cleanPhone.startsWith('+')) {
+    if (cleanPhone.length === 10) cleanPhone = '+91' + cleanPhone;
+    else cleanPhone = '+' + cleanPhone;
+  }
+
+  const fromNumber = isWhatsApp 
+    ? `whatsapp:${env.TWILIO_WHATSAPP_NUMBER || '+14155238886'}`
+    : (env.TWILIO_PHONE_NUMBER || '+14155238886');
+
+  const toNumber = isWhatsApp ? `whatsapp:${cleanPhone}` : cleanPhone;
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const params = new URLSearchParams();
+  params.append('To', toNumber);
+  params.append('From', fromNumber);
+  params.append('Body', bodyText);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: params.toString()
+    });
+
+    const data = await res.json() as any;
+    if (res.ok && data.sid) {
+      console.log(`[Twilio] Message delivered to ${toNumber}. SID: ${data.sid}`);
+      return { success: true, sid: data.sid };
+    } else {
+      console.warn(`[Twilio] Delivery error to ${toNumber}:`, data.message || data);
+      return { success: false, error: data.message || 'Twilio send failed' };
+    }
+  } catch (err: any) {
+    console.error('[Twilio] Fetch exception:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function handleAuth(request: Request, env: Env, pathname: string): Promise<Response> {
   const secret = env.JWT_SECRET || 'ttt-super-secret-cloudflare-d1-worker-jwt-key-2026';
 
@@ -241,27 +296,42 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
       return Response.json({ error: 'Phone and OTP code are required' }, { status: 400 });
     }
     const cleanPhone = String(phone).replace(/\D/g, '');
-    console.log(`[OTP] Generated and dispatched OTP ${code} to ${cleanPhone}`);
+    console.log(`[OTP] Generated and dispatching OTP ${code} to ${phone}`);
 
-    // Forward to WhatsApp Gateway if URL is provided
-    const gatewayUrl = (env as any).WHATSAPP_GATEWAY_URL || 'http://localhost:8000/send-otp';
-    const apiKey = (env as any).GATEWAY_API_KEY || 'your-super-secure-shared-key';
-    let gatewaySuccess = false;
+    let twilioResult: { success: boolean; sid?: string; error?: string } = { success: false };
 
-    try {
-      const gwRes = await fetch(gatewayUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey, phone: cleanPhone, code }),
-      });
-      if (gwRes.ok) gatewaySuccess = true;
-    } catch (_) {}
+    // 1. Send via Twilio WhatsApp if configured
+    if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+      const otpText = `🚚 *LorryGuru Fleet Tracker*\n\nYour Verification Code is: *${code}*\n\nDo not share this OTP with anyone. Valid for 10 minutes.`;
+      twilioResult = await sendTwilioMessage(env, phone, otpText, true);
+
+      // Fallback: If WhatsApp delivery returns an error, attempt direct SMS
+      if (!twilioResult.success) {
+        console.info(`[Twilio] WhatsApp dispatch (${twilioResult.error}), trying SMS fallback...`);
+        twilioResult = await sendTwilioMessage(env, phone, `Your LorryGuru Verification OTP is: ${code}. Valid for 10 minutes.`, false);
+      }
+    }
+
+    // 2. Secondary fallback: Forward to custom WhatsApp Gateway if URL configured
+    let gatewaySuccess = twilioResult.success;
+    if (!gatewaySuccess && (env as any).WHATSAPP_GATEWAY_URL) {
+      try {
+        const gwRes = await fetch((env as any).WHATSAPP_GATEWAY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone, code }),
+        });
+        if (gwRes.ok) gatewaySuccess = true;
+      } catch (_) {}
+    }
 
     return Response.json({
       success: true,
       message: `OTP sent successfully to ${phone}`,
       phone: cleanPhone,
       code,
+      twilioDelivered: twilioResult.success,
+      twilioSid: twilioResult.sid,
       gatewayDelivered: gatewaySuccess
     });
   }
@@ -313,22 +383,26 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
 
     console.log(`[Recovery] Password reset requested for ${cleanEmail}. Secret: ${recoverySecret}`);
 
-    // If user has a phone, attempt to deliver via WhatsApp Gateway
+    // If user has a phone, deliver via Twilio WhatsApp & Gateway
     if (user.phone) {
+      const resetText = `🔐 *LorryGuru Password Reset*\n\nHi ${user.name || 'User'},\nYou requested to reset your password. Use the link below to set a new password:\n\n${recoveryUrl}\n\nValid for 1 hour.`;
+      if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+        await sendTwilioMessage(env, user.phone, resetText, true);
+      }
       const cleanPhone = String(user.phone).replace(/\D/g, '');
-      const gatewayUrl = (env as any).WHATSAPP_GATEWAY_URL || 'http://localhost:8000/send-otp';
-      const apiKey = (env as any).GATEWAY_API_KEY || 'your-super-secure-shared-key';
-      try {
-        await fetch(gatewayUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey,
-            phone: cleanPhone,
-            message: `🔐 *Lorry Guru Password Reset*\n\nHi ${user.name || 'User'},\nYou requested to reset your password. Use the link below to set a new password:\n\n${recoveryUrl}\n\nValid for 1 hour.`
-          })
-        }).catch(() => {});
-      } catch (_) {}
+      const gatewayUrl = (env as any).WHATSAPP_GATEWAY_URL;
+      if (gatewayUrl) {
+        try {
+          await fetch(gatewayUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone: cleanPhone,
+              message: resetText
+            })
+          });
+        } catch (_) {}
+      }
     }
 
     return Response.json({

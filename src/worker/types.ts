@@ -34,6 +34,10 @@ export interface Env {
   CORS_ORIGIN?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_WHATSAPP_NUMBER?: string;
+  TWILIO_PHONE_NUMBER?: string;
 }
 
 export interface UserClaims {
