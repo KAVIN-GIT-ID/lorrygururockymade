@@ -29,3 +29,7 @@ src/version.json
 scratch_*
 /appwrite-backup-function
 server/
+
+# WhatsApp Gateway
+whatsapp-gateway/node_modules/
+whatsapp-gateway/auth_info_baileys/
