@@ -180,7 +180,18 @@ const reconcileOrganizationProfiles = (
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      const jwt = localStorage.getItem('ttt_cf_jwt');
+      const stored = localStorage.getItem('ttt_cf_user');
+      if (jwt && stored) {
+        try {
+          return JSON.parse(stored);
+        } catch (_) {}
+      }
+    }
+    return null;
+  });
   const [isOnline, setIsOnline] = useState(true);
   const [disconnectReason, setDisconnectReason] = useState<'offline' | 'realtime_lost' | undefined>(undefined);
   const [loadingUser, setLoadingUser] = useState(true);
@@ -969,7 +980,9 @@ export default function App() {
         try {
           const userTeams = await appwrite.getUserTeams();
           if (userTeams.length > 0) {
-            const appwriteOrgId = userTeams[0].$id; // First team = their org
+            const targetOrgId = user.organizationId || user.organization_id || match?.organizationId || 'org_default';
+            const matchingTeam = userTeams.find((t: any) => t.$id === targetOrgId) || userTeams.find((t: any) => t.$id === 'org_default') || userTeams[0];
+            const appwriteOrgId = matchingTeam ? matchingTeam.$id : targetOrgId;
             migrateLocalDataToOrg(appwriteOrgId);
 
             const knownNames: { [orgId: string]: string } = {};
