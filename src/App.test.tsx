@@ -634,7 +634,7 @@ describe('App Component Root Integration Tests', () => {
     expect(await screen.findByText('Add / Update Mobile Number')).toBeInTheDocument();
 
     // Enter phone and password in form
-    const phoneInput = screen.getByPlaceholderText('Enter mobile number');
+    const phoneInput = screen.getByPlaceholderText('+919876543210');
     const passwordInput = screen.getByPlaceholderText('••••••••');
     const saveVerifyBtn = screen.getByRole('button', { name: 'Save & Verify' });
 
@@ -660,8 +660,6 @@ describe('App Component Root Integration Tests', () => {
 
     await screen.findByText('Mobile number saved and verification OTP sent successfully via WhatsApp!');
     expect(mockUpdatePhone).toHaveBeenCalledWith('+919876543210', 'password123');
-
-    await screen.findByText(/Mobile number saved and verification OTP sent successfully!/i);
 
     // The modal should close, and the OTP verification form is displayed instead of the send button
     expect(screen.queryByText('Add / Update Mobile Number')).not.toBeInTheDocument();
@@ -866,13 +864,13 @@ describe('App Component Root Integration Tests', () => {
     });
 
     // Enter invalid phone first
-    const newPhoneInput = screen.getByPlaceholderText('Enter mobile number');
+    const newPhoneInput = screen.getByPlaceholderText('+919876543210');
     fireEvent.change(newPhoneInput, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP Verification' }));
     expect(screen.getByText('Mobile number must be in E.164 format (e.g. +919876543210).')).toBeInTheDocument();
 
     // Enter valid new phone and send
-    fireEvent.change(newPhoneInput, { target: { value: '9999999999' } });
+    fireEvent.change(newPhoneInput, { target: { value: '+919999999999' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP Verification' }));
 
     // Now Step 3 should be active

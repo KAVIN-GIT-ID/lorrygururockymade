@@ -186,7 +186,7 @@ class AppwriteService {
         const stored = localStorage.getItem('ttt_cf_user');
         if (stored) this.cachedUser = JSON.parse(stored);
       } catch (_) {}
-    }
+    })();
   }
 
   private getBaseUrl(): string {
@@ -495,11 +495,6 @@ class AppwriteService {
     if (!response.ok) {
       throw new Error(`File upload failed: ${response.statusText}`);
     }
-    this.requireWriteConnection();
-    await this.initSession();
-    try {
-      // Compress image files before uploading
-      let fileToUpload = await compressImageIfNeeded(file);
 
     const data = await response.json();
     return data.$id || data.id;
@@ -1421,23 +1416,6 @@ class AppwriteService {
   ): Promise<{ documents: any[]; total: number; fallback?: boolean }> {
     await this.initSession();
     try {
-      if (filters.search) {
-        const baseQueries = [];
-        if (orgId !== 'ALL') {
-          baseQueries.push(Query.equal('organizationId', orgId));
-        }
-        const response = await this.databases.listDocuments(dbId, 'audit_logs', [
-          ...baseQueries,
-          Query.orderDesc('timestamp'),
-          Query.limit(300)
-        ]);
-        return {
-          documents: response.documents || [],
-          total: response.total || 0,
-          fallback: true
-        };
-      }
-
       const baseQueries = [];
       if (orgId !== 'ALL') {
         baseQueries.push(Query.equal('organizationId', orgId));
@@ -1458,29 +1436,47 @@ class AppwriteService {
         baseQueries.push(Query.lessThanEqual('timestamp', filters.endDate + ' 23:59:59'));
       }
 
-    if (filters.category) {
-      filtered = filtered.filter(l => l.category === filters.category);
-    }
-    if (filters.action) {
-      filtered = filtered.filter(l => l.action === filters.action);
-    }
-    if (filters.search) {
-      const s = filters.search.toLowerCase();
-      filtered = filtered.filter(l => (l.details || '').toLowerCase().includes(s) || (l.reference || '').toLowerCase().includes(s));
-    }
-    if (filters.startDate) {
-      filtered = filtered.filter(l => (l.timestamp || '') >= filters.startDate!);
-    }
-    if (filters.endDate) {
-      filtered = filtered.filter(l => (l.timestamp || '') <= filters.endDate! + ' 23:59:59');
-    }
+      baseQueries.push(Query.limit(limit));
+      baseQueries.push(Query.offset((page - 1) * limit));
+      baseQueries.push(Query.orderDesc('timestamp'));
 
-    filtered.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-    const total = filtered.length;
-    const startIndex = (page - 1) * limit;
-    const paginated = filtered.slice(startIndex, startIndex + limit);
+      const response = await this.databases.listDocuments(dbId, 'audit_logs', baseQueries);
+      return {
+        documents: response.documents || [],
+        total: response.total || 0,
+        fallback: false
+      };
+    } catch (err) {
+      const response = await this.databases.listDocuments(dbId, 'audit_logs', [
+        ...(orgId !== 'ALL' ? [Query.equal('organizationId', orgId)] : []),
+        Query.orderDesc('timestamp'),
+        Query.limit(500)
+      ]);
+      let filtered = response.documents || [];
+      if (filters.category) {
+        filtered = filtered.filter(l => l.category === filters.category);
+      }
+      if (filters.action) {
+        filtered = filtered.filter(l => l.action === filters.action);
+      }
+      if (filters.search) {
+        const s = filters.search.toLowerCase();
+        filtered = filtered.filter(l => (l.details || '').toLowerCase().includes(s) || (l.reference || '').toLowerCase().includes(s));
+      }
+      if (filters.startDate) {
+        filtered = filtered.filter(l => (l.timestamp || '') >= filters.startDate!);
+      }
+      if (filters.endDate) {
+        filtered = filtered.filter(l => (l.timestamp || '') <= filters.endDate! + ' 23:59:59');
+      }
 
-    return { documents: paginated, total, fallback: false };
+      filtered.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+      const total = filtered.length;
+      const startIndex = (page - 1) * limit;
+      const paginated = filtered.slice(startIndex, startIndex + limit);
+
+      return { documents: paginated, total, fallback: true };
+    }
   }
 
   async queryTrips(
@@ -1753,94 +1749,50 @@ class AppwriteService {
     page: number,
     limit: number
   ): Promise<{ documents: any[]; total: number }> {
-    const allDocs = await this.listFleetDocuments(dbId, 'tyres', orgId);
-    let filtered = allDocs;
+    await this.initSession();
+    try {
+      const queries = [];
+      if (orgId !== 'ALL') {
+        queries.push(Query.equal('organizationId', orgId));
+      }
+      if (filters.status) {
+        queries.push(Query.equal('status', filters.status));
+      }
+      if (filters.search) {
+        queries.push(Query.search('tyreNo', filters.search));
+      }
 
       queries.push(Query.limit(limit));
       queries.push(Query.offset((page - 1) * limit));
 
       const response = await this.databases.listDocuments(dbId, 'tyres', queries);
       return {
-        documents: response.documents.map(doc => this.reconstructRecord(doc)) || [],
+        documents: (response.documents || []).map(doc => this.reconstructRecord(doc)),
         total: response.total || 0
       };
     } catch (err: any) {
-      const errMsg = (err.message || '').toLowerCase();
-      const isSchemaError = err.code === 400 ||
-        errMsg.includes('attribute') ||
-        errMsg.includes('schema') ||
-        errMsg.includes('not found') ||
-        errMsg.includes('index');
+      console.warn("Appwrite queryTyres fallback to client-side filtering:", err);
+      const allDocs = await this.listFleetDocuments(dbId, 'tyres', orgId);
 
-      if (isSchemaError) {
-        console.warn("Appwrite queryTyres failed due to schema/attribute mismatch. Falling back to client-side filtering...");
-        const allDocs = await this.listFleetDocuments(dbId, 'tyres', orgId);
+      let parsedList = allDocs.map(doc => this.reconstructRecord(doc) || doc);
 
-        let parsedList = allDocs.map(doc => {
-          let item = { ...doc };
-          if (doc.data) {
-            try {
-              const parsed = JSON.parse(doc.data);
-              item = { ...item, ...parsed };
-            } catch (e) {
-              console.warn("Failed to parse data for fallback queryTyres:", doc.$id, e);
-            }
-          }
-          return item;
-        });
-
-        if (filters.status) {
-          parsedList = parsedList.filter(t => t.status === filters.status);
-        }
-        if (filters.search) {
-          const s = filters.search.toLowerCase();
-          parsedList = parsedList.filter(t => (t.tyreNo || '').toLowerCase().includes(s));
-        }
-
-        const total = parsedList.length;
-        const startIndex = (page - 1) * limit;
-        const paginatedList = parsedList.slice(startIndex, startIndex + limit);
-
-        const documents = paginatedList.map(item => {
-          const { id, $id, $collectionId, $databaseId, $createdAt, $updatedAt, $permissions, ...rest } = item;
-          return {
-            $id: id || $id,
-            $collectionId,
-            $databaseId,
-            $createdAt,
-            $updatedAt,
-            $permissions,
-            organizationId: item.organizationId,
-            tyreNo: item.tyreNo || '',
-            manufacturer: item.manufacturer || '',
-            status: item.status || 'Available',
-            currentTruckNo: item.currentTruckNo || '',
-            purchaseDate: item.purchaseDate || '',
-            movementHistory: item.movementHistory || [],
-            data: item.data || JSON.stringify(rest),
-            ...rest
-          };
-        });
-
-        return {
-          documents,
-          total
-        };
+      if (filters.status) {
+        parsedList = parsedList.filter(t => t.status === filters.status);
+      }
+      if (filters.search) {
+        const s = filters.search.toLowerCase();
+        parsedList = parsedList.filter(t => (t.tyreNo || '').toLowerCase().includes(s));
       }
 
-      console.error("queryTyres failure:", err);
-      throw err;
-    }
-    if (filters.search) {
-      const s = filters.search.toUpperCase();
-      filtered = filtered.filter(t => (t.tyreNo || '').toUpperCase() === s);
-    }
+      const total = parsedList.length;
+      const startIndex = (page - 1) * limit;
+      const paginatedList = parsedList.slice(startIndex, startIndex + limit);
 
-    const total = filtered.length;
-    const startIndex = (page - 1) * limit;
-    const paginated = filtered.slice(startIndex, startIndex + limit);
-
-    return { documents: paginated, total };
+      return {
+        documents: paginatedList,
+        total
+      };
+    }
   }
 
   async fetchMonthlyTripsAndExpenses(

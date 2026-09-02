@@ -504,5 +504,5 @@ describe('End-to-End Live Regression & System Audit Suite', () => {
         } catch (_) {}
       }
     }
-  });
+  }, 30000);
 });

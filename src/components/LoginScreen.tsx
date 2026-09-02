@@ -43,6 +43,7 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
   const [successMsg, setSuccessMsg] = createSignal<string | null>(null);
   const [showConfigDetails, setShowConfigDetails] = createSignal(false);
+  let googleBtnRef: HTMLDivElement | undefined;
 
   // 2FA state variables
   const [is2FAInterception, setIs2FAInterception] = createSignal(false);
@@ -780,25 +781,14 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
           </div>
         </div>
 
-        <div class="flex justify-center gap-3 text-[10px] text-slate-550 font-bold border-t border-slate-850 pt-3">
+        <div class="flex justify-center gap-3 text-[10px] text-slate-500 font-bold border-t border-slate-800 pt-3">
           <button type="button" onClick={() => navigate('/terms')} class="hover:text-slate-300 transition-colors cursor-pointer">Terms &amp; Conditions</button>
           <span>•</span>
           <button type="button" onClick={() => navigate('/privacy')} class="hover:text-slate-300 transition-colors cursor-pointer">Privacy Policy</button>
           <span>•</span>
           <button type="button" onClick={() => navigate('/refunds')} class="hover:text-slate-300 transition-colors cursor-pointer">Refund Policy</button>
         </div>
-
-            <div className="pt-2 border-t border-slate-800 flex justify-end">
-              <button
-                onClick={() => setPolicyModal(null)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

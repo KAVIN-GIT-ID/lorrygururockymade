@@ -10,7 +10,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { useAuth } from '../context/AuthContext';
 
 import { ExpenseEntry, Truck, Account, Driver, OrganizationProfile } from '../types';
-import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings } from 'lucide-solid';
+import { Plus, Edit2, Trash2, Landmark, DollarSign, Calendar, ShoppingBag, Truck as TruckIcon, ShieldCheck, HelpCircle, FileSpreadsheet, User, X, Settings, Coins, CheckCircle, Clock } from 'lucide-solid';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import SearchableSelect from './SearchableSelect';
 import { useLanguage } from '../context/LanguageContext';
@@ -238,12 +238,14 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     setCurrentPage(1);
   });
 
+  const isOnline = () => Boolean(typeof navigator !== 'undefined' && navigator.onLine && isAppwriteConfigured());
+
   // Offline / local logic
   createEffect(() => {
-    if (!online) {
-      const filtered = props.expenses.filter(exp => {
-        const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
-                              exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
+    if (!isOnline()) {
+      const filtered = (props.expenses || []).filter(exp => {
+        const matchesSearch = (exp.shopName || '').toLowerCase().includes(searchQuery().toLowerCase()) || 
+                              (exp.expenseType || '').toLowerCase().includes(searchQuery().toLowerCase());
         const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
         const matchesType = selectedTypeFilter() ? exp.expenseType === selectedTypeFilter() : true;
         const matchesStartDate = startDateFilter() ? exp.date >= startDateFilter() : true;
@@ -259,7 +261,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
 
   // Online Appwrite logic
   createEffect(() => {
-    if (online) {
+    if (isOnline()) {
       const fetchServerExpenses = async () => {
         setLoading(true);
         try {
@@ -304,19 +306,19 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     }
   });
 
-  const totalExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
+  const totalExpenseSum = () => (isOnline() ? displayedExpenses() : (props.expenses || []).filter(exp => {
+    const matchesSearch = (exp.shopName || '').toLowerCase().includes(searchQuery().toLowerCase()) || 
+                          (exp.expenseType || '').toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
     const matchesType = selectedTypeFilter() ? exp.expenseType === selectedTypeFilter() : true;
     const matchesStartDate = startDateFilter() ? exp.date >= startDateFilter() : true;
     const matchesEndDate = endDateFilter() ? exp.date <= endDateFilter() : true;
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-  });
+  })).reduce((sum, item) => sum + item.amount, 0);
 
-  const pendingExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
+  const pendingExpenseSum = () => (isOnline() ? displayedExpenses() : (props.expenses || []).filter(exp => {
+    const matchesSearch = (exp.shopName || '').toLowerCase().includes(searchQuery().toLowerCase()) || 
+                          (exp.expenseType || '').toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
     const matchesType = selectedTypeFilter() ? exp.expenseType === selectedTypeFilter() : true;
     const matchesStartDate = startDateFilter() ? exp.date >= startDateFilter() : true;
@@ -324,9 +326,9 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
   })).filter(e => e.status === 'Pending').reduce((sum, item) => sum + item.amount, 0);
 
-  const paidExpenseSum = (online ? displayedExpenses() : props.expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery().toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery().toLowerCase());
+  const paidExpenseSum = () => (isOnline() ? displayedExpenses() : (props.expenses || []).filter(exp => {
+    const matchesSearch = (exp.shopName || '').toLowerCase().includes(searchQuery().toLowerCase()) || 
+                          (exp.expenseType || '').toLowerCase().includes(searchQuery().toLowerCase());
     const matchesTruck = selectedTruckFilter() ? exp.truckNo === selectedTruckFilter() : true;
     const matchesType = selectedTypeFilter() ? exp.expenseType === selectedTypeFilter() : true;
     const matchesStartDate = startDateFilter() ? exp.date >= startDateFilter() : true;
@@ -334,7 +336,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
   })).filter(e => e.status === 'Paid' || e.status === 'Settled').reduce((sum, item) => sum + item.amount, 0);
 
-  const uniqueExpenseTypes = Array.from(new Set(props.expenses.map(e => e.expenseType).filter(Boolean)));
+  const uniqueExpenseTypes = Array.from(new Set((props.expenses || []).map(e => e.expenseType).filter(Boolean)));
 
   return (
     <div id="expense-master-panel" class="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in font-sans">
@@ -368,35 +370,35 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
         )}
       </div>
 
-      {/* METRIC BADGES CARD BLOCK */}
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div class="bg-slate-50 border border-slate-250/70 p-4 rounded-xl flex items-center justify-between">
+      {/* METRIC KPI WIDGETS */}
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex items-center justify-between">
           <div>
-            <span class="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Total Filtered Cost</span>
-            <span class="text-lg font-extrabold text-slate-800 font-mono">₹{totalExpenseSum.toLocaleString('en-IN')}</span>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t('exp.kpi_total', 'Total Registered')}</span>
+            <span class="text-lg font-extrabold text-slate-800 font-mono">₹{totalExpenseSum().toLocaleString('en-IN')}</span>
           </div>
-          <div class="p-2.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-lg">
-            <DollarSign class="w-4 h-4" />
-          </div>
-        </div>
-        
-        <div class="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl flex items-center justify-between">
-          <div>
-            <span class="text-[10px] text-emerald-600 block font-bold uppercase tracking-wider">Paid Settlements</span>
-            <span class="text-lg font-extrabold text-emerald-800 font-mono">₹{paidExpenseSum.toLocaleString('en-IN')}</span>
-          </div>
-          <div class="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-100">
-            <ShieldCheck class="w-4 h-4" />
+          <div class="p-2.5 bg-white border border-slate-200 rounded-lg text-slate-700 shadow-xs">
+            <Coins class="w-4 h-4" />
           </div>
         </div>
 
-        <div class="bg-amber-50/50 border border-amber-100 p-4 rounded-xl flex items-center justify-between">
+        <div class="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 flex items-center justify-between">
           <div>
-            <span class="text-[10px] text-amber-700 block font-bold uppercase tracking-wider">Pending/On-Credit</span>
-            <span class="text-lg font-extrabold text-amber-900 font-mono">₹{pendingExpenseSum.toLocaleString('en-IN')}</span>
+            <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">{t('exp.kpi_paid', 'Total Settled')}</span>
+            <span class="text-lg font-extrabold text-emerald-800 font-mono">₹{paidExpenseSum().toLocaleString('en-IN')}</span>
           </div>
-          <div class="p-2.5 bg-amber-50 text-amber-600 rounded-lg border border-amber-150">
-            <HelpCircle class="w-4 h-4" />
+          <div class="p-2.5 bg-white border border-emerald-200 rounded-lg text-emerald-600 shadow-xs">
+            <CheckCircle class="w-4 h-4" />
+          </div>
+        </div>
+
+        <div class="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 flex items-center justify-between">
+          <div>
+            <span class="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">{t('exp.kpi_pending', 'Pending Balance')}</span>
+            <span class="text-lg font-extrabold text-amber-900 font-mono">₹{pendingExpenseSum().toLocaleString('en-IN')}</span>
+          </div>
+          <div class="p-2.5 bg-white border border-amber-200 rounded-lg text-amber-600 shadow-xs">
+            <Clock class="w-4 h-4" />
           </div>
         </div>
       </div>
@@ -669,7 +671,7 @@ export default function ExpenseMaster(rawProps: ExpenseMasterProps) {
           >
             Reset Filters
           </button>
-        )}
+        </div>
 
       </div>
 
