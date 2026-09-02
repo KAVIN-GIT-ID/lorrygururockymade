@@ -7,6 +7,8 @@ const mockAddTruck = vi.hoisted(() => vi.fn());
 const mockUpdateTruck = vi.hoisted(() => vi.fn());
 const mockDeleteTruck = vi.hoisted(() => vi.fn());
 
+const mockNearExpiryDate = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
 const mockTrucksData = vi.hoisted(() => [
   {
     id: 'tr-1',
@@ -16,8 +18,8 @@ const mockTrucksData = vi.hoisted(() => [
     make: 'TATA',
     model: '3118',
     type: '12 Wheeler',
-    insuranceDate: '2026-08-30', // Near expiry (~15 days from 2026-08-15)
-    fcDate: '2026-04-20',        // Expired relative to 2026-05-23
+    insuranceDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Near expiry (15 days from today)
+    fcDate: '2020-04-20',        // Expired
     currentKM: 100000,
     engineOilKM: 105000,
     isApproved: true,
@@ -127,12 +129,17 @@ describe('TruckMaster Component Tests', () => {
       />
     ));
 
-    // FC is 2026-04-20, which is expired (displayText is 20-04-2026)
-    const fcCell = screen.getAllByText('20-04-2026')[0];
+    // FC is 2020-04-20, which is expired (displayText is 20-04-2020)
+    const fcCell = screen.getAllByText('20-04-2020')[0];
     expect(fcCell).toHaveClass('bg-rose-50');
 
-    // Insurance is 2026-08-30, which is near expiry (~15 days from 2026-08-15)
-    const insCell = screen.getAllByText('30-08-2026')[0];
+    // Insurance is near expiry (~15 days from today)
+    const insDay = String(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).getDate()).padStart(2, '0');
+    const insMonth = String(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).getMonth() + 1).padStart(2, '0');
+    const insYear = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).getFullYear();
+    const insFormatted = `${insDay}-${insMonth}-${insYear}`;
+
+    const insCell = screen.getAllByText(insFormatted)[0];
     expect(insCell).toHaveClass('bg-amber-50');
   });
 
