@@ -77,6 +77,7 @@ export const migrateUserPermissions = (list: any[]): UserPermission[] => {
       } as UserPermission;
     }
     return {
+      ...item,
       id: item.id,
       email: item.email,
       name: item.name,

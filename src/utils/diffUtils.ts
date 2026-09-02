@@ -4,21 +4,31 @@ export const generateDiffText = <T extends Record<string, any>>(
   oldObj: T,
   newObj: T,
   labels: Partial<Record<keyof T, string>>,
-  ignoreKeys: string[] = ['id']
+  ignoreKeys: string[] = ['id', '$id', '$createdAt', '$updatedAt', '$databaseId', '$collectionId', '$permissions', 'createdAt', 'updatedAt', 'syncState', 'sequence', 'version', 'updatedBy']
 ): string => {
   const changes: string[] = [];
+  const defaultIgnore = ['id', '$id', '$createdAt', '$updatedAt', '$databaseId', '$collectionId', '$permissions', 'createdAt', 'updatedAt', 'syncState', 'sequence', 'version', 'updatedBy'];
+  const activeIgnore = Array.from(new Set([...ignoreKeys, ...defaultIgnore]));
   const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)])) as Array<keyof T & string>;
 
   for (const key of allKeys) {
-    if (ignoreKeys.includes(key)) continue;
+    if (activeIgnore.includes(key)) continue;
 
-    const oldValue = oldObj[key];
-    const newValue = newObj[key];
+    let oldValue: any = oldObj[key];
+    let newValue: any = newObj[key];
+
+    // Normalize empty strings, null, and undefined
+    if (oldValue === undefined || oldValue === null || oldValue === '') oldValue = undefined;
+    if (newValue === undefined || newValue === null || newValue === '') newValue = undefined;
+
+    // Normalize numeric values (e.g. 100 vs "100")
+    if (oldValue !== undefined && !isNaN(Number(oldValue)) && typeof oldValue !== 'boolean') oldValue = Number(oldValue);
+    if (newValue !== undefined && !isNaN(Number(newValue)) && typeof newValue !== 'boolean') newValue = Number(newValue);
 
     if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
       const label = labels[key] || (key as string);
-      const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
-      const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
+      const oldStr = oldValue === undefined ? '(None)' : String(oldValue);
+      const newStr = newValue === undefined ? '(None)' : String(newValue);
       changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
     }
   }
@@ -89,7 +99,7 @@ export const getDriverDiff = (oldDriver: Driver, newDriver: Driver): string => {
     licenseNo: 'License Number',
     status: 'Active Status'
   };
-  return generateDiffText(oldDriver, newDriver, labels);
+  return generateDiffText(oldDriver, newDriver, labels, ['id', 'organizationId', 'syncState', 'data', 'licenseFileId']);
 };
 
 export const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
@@ -122,7 +132,7 @@ export const getTruckDiff = (oldTruck: Truck, newTruck: Truck): string => {
     loanStatus: 'Loan Status',
     loanNotes: 'Loan Notes'
   };
-  return generateDiffText(oldTruck, newTruck, labels);
+  return generateDiffText(oldTruck, newTruck, labels, ['id', 'organizationId', 'truckRequests', 'activationPayments', 'syncState', 'data']);
 };
 
 export const getOfficeDiff = (oldOffice: Office, newOffice: Office): string => {
@@ -133,7 +143,7 @@ export const getOfficeDiff = (oldOffice: Office, newOffice: Office): string => {
     phone: 'Phone No',
     status: 'Active Status'
   };
-  return generateDiffText(oldOffice, newOffice, labels);
+  return generateDiffText(oldOffice, newOffice, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getAccountDiff = (oldAccount: Account, newAccount: Account): string => {
@@ -143,7 +153,7 @@ export const getAccountDiff = (oldAccount: Account, newAccount: Account): string
     holderName: 'Account Holder Name',
     status: 'Ledger Status'
   };
-  return generateDiffText(oldAccount, newAccount, labels);
+  return generateDiffText(oldAccount, newAccount, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getExpenseDiff = (oldExpense: ExpenseEntry, newExpense: ExpenseEntry): string => {
@@ -158,7 +168,7 @@ export const getExpenseDiff = (oldExpense: ExpenseEntry, newExpense: ExpenseEntr
     accountType: 'Payer Type',
     driverName: 'Paid By Operator'
   };
-  return generateDiffText(oldExpense, newExpense, labels);
+  return generateDiffText(oldExpense, newExpense, labels, ['id', 'organizationId', 'syncState', 'data']);
 };
 
 export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
@@ -249,13 +259,17 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   // Added Payments
   const addedPays = newPay.filter(nP => !oldPay.some(oP => oP.id === nP.id));
   for (const p of addedPays) {
-    changes.push(`Added Payment: "(None)" ➔ "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})"`);
+    const sidx = newTrip.subTrips ? newTrip.subTrips.findIndex(st => st.id === p.subTripId) : -1;
+    const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (p.subTripId ? `SubTrip ID: ${p.subTripId}` : 'General');
+    changes.push(`Added Payment (${segInfo}): "(None)" ➔ "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})"`);
   }
 
   // Deleted Payments
   const deletedPays = oldPay.filter(oP => !newPay.some(nP => nP.id === oP.id));
   for (const p of deletedPays) {
-    changes.push(`Deleted Payment: "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})" ➔ "(None)"`);
+    const sidx = oldTrip.subTrips ? oldTrip.subTrips.findIndex(st => st.id === p.subTripId) : -1;
+    const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (p.subTripId ? `SubTrip ID: ${p.subTripId}` : 'General');
+    changes.push(`Deleted Payment (${segInfo}): "₹${p.amount} on ${p.date} (${p.notes || 'No Notes'})" ➔ "(None)"`);
   }
 
   // Modified Payments
@@ -263,6 +277,8 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   for (const nP of modifiedPays) {
     const oP = oldPay.find(o => o.id === nP.id)!;
     if (JSON.stringify(oP) !== JSON.stringify(nP)) {
+      const sidx = newTrip.subTrips ? newTrip.subTrips.findIndex(st => st.id === nP.subTripId) : -1;
+      const segInfo = sidx !== -1 ? `Seg #${sidx + 1}` : (nP.subTripId ? `SubTrip ID: ${nP.subTripId}` : 'General');
       const payLabels: Partial<Record<keyof TripPayment, string>> = {
         amount: 'Amount',
         date: 'Date',
@@ -272,7 +288,7 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
         const oldValue = oP[key];
         const newValue = nP[key];
         if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-          const label = `Payment [₹${oP.amount}] ${payLabels[key]}`;
+          const label = `Payment [₹${oP.amount}] (${segInfo}) ${payLabels[key]}`;
           const oldStr = oldValue === undefined || oldValue === null || oldValue === '' ? '(None)' : String(oldValue);
           const newStr = newValue === undefined || newValue === null || newValue === '' ? '(None)' : String(newValue);
           changes.push(`${label}: "${oldStr}" ➔ "${newStr}"`);
@@ -364,3 +380,140 @@ export const getTripDiff = (oldTrip: TripEntry, newTrip: TripEntry): string => {
   }
   return changes.join(" | ");
 };
+
+export interface CollectionDiffResult<T> {
+  toCreate: T[];
+  toUpdate: T[];
+  toDelete: T[];
+  hasChanges: boolean;
+}
+
+/**
+ * Generic stable-ID diffing for collections (sub_trips, fuels, advances, etc.)
+ */
+export function diffCollection<T extends { id?: string; $id?: string }>(
+  previousItemsInput: T[] = [],
+  currentItemsInput: T[] = [],
+  isEqual: (a: T, b: T) => boolean = (a, b) => {
+    const sanitize = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return {};
+      const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, tripId, organizationId, ...rest } = obj;
+      const cleaned: Record<string, any> = {};
+      Object.keys(rest).sort().forEach(k => {
+        const val = rest[k];
+        if (val !== undefined && val !== null && val !== '') {
+          if (typeof val === 'number' && val === 0) return;
+          if (typeof val === 'boolean' && !val) return;
+          cleaned[k] = typeof val === 'number' ? String(val) : val;
+        }
+      });
+      return cleaned;
+    };
+    return JSON.stringify(sanitize(a)) === JSON.stringify(sanitize(b));
+  }
+): CollectionDiffResult<T> {
+  const parseArray = (val: any): T[] => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return [];
+  };
+
+  const previousItems = parseArray(previousItemsInput);
+  const currentItems = parseArray(currentItemsInput);
+
+  const getId = (item: T): string | undefined => item.$id || item.id;
+
+  const prevMap = new Map<string, T>();
+  previousItems.forEach(item => {
+    const id = getId(item);
+    if (id) prevMap.set(id, item);
+  });
+
+  const currMap = new Map<string, T>();
+  const toCreate: T[] = [];
+  const toUpdate: T[] = [];
+
+  currentItems.forEach(item => {
+    const id = getId(item);
+    if (id && prevMap.has(id)) {
+      currMap.set(id, item);
+      const prevItem = prevMap.get(id)!;
+      if (!isEqual(prevItem, item)) {
+        toUpdate.push(item);
+      }
+    } else {
+      toCreate.push(item);
+    }
+  });
+
+  const toDelete: T[] = [];
+  previousItems.forEach(item => {
+    const id = getId(item);
+    if (id && !currMap.has(id)) {
+      toDelete.push(item);
+    }
+  });
+
+  const hasChanges = toCreate.length > 0 || toUpdate.length > 0 || toDelete.length > 0;
+
+  return {
+    toCreate,
+    toUpdate,
+    toDelete,
+    hasChanges
+  };
+}
+
+/**
+ * Extract parent trip metadata for decoupled diffing
+ */
+export function getTripMetadata(trip: Record<string, any> | null | undefined): Record<string, any> {
+  if (!trip) return {};
+  const {
+    subTrips,
+    fuels,
+    advances,
+    payments,
+    syncState,
+    $id,
+    $sequence,
+    $createdAt,
+    $updatedAt,
+    $permissions,
+    $databaseId,
+    $collectionId,
+    createdAt,
+    updatedAt,
+    updatedBy,
+    createdBy,
+    data,
+    organizationId,
+    id,
+    version,
+    _v,
+    ...metadata
+  } = trip;
+
+  const cleaned: Record<string, any> = {};
+  Object.keys(metadata).sort().forEach(key => {
+    const val = metadata[key];
+    if (val !== undefined && val !== null && val !== '') {
+      const numVal = Number(val);
+      if (!isNaN(numVal) && typeof val !== 'boolean') {
+        if (numVal === 0) return;
+        cleaned[key] = numVal;
+      } else {
+        if (typeof val === 'boolean' && !val) return;
+        cleaned[key] = String(val).trim();
+      }
+    }
+  });
+
+  return cleaned;
+}
+

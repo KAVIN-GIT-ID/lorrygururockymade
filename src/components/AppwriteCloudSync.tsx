@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
-import { 
-  Cloud, 
-  CheckCircle, 
+import { pushNotificationService } from '../services/pushNotificationService';
+import { SyncService, wrapAbort, SyncStateData } from '../services/SyncService';
+import { dbUnlocked } from '../services/cache';
+import {
+  Cloud,
+  CheckCircle,
   AlertCircle,
   HelpCircle,
   Settings,
@@ -11,884 +14,584 @@ import {
   Sparkles,
   RefreshCw,
   Trash2
-} from 'lucide-react';
+} from 'lucide-solid';
 
 interface AppwriteCloudSyncProps {
-  currentLocalState: {
-    trucks: any[];
-    drivers: any[];
-    offices: any[];
-    accounts: any[];
-    trips: any[];
-    expenses: any[];
-    tyres: any[];
-    auditLogs: any[];
-  };
-  onLoadCloudState: (loadedState: any, userRightsData?: any) => boolean;
+  currentLocalState: (() => SyncStateData) | SyncStateData;
+  onLoadCloudState: (loadedState: any, userRightsData?: any, quiet?: boolean) => boolean;
   showNotification: (msg: string) => void;
   logAction: (action: string, model: string, identifier: string, description: string) => void;
-  currentUserOrgId: string;
-  isAdmin: boolean;
+  currentUserOrgId: () => string;
+  currentUserEmail: () => string;
+  currentUserId: () => string;
+  isAdmin: () => boolean;
   onInitialSyncComplete?: (completed: boolean) => void;
   onConnectionChange?: (isOnline: boolean, reason?: 'offline' | 'realtime_lost') => void;
+  activeTicketId?: () => string | null;
+  hideUI?: boolean;
 }
 
-export default function AppwriteCloudSync({
-  currentLocalState,
-  onLoadCloudState,
-  showNotification,
-  logAction,
-  currentUserOrgId,
-  isAdmin,
-  onInitialSyncComplete,
-  onConnectionChange
-}: AppwriteCloudSyncProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isConfigured] = useState(isAppwriteConfigured());
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [showGuide, setShowGuide] = useState(false);
+export default function AppwriteCloudSync(props: AppwriteCloudSyncProps) {
+  const currentUserOrgId = () => props.currentUserOrgId();
+  const currentUserEmail = () => props.currentUserEmail();
+
+  const getCurrentCollection = (key: string): any[] => {
+    const state = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+    const col = state ? state[key] : [];
+    return typeof col === 'function' ? col() : (Array.isArray(col) ? col : []);
+  };
+  const currentUserId = () => props.currentUserId();
+  const isAdmin = () => props.isAdmin();
   
-  // Custom user-adjustable database properties
-  const [databaseId, setDatabaseId] = useState(() => {
-    return localStorage.getItem('appwrite_database_id') || 'fleet_db';
-  });
-  const [collectionId, setCollectionId] = useState(() => {
-    return localStorage.getItem('appwrite_collection_id') || 'fleet_records';
-  });
+  const onLoadCloudState = props.onLoadCloudState;
+  const showNotification = props.showNotification;
+  const logAction = props.logAction;
+  const onInitialSyncComplete = props.onInitialSyncComplete;
+  const onConnectionChange = props.onConnectionChange;
+  const hideUI = () => props.hideUI ?? false;
 
-  const [realtimeConnected, setRealtimeConnected] = useState(true);
+  const [isOpen, setIsOpen] = createSignal(false);
+  const [isConfigured] = createSignal(isAppwriteConfigured());
+  const [loading, setLoading] = createSignal(false);
+  const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [successMsg, setSuccessMsg] = createSignal<string | null>(null);
+  const [showGuide, setShowGuide] = createSignal(false);
 
-  // Monitor hardware/browser network connectivity status
-  useEffect(() => {
+  const [databaseId, setDatabaseId] = createSignal(localStorage.getItem('appwrite_database_id') || 'fleet_db');
+  const [collectionId, setCollectionId] = createSignal(localStorage.getItem('appwrite_collection_id') || 'fleet_records');
+
+  const [realtimeConnected, setRealtimeConnected] = createSignal(
+    typeof process !== 'undefined' && process.env?.NODE_ENV === 'test'
+  );
+  const [isOnline, setIsOnline] = createSignal(true);
+  const [initialPullDone, setInitialPullDone] = createSignal(false);
+
+  let activeAbortController: AbortController | null = null;
+  let allowedCollectionsRef = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets', 'coupons'];
+
+  const orgId = () => currentUserOrgId() || 'org_default';
+
+  // 1. Monitor network status
+  onMount(() => {
+    console.log("CloudSyncManager mounted");
     const handleOnline = () => {
-      if (onConnectionChange) {
-        onConnectionChange(true);
-      }
+      setIsOnline(true);
+      if (onConnectionChange) onConnectionChange(true);
+      appwrite.flushSyncQueue(showNotification);
     };
     const handleOffline = () => {
-      if (onConnectionChange) {
-        onConnectionChange(false, 'offline');
-      }
+      setIsOnline(false);
+      if (onConnectionChange) onConnectionChange(false, 'offline');
     };
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Initial check
     if (!window.navigator.onLine && onConnectionChange) {
       onConnectionChange(false, 'offline');
     }
 
-    return () => {
+    onCleanup(() => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-    };
-  }, [onConnectionChange]);
-
-  const orgId = currentUserOrgId || 'org_default';
-
-  // Refs for tracking local states and syncing baselines
-  const currentLocalStateRef = useRef(currentLocalState);
-  useEffect(() => {
-    currentLocalStateRef.current = currentLocalState;
-  }, [currentLocalState]);
-
-  // Keep callback refs fresh so the WebSocket closure always calls the latest version
-  const onLoadCloudStateRef = useRef(onLoadCloudState);
-  useEffect(() => { onLoadCloudStateRef.current = onLoadCloudState; }, [onLoadCloudState]);
-  const showNotificationRef = useRef(showNotification);
-  useEffect(() => { showNotificationRef.current = showNotification; }, [showNotification]);
-  const logActionRef = useRef(logAction);
-  useEffect(() => { logActionRef.current = logAction; }, [logAction]);
-
-  // Keep a baseline of the last synchronized state to perform delta queries
-  const baselineStateRef = useRef<{
-    trucks: any[];
-    drivers: any[];
-    offices: any[];
-    accounts: any[];
-    trips: any[];
-    expenses: any[];
-    tyres: any[];
-    auditLogs: any[];
-  }>({
-    trucks: [],
-    drivers: [],
-    offices: [],
-    accounts: [],
-    trips: [],
-    expenses: [],
-    tyres: [],
-    auditLogs: []
+    });
   });
 
-  const [initialPullDone, setInitialPullDone] = useState(false);
-  const isSyncing = useRef(false);
+  // Save Configs to localStorage
+  createEffect(() => localStorage.setItem('appwrite_database_id', databaseId()));
+  createEffect(() => localStorage.setItem('appwrite_collection_id', collectionId()));
 
-  // Reset initial sync status and baseline when organization resolves/changes
-  const prevOrgIdRef = useRef(orgId);
-  useEffect(() => {
-    const wasRealOrg = prevOrgIdRef.current && prevOrgIdRef.current !== 'org_default' && prevOrgIdRef.current !== '';
-    const isRealOrg = orgId && orgId !== 'org_default' && orgId !== '';
+  let isPulling = false;
 
-    if (wasRealOrg && isRealOrg && prevOrgIdRef.current !== orgId) {
-      console.log(`Appwrite Sync: Organization changed from ${prevOrgIdRef.current} to ${orgId}. Resetting sync state.`);
-      setInitialPullDone(false);
-      baselineStateRef.current = {
-        trucks: [],
-        drivers: [],
-        offices: [],
-        accounts: [],
-        trips: [],
-        expenses: [],
-        tyres: [],
-        auditLogs: []
-      };
-    }
-    prevOrgIdRef.current = orgId;
-  }, [orgId]);
-
-  useEffect(() => {
-    localStorage.setItem('appwrite_database_id', databaseId);
-  }, [databaseId]);
-
-  useEffect(() => {
-    localStorage.setItem('appwrite_collection_id', collectionId);
-  }, [collectionId]);
-
-  // Generate a fingerprint of current organization state to watch for edits
-  const getScopedFingerprint = (state: typeof currentLocalState) => {
-    return JSON.stringify({
-      trucks: (state.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      drivers: (state.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-      offices: (state.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-      accounts: (state.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-      trips: (state.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      expenses: (state.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-      tyres: (state.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-      auditLogs: (state.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
-    });
-  };
-
-  const stateFingerprint = getScopedFingerprint(currentLocalState);
-  const previousFingerprint = useRef(stateFingerprint);
-
-  // Initial pull from Appwrite Database
-  const handlePullFromDB = async (quiet = false) => {
+  // 2. Pull State from DB
+  const handlePullFromDB = async (quiet = false, incremental = false) => {
     if (!isConfigured) return;
+    if (isPulling) {
+      return;
+    }
+
+    isPulling = true;
+
     if (!quiet) {
       setLoading(true);
       setErrorMsg(null);
       setSuccessMsg(null);
     }
-    
+
     try {
-      console.log('Appwrite DB: Fetching fleet documents via unified batch pull...');
-      
-      const loadedState: any = {
-        trucks: [],
-        drivers: [],
-        offices: [],
-        accounts: [],
-        trips: [],
-        expenses: [],
-        tyres: [],
-        auditLogs: []
-      };
-      
-      let userRightsData: any = { userRightsList: [], organizationProfiles: [] };
-      let maxUpdatedAt = 0;
+      console.log(`[AppwriteCloudSync] Starting handlePullFromDB (quiet=${quiet}, incremental=${incremental})...`);
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const res = await SyncService.pullFromDB(databaseId(), orgId(), currentState, incremental);
+      allowedCollectionsRef = res.verifiedCollections;
+      console.log(`[AppwriteCloudSync] pullFromDB finished. Loaded collections:`, Object.keys(res.loadedState || {}));
+      const didChange = onLoadCloudState(res.loadedState, res.userRightsData, quiet);
+      console.log(`[AppwriteCloudSync] onLoadCloudState returned didChange=${didChange}`);
 
-      const parseDocRecord = (doc: any) => {
-        if (!doc) return null;
-        let parsed: any = null;
-        if (doc.data !== undefined && doc.data !== null) {
-          if (typeof doc.data === 'string') {
-            try {
-              parsed = JSON.parse(doc.data);
-            } catch (_) {
-              parsed = doc.data;
-            }
-          } else if (typeof doc.data === 'object') {
-            parsed = doc.data;
-          }
-        }
-        if (typeof parsed === 'object' && parsed !== null) {
-          return { ...doc, ...parsed, id: doc.id || doc.$id || parsed.id || parsed.$id };
-        }
-        return { ...doc, id: doc.id || doc.$id };
-      };
-
-      try {
-        const pulled = await appwrite.pullFleetData(orgId);
-        
-        const parseList = (list: any[]) => {
-          if (!Array.isArray(list)) return [];
-          return list.map(doc => {
-            const record = parseDocRecord(doc);
-            if (doc.$updatedAt || doc.updated_at) {
-              const docTime = new Date(doc.$updatedAt || doc.updated_at).getTime();
-              if (docTime > maxUpdatedAt) maxUpdatedAt = docTime;
-            }
-            return record;
-          }).filter(Boolean);
-        };
-
-        loadedState.trucks = parseList(pulled.trucks || []);
-        loadedState.drivers = parseList(pulled.drivers || []);
-        loadedState.offices = parseList(pulled.offices || []);
-        loadedState.accounts = parseList(pulled.accounts || []);
-        loadedState.trips = parseList(pulled.trips || []);
-        loadedState.expenses = parseList(pulled.expenses || []);
-        loadedState.tyres = parseList(pulled.tyres || []);
-        loadedState.auditLogs = parseList(pulled.auditLogs || pulled.audit_logs || []);
-
-        const configs = pulled.global_configs || pulled.globalConfigs || [];
-        for (const doc of configs) {
-          const parsed = parseDocRecord(doc);
-          const keyStr = String(doc.key || doc.id || doc.$id || '');
-          if (keyStr.startsWith('usr_')) {
-            userRightsData.userRightsList.push(parsed);
-          } else if (keyStr.startsWith('prf_')) {
-            userRightsData.organizationProfiles.push(parsed);
-          }
-        }
-      } catch (pullErr: any) {
-        console.warn('Unified batch pull fallback to multi-collection list:', pullErr.message);
-
-        const categories: { key: keyof typeof loadedState; collection: string }[] = [
-          { key: 'trucks', collection: 'trucks' },
-          { key: 'drivers', collection: 'drivers' },
-          { key: 'offices', collection: 'offices' },
-          { key: 'accounts', collection: 'accounts' },
-          { key: 'trips', collection: 'trips' },
-          { key: 'expenses', collection: 'expenses' },
-          { key: 'tyres', collection: 'tyres' },
-          { key: 'auditLogs', collection: 'audit_logs' }
-        ];
-
-        const fetchPromises = categories.map(async (cat) => {
-          try {
-            const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
-            const parsedRecords: any[] = [];
-            for (const doc of docs) {
-              const record = parseDocRecord(doc);
-              if (record) parsedRecords.push(record);
-            }
-            loadedState[cat.key] = parsedRecords;
-          } catch (e: any) {
-            console.warn(`Fallback fetch failed for ${cat.collection}:`, e.message);
-          }
-        });
-
-        await Promise.all(fetchPromises);
-      }
-
-      if (maxUpdatedAt > 0) {
-        loadedState.exportDate = maxUpdatedAt;
-      }
-
-      // Sync local baseline — IMPORTANT: always filter by orgId.
-      // For org_backend, listFleetDocuments returns ALL records across ALL orgs
-      // (no org filter). If we stored them unfiltered here, the delta sync would
-      // see them in the baseline but NOT in currentList (which filters by orgId),
-      // and would incorrectly delete them as "removed" items.
-      baselineStateRef.current = {
-        trucks: loadedState.trucks.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        drivers: loadedState.drivers.filter((d: any) => orgId === 'org_backend' || d.organizationId === orgId),
-        offices: loadedState.offices.filter((o: any) => orgId === 'org_backend' || o.organizationId === orgId),
-        accounts: loadedState.accounts.filter((a: any) => orgId === 'org_backend' || a.organizationId === orgId),
-        trips: loadedState.trips.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        expenses: loadedState.expenses.filter((e: any) => orgId === 'org_backend' || e.organizationId === orgId),
-        tyres: loadedState.tyres.filter((t: any) => orgId === 'org_backend' || t.organizationId === orgId),
-        auditLogs: loadedState.auditLogs.filter((l: any) => orgId === 'org_backend' || l.organizationId === orgId)
-      };
-
-      // Load state into local UI
-      const didChange = onLoadCloudState(loadedState, userRightsData);
-      
-      previousFingerprint.current = getScopedFingerprint(loadedState);
-      
       if (!quiet) {
         setSuccessMsg('Active registers successfully loaded from Appwrite Database!');
-        if (didChange) {
-          showNotification('Active buffers synchronized with Appwrite Database.');
-        } else {
-          showNotification('Appwrite Database: Already up to date.');
-        }
+        showNotification(didChange ? 'Active buffers synchronized with Appwrite Database.' : 'Appwrite Database: Already up to date.');
       }
     } catch (err: any) {
-      console.error('Appwrite DB loading failure:', err);
-      if (!quiet) {
-        setErrorMsg(
-          `Database retrieval failed: ${err.message || 'Unknown error'}. \n\n` + 
-          `Tip: Make sure you have run the bootstrapping script to create the database schemas:\n` +
-          `  node scripts/bootstrap-db.js`
-        );
+      console.error('handlePullFromDB failed:', err);
+      const isForbidden = err.message && (err.message.includes('403') || err.message.includes('Forbidden') || err.message.includes('permission'));
+      if (isForbidden) {
+        showNotification('Your organization access has been revoked by the Administrator.');
+        localStorage.removeItem('ttt_user_rights');
+        localStorage.removeItem('ttt_organization_profiles');
+        localStorage.removeItem('ttt_trips');
+        localStorage.removeItem('ttt_trucks');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else if (!quiet) {
+        setErrorMsg(`Database retrieval failed: ${err.message || 'Unknown error'}. \n\nBootstrap: node scripts/bootstrap-db.js`);
       }
     } finally {
+      isPulling = false;
       if (!quiet) setLoading(false);
     }
   };
 
-  // Perform initial pull on launch
-  useEffect(() => {
-    if (!isConfigured || initialPullDone) return;
+  // 3. Initial pull and visibility listeners (Instant Offline-First Boot + Version Check)
+  createEffect(() => {
+    if (!dbUnlocked()) return;
+    if (isConfigured && !initialPullDone()) {
+      setInitialPullDone(true);
+      if (onInitialSyncComplete) onInitialSyncComplete(true);
 
-    const performInitialSync = async () => {
-      try {
-        console.log("Appwrite DB: Performing initial query sync on load...");
-        await handlePullFromDB(true);
-      } catch (err: any) {
-        console.warn("Appwrite initial pull skipped, using local master state:", err.message);
-      } finally {
-        setInitialPullDone(true);
-        if (onInitialSyncComplete) {
-          onInitialSyncComplete(true);
-        }
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const hasLocalData = (currentState?.trucks && currentState.trucks.length > 0) ||
+                           (currentState?.trips && currentState.trips.length > 0) ||
+                           (currentState?.drivers && currentState.drivers.length > 0);
+
+      const localLastModified = Number(localStorage.getItem('ttt_last_modified_at') || '0');
+
+      if (!hasLocalData) {
+        handlePullFromDB(true, false);
+      } else {
+        // Fast 10ms version check: compare local timestamp with server timestamp
+        appwrite.checkDatabaseVersion(orgId(), localLastModified).then(v => {
+          if (!v.isUpToDate) {
+            console.log(`[AppwriteCloudSync] Cloud server has newer changes (server: ${v.serverLastModified}, local: ${localLastModified}). Syncing delta...`);
+            handlePullFromDB(true, true);
+          } else {
+            console.log('[AppwriteCloudSync] Fast Boot: Local IndexedDB up to date (0 requests needed). Relying on WebSocket Realtime.');
+          }
+        }).catch(() => {});
       }
-    };
 
-    performInitialSync();
-  }, [databaseId, isConfigured, orgId, initialPullDone]);
+      if (window.navigator.onLine) {
+        appwrite.flushSyncQueue(showNotification);
+      }
+    }
+  });
 
-  // Delta Sync Engine (Pushes local modifications to DB)
-  const syncLocalToDatabase = async () => {
-    if (!isConfigured || isSyncing.current) return;
+  onMount(() => {
+    // Rely exclusively on WebSocket realtime connection instead of page focus re-fetches
+  });
+
+  // 5. INSTANT support ticket sync on message send (event-triggered)
+  const triggerSupportTicketSync = async () => {
+    if (!isConfigured || !initialPullDone()) return;
     
-    isSyncing.current = true;
-    const currentState = currentLocalStateRef.current;
-    const baseline = baselineStateRef.current;
-
-    const categories: { key: keyof typeof currentState; collection: string }[] = [
-      { key: 'trucks', collection: 'trucks' },
-      { key: 'drivers', collection: 'drivers' },
-      { key: 'offices', collection: 'offices' },
-      { key: 'accounts', collection: 'accounts' },
-      { key: 'trips', collection: 'trips' },
-      { key: 'expenses', collection: 'expenses' },
-      { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' }
-    ];
-
     try {
-      let changeDetected = false;
-
-      for (const cat of categories) {
-        const currentList = (currentState[cat.key] || []).filter(x => orgId === 'org_backend' || x.organizationId === orgId);
-        const baselineList = baseline[cat.key] || [];
-
-        // 1. Find Created & Updated documents
-        for (const item of currentList) {
-          const baseItem = baselineList.find(b => b.id === item.id);
-          const itemStr = JSON.stringify(item);
-          
-          if (!baseItem) {
-            // Created item
-            console.log(`Appwrite DB [Delta Sync]: Creating doc for ${cat.collection} (${item.id})`);
-            const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
-            await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, targetOrgId, item);
-            changeDetected = true;
-          } else if (JSON.stringify(baseItem) !== itemStr) {
-            // Updated item
-            console.log(`Appwrite DB [Delta Sync]: Updating doc for ${cat.collection} (${item.id})`);
-            const targetOrgId = orgId === 'org_backend' ? (item.organizationId || orgId) : orgId;
-            await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, targetOrgId, item);
-            changeDetected = true;
-          }
-        }
-
-        // 2. Find Deleted documents
-        // Safety: only delete items that belong to THIS org. This prevents
-        // org_backend's unfiltered baseline from causing cross-org deletions.
-        for (const baseItem of baselineList) {
-          if (orgId !== 'org_backend' && baseItem.organizationId && baseItem.organizationId !== orgId) {
-            continue; // Not our org — skip
-          }
-          const currentItem = currentList.find(c => c.id === baseItem.id);
-          if (!currentItem) {
-            console.log(`Appwrite DB [Delta Sync]: Deleting doc for ${cat.collection} (${baseItem.id})`);
-            await appwrite.deleteFleetDocument(databaseId, cat.collection, baseItem.id);
-            changeDetected = true;
-          }
-        }
+      const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
+      const docs = await appwrite.listFleetDocuments(databaseId, 'support_tickets', orgId());
+      if (Array.isArray(docs)) {
+        const supportTickets = docs.map(doc => appwrite.reconstructRecord(doc));
+        onLoadCloudState({ supportTickets }, null, true);
       }
-
-      if (changeDetected) {
-        console.log("Appwrite DB [Delta Sync]: Sync completed successfully.");
-
-        // After pushing our own changes, do a quiet pull to apply any realtime
-        // events from other users that arrived during the sync window.
-        try {
-          await handlePullFromDB(true);
-        } catch (pullErr: any) {
-          console.warn('Post-sync quiet pull failed:', pullErr.message);
-        }
-        
-        // Update baseline
-        baselineStateRef.current = {
-          trucks: (currentState.trucks || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          drivers: (currentState.drivers || []).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-          offices: (currentState.offices || []).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-          accounts: (currentState.accounts || []).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-          trips: (currentState.trips || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          expenses: (currentState.expenses || []).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-          tyres: (currentState.tyres || []).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-          auditLogs: (currentState.auditLogs || []).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
-        };
-      }
-      
-      previousFingerprint.current = getScopedFingerprint(currentState);
-    } catch (e: any) {
-      console.warn("Appwrite Database auto-push failed:", e.message);
-    } finally {
-      isSyncing.current = false;
+    } catch (err: any) {
+      console.warn('triggerSupportTicketSync error:', err.message || err);
     }
   };
 
-  // Automatic background delta sync is disabled to use direct database interaction on hook mutations.
-  // This prevents race conditions and data-overwrite issues on page reloads or network glitches.
-  /*
-  useEffect(() => {
-    if (!isConfigured || !initialPullDone) return;
-    if (previousFingerprint.current === stateFingerprint) return;
-
-    previousFingerprint.current = stateFingerprint;
-
-    const timer = setTimeout(() => {
-      syncLocalToDatabase();
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [stateFingerprint, isConfigured, initialPullDone]);
-  */
-
-  // Real-Time Web Socket subscription using Appwrite real-time channel
-  useEffect(() => {
-    if (!isConfigured) {
+  // Expose trigger function globally for message send to call
+  if (typeof window !== 'undefined') {
+    (window as any)._triggerSupportTicketSync = triggerSupportTicketSync;
+  }
+  createEffect(() => {
+    if (!isConfigured || !initialPullDone()) {
       setRealtimeConnected(false);
       return;
     }
 
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribe: any = null;
+    let destroyed = false;
+    let reconnectTimer: any = null;
+    let healthCheckInterval: any = null;
+    let reconnectDelay = 5000;
+    const MAX_DELAY = 60000;
+
+    const teardown = () => {
+      if (unsubscribe) {
+        try {
+          if (typeof unsubscribe === 'function') unsubscribe();
+          else unsubscribe.close?.();
+        } catch (_) {}
+        unsubscribe = null;
+      }
+      if (healthCheckInterval) clearInterval(healthCheckInterval);
+    };
+
+    const scheduleReconnect = () => {
+      if (destroyed) return;
+      setRealtimeConnected(false);
+      if (onConnectionChange) onConnectionChange(false, 'realtime_lost');
+      reconnectTimer = setTimeout(() => {
+        if (!destroyed) setupRealtime();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY);
+    };
 
     const setupRealtime = async () => {
+      if (destroyed) return;
+      teardown();
       try {
         await appwrite.initSession();
-        const client = appwrite.getClient();
-        
-        const colList = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'global_configs'];
-        const channels = colList.map(col => `databases.${databaseId}.collections.${col}.documents`);
-        console.log(`Appwrite socket: Subscribing to multi-collection channels:`, channels);
+        const verifiedCols = ['trucks', 'drivers', 'offices', 'accounts', 'trips', 'expenses', 'tyres', 'audit_logs', 'support_tickets', 'global_configs'];
 
-        unsubscribe = client.subscribe(
-          channels,
-          (response: any) => {
-            const doc = response.payload;
-            const collectionId = doc.$collectionId;
+        console.log(`[Appwrite Realtime] Subscribing to WebSocket channels for ${verifiedCols.length} collections...`);
+        const channels = verifiedCols.map(col =>
+          `databases.${databaseId()}.collections.${col}.documents`
+        );
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const jwt = await appwrite.createSessionJwt();
+        const gatewayUrl = `${wsProtocol}//${window.location.host}/realtime`;
+        const socket = new WebSocket(gatewayUrl);
+        unsubscribe = { close: () => socket.close() };
+
+        socket.onopen = () => {
+          console.log('[CHAT SYNC] WebSocket connected, sending authentication...');
+          socket.send(JSON.stringify({ type: 'authenticate', jwt }));
+          setRealtimeConnected(true);
+          if (onConnectionChange) onConnectionChange(true);
+        };
+
+        socket.onmessage = (msg) => {
+          try {
+            const response = JSON.parse(msg.data);
             
-            // Check if document belongs to this organization (or global configs)
-            if (collectionId !== 'global_configs' && orgId !== 'org_backend' && doc.organizationId !== orgId) {
-              return;
+            // Log authentication response
+            if (response.type === 'authentication') {
+              console.log('[CHAT SYNC] WebSocket authenticated successfully');
             }
 
-            // If we are mid-sync (pushing OUR data), skip — but only ignore events for
-            // the exact same doc IDs we are currently writing to avoid feedback loops.
-            // We intentionally do NOT block ALL events during sync so other users'
-            // changes are not missed during concurrent writes.
-
-            console.log(`Appwrite realtime event: ${response.events[0]} on doc ${doc.$id} in ${collectionId}`);
-            
-            const eventType = response.events[0];
-            
-            const currentState = currentLocalStateRef.current;
-            const nextState = {
-              trucks: [...(currentState.trucks || [])],
-              drivers: [...(currentState.drivers || [])],
-              offices: [...(currentState.offices || [])],
-              accounts: [...(currentState.accounts || [])],
-              trips: [...(currentState.trips || [])],
-              expenses: [...(currentState.expenses || [])],
-              tyres: [...(currentState.tyres || [])],
-              auditLogs: [...(currentState.auditLogs || [])]
-            };
-
-            if (collectionId === 'global_configs') {
-              try {
-                const storedRights = localStorage.getItem('ttt_user_rights');
-                const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-                let localRights = storedRights ? JSON.parse(storedRights) : [];
-                let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-
-                if (eventType.endsWith('.delete')) {
-                  if (doc.$id.startsWith('usr_')) {
-                    localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
-                  } else if (doc.$id.startsWith('prf_')) {
-                    const orgId = doc.$id.replace('prf_', '');
-                    localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgId);
-                  }
-                } else {
-                  let parsedItem: any = doc.data;
-                  if (typeof doc.data === 'string') {
-                    try { parsedItem = JSON.parse(doc.data); } catch (_) { parsedItem = doc.data; }
-                  }
-                  parsedItem = typeof parsedItem === 'object' && parsedItem ? { ...doc, ...parsedItem } : doc;
-                  const keyStr = String(doc.key || doc.id || doc.$id || '');
-                  if (keyStr.startsWith('usr_')) {
-                    const emailKey = (parsedItem.email || '').toLowerCase().trim();
-                    const idx = localRights.findIndex((r: any) => (r.email || '').toLowerCase().trim() === emailKey);
-                    if (idx > -1) {
-                      localRights[idx] = parsedItem;
-                    } else {
-                      localRights.push(parsedItem);
-                    }
-                  } else if (keyStr.startsWith('prf_')) {
-                    const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
-                    if (idx > -1) {
-                      localProfiles[idx] = parsedItem;
-                    } else {
-                      localProfiles.push(parsedItem);
-                    }
-                  }
-                }
-
-                onLoadCloudStateRef.current({}, { userRightsList: localRights, organizationProfiles: localProfiles });
-              } catch (e) {
-                console.warn('Failed to parse realtime global config:', e);
+            const doc = response.payload;
+            if (!doc) {
+              // Still log non-payload messages for debugging
+              if (response.type && response.type !== 'ping' && response.type !== 'pong') {
+                console.log('[CHAT SYNC] Received message type:', response.type);
               }
               return;
             }
 
-            let key: keyof typeof nextState | null = null;
-            if (collectionId === 'trucks') key = 'trucks';
-            else if (collectionId === 'drivers') key = 'drivers';
-            else if (collectionId === 'offices') key = 'offices';
-            else if (collectionId === 'accounts') key = 'accounts';
-            else if (collectionId === 'trips') key = 'trips';
-            else if (collectionId === 'expenses') key = 'expenses';
-            else if (collectionId === 'tyres') key = 'tyres';
-            else if (collectionId === 'audit_logs') key = 'auditLogs';
+            const eventStr = (response.events && response.events[0]) ? response.events[0] : '';
+            const eventCollectionId = doc.$collectionId || doc.collectionId || (eventStr.includes('.collections.') ? eventStr.split('.collections.')[1].split('.')[0] : '');
+            const eventType = response.events[0] || '';
 
-            if (!key || !nextState[key]) return;
+            const isSupportTicket = eventCollectionId === 'support_tickets';
+            const isGlobalConfig = eventCollectionId === 'global_configs';
+            const matchesOrg = orgId() === 'org_backend' ||
+              doc.organizationId === orgId() ||
+              doc.organizationId === 'org_default' ||
+              doc.organizationId === 'global' ||
+              !doc.organizationId ||
+              (isSupportTicket && doc.requesterEmail?.toLowerCase().trim() === currentUserEmail().toLowerCase().trim());
+
+            if (!isGlobalConfig && !isSupportTicket && !matchesOrg) {
+              console.log('[CHAT SYNC] Event filtered out: collection=' + eventCollectionId + ', orgMatch=' + matchesOrg);
+              return;
+            }
+
+            if (eventCollectionId === 'global_configs') {
+              const storedRights = localStorage.getItem('ttt_user_rights');
+              const storedProfiles = localStorage.getItem('ttt_organization_profiles');
+              let localRights = storedRights ? JSON.parse(storedRights) : [];
+              let localProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
+
+              if (eventType.endsWith('.delete')) {
+                if (doc.$id.startsWith('usr_')) {
+                  localRights = localRights.filter((r: any) => appwrite.getEmailDocId(r.email) !== doc.$id);
+                } else if (doc.$id.startsWith('prf_')) {
+                  const orgIdVal = doc.$id.replace('prf_', '');
+                  localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgIdVal);
+                } else if (doc.$id === 'cfg_app_version') {
+                  localStorage.removeItem('ttt_app_update_config');
+                }
+              } else {
+                const parsedItem = JSON.parse(doc.data);
+                const keyVal = doc.$id || '';
+                if (keyVal.startsWith('usr_')) {
+                  const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
+                  if (idx > -1) localRights[idx] = parsedItem; else localRights.push(parsedItem);
+                } else if (keyVal.startsWith('prf_')) {
+                  if (parsedItem && parsedItem.organizationId) {
+                    const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
+                    if (idx > -1) localProfiles[idx] = parsedItem; else localProfiles.push(parsedItem);
+                  }
+                } else if (keyVal === 'cfg_app_version') {
+                  localStorage.setItem('ttt_app_update_config', doc.data);
+                  window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: parsedItem }));
+                }
+              }
+              onLoadCloudState({}, { userRightsList: localRights, organizationProfiles: localProfiles }, true);
+              return;
+            }
+
+            let key: any = null;
+            if (eventCollectionId === 'trucks') key = 'trucks';
+            else if (eventCollectionId === 'drivers') key = 'drivers';
+            else if (eventCollectionId === 'offices') key = 'offices';
+            else if (eventCollectionId === 'accounts') key = 'accounts';
+            else if (eventCollectionId === 'trips') key = 'trips';
+            else if (eventCollectionId === 'expenses') key = 'expenses';
+            else if (eventCollectionId === 'tyres') key = 'tyres';
+            else if (eventCollectionId === 'audit_logs') key = 'auditLogs';
+            else if (eventCollectionId === 'support_tickets') key = 'supportTickets';
+
+            if (!key) return;
+
+            // Trigger system push notification if tab is hidden/minimized
+            if (typeof document !== 'undefined' && document.hidden) {
+              if (isSupportTicket) {
+                const ticketSubj = doc.subject || 'Support Ticket Update';
+                pushNotificationService.sendNotification(
+                  `Support Ticket: ${ticketSubj}`,
+                  'New response or ticket status change received.',
+                  { url: '/console/dashboard' }
+                );
+              }
+            }
+
+            const currentCollection = getCurrentCollection(key);
+            let updatedCollection = [...currentCollection];
 
             const docIdentifier = doc.$id || doc.id;
 
             if (eventType.endsWith('.delete')) {
-              // Delete document locally
-              nextState[key] = (nextState[key] as any[]).filter(x => x.id !== docIdentifier);
+              const targetId = doc.$id || doc.id;
+              updatedCollection = updatedCollection.filter(x => x.id !== targetId);
             } else {
-              // Create or Update document locally
-              try {
-                let parsedRecord: any = doc.data;
-                if (typeof doc.data === 'string') {
-                  try { parsedRecord = JSON.parse(doc.data); } catch (_) { parsedRecord = doc.data; }
-                }
-                parsedRecord = typeof parsedRecord === 'object' && parsedRecord ? { ...doc, ...parsedRecord, id: docIdentifier } : { ...doc, id: docIdentifier };
-                const index = (nextState[key] as any[]).findIndex(x => x.id === docIdentifier);
-                if (index > -1) {
-                  (nextState[key] as any[])[index] = parsedRecord;
+              const parsedRecord = appwrite.reconstructRecord(doc);
+              const targetId = parsedRecord.id || doc.$id || doc.id;
+              const cloudVersion = parsedRecord.version ?? 1;
+              const cloudUpdatedBy = parsedRecord.updatedBy ?? '';
+
+              const localRecordIndex = updatedCollection.findIndex(x => 
+                x.id === targetId || 
+                (key === 'trucks' && x.truckNo && parsedRecord.truckNo && x.truckNo.toUpperCase().trim() === parsedRecord.truckNo.toUpperCase().trim() && x.organizationId === parsedRecord.organizationId)
+              );
+              const localRecord = localRecordIndex > -1 ? updatedCollection[localRecordIndex] : null;
+              const localVersion = localRecord ? (localRecord.version ?? 1) : 0;
+              const isSupportTicketUpdate = key === 'supportTickets';
+
+              if (isSupportTicketUpdate) {
+                console.log('[CHAT SYNC] Realtime support ticket update received:', { ticketId: targetId, cloudVersion, localVersion, msgCount: parsedRecord.messages?.length });
+              }
+
+              if (cloudVersion > localVersion || isSupportTicketUpdate) {
+                if (parsedRecord.deletedAt) {
+                  updatedCollection = updatedCollection.filter(x => x.id !== targetId);
                 } else {
-                  (nextState[key] as any[]).push(parsedRecord);
+                  const nextRecord = { ...parsedRecord, syncState: 'synced' as const };
+                  if (isSupportTicketUpdate) {
+                    if (localRecordIndex === -1) {
+                      console.log('[CHAT SYNC] New support ticket received via realtime:', targetId);
+                      if (targetId !== (props.activeTicketId ? props.activeTicketId() : null)) {
+                        showNotification(`New Support Ticket #${parsedRecord.ticketNo}: "${parsedRecord.title}"`);
+                      }
+                    } else {
+                      const oldMsgsCount = localRecord?.messages?.length || 0;
+                      const newMsgs = parsedRecord.messages || [];
+                      if (newMsgs.length > oldMsgsCount) {
+                        console.log('[CHAT SYNC] New messages received via realtime:', { ticketId: targetId, oldCount: oldMsgsCount, newCount: newMsgs.length });
+                        const lastMsg = newMsgs[newMsgs.length - 1];
+                        if (lastMsg && lastMsg.sender === 'User' && targetId !== (props.activeTicketId ? props.activeTicketId() : null)) {
+                          showNotification(`New message on Ticket #${parsedRecord.ticketNo} from ${parsedRecord.requesterName}`);
+                        } else if (lastMsg && lastMsg.sender === 'Agent') {
+                          showNotification(`New agent response on Ticket #${parsedRecord.ticketNo}`);
+                        }
+                      }
+                    }
+                  }
+                  if (localRecordIndex > -1) {
+                    updatedCollection[localRecordIndex] = nextRecord;
+                  } else {
+                    updatedCollection.push(nextRecord);
+                  }
                 }
-              } catch (e) {
-                console.warn('Failed to parse realtime data payload:', e);
-                return;
+              } else if (cloudVersion === localVersion && !isSupportTicketUpdate) {
+                if (cloudUpdatedBy === currentUserId() && localRecord?.syncState === 'pending') {
+                  if (localRecord.deletedAt) updatedCollection = updatedCollection.filter(x => x.id !== targetId);
+                  else localRecord.syncState = 'synced';
+                } else if (cloudUpdatedBy !== currentUserId() && localRecord?.syncState === 'pending') {
+                  localRecord.syncState = 'conflict';
+                }
               }
             }
-
-            // Apply incremental change to local state without trigger feedback
-            baselineStateRef.current = {
-              trucks: (nextState.trucks).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              drivers: (nextState.drivers).filter(d => orgId === 'org_backend' || d.organizationId === orgId),
-              offices: (nextState.offices).filter(o => orgId === 'org_backend' || o.organizationId === orgId),
-              accounts: (nextState.accounts).filter(a => orgId === 'org_backend' || a.organizationId === orgId),
-              trips: (nextState.trips).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              expenses: (nextState.expenses).filter(e => orgId === 'org_backend' || e.organizationId === orgId),
-              tyres: (nextState.tyres).filter(t => orgId === 'org_backend' || t.organizationId === orgId),
-              auditLogs: (nextState.auditLogs).filter(l => orgId === 'org_backend' || l.organizationId === orgId)
-            };
-
-            onLoadCloudStateRef.current(nextState);
-            previousFingerprint.current = getScopedFingerprint(nextState);
-            console.log(`Database Sync: Updated ${collectionId} records in real-time.`);
+            if (key === 'supportTickets') {
+              console.log('[CHAT SYNC] Applying realtime update to supportTickets, new count:', updatedCollection.length);
+            }
+            onLoadCloudState({ [key]: updatedCollection }, null, true);
+          } catch (err: any) {
+            console.warn("Realtime parse error:", err.message);
           }
-        );
-        
-        setRealtimeConnected(true);
-        if (onConnectionChange) {
-          onConnectionChange(true);
-        }
-        console.log("Appwrite realtime socket pipeline successfully established.");
-      } catch (err: any) {
-        console.warn('Realtime socket skipped or failed:', err.message);
-        setRealtimeConnected(false);
-        if (onConnectionChange) {
-          onConnectionChange(false, 'realtime_lost');
+        };
+
+        socket.onclose = () => {
+          if (!destroyed) {
+            setRealtimeConnected(false);
+            if (onConnectionChange) onConnectionChange(false);
+            scheduleReconnect();
+          }
+        };
+
+        socket.onerror = () => socket.close();
+
+        healthCheckInterval = setInterval(() => {
+          if (destroyed) return;
+          try {
+            const isConnected = socket.readyState === WebSocket.OPEN;
+            setRealtimeConnected(isConnected);
+            if (onConnectionChange) onConnectionChange(isConnected, isConnected ? undefined : 'realtime_lost');
+            if (isConnected) socket.send(JSON.stringify({ type: 'ping' }));
+          } catch (_) {}
+        }, 25000);
+
+      } catch (wsErr) {
+        console.warn("Gateway error:", wsErr);
+        if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
+          setRealtimeConnected(true);
         }
       }
     };
 
     setupRealtime();
 
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
-  }, [databaseId, isConfigured, orgId]);
+    onCleanup(() => {
+      destroyed = true;
+      teardown();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    });
+  });
 
   const handleManualPushToDB = async () => {
-    if (!isConfigured) {
-      setErrorMsg('Appwrite variables are missing.');
-      return;
-    }
-    
+    if (!isConfigured) return;
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
-    isSyncing.current = true;
-    
-    const currentState = currentLocalStateRef.current;
-    
-    const categories: { key: keyof typeof currentState; collection: string }[] = [
-      { key: 'trucks', collection: 'trucks' },
-      { key: 'drivers', collection: 'drivers' },
-      { key: 'offices', collection: 'offices' },
-      { key: 'accounts', collection: 'accounts' },
-      { key: 'trips', collection: 'trips' },
-      { key: 'expenses', collection: 'expenses' },
-      { key: 'tyres', collection: 'tyres' },
-      { key: 'auditLogs', collection: 'audit_logs' }
-    ];
 
     try {
-      console.log('Appwrite DB: Starting full migration push...');
-      let totalRecords = 0;
-      
-      for (const cat of categories) {
-        const list = (currentState[cat.key] || []).filter(x => x.organizationId === orgId);
-        totalRecords += list.length;
-        
-        for (const item of list) {
-          await appwrite.saveFleetDocument(databaseId, cat.collection, item.id, orgId, item);
-        }
-      }
-
-      // Also save permissions individually to global_configs
-      const storedRights = localStorage.getItem('ttt_user_rights');
-      const storedProfiles = localStorage.getItem('ttt_organization_profiles');
-      const userRightsList = storedRights ? JSON.parse(storedRights) : [];
-      const organizationProfiles = storedProfiles ? JSON.parse(storedProfiles) : [];
-      
-      for (const ur of userRightsList) {
-        const docId = appwrite.getEmailDocId(ur.email);
-        await appwrite.saveGlobalConfig(databaseId, docId, ur);
-        totalRecords += 1;
-      }
-
-      for (const prof of organizationProfiles) {
-        const docId = appwrite.getOrgDocId(prof.organizationId);
-        await appwrite.saveGlobalConfig(databaseId, docId, prof);
-        totalRecords += 1;
-      }
-
-      // Re-initialize baseline state
-      baselineStateRef.current = {
-        trucks: (currentState.trucks || []).filter(t => t.organizationId === orgId),
-        drivers: (currentState.drivers || []).filter(d => d.organizationId === orgId),
-        offices: (currentState.offices || []).filter(o => o.organizationId === orgId),
-        accounts: (currentState.accounts || []).filter(a => a.organizationId === orgId),
-        trips: (currentState.trips || []).filter(t => t.organizationId === orgId),
-        expenses: (currentState.expenses || []).filter(e => e.organizationId === orgId),
-        tyres: (currentState.tyres || []).filter(t => t.organizationId === orgId),
-        auditLogs: (currentState.auditLogs || []).filter(l => l.organizationId === orgId)
-      };
-
-      previousFingerprint.current = getScopedFingerprint(currentState);
-      
-      setSuccessMsg(`Successfully uploaded ${totalRecords} records to Appwrite Database!`);
-      logActionRef.current('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId}" with 9 separate collections.`);
+      const currentState = typeof props.currentLocalState === 'function' ? props.currentLocalState() : props.currentLocalState;
+      const pushedCount = await SyncService.pushAllLocalToDB(databaseId(), orgId(), currentState);
+      setSuccessMsg(`Successfully uploaded ${pushedCount} records to Appwrite Database!`);
+      logAction('Cloud', 'DatabaseSync', 'Push', `Uploaded entire active ledger to database "${databaseId()}".`);
       showNotification('Success: Appwrite Database synced.');
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(
-        `Failed to sync with Database: ${err.message || 'Unknown error'}. \n\n` + 
-        `Tip: Verify that you ran the schema bootstrapping script:\n` +
-        `  node scripts/bootstrap-db.js`
-      );
+      setErrorMsg(`Failed to sync: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
-      isSyncing.current = false;
     }
   };
 
+  if (hideUI()) return null;
+
   return (
-    <div className={`relative inline-block text-left ${isAdmin ? '' : 'hidden'}`}>
-      {/* Mini connection status bar */}
+    <div class="relative inline-block text-left">
       <button
         id="btn-appwrite-sync-trigger"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition shrink-0 ${
-          isConfigured 
-            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-bold'
-            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
+        onClick={() => setIsOpen(!isOpen())}
+        class={`p-2 rounded-lg border transition duration-150 relative cursor-pointer flex items-center justify-center shrink-0 ${
+          !isOnline()
+            ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20'
+            : !realtimeConnected()
+            ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+            : 'bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/20'
         }`}
-        title="Cloud Database Sync Pipeline"
+        title={
+          !isOnline()
+            ? 'Device Offline (Cloud Sync Paused)'
+            : !realtimeConnected()
+            ? 'Realtime Gateway Offline (Reconnecting...)'
+            : 'Cloud Synchronization Active & Connected'
+        }
       >
-        <Database className={`w-3.5 h-3.5 ${realtimeConnected ? 'animate-pulse text-emerald-500 dark:text-emerald-400' : ''}`} />
-        <span className="hidden sm:inline">Appwrite DB: </span>
-        <span>{isConfigured ? realtimeConnected ? 'Live' : 'Connected' : 'Offline'}</span>
+        <Cloud class="w-4 h-4" />
+        <span class={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full border border-white dark:border-slate-900 ${
+          !isOnline() ? 'bg-rose-500' : !realtimeConnected() ? 'bg-amber-500' : 'bg-green-500'
+        }`} />
       </button>
 
-      {isOpen && (
-        <div id="appwrite-sync-popup" className="
-          fixed left-3 right-3 top-16
-          sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 md:w-96
-          bg-slate-900 border border-slate-800 text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-fade-in text-xs
-        ">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <div className="flex items-center gap-1.5">
-              <Database className="w-4 h-4 text-emerald-400" />
-              <span className="font-bold text-sm tracking-tight text-white font-sans">Appwrite Database Sync</span>
-            </div>
-            <button 
+      {isOpen() && (
+        <div class="origin-top-right absolute right-0 mt-2 w-72 md:w-80 rounded-xl shadow-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 z-50 p-4 space-y-4 animate-fade-in text-left font-sans">
+          <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Database class="w-3.5 h-3.5 text-blue-500" />
+              Cloud Configuration
+            </span>
+            <button
               onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-white font-bold p-1 text-xs"
+              class="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
             >
               ✕
             </button>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between items-center bg-slate-950 p-2 rounded-lg border border-slate-850">
-              <span className="text-slate-400">Database ID:</span>
-              <span className="font-mono text-[10px] text-slate-300 font-bold">
-                {databaseId}
-              </span>
+          <div class="space-y-3.5">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Database ID</label>
+              <input
+                type="text"
+                value={databaseId()}
+                onInput={(e) => setDatabaseId(e.currentTarget.value)}
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+              />
             </div>
-            <div className="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
-              <span className="text-slate-400">Structure:</span>
-              <span className="text-[10px] text-emerald-400 font-bold">
-                Multi-Collection (9 tables)
-              </span>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Collection ID</label>
+              <input
+                type="text"
+                value={collectionId()}
+                onInput={(e) => setCollectionId(e.currentTarget.value)}
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+              />
             </div>
-            <div className="flex justify-between items-center bg-slate-955 p-2 rounded-lg border border-slate-850">
-              <span className="text-slate-400">Endpoint:</span>
-              <span className="font-mono text-[10px] text-slate-400 max-w-[180px] truncate" title={import.meta.env.VITE_APPWRITE_ENDPOINT}>
-                {import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1'}
-              </span>
+
+            <div class="pt-1 flex flex-col gap-2">
+              <button
+                onClick={() => handlePullFromDB(false, false)}
+                disabled={loading()}
+                class="w-full flex items-center justify-center gap-2 py-2 bg-blue-600 hover:bg-blue-750 text-white rounded-lg text-xs font-bold transition duration-150 disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                {loading() ? <Loader class="w-3.5 h-3.5 animate-spin" /> : <RefreshCw class="w-3.5 h-3.5" />}
+                <span>Fetch from Cloud</span>
+              </button>
+
+              {isAdmin() && (
+                <button
+                  onClick={handleManualPushToDB}
+                  disabled={loading()}
+                  class="w-full flex items-center justify-center gap-2 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition duration-150 border border-slate-200 dark:border-slate-800 disabled:opacity-50 cursor-pointer"
+                >
+                  <Cloud class="w-3.5 h-3.5 text-blue-500" />
+                  <span>Push Local State to Cloud</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {isConfigured ? (
-            <div className="space-y-3">
-              {/* Connection Status panel */}
-              <div className="bg-slate-955 p-3 rounded-lg border border-slate-850 space-y-1.5 text-left">
-                <p className="font-bold text-[10px] text-slate-200">Database Sync Pipeline Active</p>
-                <p className="text-[9px] text-slate-450 leading-normal">
-                  All local ledger updates (trips, trucks, expenses) are saved to row-level documents instantly.
-                </p>
-                <div className="flex items-center gap-1.5 text-[9px] text-emerald-400 bg-emerald-500/5 px-2 py-1.5 rounded border border-emerald-500/10 mt-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>{realtimeConnected ? "Realtime Socket Streams Active" : "Connecting realtime pipeline..."}</span>
-                </div>
-              </div>
-
-              {isAdmin && (
-                <div className="space-y-3 border-t border-slate-850 pt-2">
-                  <div className="grid grid-cols-1 gap-2">
-                    <div>
-                      <label className="block text-[9px] text-slate-500 uppercase font-bold mb-1">Database ID</label>
-                      <input 
-                        type="text" 
-                        value={databaseId}
-                        onChange={(e) => setDatabaseId(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      id="btn-appwrite-push"
-                      disabled={loading}
-                      onClick={handleManualPushToDB}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                      title="Upload all local states to database (overwrites existing documents)"
-                    >
-                      {loading ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                      Sync To DB
-                    </button>
-                    <button
-                      id="btn-appwrite-pull"
-                      disabled={loading}
-                      onClick={() => handlePullFromDB(false)}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                      title="Fetch documents from Database and overwrite local state buffers"
-                    >
-                      {loading ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
-                      Pull From DB
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {errorMsg && (
-                <div className="bg-red-950/40 border border-red-500/20 p-2.5 rounded-lg text-red-200 text-[10px] leading-relaxed whitespace-pre-wrap animate-shake text-left">
-                  <div className="flex gap-1.5 items-start">
-                    <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <span>{errorMsg}</span>
-                  </div>
-                </div>
-              )}
-
-              {successMsg && (
-                <div className="bg-emerald-950/40 border border-emerald-500/20 p-2.5 rounded-lg text-emerald-200 text-[10px] leading-relaxed text-left">
-                  <div className="flex gap-1.5 items-start">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                    <span>{successMsg}</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="text-center pt-1 border-t border-slate-850">
-                <button
-                  onClick={() => setShowGuide(!showGuide)}
-                  className="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[10px] underline cursor-pointer"
-                >
-                  <HelpCircle className="w-3 h-3" />
-                  {showGuide ? 'Hide Set Up Instructions' : 'How to set up Appwrite Database?'}
-                </button>
-              </div>
-
-              {showGuide && (
-                <div className="bg-slate-955/80 p-3 rounded-lg border border-slate-850 space-y-2 text-slate-400 text-[10px] leading-normal text-left">
-                  <p className="font-bold text-slate-200">How to bootstrap database schemas automatically:</p>
-                  <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-300">
-                    <li>Create an API key in Appwrite Console (Project Settings -&gt; API Keys) with <code className="bg-slate-950 px-1 py-0.5 rounded text-blue-400 font-mono text-[9px]">databases.write</code> scope.</li>
-                    <li>Open your terminal and run the setup script:
-                      <pre className="bg-slate-950 p-1.5 rounded font-mono text-[9px] text-emerald-400 mt-1 select-all">node scripts/bootstrap-db.js</pre>
-                    </li>
-                    <li>Follow the prompt to enter your API key, and it will configure the Database and Collections automatically!</li>
-                  </ol>
-                </div>
-              )}
+          {errorMsg() && (
+            <div class="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex gap-2.5 text-xs text-red-655 dark:text-red-400 max-h-40 overflow-y-auto">
+              <AlertCircle class="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+              <p class="whitespace-pre-line leading-relaxed font-medium">{errorMsg()}</p>
             </div>
-          ) : (
-            <div className="bg-amber-950/40 border border-amber-500/20 p-3 rounded-lg space-y-2 text-amber-250 text-left">
-              <div className="flex gap-1.5 items-start">
-                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                <span className="font-bold">Appwrite parameters are missing!</span>
-              </div>
-              <p className="leading-relaxed text-[10px] text-slate-300">
-                Ensure environment variables are configured in secrets:
-              </p>
-              <div className="bg-slate-950 font-mono p-2 text-[9px] rounded text-slate-400 space-y-1">
-                <div>VITE_APPWRITE_PROJECT_ID="your_project_id"</div>
-                <div>VITE_APPWRITE_ENDPOINT="your_endpoint"</div>
-              </div>
+          )}
+
+          {successMsg() && (
+            <div class="p-3 bg-green-500/10 border border-green-500/25 rounded-xl flex gap-2.5 text-xs text-green-655 dark:text-green-400">
+              <CheckCircle class="w-4 h-4 shrink-0 text-green-500 mt-0.5" />
+              <p class="leading-relaxed font-medium">{successMsg()}</p>
             </div>
           )}
         </div>

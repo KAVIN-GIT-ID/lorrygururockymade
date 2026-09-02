@@ -1,0 +1,23 @@
+{
+  "name": "truck-trip-tracker-backup",
+  "version": "1.0.0",
+  "description": "Independent Appwrite Automated Backup & Restore Microservice",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types worker.ts",
+    "restore": "node --experimental-strip-types restore.ts",
+    "clone-schema": "node --experimental-strip-types cloneSchema.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "googleapis": "^140.0.1",
+    "node-appwrite": "^11.1.1",
+    "tar": "^7.5.17"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "@types/tar": "^6.1.13",
+    "typescript": "^5.4.5"
+  }
+}

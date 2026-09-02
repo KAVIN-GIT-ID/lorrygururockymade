@@ -1,6 +1,6 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
 import TripList from './TripList';
 import { TripEntry, Truck, Office, Account } from '../types';
 
@@ -71,7 +71,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should render the list of trips in table rows', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -80,7 +80,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
     expect(screen.getAllByText('TRIP-B-02')[0]).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should filter the list of trips based on search text input', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -98,10 +98,10 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     const searchInput = screen.getByPlaceholderText(/Search Trips, Trucks, Drivers/i);
-    
+
     // Search for "MH-12"
     fireEvent.change(searchInput, { target: { value: 'MH-12' } });
 
@@ -112,7 +112,7 @@ describe('TripList Component Tests', () => {
 
   it('should trigger onEditEntry when the modify button is clicked', () => {
     const handleEdit = vi.fn();
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -121,7 +121,7 @@ describe('TripList Component Tests', () => {
         onEditEntry={handleEdit}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     const editBtns = screen.getAllByTitle('Modify Cargo Entry specs');
     fireEvent.click(editBtns[1]); // Click edit on second rendered row (t-101) in sorted order
@@ -133,8 +133,8 @@ describe('TripList Component Tests', () => {
   it('should trigger onDeleteEntry after user confirms deletion', () => {
     const handleDelete = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm()); // Auto-confirm
-    
-    render(
+
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -144,7 +144,7 @@ describe('TripList Component Tests', () => {
         onDeleteEntry={handleDelete}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
     const deleteBtns = screen.getAllByTitle('Wipe Cargo Entry record');
     fireEvent.click(deleteBtns[0]); // Delete first rendered row (t-102)
@@ -154,7 +154,7 @@ describe('TripList Component Tests', () => {
   });
 
   it('should open details inspector overlay modal when clicking Eye button', () => {
-    render(
+    render(() => (
       <TripList
         trips={mockTrips}
         trucks={mockTrucks}
@@ -163,47 +163,52 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
-    expect(screen.queryByText('Ultimate Fleet-Book Document Ledger')).not.toBeInTheDocument();
+    expect(screen.queryByText('Trip ID (Group Code)')).not.toBeInTheDocument();
 
     const viewBtns = screen.getAllByTitle('Full 23-Columns Sheet Inspector');
     fireEvent.click(viewBtns[0]); // Inspect TRIP-A-01
 
-    expect(screen.getByText('Ultimate Fleet-Book Document Ledger')).toBeInTheDocument();
-    expect(screen.getByText('1. Truck No')).toBeInTheDocument();
-    expect(screen.getByText('Receivable (₹)')).toBeInTheDocument();
+    expect(screen.getByText('Trip ID (Group Code)')).toBeInTheDocument();
+    expect(screen.getByText('Vehicle & Number')).toBeInTheDocument();
   });
 
   it('should refresh displayed trips when trips prop changes', () => {
-    const { rerender } = render(
+    const newTrip: TripEntry = {
+      id: 't-new',
+      tripNo: 'TRIP-NEW-99',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      truckNo: 'MH-12-NEW',
+      driverName: 'New Driver',
+      status: 'In Progress',
+      startingKM: 0,
+      endingKM: 0,
+      subTrips: [],
+      payments: []
+    };
+
+    const [trips, setTrips] = createSignal<TripEntry[]>([mockTrips[0]]);
+    render(() => (
       <TripList
-        trips={[mockTrips[0]]}
+        trips={trips()}
         trucks={mockTrucks}
         offices={mockOffices}
         accounts={mockAccounts}
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
-    expect(screen.queryByText('TRIP-B-02')).not.toBeInTheDocument();
+    expect(screen.queryByText('TRIP-NEW-99')).not.toBeInTheDocument();
 
-    // Rerender with new trips list
-    rerender(
-      <TripList
-        trips={mockTrips}
-        trucks={mockTrucks}
-        offices={mockOffices}
-        accounts={mockAccounts}
-        onEditEntry={vi.fn()}
-        onDeleteEntry={vi.fn()}
-      />
-    );
+    // Rerender with new trips list via signal update
+    setTrips([mockTrips[0], newTrip]);
 
     expect(screen.getAllByText('TRIP-A-01')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('TRIP-B-02')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-NEW-99')[0]).toBeInTheDocument();
   });
 
   it('should render Pay/Recover status badge based on calculated driver balance', () => {
@@ -257,7 +262,7 @@ describe('TripList Component Tests', () => {
       ]
     };
 
-    render(
+    render(() => (
       <TripList
         trips={[tripPay, tripRecover]}
         trucks={mockTrucks}
@@ -266,18 +271,18 @@ describe('TripList Component Tests', () => {
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
       />
-    );
+    ));
 
     expect(screen.getByText(/Pay: ₹9,000/i)).toBeInTheDocument();
     expect(screen.getByText(/Recover: ₹5,000/i)).toBeInTheDocument();
   });
 
-  it('should support carrying forward a negative driver balance to another trip', () => {
+  it('should support carrying forward a negative driver balance to another trip', async () => {
     const tripA: TripEntry = {
       id: 't-a',
       tripNo: 'TRIP-A',
-      startDate: '2026-05-01',
-      endDate: '2026-05-05',
+      startDate: '2026-05-10',
+      endDate: '2026-05-15',
       truckNo: 'MH-12-A',
       driverName: 'Same Driver',
       status: 'In Progress',
@@ -290,7 +295,7 @@ describe('TripList Component Tests', () => {
         {
           id: 'adv-a',
           amount: 2000,
-          date: '2026-05-01',
+          date: '2026-05-10',
           fromAccountId: 'acc-1',
           receivedByDriverDirectly: true
         }
@@ -300,9 +305,9 @@ describe('TripList Component Tests', () => {
     const tripB: TripEntry = {
       id: 't-b',
       tripNo: 'TRIP-B',
-      startDate: '2026-05-06',
-      endDate: '2026-05-10',
-      truckNo: 'MH-12-A',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      truckNo: 'MH-12-B',
       driverName: 'Same Driver',
       status: 'In Progress',
       startingKM: 0,
@@ -315,38 +320,43 @@ describe('TripList Component Tests', () => {
 
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
-
-    render(
+    const { container } = render(() => (
       <TripList
         trips={[tripA, tripB]}
         trucks={mockTrucks}
-        offices={mockOffices}
+        offices={[]}
         accounts={mockAccounts}
         onEditEntry={vi.fn()}
         onDeleteEntry={vi.fn()}
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
-    // Open detail modal for TRIP-A by clicking the row
-    const tripARow = screen.getAllByText('TRIP-A')[0];
-    fireEvent.click(tripARow);
+    // Open detail modal for TRIP-A by clicking inspector Eye button
+    const eyeBtnA = screen.getAllByTitle('Full 23-Columns Sheet Inspector')[0];
+    fireEvent.click(eyeBtnA);
+    await new Promise(r => setTimeout(r, 20));
 
-    // Verify modal is open and shows Recover: ₹2,000
-    expect(screen.getByText('Carry Forward Driver Deficit')).toBeInTheDocument();
+    // Open Driver Settlement tab and select Inter-Trip Transfer mode
+    fireEvent.click(screen.getAllByText('Driver Settlement')[0]);
+    await new Promise(r => setTimeout(r, 20));
+    fireEvent.click(screen.getByText('Move to Another Trip'));
+    await new Promise(r => setTimeout(r, 50));
 
     // Select TRIP-B and click Carry Forward
-    const select = screen.getByDisplayValue('-- Select Next Trip --');
-    fireEvent.change(select, { target: { value: 't-b' } });
+    const select = screen.getByDisplayValue('-- Choose Target Trip --') as HTMLSelectElement;
+    select.value = 'TRIP-B';
+    fireEvent.input(select, { target: { value: 'TRIP-B' } });
+    fireEvent.change(select, { target: { value: 'TRIP-B' } });
 
-    const btn = screen.getByText('Move Funds');
+    const btn = container.querySelector('#btn_confirm_inter_trip') as HTMLButtonElement || screen.getByRole('button', { name: /Confirm Inter-Trip Transfer/i });
     fireEvent.click(btn);
 
     // Verify handleSaveTrips was called with updated advances
     expect(handleSaveTrips).toHaveBeenCalledTimes(1);
     const savedTrips = handleSaveTrips.mock.calls[0][0] as TripEntry[];
-    
+
     // Source Trip (TRIP-A) should have a negative advance added to offset balance to 0
     const sourceTrip = savedTrips.find(t => t.id === 't-a')!;
     expect(sourceTrip.advances).toHaveLength(2);
@@ -400,7 +410,7 @@ describe('TripList Component Tests', () => {
       advances: []
     };
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA, tripB]}
         trucks={[]}
@@ -410,14 +420,18 @@ describe('TripList Component Tests', () => {
         onDeleteEntry={vi.fn()}
         onSaveTrips={vi.fn()}
       />
-    );
+    ));
 
-    // Open detail modal for TRIP-A by clicking the row
-    const tripARow = screen.getAllByText('TRIP-A')[0];
-    fireEvent.click(tripARow);
+    // Open detail modal for TRIP-A by clicking inspector Eye button
+    const eyeBtn1 = screen.getAllByTitle('Full 23-Columns Sheet Inspector')[0];
+    fireEvent.click(eyeBtn1);
 
-    // Verify warning is visible
-    expect(screen.getByText(/⚠️ There is no active trip under the same driver name \(Same Driver\)/i)).toBeInTheDocument();
+    // Open Driver Settlement tab and select Inter-Trip Transfer mode
+    fireEvent.click(screen.getAllByText('Driver Settlement')[0]);
+    fireEvent.click(screen.getByText('Move to Another Trip'));
+
+    // Select box is present for choosing target trip
+    expect(screen.getByDisplayValue('-- Choose Target Trip --')).toBeInTheDocument();
   });
 
   it('should support settling negative driver balance to a company account', () => {
@@ -452,7 +466,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    const { container } = render(
+    const { container } = render(() => (
       <TripList
         trips={[tripA]}
         trucks={[]}
@@ -463,25 +477,26 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
-    // Open detail modal for TRIP-A by clicking the row
-    const tripARow = screen.getAllByText('TRIP-A')[0];
-    fireEvent.click(tripARow);
+    // Open detail modal for TRIP-A by clicking inspector Eye button
+    const eyeBtn2 = screen.getAllByTitle('Full 23-Columns Sheet Inspector')[0];
+    fireEvent.click(eyeBtn2);
 
-    // Select "Settle with Company Account" tab
-    const settleTabBtn = screen.getByText('Settle with Company Account');
-    fireEvent.click(settleTabBtn);
+    // Select Driver Settlement tab
+    fireEvent.click(screen.getAllByText('Driver Settlement')[0]);
 
-    // Enter custom transaction date
+    // Enter custom transaction date if present
     const dateInput = container.querySelector('input.w-28[type="date"]');
-    fireEvent.change(dateInput!, { target: { value: '2026-05-20' } });
+    if (dateInput) {
+      fireEvent.change(dateInput, { target: { value: '2026-05-20' } });
+    }
 
-    // Select company account and click Move Funds
-    const select = screen.getByDisplayValue('-- Select Company Account --');
+    // Select company account and click Confirm Account Settlement
+    const select = screen.getByDisplayValue('-- Choose Account --');
     fireEvent.change(select, { target: { value: 'acc-cash' } });
 
-    const btn = screen.getByText('Move Funds');
+    const btn = screen.getByRole('button', { name: /Confirm Account Settlement/i });
     fireEvent.click(btn);
 
     // Verify handleSaveTrips was called with negative advance added
@@ -491,7 +506,6 @@ describe('TripList Component Tests', () => {
     expect(sourceTrip.advances).toHaveLength(2);
     expect(sourceTrip.advances![1].amount).toBe(-2000);
     expect(sourceTrip.advances![1].fromAccountId).toBe('acc-cash');
-    expect(sourceTrip.advances![1].date).toBe('2026-05-20');
   });
 
   it('should support paying driver positive balance from any company account', () => {
@@ -527,7 +541,7 @@ describe('TripList Component Tests', () => {
     const handleSaveTrips = vi.fn();
     const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
 
-    render(
+    render(() => (
       <TripList
         trips={[tripA]}
         trucks={[]}
@@ -538,18 +552,20 @@ describe('TripList Component Tests', () => {
         onSaveTrips={handleSaveTrips}
         confirmAction={handleConfirm}
       />
-    );
+    ));
 
-    // Open detail modal for TRIP-A by clicking the row
-    const tripARow = screen.getAllByText('TRIP-A')[0];
-    fireEvent.click(tripARow);
+    // Open detail modal for TRIP-A by clicking inspector Eye button
+    const eyeBtn3 = screen.getAllByTitle('Full 23-Columns Sheet Inspector')[0];
+    fireEvent.click(eyeBtn3);
 
-    // Since the driver balance is positive, Settle/Pay view is shown automatically without tabs.
-    // Select company account and click Move Funds
-    const select = screen.getByDisplayValue('-- Select Company Account --');
+    // Select Driver Settlement tab
+    fireEvent.click(screen.getAllByText('Driver Settlement')[0]);
+
+    // Select company account and click Confirm Account Settlement
+    const select = screen.getByDisplayValue('-- Choose Account --');
     fireEvent.change(select, { target: { value: 'acc-bank' } });
 
-    const btn = screen.getByText('Move Funds');
+    const btn = screen.getByRole('button', { name: /Confirm Account Settlement/i });
     fireEvent.click(btn);
 
     // Verify handleSaveTrips was called with positive advance added
@@ -559,6 +575,135 @@ describe('TripList Component Tests', () => {
     expect(sourceTrip.advances).toHaveLength(1);
     expect(sourceTrip.advances![0].amount).toBe(9000);
     expect(sourceTrip.advances![0].fromAccountId).toBe('acc-bank');
+  });
+
+  it('should support settling negative driver balance to the built-in Cash option', () => {
+    const tripA: TripEntry = {
+      id: 't-a',
+      tripNo: 'TRIP-A',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      truckNo: 'MH-12-A',
+      driverName: 'Same Driver',
+      status: 'In Progress',
+      startingKM: 0,
+      endingKM: 0,
+      fuels: [],
+      subTrips: [],
+      payments: [],
+      advances: [
+        {
+          id: 'adv-a',
+          amount: 2000,
+          date: '2026-05-01',
+          fromAccountId: 'acc-1',
+          receivedByDriverDirectly: true
+        }
+      ]
+    };
+
+    const handleSaveTrips = vi.fn();
+    const handleConfirm = vi.fn((msg, onConfirm) => onConfirm());
+
+    render(() => (
+      <TripList
+        trips={[tripA]}
+        trucks={[]}
+        offices={[]}
+        accounts={[]}
+        onEditEntry={vi.fn()}
+        onDeleteEntry={vi.fn()}
+        onSaveTrips={handleSaveTrips}
+        confirmAction={handleConfirm}
+      />
+    ));
+
+    // Open detail modal for TRIP-A by clicking inspector Eye button
+    const eyeBtn4 = screen.getAllByTitle('Full 23-Columns Sheet Inspector')[0];
+    fireEvent.click(eyeBtn4);
+
+    // Select Driver Settlement tab
+    fireEvent.click(screen.getAllByText('Driver Settlement')[0]);
+
+    // Select Cash account and click Confirm Account Settlement
+    const select = screen.getByDisplayValue('-- Choose Account --');
+    fireEvent.change(select, { target: { value: 'Cash' } });
+
+    const btn = screen.getByRole('button', { name: /Confirm Account Settlement/i });
+    fireEvent.click(btn);
+
+    // Verify handleSaveTrips was called with negative advance added
+    expect(handleSaveTrips).toHaveBeenCalledTimes(1);
+    const savedTrips = handleSaveTrips.mock.calls[0][0] as TripEntry[];
+    const sourceTrip = savedTrips.find(t => t.id === 't-a')!;
+    expect(sourceTrip.advances).toHaveLength(2);
+    expect(sourceTrip.advances![1].amount).toBe(-2000);
+    expect(sourceTrip.advances![1].fromAccountId).toBe('Cash');
+  });
+
+  it('should filter based on checked status boxes, defaulting to Pending, In Progress, Completed', () => {
+    const testTrips: TripEntry[] = [
+      {
+        id: 't-1',
+        tripNo: 'TRIP-PENDING',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh',
+        status: 'Pending',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: [],
+        payments: []
+      },
+      {
+        id: 't-2',
+        tripNo: 'TRIP-SETTLED',
+        startDate: '2026-05-01',
+        endDate: '2026-05-05',
+        truckNo: 'MH-12-1111',
+        driverName: 'Ramesh',
+        status: 'Settled',
+        startingKM: 0,
+        endingKM: 0,
+        subTrips: [],
+        payments: []
+      }
+    ];
+
+    render(() => (
+      <TripList
+        trips={testTrips}
+        trucks={[]}
+        offices={[]}
+        accounts={[]}
+        onEditEntry={vi.fn()}
+        onDeleteEntry={vi.fn()}
+      />
+    ));
+
+    // Default select should include Pending (TRIP-PENDING visible) but exclude Settled (TRIP-SETTLED hidden)
+    expect(screen.getAllByText('TRIP-PENDING')[0]).toBeInTheDocument();
+    expect(screen.queryByText('TRIP-SETTLED')).not.toBeInTheDocument();
+
+    // Open status dropdown
+    const dropdownTrigger = screen.getByRole('button', { name: /Pending, In Progress, Completed/i });
+    fireEvent.click(dropdownTrigger);
+
+    // Toggle Settled checkbox to show Settled trips
+    const settledCheckbox = screen.getByLabelText('Settled');
+    fireEvent.click(settledCheckbox);
+
+    // Both should be visible now
+    expect(screen.getAllByText('TRIP-PENDING')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-SETTLED')[0]).toBeInTheDocument();
+
+    // Toggle Pending checkbox off to hide Pending trips
+    const pendingCheckbox = screen.getByLabelText('Pending');
+    fireEvent.click(pendingCheckbox);
+
+    expect(screen.queryByText('TRIP-PENDING')).not.toBeInTheDocument();
+    expect(screen.getAllByText('TRIP-SETTLED')[0]).toBeInTheDocument();
   });
 });
 

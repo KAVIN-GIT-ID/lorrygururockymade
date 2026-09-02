@@ -1,6 +1,6 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
 import UserAccessControl from './UserAccessControl';
 import { UserPermission, OrganizationProfile } from '../types';
 
@@ -44,7 +44,7 @@ const mockOrgProfile: OrganizationProfile = {
 
 describe('UserAccessControl Fuel Cards Management', () => {
   it('should render fuel cards section and existing card correctly', () => {
-    render(
+    render(() => (
       <UserAccessControl
         permissions={mockPermissions}
         orgProfile={mockOrgProfile}
@@ -56,7 +56,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
         currentUserEmail="admin@company.com"
         currentUserOrgId="org_test"
       />
-    );
+    ));
 
     expect(screen.getByText('Organization Fuel Cards (Accounts)')).toBeInTheDocument();
     expect(screen.getByText('HPCL primary card')).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
 
   it('should toggle new fuel card form and allow adding a card', () => {
     const handleUpdateProfile = vi.fn();
-    render(
+    render(() => (
       <UserAccessControl
         permissions={mockPermissions}
         orgProfile={mockOrgProfile}
@@ -77,7 +77,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
         currentUserEmail="admin@company.com"
         currentUserOrgId="org_test"
       />
-    );
+    ));
 
     // Form shouldn't be visible initially
     expect(screen.queryByText('Add New Fuel Card')).not.toBeInTheDocument();
@@ -108,7 +108,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
 
   it('should load pre-filled card details in edit mode and allow updating', () => {
     const handleUpdateProfile = vi.fn();
-    render(
+    render(() => (
       <UserAccessControl
         permissions={mockPermissions}
         orgProfile={mockOrgProfile}
@@ -120,7 +120,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
         currentUserEmail="admin@company.com"
         currentUserOrgId="org_test"
       />
-    );
+    ));
 
     // Click edit button
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -143,7 +143,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
     const confirmSpy = vi.fn().mockReturnValue(true);
     window.confirm = confirmSpy;
 
-    render(
+    render(() => (
       <UserAccessControl
         permissions={mockPermissions}
         orgProfile={mockOrgProfile}
@@ -155,7 +155,7 @@ describe('UserAccessControl Fuel Cards Management', () => {
         currentUserEmail="admin@company.com"
         currentUserOrgId="org_test"
       />
-    );
+    ));
 
     // Click delete button
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -185,7 +185,7 @@ describe('UserAccessControl Verification Manual Overrides', () => {
     const handleUpdatePermission = vi.fn();
     const handleShowNotification = vi.fn();
 
-    render(
+    render(() => (
       <UserAccessControl
         permissions={unverifiedPermissions}
         orgProfile={mockOrgProfile}
@@ -196,7 +196,7 @@ describe('UserAccessControl Verification Manual Overrides', () => {
         currentUserEmail="admin@company.com"
         currentUserOrgId="org_test"
       />
-    );
+    ));
 
     // Verify unverified statuses are rendered
     expect(screen.getAllByText('Email: Unverified')).toHaveLength(2); // Mobile and Desktop views

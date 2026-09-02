@@ -16,6 +16,23 @@ describe('dateUtils Unit Tests', () => {
       expect(date.getMonth()).toBe(4); // 0-indexed May
       expect(date.getDate()).toBe(27);
     });
+
+    it('should parse Indian format DD-MM-YYYY, DD/MM/YYYY, and DD.MM.YYYY correctly', () => {
+      const d1 = parseLocalDate('27-05-2026');
+      expect(d1.getFullYear()).toBe(2026);
+      expect(d1.getMonth()).toBe(4);
+      expect(d1.getDate()).toBe(27);
+
+      const d2 = parseLocalDate('05/08/2026');
+      expect(d2.getFullYear()).toBe(2026);
+      expect(d2.getMonth()).toBe(7); // August
+      expect(d2.getDate()).toBe(5);
+
+      const d3 = parseLocalDate('05.08.2026');
+      expect(d3.getFullYear()).toBe(2026);
+      expect(d3.getMonth()).toBe(7);
+      expect(d3.getDate()).toBe(5);
+    });
   });
 
   describe('formatDate', () => {

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { createSignal, createEffect, onMount, onCleanup } from 'solid-js';
+
 import { Truck, Driver, Office, Account, TripEntry, ExpenseEntry } from '../types';
 import { parseSpokenNumber, matchClosestOption, normalizeString } from '../utils/speechUtils';
 import { indianCities } from './indianCities';
 import { 
   Mic, MicOff, Volume2, VolumeX, Sparkles, RefreshCw, X, Send, 
   Check, Play, CornerDownLeft, AlertCircle, HelpCircle
-} from 'lucide-react';
+} from 'lucide-solid';
 
 interface VoiceAssistantProps {
   isOpen: boolean;
@@ -128,20 +129,20 @@ export default function VoiceAssistant({
   onSubmitExpense,
   voiceLang = 'en-IN'
 }: VoiceAssistantProps) {
-  const [activeFlow, setActiveFlow] = useState<'trip' | 'expense' | null>(null);
-  const [currentStepIdx, setCurrentStepIdx] = useState<number>(-1);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [formData, setFormData] = useState<Record<string, any>>({});
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [textInput, setTextInput] = useState('');
-  const [recognitionError, setRecognitionError] = useState<string | null>(null);
+  const [activeFlow, setActiveFlow] = createSignal<'trip' | 'expense' | null>(null);
+  const [currentStepIdx, setCurrentStepIdx] = createSignal<number>(-1);
+  const [messages, setMessages] = createSignal<Message[]>([]);
+  const [formData, setFormData] = createSignal<Record<string, any>>({});
+  const [isListening, setIsListening] = createSignal(false);
+  const [isSpeaking, setIsSpeaking] = createSignal(false);
+  const [isMuted, setIsMuted] = createSignal(false);
+  const [transcript, setTranscript] = createSignal('');
+  const [textInput, setTextInput] = createSignal('');
+  const [recognitionError, setRecognitionError] = createSignal<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const speechTimeoutRef = useRef<any>(null);
+  let messagesEndRef: HTMLDivElement | undefined;
+  let recognitionRef: any = null;
+  let speechTimeoutRef: any = null;
 
   const langCode = TRANSLATIONS[voiceLang] ? voiceLang : 'en-IN';
   const t = TRANSLATIONS[langCode];
@@ -312,7 +313,7 @@ export default function VoiceAssistant({
   };
 
   // Initialize Speech Recognition
-  useEffect(() => {
+  createEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
@@ -331,9 +332,9 @@ export default function VoiceAssistant({
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
+            finalTranscript += event.results[i][0].transcript();
           } else {
-            interimTranscript += event.results[i][0].transcript;
+            interimTranscript += event.results[i][0].transcript();
           }
         }
 
@@ -354,7 +355,7 @@ export default function VoiceAssistant({
         setIsListening(false);
       };
 
-      recognitionRef.current = rec;
+      recognitionRef = rec;
     } else {
       setRecognitionError('Speech recognition not supported in this browser.');
     }
@@ -367,15 +368,15 @@ export default function VoiceAssistant({
     return () => {
       stopVoiceAll();
     };
-  }, [isOpen, voiceLang]);
+  });
 
   // Scroll to bottom of chat
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, transcript]);
+  createEffect(() => {
+    messagesEndRef?.scrollIntoView({ behavior: 'smooth' });
+  });
 
-  const speakText = (text: string, callback?: () => void) => {
-    if (isMuted) {
+  function speakText(text: string, callback?: () => void) {
+    if (isMuted()) {
       if (callback) callback();
       return;
     }
@@ -415,42 +416,42 @@ export default function VoiceAssistant({
       setIsSpeaking(false);
       if (callback) callback();
     }
-  };
+  }
 
-  const startListening = () => {
-    if (isSpeaking) return;
-    if (recognitionRef.current) {
+  function startListening() {
+    if (isSpeaking()) return;
+    if (recognitionRef) {
       try {
-        recognitionRef.current.start();
+        recognitionRef.start();
       } catch (e) {
         // Recognition might already be running
       }
     }
-  };
+  }
 
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+  function stopListening() {
+    if (recognitionRef) {
+      recognitionRef.stop();
     }
     setIsListening(false);
-  };
+  }
 
-  const stopVoiceAll = () => {
+  function stopVoiceAll() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
+    if (recognitionRef) {
+      recognitionRef.abort();
     }
     setIsSpeaking(false);
     setIsListening(false);
-  };
+  }
 
-  const addMessage = (sender: 'assistant' | 'user', text: string, status?: 'success' | 'error' | 'neutral') => {
+  function addMessage(sender: 'assistant' | 'user', text: string, status?: 'success' | 'error' | 'neutral') {
     setMessages(prev => [...prev, { sender, text, timestamp: new Date(), status }]);
-  };
+  }
 
-  const greetUser = () => {
+  function greetUser() {
     setMessages([]);
     setActiveFlow(null);
     setCurrentStepIdx(-1);
@@ -656,35 +657,35 @@ export default function VoiceAssistant({
     ]
   };
 
-  const handleInputTextSubmit = (e?: React.FormEvent) => {
+  const handleInputTextSubmit = (e?: Event) => {
     if (e) e.preventDefault();
-    if (!textInput.trim()) return;
+    if (!textInput().trim()) return;
 
-    const userInput = textInput.trim();
+    const userInput = textInput().trim();
     setTextInput('');
     processUserInput(userInput);
   };
 
   // Watch for spoken transcripts
-  useEffect(() => {
-    if (transcript && !isSpeaking && !isListening) {
-      const finalInput = transcript;
+  createEffect(() => {
+    if (transcript() && !isSpeaking() && !isListening()) {
+      const finalInput = transcript();
       setTranscript('');
       processUserInput(finalInput);
     }
-  }, [isListening, transcript, isSpeaking]);
+  });
 
   // Restart recognition if listening was aborted prematurely while speaking is false
-  useEffect(() => {
-    if (!isListening && !isSpeaking && activeFlow !== null && currentStepIdx >= 0) {
+  createEffect(() => {
+    if (!isListening() && !isSpeaking() && activeFlow() !== null && currentStepIdx() >= 0) {
       const t = setTimeout(() => {
-        if (!isListening && !isSpeaking) {
+        if (!isListening() && !isSpeaking()) {
           startListening();
         }
       }, 500);
       return () => clearTimeout(t);
     }
-  }, [isListening, isSpeaking, activeFlow, currentStepIdx]);
+  });
 
   const processUserInput = (input: string) => {
     addMessage('user', input);
@@ -711,8 +712,8 @@ export default function VoiceAssistant({
     }
 
     if (normalizedInput === 'repeat' || normalizedInput === 'say again' || normalizedInput === 'what' || normalizedInput === 'दोहराएं' || normalizedInput === 'दोहराओ') {
-      if (activeFlow && currentStepIdx >= 0) {
-        const step = flows[activeFlow][currentStepIdx];
+      if (activeFlow() && currentStepIdx() >= 0) {
+        const step = flows[activeFlow()][currentStepIdx()];
         speakText(step.question, () => {
           startListening();
         });
@@ -723,7 +724,7 @@ export default function VoiceAssistant({
     }
 
     // 3. Flow Selection state
-    if (activeFlow === null) {
+    if (activeFlow() === null) {
       const tripKeywords = [
         'trip', 'journey', 'travel',
         'यात्रा', 'ट्रिप', 'सफर',
@@ -768,8 +769,8 @@ export default function VoiceAssistant({
     }
 
     // 4. Processing flow steps
-    const flowSteps = flows[activeFlow];
-    const currentStep = flowSteps[currentStepIdx];
+    const flowSteps = flows[activeFlow()];
+    const currentStep = flowSteps[currentStepIdx()];
 
     const result = currentStep.validateAndParse(input);
 
@@ -782,7 +783,7 @@ export default function VoiceAssistant({
       return;
     }
 
-    const updatedData = { ...formData, [currentStep.key]: result.value };
+    const updatedData = { ...formData(), [currentStep.key]: result.value };
     setFormData(updatedData);
 
     if (currentStep.type === 'confirm') {
@@ -798,13 +799,13 @@ export default function VoiceAssistant({
     }
 
     // Advance to next step
-    const nextIdx = currentStepIdx + 1;
+    const nextIdx = currentStepIdx() + 1;
     setCurrentStepIdx(nextIdx);
     const nextStep = flowSteps[nextIdx];
 
     let spokenQuestion = nextStep.question;
     if (nextStep.type === 'confirm') {
-      if (activeFlow === 'trip') {
+      if (activeFlow() === 'trip') {
         if (langCode === 'hi-IN') {
           spokenQuestion = `विवरण जाँचें: मैंने ट्रक ${updatedData.truckNo}, ड्राइवर ${updatedData.driverName}, शुरुआत ${updatedData.startingKM} किलोमीटर, रूट ${updatedData.routeFrom} से ${updatedData.routeTo} और किराया ${updatedData.income} रुपये की यात्रा तैयार की है। सहेजने के लिए 'हाँ' कहें, या रद्द करने के लिए 'नहीं' कहें।`;
         } else if (langCode === 'ta-IN') {
@@ -842,7 +843,7 @@ export default function VoiceAssistant({
   };
 
   const saveDocument = (data: Record<string, any>) => {
-    if (activeFlow === 'trip') {
+    if (activeFlow() === 'trip') {
       const currentYear = new Date().getFullYear();
       let lastSeq = 0;
       existingTripNos.forEach(v => {
@@ -895,7 +896,7 @@ export default function VoiceAssistant({
       speakText(voiceMsg, () => {
         onClose();
       });
-    } else if (activeFlow === 'expense') {
+    } else if (activeFlow() === 'expense') {
       const expObj: Omit<ExpenseEntry, 'id'> = {
         truckNo: data.truckNo,
         expenseType: data.expenseType,
@@ -922,39 +923,39 @@ export default function VoiceAssistant({
 
   return (
     <div 
-      className="fixed bottom-6 right-6 w-96 max-h-[520px] bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden animate-slide-up font-sans"
+      class="fixed bottom-6 right-6 w-96 max-h-[520px] bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden animate-slide-up font-sans"
       id="voice-assistant-drawer"
     >
       {/* Header */}
-      <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center select-none">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-          <span className="font-bold text-xs uppercase tracking-wider">Antigravity Voice Pilot</span>
+      <div class="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center select-none">
+        <div class="flex items-center gap-2">
+          <Sparkles class="w-4 h-4 text-amber-300 animate-pulse" />
+          <span class="font-bold text-xs uppercase tracking-wider">Antigravity Voice Pilot</span>
         </div>
         
-        <div className="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5">
           {/* Mute button */}
           <button 
             onClick={() => {
-              const nextMuted = !isMuted;
+              const nextMuted = !isMuted();
               setIsMuted(nextMuted);
               if (nextMuted && typeof window !== 'undefined' && window.speechSynthesis) {
                 window.speechSynthesis.cancel();
               }
             }}
-            className="p-1 hover:bg-white/20 rounded transition cursor-pointer"
-            title={isMuted ? "Unmute Assistant" : "Mute Assistant"}
+            class="p-1 hover:bg-white/20 rounded transition cursor-pointer"
+            title={isMuted() ? "Unmute Assistant" : "Mute Assistant"}
           >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted() ? <VolumeX class="w-4 h-4" /> : <Volume2 class="w-4 h-4" />}
           </button>
 
           {/* Reset button */}
           <button 
             onClick={greetUser}
-            className="p-1 hover:bg-white/20 rounded transition cursor-pointer"
+            class="p-1 hover:bg-white/20 rounded transition cursor-pointer"
             title="Restart dialogue"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw class="w-3.5 h-3.5" />
           </button>
 
           {/* Close button */}
@@ -963,21 +964,21 @@ export default function VoiceAssistant({
               stopVoiceAll();
               onClose();
             }}
-            className="p-1 hover:bg-white/20 rounded transition cursor-pointer"
+            class="p-1 hover:bg-white/20 rounded transition cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X class="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Message Feed */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-3 max-h-[360px] min-h-[220px] bg-slate-50/50 dark:bg-slate-950/20">
-        {messages.map((m, idx) => (
+      <div class="flex-1 p-4 overflow-y-auto space-y-3 max-h-[360px] min-h-[220px] bg-slate-50/50 dark:bg-slate-950/20">
+        {messages().map((m, idx) => (
           <div 
-            key={idx} 
-            className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
+             
+            class={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
           >
-            <div className={`
+            <div class={`
               max-w-[80%] rounded-2xl px-3 py-2 text-xs leading-relaxed shadow-3xs
               ${m.sender === 'user' 
                 ? 'bg-blue-600 text-white rounded-br-none' 
@@ -990,10 +991,10 @@ export default function VoiceAssistant({
             </div>
           </div>
         ))}
-        {transcript && (
-          <div className="flex justify-end animate-pulse">
-            <div className="max-w-[80%] bg-blue-600/40 text-white border border-blue-500/20 rounded-2xl rounded-br-none px-3 py-2 text-xs italic">
-              {transcript}
+        {transcript() && (
+          <div class="flex justify-end animate-pulse">
+            <div class="max-w-[80%] bg-blue-600/40 text-white border border-blue-500/20 rounded-2xl rounded-br-none px-3 py-2 text-xs italic">
+              {transcript()}
             </div>
           </div>
         )}
@@ -1001,74 +1002,74 @@ export default function VoiceAssistant({
       </div>
 
       {/* Soundwave/Speech Visualizer */}
-      <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900 h-10 select-none">
-        <div className="flex items-center gap-2">
-          {isListening ? (
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '450ms' }} />
-              <span className="text-[10px] text-blue-600 font-bold dark:text-blue-400 ml-1.5">Listening...</span>
+      <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900 h-10 select-none">
+        <div class="flex items-center gap-2">
+          {isListening() ? (
+            <div class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ 'animation-delay': '0ms' }} />
+              <span class="w-1.5 h-3 bg-blue-600 rounded-full animate-bounce" style={{ 'animation-delay': '150ms' }} />
+              <span class="w-1.5 h-2 bg-blue-500 rounded-full animate-bounce" style={{ 'animation-delay': '300ms' }} />
+              <span class="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ 'animation-delay': '450ms' }} />
+              <span class="text-[10px] text-blue-600 font-bold dark:text-blue-400 ml-1.5">Listening...</span>
             </div>
-          ) : isSpeaking ? (
-            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold animate-pulse">Speaking...</span>
+          ) : isSpeaking() ? (
+            <span class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold animate-pulse">Speaking...</span>
           ) : (
-            <span className="text-[10px] text-slate-400 font-medium">Click microphone to reply</span>
+            <span class="text-[10px] text-slate-400 font-medium">Click microphone to reply</span>
           )}
         </div>
 
         {/* Action micro button */}
         <button
           onClick={() => {
-            if (isListening) {
+            if (isListening()) {
               stopListening();
             } else {
               startListening();
             }
           }}
-          className={`
+          class={`
             p-1.5 rounded-full transition cursor-pointer
-            ${isListening 
+            ${isListening() 
               ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm ring-4 ring-red-100 dark:ring-red-950/40' 
               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
             }
           `}
-          title={isListening ? "Pause microphone" : "Activate microphone"}
+          title={isListening() ? "Pause microphone" : "Activate microphone"}
         >
-          {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+          {isListening() ? <MicOff class="w-3.5 h-3.5" /> : <Mic class="w-3.5 h-3.5" />}
         </button>
       </div>
 
       {/* Manual Input Fallback Bar */}
       <form 
         onSubmit={handleInputTextSubmit} 
-        className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex gap-1.5 items-center"
+        class="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex gap-1.5 items-center"
       >
         <input 
           type="text" 
-          value={textInput}
+          value={textInput()}
           onChange={(e) => setTextInput(e.target.value)}
-          placeholder={isSpeaking ? "Speaking..." : "Type response here..."}
-          disabled={isSpeaking}
-          className="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-blue-500 font-medium disabled:opacity-40"
+          placeholder={isSpeaking() ? "Speaking..." : "Type response here..."}
+          disabled={isSpeaking()}
+          class="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-blue-500 font-medium disabled:opacity-40"
         />
         <button 
           type="submit"
-          disabled={isSpeaking || !textInput.trim()}
-          className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 rounded-lg transition cursor-pointer"
+          disabled={isSpeaking() || !textInput().trim()}
+          class="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 rounded-lg transition cursor-pointer"
         >
-          <Send className="w-3.5 h-3.5" />
+          <Send class="w-3.5 h-3.5" />
         </button>
       </form>
       
-      {recognitionError && (
-        <div className="absolute top-10 left-2 right-2 p-2 bg-rose-50 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] leading-tight flex items-start gap-1.5 shadow-md">
-          <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+      {recognitionError() && (
+        <div class="absolute top-10 left-2 right-2 p-2 bg-rose-50 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50 rounded-lg text-[10px] leading-tight flex items-start gap-1.5 shadow-md">
+          <AlertCircle class="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
           <div>
-            <span className="font-bold">Mic Error:</span> {recognitionError}
+            <span class="font-bold">Mic Error:</span> {recognitionError()}
           </div>
-          <button onClick={() => setRecognitionError(null)} className="ml-auto font-bold text-rose-500 hover:text-rose-700">✕</button>
+          <button onClick={() => setRecognitionError(null)} class="ml-auto font-bold text-rose-500 hover:text-rose-700">✕</button>
         </div>
       )}
     </div>

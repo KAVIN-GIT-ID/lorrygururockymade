@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { UserPermission, OrganizationProfile } from '../types';
-import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone } from 'lucide-react';
+import { createSignal, createEffect, For, mergeProps } from 'solid-js';
+
+import { UserPermission, OrganizationProfile, UserRights } from '../types';
+import { Plus, Trash2, Shield, User, Mail, CheckCircle, XCircle, ChevronDown, ChevronUp, ShieldCheck, Check, RefreshCw, Cloud, CreditCard, Phone, Sparkles } from 'lucide-solid';
 
 interface TeamMember {
   $id: string;
@@ -8,7 +9,7 @@ interface TeamMember {
   userEmail: string;
   userName: string;
   roles: string[];
-  confirm: boolean; // true = accepted, false = pending email confirmation
+  confirm: boolean; // true = accepted, false = pending email() confirmation
   invited: string;
 }
 
@@ -32,97 +33,268 @@ interface UserAccessControlProps {
   onUpdateOrgProfile?: (updatedProfile: OrganizationProfile) => void;
 }
 
-export default function UserAccessControl({
-  permissions,
-  currentUserEmail = '',
-  onAddPermission,
-  onUpdatePermission,
-  onDeletePermission,
-  confirmAction,
-  showNotification,
-  currentUserOrgId = 'org_default',
-  teamMembers = [],
-  loadingTeamMembers = false,
-  canAddBackend = false,
-  canEditBackend = false,
-  canDeleteBackend = false,
-  orgProfile,
-  onUpdateOrgProfile
-}: UserAccessControlProps) {
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<'Admin' | 'Custom'>('Custom');
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+export default function UserAccessControl(rawProps: UserAccessControlProps) {
+  const props = mergeProps(
+    {
+      get permissions() { return typeof rawProps.permissions === 'function' ? (rawProps.permissions as any)() : (rawProps.permissions || []); },
+      get orgProfile() { return typeof rawProps.orgProfile === 'function' ? (rawProps.orgProfile as any)() : rawProps.orgProfile; },
+      get teamMembers() { return typeof rawProps.teamMembers === 'function' ? (rawProps.teamMembers as any)() : (rawProps.teamMembers || []); },
+      get currentUserOrgId() { return typeof rawProps.currentUserOrgId === 'function' ? (rawProps.currentUserOrgId as any)() : (rawProps.currentUserOrgId || 'org_default'); },
+      get loadingTeamMembers() { return typeof rawProps.loadingTeamMembers === 'function' ? (rawProps.loadingTeamMembers as any)() : (rawProps.loadingTeamMembers || false); },
+      get canAddBackend() { return typeof rawProps.canAddBackend === 'function' ? (rawProps.canAddBackend as any)() : (rawProps.canAddBackend || false); },
+      get canEditBackend() { return typeof rawProps.canEditBackend === 'function' ? (rawProps.canEditBackend as any)() : (rawProps.canEditBackend || false); },
+      get canDeleteBackend() { return typeof rawProps.canDeleteBackend === 'function' ? (rawProps.canDeleteBackend as any)() : (rawProps.canDeleteBackend || false); },
+      get currentUserEmail() { return typeof rawProps.currentUserEmail === 'function' ? (rawProps.currentUserEmail as any)() : (rawProps.currentUserEmail || ''); },
+    },
+    rawProps
+  );
 
-  const [engineOilInterval, setEngineOilInterval] = useState<number | ''>('');
-  const [crownOilInterval, setCrownOilInterval] = useState<number | ''>('');
-  const [gearBoxOilInterval, setGearBoxOilInterval] = useState<number | ''>('');
-  const [radiatorInterval, setRadiatorInterval] = useState<number | ''>('');
-  const [pinpushInterval, setPinpushInterval] = useState<number | ''>('');
-  const [wheelGreaseInterval, setWheelGreaseInterval] = useState<number | ''>('');
-  const [brokeragePolicy, setBrokeragePolicy] = useState<'OrgBears' | 'DriverBears'>('DriverBears');
+  const permissions = () => props.permissions;
+  const orgProfile = () => props.orgProfile;
+  const teamMembers = () => props.teamMembers;
+  const currentUserOrgId = () => props.currentUserOrgId;
+  const loadingTeamMembers = () => props.loadingTeamMembers;
+  const canAddBackend = () => props.canAddBackend;
+  const canEditBackend = () => props.canEditBackend;
+  const canDeleteBackend = () => props.canDeleteBackend;
+  const confirmAction = props.confirmAction;
+  const showNotification = props.showNotification;
+  const currentUserEmail = () => props.currentUserEmail;
+  const onAddPermission = props.onAddPermission;
+  const onUpdatePermission = props.onUpdatePermission;
+  const onDeletePermission = props.onDeletePermission;
+  const onUpdateOrgProfile = props.onUpdateOrgProfile;
 
-  useEffect(() => {
-    if (orgProfile) {
-      setEngineOilInterval(orgProfile.engineOilIntervalKM !== undefined && orgProfile.engineOilIntervalKM !== null ? orgProfile.engineOilIntervalKM : '');
-      setCrownOilInterval(orgProfile.crownOilIntervalKM !== undefined && orgProfile.crownOilIntervalKM !== null ? orgProfile.crownOilIntervalKM : '');
-      setGearBoxOilInterval(orgProfile.gearBoxOilIntervalKM !== undefined && orgProfile.gearBoxOilIntervalKM !== null ? orgProfile.gearBoxOilIntervalKM : '');
-      setRadiatorInterval(orgProfile.radiatorIntervalKM !== undefined && orgProfile.radiatorIntervalKM !== null ? orgProfile.radiatorIntervalKM : '');
-      setPinpushInterval(orgProfile.pinpushIntervalKM !== undefined && orgProfile.pinpushIntervalKM !== null ? orgProfile.pinpushIntervalKM : '');
-      setWheelGreaseInterval(orgProfile.wheelGreaseIntervalKM !== undefined && orgProfile.wheelGreaseIntervalKM !== null ? orgProfile.wheelGreaseIntervalKM : '');
-      setBrokeragePolicy(orgProfile.brokeragePolicy || 'DriverBears');
+  const [showAddForm, setShowAddForm] = createSignal(false);
+  const [email, setEmail] = createSignal('');
+  const [name, setName] = createSignal('');
+  const [phone, setPhone] = createSignal('');
+  const [role, setRole] = createSignal<'Admin' | 'Custom'>('Custom');
+  const [expandedUserId, setExpandedUserId] = createSignal<string | null>(null);
+
+  const [engineOilInterval, setEngineOilInterval] = createSignal<number | ''>('');
+  const [crownOilInterval, setCrownOilInterval] = createSignal<number | ''>('');
+  const [gearBoxOilInterval, setGearBoxOilInterval] = createSignal<number | ''>('');
+  const [radiatorInterval, setRadiatorInterval] = createSignal<number | ''>('');
+  const [pinpushInterval, setPinpushInterval] = createSignal<number | ''>('');
+  const [wheelGreaseInterval, setWheelGreaseInterval] = createSignal<number | ''>('');
+  const [brokeragePolicy, setBrokeragePolicy] = createSignal<'OrgBears' | 'DriverBears'>('DriverBears');
+  const [insuranceWarningDays, setInsuranceWarningDays] = createSignal<number | ''>('');
+  const [fcWarningDays, setFcWarningDays] = createSignal<number | ''>('');
+  const [npTaxWarningDays, setNpTaxWarningDays] = createSignal<number | ''>('');
+  const [fiveYearPermitWarningDays, setFiveYearPermitWarningDays] = createSignal<number | ''>('');
+  const [qTaxWarningDays, setQTaxWarningDays] = createSignal<number | ''>('');
+  const [greenTaxWarningDays, setGreenTaxWarningDays] = createSignal<number | ''>('');
+  const [subscriptionWarningDays, setSubscriptionWarningDays] = createSignal<number | ''>('');
+
+  const [lastOrgId, setLastOrgId] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    const prof = orgProfile();
+    if (prof && prof.organizationId !== lastOrgId()) {
+      setEngineOilInterval(prof.engineOilIntervalKM !== undefined && prof.engineOilIntervalKM !== null ? prof.engineOilIntervalKM : '');
+      setCrownOilInterval(prof.crownOilIntervalKM !== undefined && prof.crownOilIntervalKM !== null ? prof.crownOilIntervalKM : '');
+      setGearBoxOilInterval(prof.gearBoxOilIntervalKM !== undefined && prof.gearBoxOilIntervalKM !== null ? prof.gearBoxOilIntervalKM : '');
+      setRadiatorInterval(prof.radiatorIntervalKM !== undefined && prof.radiatorIntervalKM !== null ? prof.radiatorIntervalKM : '');
+      setPinpushInterval(prof.pinpushIntervalKM !== undefined && prof.pinpushIntervalKM !== null ? prof.pinpushIntervalKM : '');
+      setWheelGreaseInterval(prof.wheelGreaseIntervalKM !== undefined && prof.wheelGreaseIntervalKM !== null ? prof.wheelGreaseIntervalKM : '');
+      setBrokeragePolicy(prof.brokeragePolicy || 'DriverBears');
+      setInsuranceWarningDays(prof.insuranceWarningDays !== undefined && prof.insuranceWarningDays !== null ? prof.insuranceWarningDays : '');
+      setFcWarningDays(prof.fcWarningDays !== undefined && prof.fcWarningDays !== null ? prof.fcWarningDays : '');
+      setNpTaxWarningDays(prof.npTaxWarningDays !== undefined && prof.npTaxWarningDays !== null ? prof.npTaxWarningDays : '');
+      setFiveYearPermitWarningDays(prof.fiveYearPermitWarningDays !== undefined && prof.fiveYearPermitWarningDays !== null ? prof.fiveYearPermitWarningDays : '');
+      setQTaxWarningDays(prof.qTaxWarningDays !== undefined && prof.qTaxWarningDays !== null ? prof.qTaxWarningDays : '');
+      setGreenTaxWarningDays(prof.greenTaxWarningDays !== undefined && prof.greenTaxWarningDays !== null ? prof.greenTaxWarningDays : '');
+      setSubscriptionWarningDays(prof.subscriptionWarningDays !== undefined && prof.subscriptionWarningDays !== null ? prof.subscriptionWarningDays : '');
+      setLastOrgId(prof.organizationId);
     }
-  }, [orgProfile]);
+  });
 
-  const handleSaveOrgDefaults = (e: React.FormEvent) => {
+  const handleSaveOrgDefaults = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    onUpdateOrgProfile({
-      ...orgProfile,
-      engineOilIntervalKM: engineOilInterval !== '' ? Number(engineOilInterval) : undefined,
-      crownOilIntervalKM: crownOilInterval !== '' ? Number(crownOilInterval) : undefined,
-      gearBoxOilIntervalKM: gearBoxOilInterval !== '' ? Number(gearBoxOilInterval) : undefined,
-      radiatorIntervalKM: radiatorInterval !== '' ? Number(radiatorInterval) : undefined,
-      pinpushIntervalKM: pinpushInterval !== '' ? Number(pinpushInterval) : undefined,
-      wheelGreaseIntervalKM: wheelGreaseInterval !== '' ? Number(wheelGreaseInterval) : undefined,
-      brokeragePolicy: brokeragePolicy,
+    const currentProf = orgProfile();
+    if (!currentProf || !props.onUpdateOrgProfile) return;
+    props.onUpdateOrgProfile({
+      ...currentProf,
+      engineOilIntervalKM: engineOilInterval() !== '' ? Number(engineOilInterval()) : undefined,
+      crownOilIntervalKM: crownOilInterval() !== '' ? Number(crownOilInterval()) : undefined,
+      gearBoxOilIntervalKM: gearBoxOilInterval() !== '' ? Number(gearBoxOilInterval()) : undefined,
+      radiatorIntervalKM: radiatorInterval() !== '' ? Number(radiatorInterval()) : undefined,
+      pinpushIntervalKM: pinpushInterval() !== '' ? Number(pinpushInterval()) : undefined,
+      wheelGreaseIntervalKM: wheelGreaseInterval() !== '' ? Number(wheelGreaseInterval()) : undefined,
+      brokeragePolicy: brokeragePolicy(),
+      insuranceWarningDays: insuranceWarningDays() !== '' ? Number(insuranceWarningDays()) : undefined,
+      fcWarningDays: fcWarningDays() !== '' ? Number(fcWarningDays()) : undefined,
+      npTaxWarningDays: npTaxWarningDays() !== '' ? Number(npTaxWarningDays()) : undefined,
+      fiveYearPermitWarningDays: fiveYearPermitWarningDays() !== '' ? Number(fiveYearPermitWarningDays()) : undefined,
+      qTaxWarningDays: qTaxWarningDays() !== '' ? Number(qTaxWarningDays()) : undefined,
+      greenTaxWarningDays: greenTaxWarningDays() !== '' ? Number(greenTaxWarningDays()) : undefined,
+      subscriptionWarningDays: subscriptionWarningDays() !== '' ? Number(subscriptionWarningDays()) : undefined,
     });
-    showNotification("Organization defaults updated successfully!");
+    props.showNotification("Organization defaults updated successfully!");
   };
 
-  const [fuelCardName, setFuelCardName] = useState('');
-  const [fuelCardNo, setFuelCardNo] = useState('');
-  const [fuelCardStatus, setFuelCardStatus] = useState<'Active' | 'Inactive'>('Active');
-  const [editingFuelCardId, setEditingFuelCardId] = useState<string | null>(null);
-  const [showFuelCardForm, setShowFuelCardForm] = useState(false);
+  const [newExpenseType, setNewExpenseType] = createSignal('');
+  const [newShopName, setNewShopName] = createSignal('');
 
-  const handleSaveFuelCard = (e: React.FormEvent) => {
+  const handlePopulateStandardDefaults = () => {
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!updater) return;
+
+    const defaultFuelCards = [
+      { id: 'fc_iocl_1', cardName: 'IOCL Fuel Card', cardNumber: '7089-XXXX-1002', status: 'Active' as const },
+      { id: 'fc_hpcl_2', cardName: 'HPCL DriveTrack Plus', cardNumber: '5021-XXXX-3004', status: 'Active' as const },
+      { id: 'fc_bpcl_3', cardName: 'BPCL SmartFleet Card', cardNumber: '6011-XXXX-8009', status: 'Active' as const }
+    ];
+
+    const defaultExpenseTypes = [
+      'Loading / Unloading Wages',
+      'Mamul & RMC Charges',
+      'Brokerage / Commission',
+      'Crossing Expense',
+      'Police & RTO Checkpost',
+      'FASTag / Toll Plaza',
+      'Water Wash & Maintenance',
+      'AdBlue / Def Refill'
+    ];
+
+    const defaultShopNames = [
+      'Indian Oil Corporation',
+      'Bharat Petroleum Bunk',
+      'Hindustan Petroleum (HPCL)',
+      'Nayara Energy Bunk',
+      'Royal Auto Spares',
+      'Premier Tyres & Wheel Alignment'
+    ];
+
+    const baseProf: OrganizationProfile = prof || {
+      organizationId: currentUserOrgId() || 'org_default',
+      organizationName: 'Fleet Transport Management',
+      ownerEmail: currentUserEmail() || 'admin@fleet.com',
+      status: 'Active',
+      maxTrucksAllowed: 50,
+      truckRequests: [],
+      approvedTrucks: [],
+      fuelCards: [],
+      customExpenseTypes: [],
+      shopNames: []
+    };
+
+    const existingCards = baseProf.fuelCards || [];
+    const mergedCards = existingCards.length > 0 ? existingCards : defaultFuelCards;
+
+    const existingTypes = baseProf.customExpenseTypes || [];
+    const mergedTypes = Array.from(new Set([...existingTypes, ...defaultExpenseTypes]));
+
+    const existingShops = baseProf.shopNames || [];
+    const mergedShops = Array.from(new Set([...existingShops, ...defaultShopNames]));
+
+    updater({
+      ...baseProf,
+      fuelCards: mergedCards,
+      customExpenseTypes: mergedTypes,
+      shopNames: mergedShops
+    });
+
+    showNotification("Standard transport default cards, expense types, and suppliers populated successfully!");
+  };
+
+  const handleAddExpenseType = (e: Event) => {
     e.preventDefault();
-    if (!orgProfile || !onUpdateOrgProfile || !fuelCardName.trim()) return;
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !newExpenseType().trim()) return;
+    const currentTypes = prof.customExpenseTypes || [];
+    const val = newExpenseType().trim();
+    if (currentTypes.includes(val)) {
+      showNotification("Expense type already exists!");
+      return;
+    }
+    updater({
+      ...prof,
+      customExpenseTypes: [...currentTypes, val]
+    });
+    setNewExpenseType('');
+    showNotification("Expense type added successfully!");
+  };
 
-    const currentCards = orgProfile.fuelCards || [];
+  const handleDeleteExpenseType = (typeToDelete: string) => {
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentTypes = prof.customExpenseTypes || [];
+    updater({
+      ...prof,
+      customExpenseTypes: currentTypes.filter(t => t !== typeToDelete)
+    });
+    showNotification("Expense type deleted successfully!");
+  };
+
+  const handleAddShopName = (e: Event) => {
+    e.preventDefault();
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !newShopName().trim()) return;
+    const currentShops = prof.shopNames || [];
+    const val = newShopName().trim();
+    if (currentShops.includes(val)) {
+      showNotification("Shop name() already exists!");
+      return;
+    }
+    updater({
+      ...prof,
+      shopNames: [...currentShops, val]
+    });
+    setNewShopName('');
+    showNotification("Shop name() added successfully!");
+  };
+
+  const handleDeleteShopName = (shopToDelete: string) => {
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentShops = prof.shopNames || [];
+    updater({
+      ...prof,
+      shopNames: currentShops.filter(s => s !== shopToDelete)
+    });
+    showNotification("Shop name() deleted successfully!");
+  };
+
+  const [fuelCardName, setFuelCardName] = createSignal('');
+  const [fuelCardNo, setFuelCardNo] = createSignal('');
+  const [fuelCardStatus, setFuelCardStatus] = createSignal<'Active' | 'Inactive'>('Active');
+  const [editingFuelCardId, setEditingFuelCardId] = createSignal<string | null>(null);
+  const [showFuelCardForm, setShowFuelCardForm] = createSignal(false);
+
+  const handleSaveFuelCard = (e: Event) => {
+    e.preventDefault();
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater || !fuelCardName().trim()) return;
+
+    const currentCards = prof.fuelCards || [];
     let updatedCards;
 
-    if (editingFuelCardId) {
+    if (editingFuelCardId()) {
       updatedCards = currentCards.map(c =>
-        c.id === editingFuelCardId
-          ? { ...c, cardName: fuelCardName.trim(), cardNumber: fuelCardNo.trim() || undefined, status: fuelCardStatus }
+        c.id === editingFuelCardId()
+          ? { ...c, cardName: fuelCardName().trim(), cardNumber: fuelCardNo().trim() || undefined, status: fuelCardStatus() }
           : c
       );
     } else {
       const newCard = {
         id: 'fc_' + Date.now(),
-        cardName: fuelCardName.trim(),
-        cardNumber: fuelCardNo.trim() || undefined,
-        status: fuelCardStatus
+        cardName: fuelCardName().trim(),
+        cardNumber: fuelCardNo().trim() || undefined,
+        status: fuelCardStatus()
       };
       updatedCards = [...currentCards, newCard];
     }
 
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       fuelCards: updatedCards
     });
 
@@ -131,27 +303,31 @@ export default function UserAccessControl({
     setFuelCardStatus('Active');
     setEditingFuelCardId(null);
     setShowFuelCardForm(false);
-    showNotification(editingFuelCardId ? "Fuel card updated successfully!" : "Fuel card added successfully!");
+    showNotification(editingFuelCardId() ? "Fuel card updated successfully!" : "Fuel card added successfully!");
   };
 
   const handleDeleteFuelCard = (cardId: string) => {
-    if (!orgProfile || !onUpdateOrgProfile) return;
-    const currentCards = orgProfile.fuelCards || [];
+    const prof = orgProfile();
+    const updater = onUpdateOrgProfile;
+    if (!prof || !updater) return;
+    const currentCards = prof.fuelCards || [];
     const updatedCards = currentCards.filter(c => c.id !== cardId);
 
-    onUpdateOrgProfile({
-      ...orgProfile,
+    updater({
+      ...prof,
       fuelCards: updatedCards
     });
     showNotification("Fuel card deleted successfully!");
   };
 
-  const isBackendOrg = currentUserOrgId === 'org_backend';
-  const currentUserPerm = permissions.find(p => p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim());
-  const currentUserRole = currentUserPerm?.role || 'Custom';
+  const isBackendOrg = currentUserOrgId() === 'org_backend';
+  const currentUserPerm = () => permissions().find(p => p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim());
+  const currentUserRole = () => currentUserPerm()?.role || 'Custom';
 
   // Custom permissions state for creation form
-  const [rights, setRights] = useState({
+  const [supportRoles, setSupportRoles] = createSignal<('Technical' | 'Billing' | 'General')[]>([]);
+
+  const [rights, setRights] = createSignal({
     canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
     canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
     canViewTrucks: false, canEditTrucks: false, canDeleteTrucks: false,
@@ -162,10 +338,11 @@ export default function UserAccessControl({
     canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
     canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
     canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-    canEditLoans: false, canDeleteLoans: false
+    canEditLoans: false, canDeleteLoans: false,
+    canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
   });
 
-  const toggleFormRight = (key: keyof typeof rights) => {
+  const toggleFormRight = (key: keyof ReturnType<typeof rights>) => {
     setRights(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -174,6 +351,7 @@ export default function UserAccessControl({
     setName('');
     setPhone('');
     setRole('Custom');
+    setSupportRoles([]);
     setRights({
       canViewTrips: false, canEditTrips: false, canDeleteTrips: false,
       canViewTyres: false, canEditTyres: false, canDeleteTyres: false,
@@ -185,30 +363,32 @@ export default function UserAccessControl({
       canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
       canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
       canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
+      canEditLoans: false, canDeleteLoans: false,
+      canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: Event) => {
     e.preventDefault();
-    if (!email.trim() || !name.trim()) return;
+    if (!email().trim() || !name().trim()) return;
 
-    // Check duplicate email
-    if (permissions.some(p => p.email.toLowerCase().trim() === email.toLowerCase().trim())) {
-      alert("A user with this email address already exists in the access control registry.");
+    // Check duplicate email()
+    if (permissions().some(p => p.email.toLowerCase().trim() === email().toLowerCase().trim())) {
+      alert("A user with this email() address already exists in the access control registry.");
       return;
     }
 
     onAddPermission({
-      email: email.trim().toLowerCase(),
-      name: name.trim(),
-      phone: phone.trim() || undefined,
+      email: email().trim().toLowerCase(),
+      name: name().trim(),
+      phone: phone().trim() || undefined,
       isEmailVerified: false,
       isPhoneVerified: false,
-      role,
-      organizationId: currentUserOrgId,
+      role: role(),
+      organizationId: currentUserOrgId(),
       isApproved: true, // Manual additions by admin are auto-approved
-      ...rights
+      supportRole: isBackendOrg ? supportRoles() : [],
+      ...rights()
     });
 
     resetForm();
@@ -229,7 +409,8 @@ export default function UserAccessControl({
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
-        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg,
+        canViewTickets: isBackendOrg, canEditTickets: isBackendOrg, canDeleteTickets: isBackendOrg, canTransferTickets: isBackendOrg
       });
     } else {
       setRights({
@@ -243,18 +424,19 @@ export default function UserAccessControl({
         canViewBackend: false, canAddBackend: false, canEditBackend: false, canDeleteBackend: false, canApproveBackend: false,
         canViewTruckRequests: false, canDeleteTruckRequests: false, canViewBackendTeam: false, canDeleteBackendTeam: false,
         canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-        canEditLoans: false, canDeleteLoans: false
+        canEditLoans: false, canDeleteLoans: false,
+        canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
       });
     }
   };
 
   const toggleUserRight = (userPerm: UserPermission, rightKey: keyof Omit<UserPermission, 'id' | 'email' | 'name' | 'role' | 'organizationId' | 'isApproved'>) => {
-    if (isBackendOrg && !canEditBackend) {
+    if (isBackendOrg && !canEditBackend()) {
       showNotification("You do not have permission to edit backend team privileges.");
       return;
     }
     if (userPerm.role === 'Admin') {
-      showNotification("Cannot modify individual rights on an Admin account. Downgrade to Custom role first.");
+      showNotification("Cannot modify individual rights() on an Admin account. Downgrade to Custom role() first.");
       return;
     }
 
@@ -267,11 +449,11 @@ export default function UserAccessControl({
   };
 
   const changeUserRole = (userPerm: UserPermission, newRole: 'Admin' | 'Custom') => {
-    if (userPerm.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()) {
-      alert("Safety Lock: You cannot change your own role and revoke your Admin permissions.");
+    if (userPerm.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim()) {
+      alert("Safety Lock: You cannot change your own role() and revoke your Admin permissions.");
       return;
     }
-    if (isBackendOrg && !canEditBackend) {
+    if (isBackendOrg && !canEditBackend()) {
       showNotification("You do not have permission to modify backend team roles.");
       return;
     }
@@ -290,12 +472,13 @@ export default function UserAccessControl({
         canViewBackend: isBackendOrg, canAddBackend: isBackendOrg, canEditBackend: isBackendOrg, canDeleteBackend: isBackendOrg, canApproveBackend: isBackendOrg,
         canViewTruckRequests: isBackendOrg, canDeleteTruckRequests: isBackendOrg, canViewBackendTeam: isBackendOrg, canDeleteBackendTeam: isBackendOrg,
         canViewDatabaseConsole: isBackendOrg, canEditDatabaseConsole: isBackendOrg, canDeleteDatabaseConsole: isBackendOrg,
-        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg
+        canEditLoans: !isBackendOrg, canDeleteLoans: !isBackendOrg,
+        canViewTickets: isBackendOrg, canEditTickets: isBackendOrg, canDeleteTickets: isBackendOrg, canTransferTickets: isBackendOrg
       } : {})
     };
 
     onUpdatePermission(updated);
-    showNotification(`Updated role for ${userPerm.name} to ${newRole}.`);
+    showNotification(`Updated role() for ${userPerm.name} to ${newRole}.`);
   };
 
   const approveUser = (userPerm: UserPermission) => {
@@ -319,58 +502,69 @@ export default function UserAccessControl({
       canViewTruckRequests: false, canDeleteTruckRequests: false,
       canViewBackendTeam: false, canDeleteBackendTeam: false,
       canViewDatabaseConsole: false, canEditDatabaseConsole: false, canDeleteDatabaseConsole: false,
-      canEditLoans: false, canDeleteLoans: false
+      canEditLoans: false, canDeleteLoans: false,
+      canViewTickets: false, canEditTickets: false, canDeleteTickets: false, canTransferTickets: false
     };
     onUpdatePermission(updated);
     showNotification(`Approved ${userPerm.name}. Please grant specific permissions as needed.`);
   };
 
-  /** Find this user's live Appwrite membership record (by email match) */
-  const getAppwriteMembership = (email: string): TeamMember | undefined => {
-    return teamMembers.find(m => m.userEmail?.toLowerCase() === email.toLowerCase());
+  /** Find this user's live Appwrite membership record (by email() match) */
+  const getAppwriteMembership = (targetEmail: string): TeamMember | undefined => {
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    const list = teamMembers();
+    const match = list.find(m => {
+      const mEmail = (m.userEmail || (m as any).email || '').trim().toLowerCase();
+      return mEmail === cleanEmail;
+    });
+    console.log(`[getAppwriteMembership] Matching email: "${cleanEmail}" -> found:`, match, "in list:", list);
+    if (list.length > 0) {
+      console.log(`[getAppwriteMembership] Raw memberships list JSON:`, JSON.stringify(list));
+    }
+    return match;
   };
 
   return (
-    <div id="user-access-panel" className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in text-slate-850">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div id="user-access-panel" class="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-xs animate-fade-in text-slate-850">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-600" />
+          <h2 class="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2">
+            <Shield class="w-5 h-5 text-blue-600" />
             User Access Control (RBAC)
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Manage user access, grant role privileges, approve pending registrants, and toggle view/edit/delete modules.
+          <p class="text-xs text-slate-500 mt-0.5">
+            Manage user access, grant role() privileges, approve pending registrants, and toggle view/edit/delete modules.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div class="flex items-center gap-2.5">
           {/* Appwrite Teams sync indicator */}
-          {teamMembers.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
-              <Cloud className="w-3 h-3" />
-              {teamMembers.length} in Appwrite Team
+          {teamMembers().length > 0 && (
+            <span class="inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
+              <Cloud class="w-3 h-3" />
+              {teamMembers().length} in Appwrite Team
             </span>
           )}
-          {loadingTeamMembers && (
-            <span className="inline-flex items-center gap-1 text-[9px] text-slate-400">
-              <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
+          {loadingTeamMembers() && (
+            <span class="inline-flex items-center gap-1 text-[9px] text-slate-400">
+              <RefreshCw class="w-3 h-3 animate-spin" /> Syncing...
             </span>
           )}
           <button
             id="btn-add-permission"
             onClick={() => {
-              if (isBackendOrg && !canAddBackend) {
+              if (isBackendOrg && !canAddBackend()) {
                 showNotification("You do not have permission to add backend team members.");
                 return;
               }
               resetForm();
-              setShowAddForm(!showAddForm);
+              setShowAddForm(!showAddForm());
             }}
-            disabled={isBackendOrg && !canAddBackend}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isBackendOrg && !canAddBackend()}
+            class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-150 shadow-sm text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {showAddForm ? 'Close Panel' : (
+            {showAddForm() ? 'Close Panel' : (
               <>
-                <Plus className="w-3.5 h-3.5" /> Add User Access
+                <Plus class="w-3.5 h-3.5" /> Add User Access
               </>
             )}
           </button>
@@ -378,102 +572,189 @@ export default function UserAccessControl({
       </div>
 
       {/* ORGANIZATION DEFAULT MAINTENANCE SETTINGS (ORG DEFAULTS) */}
-      {orgProfile && !isBackendOrg && (
-        <div className="mb-6 p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 text-slate-800">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-            <Shield className="w-4 h-4 text-blue-600 animate-pulse" />
-            <h3 className="text-xs font-bold text-blue-650 uppercase tracking-widest">
+      {orgProfile() && !isBackendOrg && (
+        <div class="mb-6 p-4 md:p-5 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in space-y-4 text-slate-800">
+          <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <Shield class="w-4 h-4 text-blue-600 animate-pulse" />
+            <h3 class="text-xs font-bold text-blue-650 uppercase tracking-widest">
               Organization Default Maintenance Settings (Org Defaults)
             </h3>
           </div>
-          <p className="text-[11px] text-slate-500 leading-relaxed">
+          <p class="text-[11px] text-slate-500 leading-relaxed">
             Define the organization-wide default service intervals (in kilometers). These thresholds are used across your fleet registry to warn about due maintenance milestones. Individual vehicles can override these defaults in the Truck Registry specs form.
           </p>
-          <form onSubmit={handleSaveOrgDefaults} className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <form onSubmit={handleSaveOrgDefaults} class="space-y-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
-                <label htmlFor="input-org-engine-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Engine Oil Change (KM)</label>
+                <label for="input-org-engine-oil-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Engine Oil Change (KM)</label>
                 <input
                   id="input-org-engine-oil-interval"
                   type="number"
                   placeholder="e.g. 15000"
-                  value={engineOilInterval}
+                  value={engineOilInterval()}
                   onChange={(e) => setEngineOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="input-org-crown-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Crown Oil Change (KM)</label>
+                <label for="input-org-crown-oil-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Crown Oil Change (KM)</label>
                 <input
                   id="input-org-crown-oil-interval"
                   type="number"
                   placeholder="e.g. 40000"
-                  value={crownOilInterval}
+                  value={crownOilInterval()}
                   onChange={(e) => setCrownOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="input-org-gearbox-oil-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Gear Box Oil Change (KM)</label>
+                <label for="input-org-gearbox-oil-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Gear Box Oil Change (KM)</label>
                 <input
                   id="input-org-gearbox-oil-interval"
                   type="number"
                   placeholder="e.g. 40000"
-                  value={gearBoxOilInterval}
+                  value={gearBoxOilInterval()}
                   onChange={(e) => setGearBoxOilInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="input-org-radiator-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Radiator Service (KM)</label>
+                <label for="input-org-radiator-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Radiator Service (KM)</label>
                 <input
                   id="input-org-radiator-interval"
                   type="number"
                   placeholder="e.g. 20000"
-                  value={radiatorInterval}
+                  value={radiatorInterval()}
                   onChange={(e) => setRadiatorInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="input-org-pinpush-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Pinpush Grease (KM)</label>
+                <label for="input-org-pinpush-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Pinpush Grease (KM)</label>
                 <input
                   id="input-org-pinpush-interval"
                   type="number"
                   placeholder="e.g. 5000"
-                  value={pinpushInterval}
+                  value={pinpushInterval()}
                   onChange={(e) => setPinpushInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="input-org-wheel-grease-interval" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Wheel Grease (KM)</label>
+                <label for="input-org-wheel-grease-interval" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Wheel Grease (KM)</label>
                 <input
                   id="input-org-wheel-grease-interval"
                   type="number"
                   placeholder="e.g. 5000"
-                  value={wheelGreaseInterval}
+                  value={wheelGreaseInterval()}
                   onChange={(e) => setWheelGreaseInterval(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
               <div>
-                <label htmlFor="select-org-brokerage-policy" className="block text-[10px] font-bold text-slate-650 uppercase mb-1">Office Brokerage default policy</label>
+                <label for="select-org-brokerage-policy" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Office Brokerage default policy</label>
                 <select
                   id="select-org-brokerage-policy"
-                  value={brokeragePolicy}
+                  value={brokeragePolicy()}
                   onChange={(e) => setBrokeragePolicy(e.target.value as 'OrgBears' | 'DriverBears')}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500"
                 >
                   <option value="DriverBears">Collect/Recover from Driver (Policy 2 - Default)</option>
                   <option value="OrgBears">Bear/Absorb as Org Expense (Policy 1)</option>
                 </select>
               </div>
             </div>
-            <div className="flex justify-end">
+
+            {/* COMPLIANCE ALERT THRESHOLDS */}
+            <div class="border-t border-slate-200/60 pt-4 space-y-3">
+              <h4 class="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block">
+                Compliance Alert Thresholds (Warning Days before Expiry)
+              </h4>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <label for="input-org-insurance-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Insurance Alert (Days)</label>
+                  <input
+                    id="input-org-insurance-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={insuranceWarningDays()}
+                    onChange={(e) => setInsuranceWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-fc-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">FC Alert (Days)</label>
+                  <input
+                    id="input-org-fc-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={fcWarningDays()}
+                    onChange={(e) => setFcWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-np-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">National Permit Alert (Days)</label>
+                  <input
+                    id="input-org-np-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={npTaxWarningDays()}
+                    onChange={(e) => setNpTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-5y-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">5Y Permit Alert (Days)</label>
+                  <input
+                    id="input-org-5y-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={fiveYearPermitWarningDays()}
+                    onChange={(e) => setFiveYearPermitWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-qtax-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Q Tax Alert (Days)</label>
+                  <input
+                    id="input-org-qtax-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={qTaxWarningDays()}
+                    onChange={(e) => setQTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-greentax-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Green Tax Alert (Days)</label>
+                  <input
+                    id="input-org-greentax-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={greenTaxWarningDays()}
+                    onChange={(e) => setGreenTaxWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label for="input-org-subscription-warning" class="block text-[10px] font-bold text-slate-650 uppercase mb-1">Subscription Alert (Days)</label>
+                  <input
+                    id="input-org-subscription-warning"
+                    type="number"
+                    placeholder="Defaults to 30 days"
+                    value={subscriptionWarningDays()}
+                    onChange={(e) => setSubscriptionWarningDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="flex justify-end">
               <button
                 type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition shadow-2xs cursor-pointer"
               >
                 Save Org Defaults
               </button>
@@ -481,214 +762,392 @@ export default function UserAccessControl({
           </form>
 
           {/* FUEL CARDS SECTION */}
-          <div className="border-t border-slate-200 pt-4 mt-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-blue-650" />
-                <h3 className="text-xs font-bold text-blue-650 uppercase tracking-widest">
+          <div class="border-t border-slate-200 pt-4 mt-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+              <div class="flex items-center gap-2">
+                <CreditCard class="w-4 h-4 text-blue-650" />
+                <h3 class="text-xs font-bold text-blue-650 uppercase tracking-widest">
                   Organization Fuel Cards (Accounts)
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFuelCardName('');
-                  setFuelCardNo('');
-                  setFuelCardStatus('Active');
-                  setEditingFuelCardId(null);
-                  setShowFuelCardForm(!showFuelCardForm);
-                }}
-                className="bg-white hover:bg-slate-50 border border-slate-350 text-slate-705 font-bold text-[10px] py-1.5 px-2.5 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1"
-              >
-                {showFuelCardForm ? 'Close Form' : '+ Add Fuel Card'}
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePopulateStandardDefaults}
+                  class="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold text-[10px] py-1.5 px-2.5 rounded-lg shadow-2xs cursor-pointer inline-flex items-center gap-1 transition"
+                  title="Populate standard fuel cards, expense types, and supplier names"
+                >
+                  <Sparkles class="w-3 h-3 text-emerald-600" /> Populate Standard Defaults
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFuelCardName('');
+                    setFuelCardNo('');
+                    setFuelCardStatus('Active');
+                    setEditingFuelCardId(null);
+                    setShowFuelCardForm(!showFuelCardForm());
+                  }}
+                  class="bg-white hover:bg-slate-50 border border-slate-350 text-slate-705 font-bold text-[10px] py-1.5 px-2.5 rounded-lg shadow-3xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  {showFuelCardForm() ? 'Close Form' : '+ Add Fuel Card'}
+                </button>
+              </div>
             </div>
 
-            {showFuelCardForm && (
-              <form onSubmit={handleSaveFuelCard} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3 shadow-3xs">
-                <h4 className="text-[10px] font-bold text-blue-655 uppercase tracking-wider">
-                  {editingFuelCardId ? 'Edit Fuel Card' : 'Add New Fuel Card'}
+            {showFuelCardForm() && (
+              <form onSubmit={handleSaveFuelCard} class="bg-white border border-slate-200 p-4 rounded-xl space-y-3 shadow-3xs">
+                <h4 class="text-[10px] font-bold text-blue-655 uppercase tracking-wider">
+                  {editingFuelCardId() ? 'Edit Fuel Card' : 'Add New Fuel Card'}
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <label htmlFor="input-fuel-card-name" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Name / Account</label>
+                    <label for="input-fuel-card-name" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Name / Account</label>
                     <input
                       id="input-fuel-card-name"
                       type="text"
                       required
                       placeholder="e.g. HPCL Card #1"
-                      value={fuelCardName}
+                      value={fuelCardName()}
                       onChange={(e) => setFuelCardName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                      class="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
                     />
                   </div>
                   <div>
-                    <label htmlFor="input-fuel-card-no" className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Number (Optional)</label>
+                    <label for="input-fuel-card-no" class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Card Number (Optional)</label>
                     <input
                       id="input-fuel-card-no"
                       type="text"
                       placeholder="e.g. 700012345678"
-                      value={fuelCardNo}
+                      value={fuelCardNo()}
                       onChange={(e) => setFuelCardNo(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                      class="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-slate-550 uppercase mb-1">Status</label>
+                    <label class="block text-[9px] font-bold text-slate-550 uppercase mb-1">Status</label>
                     <select
-                      value={fuelCardStatus}
+                      value={fuelCardStatus()}
                       onChange={(e) => setFuelCardStatus(e.target.value as 'Active' | 'Inactive')}
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                      class="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="Active">Active</option>
                       <option value="Inactive">Inactive</option>
                     </select>
                   </div>
                 </div>
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setShowFuelCardForm(false)}
-                    className="px-3 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                    class="px-3 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
                   >
-                    {editingFuelCardId ? 'Save Changes' : 'Add Card'}
+                    {editingFuelCardId() ? 'Save Changes' : 'Add Card'}
                   </button>
                 </div>
               </form>
             )}
 
             {/* List of Fuel Cards */}
-            {(!orgProfile.fuelCards || orgProfile.fuelCards.length === 0) ? (
-              <p className="text-[11px] text-slate-400 italic text-center py-2">No fuel cards configured for this organization.</p>
+            {(!orgProfile()?.fuelCards || orgProfile()?.fuelCards?.length === 0) ? (
+              <div class="py-4 text-center space-y-2 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-4">
+                <p class="text-[11px] text-slate-500 font-medium">No fuel cards configured for this organization.</p>
+                <button
+                  type="button"
+                  onClick={handlePopulateStandardDefaults}
+                  class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Sparkles class="w-3.5 h-3.5" /> Populate Standard Defaults (IOCL, HPCL, BPCL Fuel Cards)
+                </button>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {orgProfile.fuelCards.map((card) => (
-                  <div key={card.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-3xs">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-800 text-xs">{card.cardName}</span>
-                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${card.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-350'}`}></span>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <For each={orgProfile()?.fuelCards || []}>
+                  {(card) => (
+                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-3xs">
+                      <div class="space-y-0.5">
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-slate-800 text-xs">{card.cardName}</span>
+                          <span class={`inline-block w-1.5 h-1.5 rounded-full ${card.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-350'}`}></span>
+                        </div>
+                        {card.cardNumber && (
+                          <code class="text-[10px] text-slate-400 font-mono select-all block">{card.cardNumber}</code>
+                        )}
                       </div>
-                      {card.cardNumber && (
-                        <code className="text-[10px] text-slate-400 font-mono select-all block">{card.cardNumber}</code>
-                      )}
+                      <div class="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingFuelCardId(card.id);
+                            setFuelCardName(card.cardName);
+                            setFuelCardNo(card.cardNumber || '');
+                            setFuelCardStatus(card.status);
+                            setShowFuelCardForm(true);
+                          }}
+                          class="text-blue-600 hover:text-blue-800 text-[10px] font-bold cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Remove fuel card "${card.cardName}"?`)) {
+                              handleDeleteFuelCard(card.id);
+                            }
+                          }}
+                          class="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingFuelCardId(card.id);
-                          setFuelCardName(card.cardName);
-                          setFuelCardNo(card.cardNumber || '');
-                          setFuelCardStatus(card.status);
-                          setShowFuelCardForm(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-800 text-[10px] font-bold cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Remove fuel card "${card.cardName}"?`)) {
-                            handleDeleteFuelCard(card.id);
-                          }
-                        }}
-                        className="text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )}
+                </For>
               </div>
             )}
+            {/* CUSTOM EXPENSE TYPES & SHOP NAMES SECTION */}
+            <div class="border-t border-slate-200 pt-4 mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Dynamic Expense Types */}
+              <div class="space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div class="flex items-center gap-2">
+                    <Shield class="w-4 h-4 text-blue-650 animate-pulse" />
+                    <h3 class="text-xs font-bold text-blue-655 uppercase tracking-wider">
+                      Custom Expense Types
+                    </h3>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddExpenseType} class="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Water Wash, RTO Fine"
+                    value={newExpenseType()}
+                    onChange={(e) => setNewExpenseType(e.target.value)}
+                    class="flex-1 bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    Add Type
+                  </button>
+                </form>
+
+                {(!orgProfile()?.customExpenseTypes || orgProfile()?.customExpenseTypes?.length === 0) ? (
+                  <div class="py-2.5 text-center space-y-1 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-3">
+                    <p class="text-[11px] text-slate-500 font-medium">No custom expense types configured.</p>
+                    <button
+                      type="button"
+                      onClick={handlePopulateStandardDefaults}
+                      class="text-[10.5px] text-emerald-700 font-extrabold hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Sparkles class="w-3 h-3 text-emerald-600" /> Load Standard Expense Types (Loading, Unloading, RMC, Brokerage, FASTag)
+                    </button>
+                  </div>
+                ) : (
+                  <div class="flex flex-wrap gap-2">
+                    <For each={orgProfile()?.customExpenseTypes || []}>
+                      {(type) => (
+                        <span class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-blue-750 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1">
+                          {type}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Delete custom expense type "${type}"?`)) {
+                                handleDeleteExpenseType(type);
+                              }
+                            }}
+                            class="text-slate-405 hover:text-rose-600 transition"
+                          >
+                            <Trash2 class="w-3 h-3" />
+                          </button>
+                        </span>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </div>
+
+              {/* Shop Names */}
+              <div class="space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div class="flex items-center gap-2">
+                    <ShieldCheck class="w-4 h-4 text-blue-650" />
+                    <h3 class="text-xs font-bold text-blue-655 uppercase tracking-wider">
+                      Authorized Shop/Supplier Names
+                    </h3>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddShopName} class="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Royal Auto, Premier Tyres"
+                    value={newShopName()}
+                    onChange={(e) => setNewShopName(e.target.value)}
+                    class="flex-1 bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    Add Shop
+                  </button>
+                </form>
+
+                {(!orgProfile()?.shopNames || orgProfile()?.shopNames?.length === 0) ? (
+                  <div class="py-2.5 text-center space-y-1 bg-slate-50/60 border border-dashed border-slate-200 rounded-xl p-3">
+                    <p class="text-[11px] text-slate-500 font-medium">No custom supplier names configured.</p>
+                    <button
+                      type="button"
+                      onClick={handlePopulateStandardDefaults}
+                      class="text-[10.5px] text-emerald-700 font-extrabold hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Sparkles class="w-3 h-3 text-emerald-600" /> Load Standard Suppliers (Indian Oil, BPCL, HPCL, Nayara Bunks)
+                    </button>
+                  </div>
+                ) : (
+                  <div class="flex flex-wrap gap-2">
+                    <For each={orgProfile()?.shopNames || []}>
+                      {(shop) => (
+                        <span class="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-250 rounded-lg px-2.5 py-1">
+                          {shop}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Delete shop name() "${shop}"?`)) {
+                                handleDeleteShopName(shop);
+                              }
+                            }}
+                            class="text-slate-405 hover:text-rose-600 transition"
+                          >
+                            <Trash2 class="w-3 h-3" />
+                          </button>
+                        </span>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}
 
-      {showAddForm && (
-        <form onSubmit={handleSubmit} className="mb-6 p-4 md:p-5 bg-slate-50 rounded-lg border border-slate-200 animate-fade-in space-y-4">
-          <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+      {showAddForm() && (
+        <form onSubmit={handleSubmit} class="mb-6 p-4 md:p-5 bg-slate-50 rounded-lg border border-slate-200 animate-fade-in space-y-4">
+          <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wider">
             Authorize New User Account
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class={`grid grid-cols-1 ${isBackendOrg ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Full Name <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <User className="w-3.5 h-3.5" />
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Full Name <span class="text-red-500">*</span></label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <User class="w-3.5 h-3.5" />
                 </span>
                 <input
                   type="text"
                   placeholder="e.g. John Doe"
-                  value={name}
+                  value={name()}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 text-slate-850 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold text-slate-800"
+                  class="w-full bg-white border border-slate-200 text-slate-850 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold text-slate-800"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <Mail className="w-3.5 h-3.5" />
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Email Address <span class="text-red-500">*</span></label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Mail class="w-3.5 h-3.5" />
                 </span>
                 <input
                   type="email"
                   placeholder="e.g. john@company.com"
-                  value={email}
+                  value={email()}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-mono"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Mobile Number</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <Phone className="w-3.5 h-3.5" />
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Mobile Number</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Phone class="w-3.5 h-3.5" />
                 </span>
                 <input
                   type="tel"
                   placeholder="e.g. +1234567890"
-                  value={phone}
+                  value={phone()}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-550 font-mono"
+                  class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-550 font-mono"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">System Role</label>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">System Role</label>
               <select
-                value={role}
+                value={role()}
                 onChange={(e) => handleRoleChange(e.target.value as 'Admin' | 'Custom')}
-                className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
+                class="w-full bg-white border border-slate-200 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-semibold"
               >
                 <option value="Custom">Custom Permissions Set</option>
                 <option value="Admin">Administrator (All Permissions)</option>
               </select>
             </div>
+            {isBackendOrg && (
+              <div class="col-span-1 md:col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Support Category Roles</label>
+                <div class="flex flex-wrap gap-4 mt-2">
+                  {['Technical', 'Billing', 'General'].map((roleVal) => {
+                    const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                    const isChecked = supportRoles().includes(typedRole);
+                    return (
+                      <label  class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setSupportRoles(prev => prev.filter(r => r !== typedRole));
+                            } else {
+                              setSupportRoles(prev => [...prev, typedRole]);
+                            }
+                          }}
+                          class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                        />
+                        {roleVal}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {role === 'Custom' && (
-            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-              <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">Define Specific module View, Edit, and Delete Rights</span>
-              <div className="grid grid-cols-4 gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 p-2.5 rounded-t-lg border-b border-slate-200">
+          {role() === 'Custom' && (
+            <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+              <span class="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">Define Specific module View, Edit, and Delete Rights</span>
+              <div class="grid grid-cols-4 gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 p-2.5 rounded-t-lg border-b border-slate-200">
                 <div>Module / Feature</div>
-                <div className="text-center">View (Read)</div>
-                <div className="text-center">Create/Edit (Write)</div>
-                <div className="text-center">Delete (Remove)</div>
+                <div class="text-center">View (Read)</div>
+                <div class="text-center">Create/Edit (Write)</div>
+                <div class="text-center">Delete (Remove)</div>
               </div>
-              <div className="divide-y divide-slate-100">
+              <div class="divide-y divide-slate-100">
                 {(!isBackendOrg ? [
                   { label: 'Trip Management', view: 'canViewTrips', edit: 'canEditTrips', del: 'canDeleteTrips' },
                   { label: 'Tyre Inventory', view: 'canViewTyres', edit: 'canEditTyres', del: 'canDeleteTyres' },
@@ -702,62 +1161,77 @@ export default function UserAccessControl({
                   { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                   { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                   { label: 'Backend Team Access Control', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                  { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                  { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                  { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
                 ]).map(mod => (
-                  <div key={mod.label} className="grid grid-cols-4 gap-2 py-2 items-center text-xs">
-                    <span className="font-semibold text-slate-700">{mod.label}</span>
-                    <div className="text-center">
+                  <div  class="grid grid-cols-4 gap-2 py-2 items-center text-xs">
+                    <span class="font-semibold text-slate-700">{mod.label}</span>
+                    <div class="text-center">
                       {mod.view ? (
                         <input
                           type="checkbox"
-                          checked={!!(rights as any)[mod.view]}
+                          checked={!!(rights() as any)[mod.view]}
                           onChange={() => toggleFormRight(mod.view as any)}
                           disabled={isBackendOrg && !canAddBackend}
-                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                          class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
                         />
                       ) : (
-                        <span className="text-slate-350 font-sans font-bold">—</span>
+                        <span class="text-slate-350 font-sans font-bold">—</span>
                       )}
                     </div>
-                    <div className="text-center">
+                    <div class="text-center">
                       <input
                         type="checkbox"
-                        checked={!!(rights as any)[mod.edit]}
+                        checked={!!(rights() as any)[mod.edit]}
                         onChange={() => toggleFormRight(mod.edit as any)}
                         disabled={isBackendOrg && !canAddBackend}
-                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                        class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
                       />
                     </div>
-                    <div className="text-center">
+                    <div class="text-center">
                       <input
                         type="checkbox"
-                        checked={!!(rights as any)[mod.del]}
+                        checked={!!(rights() as any)[mod.del]}
                         onChange={() => toggleFormRight(mod.del as any)}
                         disabled={isBackendOrg && !canAddBackend}
-                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                        class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
                       />
                     </div>
                   </div>
                 ))}
               </div>
+              {isBackendOrg && (
+                <div class="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                  <input
+                    type="checkbox"
+                    id="checkbox-form-transfer-tickets"
+                    checked={rights().canTransferTickets}
+                    onChange={() => setRights(prev => ({ ...prev, canTransferTickets: !prev.canTransferTickets }))}
+                    class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <label for="checkbox-form-transfer-tickets" class="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer uppercase tracking-tight">
+                    Authorize Ticket Transfer Privileges (Can move tickets between Technical/Billing/General category queues)
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
-          <div className="flex justify-end gap-3 mt-4 pt-3 border-t border-slate-200">
+          <div class="flex justify-end gap-3 mt-4 pt-3 border-t border-slate-200">
             <button
               type="button"
               onClick={() => {
                 resetForm();
                 setShowAddForm(false);
               }}
-              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+              class="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isBackendOrg && !canAddBackend}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isBackendOrg && !canAddBackend()}
+              class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Grant Access
             </button>
@@ -766,34 +1240,35 @@ export default function UserAccessControl({
       )}
 
       {/* ── Mobile card list (< md) ── */}
-      <div className="block md:hidden space-y-3">
-        {permissions.map((p) => {
-          const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
-          const membership = getAppwriteMembership(p.email);
-          const isExpanded = expandedUserId === p.id;
-          const canEdit = !isBackendOrg || canEditBackend;
+      <div class="block md:hidden space-y-3">
+        <For each={permissions()}>
+          {(p) => {
+            const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim();
+            const membership = getAppwriteMembership(p.email);
+            const isExpanded = expandedUserId() === p.id;
+            const canEdit = !isBackendOrg || canEditBackend();
 
-          return (
-            <div key={p.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            return (
+            <div  class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
               {/* Card header */}
-              <div className="flex items-start gap-3 p-4">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 text-sm font-extrabold border border-slate-200 flex-shrink-0">
+              <div class="flex items-start gap-3 p-4">
+                <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 text-sm font-extrabold border border-slate-200 flex-shrink-0">
                   {p.name ? p.name.substring(0, 2).toUpperCase() : 'US'}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-800 text-sm truncate">{p.name}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-slate-800 text-sm truncate">{p.name}</span>
                     {isCurrentUser && (
-                      <span className="bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">You</span>
+                      <span class="bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">You</span>
                     )}
                   </div>
-                  <span className="text-[11px] text-slate-400 font-mono block mt-0.5 truncate">{p.email}</span>
-                  <span className="text-[11px] text-slate-450 font-mono block mt-0.5 truncate">Phone: {p.phone || 'Not Set'}</span>
+                  <span class="text-[11px] text-slate-400 font-mono block mt-0.5 truncate">{p.email}</span>
+                  <span class="text-[11px] text-slate-450 font-mono block mt-0.5 truncate">Phone: {p.phone || 'Not Set'}</span>
 
                   {/* Verification override panel */}
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    <div className="flex items-center gap-1">
-                      <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
+                  <div class="flex flex-wrap gap-2 mt-2">
+                    <div class="flex items-center gap-1">
+                      <span class={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}>
@@ -807,15 +1282,15 @@ export default function UserAccessControl({
                             onUpdatePermission(updated);
                             showNotification(`Manually verified email for ${p.name}.`);
                           }}
-                          className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                          class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                         >
                           Verify
                         </button>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
+                    <div class="flex items-center gap-1">
+                      <span class={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}>
@@ -829,7 +1304,7 @@ export default function UserAccessControl({
                             onUpdatePermission(updated);
                             showNotification(`Manually verified phone for ${p.name}.`);
                           }}
-                          className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                          class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                         >
                           Verify
                         </button>
@@ -837,30 +1312,30 @@ export default function UserAccessControl({
                     </div>
                   </div>
                   {/* Status badges */}
-                  <div className="flex flex-wrap gap-1.5 mt-2">
+                  <div class="flex flex-wrap gap-1.5 mt-2">
                     {p.isApproved ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
-                        <ShieldCheck className="w-3 h-3" /> Approved
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                        <ShieldCheck class="w-3 h-3" /> Approved
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
                         Pending
                       </span>
                     )}
-                    {teamMembers.length > 0 && (
+                    {teamMembers().length > 0 && (
                       membership ? (
                         membership.confirm ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
-                            <CheckCircle className="w-2.5 h-2.5" /> Appwrite ✓
+                          <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
+                            <CheckCircle class="w-2.5 h-2.5" /> Appwrite ✓
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                            <RefreshCw className="w-2.5 h-2.5" /> Invite Pending
+                          <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                            <RefreshCw class="w-2.5 h-2.5" /> Invite Pending
                           </span>
                         )
                       ) : (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                          <XCircle className="w-2.5 h-2.5" /> Not in Appwrite
+                        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                          <XCircle class="w-2.5 h-2.5" /> Not in Appwrite
                         </span>
                       )
                     )}
@@ -869,7 +1344,7 @@ export default function UserAccessControl({
               </div>
 
               {/* Role selector + actions row */}
-              <div className="px-4 pb-4 flex flex-wrap items-center gap-2">
+              <div class="px-4 pb-4 flex flex-wrap items-center gap-2">
                 {/* Role select */}
                 <select
                   value={p.role}
@@ -877,10 +1352,10 @@ export default function UserAccessControl({
                   disabled={
                     isCurrentUser ||
                     !p.isApproved ||
-                    (isBackendOrg && !canEditBackend) ||
-                    (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                    (isBackendOrg && !canEditBackend()) ||
+                    (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                   }
-                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-2 focus:outline-none cursor-pointer disabled:opacity-50 flex-1 min-w-0"
+                  class="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-2 focus:outline-none cursor-pointer disabled:opacity-50 flex-1 min-w-0"
                 >
                   {p.role === 'SuperAdmin' && <option value="SuperAdmin">Super Admin</option>}
                   <option value="Admin">Administrator</option>
@@ -892,16 +1367,16 @@ export default function UserAccessControl({
                   <button
                     type="button"
                     onClick={() => {
-                      if (isBackendOrg && !canEditBackend) {
+                      if (isBackendOrg && !canEditBackend()) {
                         showNotification("You do not have permission to approve team members.");
                         return;
                       }
                       approveUser(p);
                     }}
-                    disabled={isBackendOrg && !canEditBackend}
-                    className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isBackendOrg && !canEditBackend()}
+                    class="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Check className="w-3.5 h-3.5" /> Approve
+                    <Check class="w-3.5 h-3.5" /> Approve
                   </button>
                 )}
 
@@ -917,14 +1392,14 @@ export default function UserAccessControl({
                       setExpandedUserId(isExpanded ? null : p.id);
                     }}
                     disabled={!p.isApproved}
-                    className="flex items-center gap-1 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition disabled:opacity-50"
+                    class="flex items-center gap-1 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition disabled:opacity-50"
                   >
-                    <Shield className="w-3.5 h-3.5" />
+                    <Shield class="w-3.5 h-3.5" />
                     {isExpanded ? 'Close' : 'Permissions'}
-                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    {isExpanded ? <ChevronUp class="w-3.5 h-3.5" /> : <ChevronDown class="w-3.5 h-3.5" />}
                   </button>
                 ) : (
-                  <span className="text-[10px] text-slate-500 font-semibold font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                  <span class="text-[10px] text-slate-500 font-semibold font-mono bg-slate-100 px-2 py-1 rounded border border-slate-200">
                     Full Admin
                   </span>
                 )}
@@ -936,11 +1411,11 @@ export default function UserAccessControl({
                       alert("Safety Lock: You cannot delete your own user profile while logged in.");
                       return;
                     }
-                    if (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
+                    if (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
                       alert("Security Restriction: You do not have permission to delete/revoke Administrator or Super Admin accounts.");
                       return;
                     }
-                    if (isBackendOrg && !canDeleteBackend) {
+                    if (isBackendOrg && !canDeleteBackend()) {
                       showNotification("You do not have permission to revoke backend team access.");
                       return;
                     }
@@ -953,23 +1428,23 @@ export default function UserAccessControl({
                   }}
                   disabled={
                     isCurrentUser ||
-                    (isBackendOrg && !canDeleteBackend) ||
-                    (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                    (isBackendOrg && !canDeleteBackend()) ||
+                    (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                   }
-                  className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  class="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Revoke User Access"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 class="w-4 h-4" />
                 </button>
               </div>
 
               {/* Expanded permissions panel */}
               {isExpanded && p.role === 'Custom' && p.isApproved && (
-                <div className="border-t border-slate-200 p-4 bg-slate-50 animate-fade-in">
-                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Fine-grained permissions — {p.name}
+                <div class="border-t border-slate-200 p-4 bg-slate-50 animate-fade-in">
+                  <h4 class="text-[10px] font-black text-blue-600 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <ShieldCheck class="w-3.5 h-3.5" /> Fine-grained permissions — {p.name}
                   </h4>
-                  <div className="space-y-2">
+                  <div class="space-y-2">
                     {(!isBackendOrg ? [
                       { label: 'Trip Management', view: 'canViewTrips', edit: 'canEditTrips', del: 'canDeleteTrips' },
                       { label: 'Tyre Inventory', view: 'canViewTyres', edit: 'canEditTyres', del: 'canDeleteTyres' },
@@ -983,42 +1458,44 @@ export default function UserAccessControl({
                       { label: 'Customer Org Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                       { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                       { label: 'Backend Team Access', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                      { label: 'Database Console', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                      { label: 'Database Console', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                      { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' },
+                      { label: 'Generate Coupon Codes', view: 'canGenerateCoupon', edit: 'canGenerateCoupon', del: 'canGenerateCoupon' }
                     ]).map(mod => (
-                      <div key={mod.label} className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
-                        <span className="text-xs font-bold text-slate-700 block mb-2">{mod.label}</span>
-                        <div className="flex gap-4">
+                      <div  class="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
+                        <span class="text-xs font-bold text-slate-700 block mb-2">{mod.label}</span>
+                        <div class="flex gap-4">
                           {mod.view ? (
-                            <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
+                            <label class="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
                               <input
                                 type="checkbox"
                                 checked={!!(p as any)[mod.view]}
                                 onChange={() => toggleUserRight(p, mod.view as any)}
-                                disabled={isBackendOrg && !canEditBackend}
-                                className="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
+                                disabled={isBackendOrg && !canEditBackend()}
+                                class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                               />
                               View
                             </label>
                           ) : (
-                            <span className="text-slate-350 font-sans font-bold text-[11px]">View: —</span>
+                            <span class="text-slate-350 font-sans font-bold text-[11px]">View: —</span>
                           )}
-                          <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
+                          <label class="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
                             <input
                               type="checkbox"
                               checked={!!(p as any)[mod.edit]}
                               onChange={() => toggleUserRight(p, mod.edit as any)}
-                              disabled={isBackendOrg && !canEditBackend}
-                              className="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
+                              disabled={isBackendOrg && !canEditBackend()}
+                              class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                             />
                             Edit
                           </label>
-                          <label className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
+                          <label class="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium cursor-pointer">
                             <input
                               type="checkbox"
                               checked={!!(p as any)[mod.del]}
                               onChange={() => toggleUserRight(p, mod.del as any)}
-                              disabled={isBackendOrg && !canEditBackend}
-                              className="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
+                              disabled={isBackendOrg && !canEditBackend()}
+                              class="rounded-sm border-slate-300 text-blue-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
                             />
                             Delete
                           </label>
@@ -1026,11 +1503,66 @@ export default function UserAccessControl({
                       </div>
                     ))}
                   </div>
-                  <div className="flex justify-end mt-3">
+                  {isBackendOrg && (
+                    <div class="flex flex-col gap-3 mt-3 pt-3 border-t border-slate-150">
+                      {/* Support Category Selection */}
+                      <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Support Category Roles</label>
+                        <div class="flex flex-wrap gap-4 mt-1 bg-white border border-slate-200 rounded-lg p-2.5">
+                          {['Technical', 'Billing', 'General'].map((roleVal) => {
+                            const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                            const currentRoles = Array.isArray(p.supportRole)
+                              ? p.supportRole
+                              : (typeof p.supportRole === 'string' && p.supportRole !== 'None' && p.supportRole !== ''
+                                ? [p.supportRole]
+                                : []);
+                            const isChecked = currentRoles.includes(typedRole);
+                            return (
+                              <label  class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isBackendOrg && !canEditBackend}
+                                  onChange={() => {
+                                    const newRoles = (isChecked
+                                      ? currentRoles.filter(r => r !== typedRole)
+                                      : [...currentRoles, typedRole]) as ('Technical' | 'Billing' | 'General')[];
+                                    const updated = { ...p, supportRole: newRoles };
+                                    onUpdatePermission(updated);
+                                  }}
+                                  class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                />
+                                {roleVal}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Ticket Transfer Permission */}
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`checkbox-transfer-tickets-mob-${p.id}`}
+                          checked={!!p.canTransferTickets}
+                          onChange={() => {
+                            const updated = { ...p, canTransferTickets: !p.canTransferTickets };
+                            onUpdatePermission(updated);
+                          }}
+                          disabled={isBackendOrg && !canEditBackend}
+                          class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                        />
+                        <label for={`checkbox-transfer-tickets-mob-${p.id}`} class="text-xs font-bold text-slate-700 cursor-pointer uppercase tracking-tight">
+                          Authorize Ticket Transfer Privileges
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  <div class="flex justify-end mt-3">
                     <button
                       type="button"
                       onClick={() => setExpandedUserId(null)}
-                      className="px-3 py-1.5 bg-slate-900 text-white font-bold text-[10px] rounded-lg hover:bg-slate-800 cursor-pointer transition"
+                      class="px-3 py-1.5 bg-slate-900 text-white font-bold text-[10px] rounded-lg hover:bg-slate-800 cursor-pointer transition"
                     >
                       Close
                     </button>
@@ -1039,47 +1571,48 @@ export default function UserAccessControl({
               )}
             </div>
           );
-        })}
+        }}
+        </For>
       </div>
 
       {/* ── Desktop table (≥ md) ── */}
-      <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="w-full text-left text-sm text-slate-700 whitespace-nowrap">
-          <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 font-bold tracking-wider">
+      <div class="hidden md:block overflow-x-auto border border-slate-200 rounded-lg">
+        <table class="w-full text-left text-sm text-slate-700 whitespace-nowrap">
+          <thead class="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 font-bold tracking-wider">
             <tr>
-              <th className="px-4 py-3.5 pl-6">Authorized User</th>
-              <th className="px-4 py-3.5 text-center">Status</th>
-              <th className="px-4 py-3.5">System Role</th>
-              <th className="px-4 py-3.5 text-center">Permissions Summary</th>
-              <th className="px-4 py-3.5 text-right pr-6">Revoke Access</th>
+              <th class="px-4 py-3.5 pl-6">Authorized User</th>
+              <th class="px-4 py-3.5 text-center">Status</th>
+              <th class="px-4 py-3.5">System Role</th>
+              <th class="px-4 py-3.5 text-center">Permissions Summary</th>
+              <th class="px-4 py-3.5 text-right pr-6">Revoke Access</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 font-sans">
-            {permissions.map((p) => {
-              const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim();
-              const canEdit = !isBackendOrg || canEditBackend;
+          <tbody class="divide-y divide-slate-100 font-sans">
+            <For each={permissions()}>
+              {(p) => {
+                const isCurrentUser = p.email.toLowerCase().trim() === currentUserEmail().toLowerCase().trim();
+                const canEdit = !isBackendOrg || canEditBackend();
 
-              return (
-                <React.Fragment key={p.id}>
-                  <tr className="hover:bg-slate-50/50 transition">
-                    <td className="px-4 py-3.5 pl-6 font-bold text-slate-800 flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold font-sans border border-slate-200 shadow-2xs">
+                return [
+                  <tr class="hover:bg-slate-50/50 transition">
+                    <td class="px-4 py-3.5 pl-6 font-bold text-slate-800 flex items-center gap-2.5">
+                      <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold font-sans border border-slate-200 shadow-2xs">
                         {p.name ? p.name.substring(0, 2).toUpperCase() : 'US'}
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-800">{p.name}</span>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-slate-800">{p.name}</span>
                           {isCurrentUser && (
-                            <span className="bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">You</span>
+                            <span class="bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider">You</span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono block mt-0.5">{p.email}</span>
-                        <span className="text-[10px] text-slate-450 font-mono block mt-0.5">Phone: {p.phone || 'Not Set'}</span>
+                        <span class="text-[10px] text-slate-400 font-mono block mt-0.5">{p.email}</span>
+                        <span class="text-[10px] text-slate-450 font-mono block mt-0.5">Phone: {p.phone || 'Not Set'}</span>
 
                         {/* Verification override panel */}
-                        <div className="flex gap-2 mt-1.5 flex-wrap">
-                          <div className="flex items-center gap-1">
-                            <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
+                        <div class="flex gap-2 mt-1.5 flex-wrap">
+                          <div class="flex items-center gap-1">
+                            <span class={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isEmailVerified
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}>
@@ -1093,15 +1626,15 @@ export default function UserAccessControl({
                                   onUpdatePermission(updated);
                                   showNotification(`Manually verified email for ${p.name}.`);
                                 }}
-                                className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                                class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                               >
                                 Verify
                               </button>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
+                          <div class="flex items-center gap-1">
+                            <span class={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-semibold ${p.isPhoneVerified
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}>
@@ -1115,7 +1648,7 @@ export default function UserAccessControl({
                                   onUpdatePermission(updated);
                                   showNotification(`Manually verified phone for ${p.name}.`);
                                 }}
-                                className="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
+                                class="text-[9px] text-blue-600 hover:text-blue-805 font-bold bg-blue-55 hover:bg-blue-100 border border-blue-200 rounded px-1.5 py-0.5 cursor-pointer transition-all"
                               >
                                 Verify
                               </button>
@@ -1126,74 +1659,68 @@ export default function UserAccessControl({
                     </td>
 
                     {/* Approval Status + Live Appwrite Membership Status */}
-                    <td className="px-4 py-3.5 text-center">
-                      <div className="flex flex-col items-center gap-1.5">
+                    <td class="px-4 py-3.5 text-center">
+                      <div class="flex flex-col items-center gap-1.5">
                         {/* Local approval status */}
                         {p.isApproved ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                            <ShieldCheck class="w-3.5 h-3.5 text-emerald-600" />
                             Approved
                           </span>
                         ) : (
-                          <div className="flex items-center justify-center gap-2">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
+                          <div class="flex items-center justify-center gap-2">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700">
                               Pending
                             </span>
                             <button
                               type="button"
                               onClick={() => {
-                                if (isBackendOrg && !canEditBackend) {
+                                if (isBackendOrg && !canEditBackend()) {
                                   showNotification("You do not have permission to approve team members.");
                                   return;
                                 }
                                 approveUser(p);
                               }}
-                              disabled={isBackendOrg && !canEditBackend}
-                              className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 rounded text-[10px] font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={isBackendOrg && !canEditBackend()}
+                              class="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 rounded text-[10px] font-bold cursor-pointer transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Check className="w-3 h-3 text-white" /> Approve
+                              <Check class="w-3 h-3 text-white" /> Approve
                             </button>
                           </div>
                         )}
 
                         {/* Live Appwrite Teams sync status */}
-                        {(() => {
-                          const membership = getAppwriteMembership(p.email);
-                          if (teamMembers.length === 0) return null; // Not loaded yet
-                          if (!membership) {
-                            return (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                                <XCircle className="w-2.5 h-2.5" /> Not in Appwrite Team
+                        {teamMembers().length > 0 && (
+                          getAppwriteMembership(p.email) ? (
+                            getAppwriteMembership(p.email)?.confirm ? (
+                              <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
+                                <CheckCircle class="w-2.5 h-2.5" /> Appwrite ✓
                               </span>
-                            );
-                          }
-                          if (membership.confirm) {
-                            return (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">
-                                <CheckCircle className="w-2.5 h-2.5" /> Appwrite ✓
+                            ) : (
+                              <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                                <RefreshCw class="w-2.5 h-2.5" /> Invite Pending
                               </span>
-                            );
-                          }
-                          return (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                              <RefreshCw className="w-2.5 h-2.5" /> Invite Pending
+                            )
+                          ) : (
+                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                              <XCircle class="w-2.5 h-2.5" /> Not in Appwrite Team
                             </span>
-                          );
-                        })()}
+                          )
+                        )}
                       </div>
                     </td>
 
-                    <td className="px-4 py-3.5 text-slate-650 font-semibold">
+                    <td class="px-4 py-3.5 text-slate-650 font-semibold">
                       <select
                         value={p.role}
                         onChange={(e) => changeUserRole(p, e.target.value as any)}
                         disabled={
                           isCurrentUser ||
                           !p.isApproved ||
-                          (isBackendOrg && !canEditBackend) ||
-                          (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                          (isBackendOrg && !canEditBackend()) ||
+                          (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }
-                        className="bg-slate-50 border border-slate-200 text-slate-800 text-[11px] font-bold rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer disabled:opacity-50"
+                        class="bg-slate-50 border border-slate-200 text-slate-800 text-[11px] font-bold rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer disabled:opacity-50"
                       >
                         {p.role === 'SuperAdmin' && <option value="SuperAdmin">Super Admin</option>}
                         <option value="Admin">Administrator</option>
@@ -1202,9 +1729,9 @@ export default function UserAccessControl({
                     </td>
 
                     {/* Expandable permissions config triggers */}
-                    <td className="px-4 py-3.5 text-center">
+                    <td class="px-4 py-3.5 text-center">
                       {(p.role === 'Admin' || p.role === 'SuperAdmin') ? (
-                        <span className="text-[11px] text-slate-500 font-semibold font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        <span class="text-[11px] text-slate-500 font-semibold font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                           Full Admin Access
                         </span>
                       ) : (
@@ -1215,30 +1742,30 @@ export default function UserAccessControl({
                               showNotification("Approve user registration access first.");
                               return;
                             }
-                            setExpandedUserId(expandedUserId === p.id ? null : p.id);
+                            setExpandedUserId(expandedUserId() === p.id ? null : p.id);
                           }}
                           disabled={!p.isApproved}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition disabled:opacity-50`}
+                          class={`inline-flex items-center gap-1.5 px-3 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition disabled:opacity-50`}
                         >
                           Configure Modules
-                          {expandedUserId === p.id ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                          {expandedUserId() === p.id ? <ChevronUp class="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown class="w-3.5 h-3.5 text-slate-400" />}
                         </button>
                       )}
                     </td>
 
                     {/* Delete / Revoke option */}
-                    <td className="px-4 py-3.5 text-right pr-6">
+                    <td class="px-4 py-3.5 text-right pr-6">
                       <button
                         onClick={() => {
                           if (isCurrentUser) {
                             alert("Safety Lock: You cannot delete your own user profile while logged in.");
                             return;
                           }
-                          if (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
+                          if (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin')) {
                             alert("Security Restriction: You do not have permission to delete/revoke Administrator or Super Admin accounts.");
                             return;
                           }
-                          if (isBackendOrg && !canDeleteBackend) {
+                          if (isBackendOrg && !canDeleteBackend()) {
                             showNotification("You do not have permission to revoke backend team access.");
                             return;
                           }
@@ -1251,37 +1778,37 @@ export default function UserAccessControl({
                         }}
                         disabled={
                           isCurrentUser ||
-                          (isBackendOrg && !canDeleteBackend) ||
-                          (currentUserRole === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
+                          (isBackendOrg && !canDeleteBackend()) ||
+                          (currentUserRole() === 'Custom' && (p.role === 'Admin' || p.role === 'SuperAdmin'))
                         }
-                        className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-650 hover:text-rose-700 rounded border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        class="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-650 hover:text-rose-700 rounded border border-rose-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Revoke User Access"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 class="w-3.5 h-3.5" />
                       </button>
                     </td>
-                  </tr>
+                  </tr>,
 
-                  {/* Expanded Nested Grid of 21 check flags */}
-                  {expandedUserId === p.id && p.role === 'Custom' && p.isApproved && (
-                    <tr className="bg-slate-50/50">
-                      <td colSpan={5} className="p-4 pl-8 pr-8">
-                        <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-4 shadow-sm animate-fade-in space-y-3 text-left">
-                          <h4 className="text-xs font-black text-blue-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  // Expanded Nested Grid of 21 check flags
+                  (expandedUserId() === p.id && p.role === 'Custom' && p.isApproved) ? (
+                    <tr class="bg-slate-50/50">
+                      <td colSpan={5} class="p-4 pl-8 pr-8">
+                        <div class="max-w-2xl bg-white border border-slate-200 rounded-xl p-4 shadow-sm animate-fade-in space-y-3 text-left">
+                          <h4 class="text-xs font-black text-blue-600 uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldCheck class="w-4 h-4 text-blue-600" />
                             Fine-grained permissions configuration for {p.name}
                           </h4>
-                          <p className="text-[10px] text-slate-500 font-medium">
+                          <p class="text-[10px] text-slate-500 font-medium">
                             Set distinct view, create/edit, and deletion capabilities for each database register module.
                           </p>
-                          <div className="border border-slate-200 rounded-lg overflow-hidden mt-2">
-                            <div className="grid grid-cols-4 gap-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 p-2.5 pl-4 border-b border-slate-250/70">
+                          <div class="border border-slate-200 rounded-lg overflow-hidden mt-2">
+                            <div class="grid grid-cols-4 gap-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 p-2.5 pl-4 border-b border-slate-250/70">
                               <div>Database Register Module</div>
-                              <div className="text-center">View (Read)</div>
-                              <div className="text-center">Write/Edit (Create)</div>
-                              <div className="text-center">Delete (Remove)</div>
+                              <div class="text-center">View (Read)</div>
+                              <div class="text-center">Write/Edit (Create)</div>
+                              <div class="text-center">Delete (Remove)</div>
                             </div>
-                            <div className="divide-y divide-slate-100 bg-white font-semibold text-slate-700 pl-4 pr-2">
+                            <div class="divide-y divide-slate-100 bg-white font-semibold text-slate-700 pl-4 pr-2">
                               {(!isBackendOrg ? [
                                 { label: 'Trip Management', view: 'canViewTrips', edit: 'canEditTrips', del: 'canDeleteTrips' },
                                 { label: 'Tyre Inventory', view: 'canViewTyres', edit: 'canEditTyres', del: 'canDeleteTyres' },
@@ -1295,50 +1822,106 @@ export default function UserAccessControl({
                                 { label: 'Customer Organization Profiles', view: 'canViewBackend', edit: 'canEditBackend', del: 'canDeleteBackend' },
                                 { label: 'Truck Activation Requests', view: 'canViewTruckRequests', edit: 'canApproveBackend', del: 'canDeleteTruckRequests' },
                                 { label: 'Backend Team Access Control', view: 'canViewBackendTeam', edit: 'canAddBackend', del: 'canDeleteBackendTeam' },
-                                { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' }
+                                { label: 'Database Console / Raw Editor', view: 'canViewDatabaseConsole', edit: 'canEditDatabaseConsole', del: 'canDeleteDatabaseConsole' },
+                                { label: 'Support Tickets Desk', view: 'canViewTickets', edit: 'canEditTickets', del: 'canDeleteTickets' }
                               ]).map(mod => (
-                                <div key={mod.label} className="grid grid-cols-4 gap-2 py-2.5 items-center text-xs">
-                                  <span className="font-bold text-slate-800">{mod.label}</span>
-                                  <div className="text-center">
+                                <div  class="grid grid-cols-4 gap-2 py-2.5 items-center text-xs">
+                                  <span class="font-bold text-slate-800">{mod.label}</span>
+                                  <div class="text-center">
                                     {mod.view ? (
                                       <input
                                         type="checkbox"
                                         checked={!!(p as any)[mod.view]}
                                         onChange={() => toggleUserRight(p, mod.view as any)}
-                                        disabled={isBackendOrg && !canEditBackend}
-                                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={isBackendOrg && !canEditBackend()}
+                                        class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                       />
                                     ) : (
-                                      <span className="text-slate-350 font-sans font-bold">—</span>
+                                      <span class="text-slate-350 font-sans font-bold">—</span>
                                     )}
                                   </div>
-                                  <div className="text-center">
+                                  <div class="text-center">
                                     <input
                                       type="checkbox"
                                       checked={!!(p as any)[mod.edit]}
                                       onChange={() => toggleUserRight(p, mod.edit as any)}
-                                      disabled={isBackendOrg && !canEditBackend}
-                                      className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      disabled={isBackendOrg && !canEditBackend()}
+                                      class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
-                                  <div className="text-center">
+                                  <div class="text-center">
                                     <input
                                       type="checkbox"
                                       checked={!!(p as any)[mod.del]}
                                       onChange={() => toggleUserRight(p, mod.del as any)}
-                                      disabled={isBackendOrg && !canEditBackend}
-                                      className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                      disabled={isBackendOrg && !canEditBackend()}
+                                      class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                 </div>
                               ))}
                             </div>
                           </div>
-                          <div className="flex justify-end pt-1">
+                          {isBackendOrg && (
+                            <div class="flex flex-col gap-3 mt-3 pt-3 border-t border-slate-200">
+                              {/* Support Category Selection */}
+                              <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Support Category Roles</label>
+                                <div class="flex flex-wrap gap-4 mt-1 bg-white border border-slate-200 rounded-lg p-2.5">
+                                  {['Technical', 'Billing', 'General'].map((roleVal) => {
+                                    const typedRole = roleVal as 'Technical' | 'Billing' | 'General';
+                                    const currentRoles = Array.isArray(p.supportRole)
+                                      ? p.supportRole
+                                      : (typeof p.supportRole === 'string' && p.supportRole !== 'None' && p.supportRole !== ''
+                                        ? [p.supportRole]
+                                        : []);
+                                    const isChecked = currentRoles.includes(typedRole);
+                                    return (
+                                      <label  class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          disabled={isBackendOrg && !canEditBackend()}
+                                          onChange={() => {
+                                            const newRoles = (isChecked
+                                              ? currentRoles.filter(r => r !== typedRole)
+                                              : [...currentRoles, typedRole]) as ('Technical' | 'Billing' | 'General')[];
+                                            const updated = { ...p, supportRole: newRoles };
+                                            onUpdatePermission(updated);
+                                          }}
+                                          class="rounded-sm border-slate-350 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                        />
+                                        {roleVal}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Ticket Transfer Permission */}
+                              <div class="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`checkbox-transfer-tickets-${p.id}`}
+                                  checked={!!p.canTransferTickets}
+                                  onChange={() => {
+                                    const updated = { ...p, canTransferTickets: !p.canTransferTickets };
+                                    onUpdatePermission(updated);
+                                  }}
+                                  disabled={isBackendOrg && !canEditBackend()}
+                                  class="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer disabled:opacity-50"
+                                />
+                                <label for={`checkbox-transfer-tickets-${p.id}`} class="text-xs font-bold text-slate-700 cursor-pointer uppercase tracking-tight">
+                                  Authorize Ticket Transfer Privileges (Can move tickets between queues)
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                          <div class="flex justify-end pt-1">
                             <button
                               type="button"
                               onClick={() => setExpandedUserId(null)}
-                              className="px-3 py-1 bg-slate-900 text-white font-bold text-[10px] rounded-lg hover:bg-slate-850 cursor-pointer shadow-3xs transition"
+                              class="px-3 py-1 bg-slate-900 text-white font-bold text-[10px] rounded-lg hover:bg-slate-850 cursor-pointer shadow-3xs transition"
                             >
                               Close Permissions Config
                             </button>
@@ -1346,10 +1929,10 @@ export default function UserAccessControl({
                         </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
+                  ) : null
+                ].filter(Boolean);
+              }}
+            </For>
           </tbody>
         </table>
       </div>

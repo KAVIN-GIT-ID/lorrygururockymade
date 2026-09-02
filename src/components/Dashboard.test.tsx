@@ -1,6 +1,6 @@
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '@solidjs/testing-library';
 import Dashboard from './Dashboard';
 import { TripEntry, Truck, Office, Account } from '../types';
 
@@ -88,7 +88,7 @@ const mockAccounts: Account[] = [
 
 describe('Dashboard Component Tests', () => {
   it('should render income, outstanding, and profit statistics correctly', () => {
-    render(
+    render(() => (
       <Dashboard
         trips={mockTrips}
         trucks={mockTrucks}
@@ -106,7 +106,7 @@ describe('Dashboard Component Tests', () => {
           canViewExpenses: true,
         } as any}
       />
-    );
+    ));
 
     // Total income = 50000 + 30000 = 80,000
     // Total expenses = 20000
@@ -126,7 +126,7 @@ describe('Dashboard Component Tests', () => {
   });
 
   it('should display correct counts for trip status categories', () => {
-    render(
+    render(() => (
       <Dashboard
         trips={mockTrips}
         trucks={mockTrucks}
@@ -137,7 +137,7 @@ describe('Dashboard Component Tests', () => {
         setActiveMonth={() => {}}
         setActiveYear={() => {}}
       />
-    );
+    ));
 
     expect(screen.getByText('Pending Advances')).toBeInTheDocument();
     expect(screen.getByText('Active Transitions')).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe('Dashboard Component Tests', () => {
   });
 
   it('should display collection account progress correctly', () => {
-    render(
+    render(() => (
       <Dashboard
         trips={mockTrips}
         trucks={mockTrucks}
@@ -161,14 +161,14 @@ describe('Dashboard Component Tests', () => {
         setActiveMonth={() => {}}
         setActiveYear={() => {}}
       />
-    );
+    ));
 
     expect(screen.getByText('Receipts by Accounts')).toBeInTheDocument();
     expect(screen.getByText('State Bank Current A/C')).toBeInTheDocument();
   });
 
   it('should compute total outstanding from allTrips while billed income uses trips', () => {
-    render(
+    render(() => (
       <Dashboard
         trips={[mockTrips[0]]}
         allTrips={mockTrips}
@@ -187,7 +187,7 @@ describe('Dashboard Component Tests', () => {
           canViewExpenses: true,
         } as any}
       />
-    );
+    ));
 
     // Total income should be only for mockTrips[0] => 50,000
     expect(screen.getByText('Total Billed Income')).toBeInTheDocument();
@@ -236,7 +236,7 @@ describe('Dashboard Component Tests', () => {
       ]
     };
 
-    render(
+    render(() => (
       <Dashboard
         trips={[tripWithDriverDirectCrossing]}
         trucks={mockTrucks}
@@ -254,7 +254,7 @@ describe('Dashboard Component Tests', () => {
           canViewExpenses: true,
         } as any}
       />
-    );
+    ));
 
     // Outstanding = income (50000) - totalOrgRentalDeductions (0 because crossing is DriverDirect) - payments (40000) = 10,000
     // If crossing was deducted from rental, outstanding would be 50000 - 2500 - 40000 = 7,500

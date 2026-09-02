@@ -1,36 +1,10 @@
+import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom';
-import React from 'react';
+import { createSignal, createEffect } from 'solid-js';
 import { vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   (globalThis as any).mockGlobalConfigs = undefined;
-});
-
-// Global mock for Recharts
-vi.mock('recharts', () => {
-  return {
-    ResponsiveContainer: ({ children }: any) => {
-      // Mock responsive container by calling children function with fake dimensions
-      if (typeof children === 'function') {
-        return children({ width: 400, height: 300 });
-      }
-      return React.createElement('div', { 'data-testid': 'ResponsiveContainer' }, children);
-    },
-    BarChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'BarChart' }, children),
-    Bar: () => React.createElement('div', { 'data-testid': 'Bar' }),
-    XAxis: () => null,
-    YAxis: () => null,
-    CartesianGrid: () => null,
-    Tooltip: () => null,
-    Legend: () => null,
-    LineChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'LineChart' }, children),
-    Line: () => React.createElement('div', { 'data-testid': 'Line' }),
-    PieChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'PieChart' }, children),
-    Pie: () => React.createElement('div', { 'data-testid': 'Pie' }),
-    Cell: () => null,
-    AreaChart: ({ children }: any) => React.createElement('div', { 'data-testid': 'AreaChart' }, children),
-    Area: () => React.createElement('div', { 'data-testid': 'Area' }),
-  };
 });
 
 // Global mock for Appwrite Service
@@ -182,7 +156,6 @@ vi.mock('../lib/appwrite', () => {
       queryTyres: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
       queryAuditLogs: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
       fetchMonthlyTripsAndExpenses: vi.fn().mockResolvedValue({ trips: [], expenses: [] }),
-      getClient: vi.fn().mockReturnValue(null),
       updatePhone: vi.fn().mockResolvedValue({}),
       createVerification: vi.fn().mockResolvedValue({}),
       updateVerification: vi.fn().mockResolvedValue({}),
@@ -190,6 +163,21 @@ vi.mock('../lib/appwrite', () => {
       updatePhoneVerification: vi.fn().mockResolvedValue({}),
       createRecovery: vi.fn().mockResolvedValue({}),
       updateRecovery: vi.fn().mockResolvedValue({}),
+      getRealtime: vi.fn().mockReturnValue({
+        subscribe: vi.fn().mockResolvedValue({
+          close: vi.fn(),
+          unsubscribe: vi.fn()
+        })
+      }),
+      flushSyncQueue: vi.fn().mockResolvedValue(undefined),
+      loadGlobalConfig: vi.fn().mockResolvedValue(null),
+      reconstructRecord: vi.fn().mockImplementation((doc) => doc),
+      createSessionJwt: vi.fn().mockResolvedValue({ jwt: 'mock-jwt' }),
+      subscribeToGateway: vi.fn().mockReturnValue({ close: vi.fn(), unsubscribe: vi.fn() }),
+      getClient: vi.fn().mockReturnValue({
+        setEndpoint: vi.fn().mockReturnThis(),
+        setProject: vi.fn().mockReturnThis(),
+      }),
     }
   };
 });

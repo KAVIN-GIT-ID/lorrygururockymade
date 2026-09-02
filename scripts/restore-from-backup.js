@@ -1,17 +1,18 @@
 const fs = require('fs');
 const path = require('path');
-const { Client, Databases } = require('appwrite');
 require('dotenv').config();
 
-const backupPath = 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-05-30.json';
+// Get backup path from command line arguments or default
+const backupPath = process.argv[2] || 'C:\\Users\\infimove\\Downloads\\TT_Tracker_Backup_2026-06-03.json';
 
-const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'http://52.66.92.164/v1';
-const projectId = process.env.VITE_APPWRITE_PROJECT_ID || '6a1c492a0012cf5f3a0c';
-const databaseId = process.env.VITE_APPWRITE_DATABASE_ID || 'fleet_db';
-const apiKey = process.env.VITE_APPWRITE_API_KEY || '7b6ffc61054c9a185db39a858a83280d84430747176173c4a75e2e43a44d9fa68f328af3e4a6f163fd1be83024e8e2ae8c2d81849ae346f2f0f393c76395e0ea792d7a057bbb685606e80f3baa9f6bdc7afb1823bc70f6ad00a84d87a0208b7f325dd0155885d732337b76d74a0cfc28ee3f9e4945cbbe627a909e744d627dd1';
+const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
+const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
+const databaseId = process.env.VITE_APPWRITE_DATABASE_ID;
+const apiKey = process.env.VITE_APPWRITE_API_KEY;
 
 if (!fs.existsSync(backupPath)) {
   console.error(`❌ Backup file not found at: ${backupPath}`);
+  console.log(`Usage: node scripts/restore-from-backup.js <path-to-backup-json-file>`);
   process.exit(1);
 }
 
@@ -22,13 +23,6 @@ console.log(`Project:        ${projectId}`);
 console.log(`Database:       ${databaseId}`);
 
 const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-
-const client = new Client()
-  .setEndpoint(endpoint)
-  .setProject(projectId)
-  .setKey(apiKey);
-
-const databases = new Databases(client);
 
 // Maps category keys in JSON backup to collection names
 const collectionsMap = {
@@ -98,14 +92,37 @@ async function saveFleetDocument(collectionId, docId, orgId, dataObj) {
     };
   }
 
-  try {
-    await databases.updateDocument(databaseId, collectionId, docId, documentData);
-  } catch (err) {
-    if (err.code === 404) {
-      await databases.createDocument(databaseId, collectionId, docId, documentData);
-    } else {
-      throw err;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Appwrite-Project': projectId,
+    'X-Appwrite-Key': apiKey
+  };
+
+  // Try updating first
+  const updateUrl = `${endpoint}/databases/${databaseId}/collections/${collectionId}/documents/${docId}`;
+  let res = await fetch(updateUrl, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ data: documentData.data, permissions: documentData.permissions })
+  });
+
+  if (res.status === 404) {
+    const createUrl = `${endpoint}/databases/${databaseId}/collections/${collectionId}/documents`;
+    const createRes = await fetch(createUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        documentId: docId,
+        data: documentData
+      })
+    });
+    if (!createRes.ok) {
+      const err = await createRes.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${createRes.status}`);
     }
+  } else if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
   }
 }
 
@@ -115,7 +132,7 @@ async function restore() {
     for (const [key, collectionId] of Object.entries(collectionsMap)) {
       const records = backupData[key] || [];
       console.log(`\nRestoring ${records.length} records for collection: ${collectionId}...`);
-      
+
       let count = 0;
       for (const record of records) {
         if (!record.id) continue;
@@ -132,13 +149,13 @@ async function restore() {
 
     // 2. Restore Global Configs (Permissions and Profiles)
     console.log(`\nRestoring User Permissions & Organization Profiles...`);
-    
+
     // User permissions
     const userRights = backupData.userRightsList || [];
     let urCount = 0;
     for (const ur of userRights) {
       if (!ur.email) continue;
-      
+
       // Helper to generate doc key
       const clean = ur.email.trim().toLowerCase();
       const sanitized = clean.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24);
@@ -155,16 +172,41 @@ async function restore() {
         data: JSON.stringify(ur)
       };
 
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': apiKey
+      };
+
+      const updateUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents/${key}`;
       try {
-        await databases.updateDocument(databaseId, 'global_configs', key, documentData);
+        let res = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ data: documentData.data })
+        });
+
+        if (res.status === 404) {
+          const createUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents`;
+          const createRes = await fetch(createUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              documentId: key,
+              data: documentData
+            })
+          });
+          if (!createRes.ok) {
+            const err = await createRes.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${createRes.status}`);
+          }
+        } else if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
         urCount++;
       } catch (err) {
-        if (err.code === 404) {
-          await databases.createDocument(databaseId, 'global_configs', key, documentData);
-          urCount++;
-        } else {
-          console.error(`  ❌ Failed to restore permission for ${ur.email}:`, err.message);
-        }
+        console.error(`  ❌ Failed to restore permission for ${ur.email}:`, err.message);
       }
     }
     console.log(`  ✓ Restored ${urCount}/${userRights.length} user rights.`);
@@ -174,27 +216,52 @@ async function restore() {
     let opCount = 0;
     for (const op of orgProfiles) {
       if (!op.organizationId) continue;
-      
+
       const key = `prf_${op.organizationId}`.slice(0, 36);
       const documentData = {
         key: key,
         data: JSON.stringify(op)
       };
 
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+        'X-Appwrite-Key': apiKey
+      };
+
+      const updateUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents/${key}`;
       try {
-        await databases.updateDocument(databaseId, 'global_configs', key, documentData);
+        let res = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ data: documentData.data })
+        });
+
+        if (res.status === 404) {
+          const createUrl = `${endpoint}/databases/${databaseId}/collections/global_configs/documents`;
+          const createRes = await fetch(createUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              documentId: key,
+              data: documentData
+            })
+          });
+          if (!createRes.ok) {
+            const err = await createRes.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${createRes.status}`);
+          }
+        } else if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
         opCount++;
       } catch (err) {
-        if (err.code === 404) {
-          await databases.createDocument(databaseId, 'global_configs', key, documentData);
-          opCount++;
-        } else {
-          console.error(`  ❌ Failed to restore profile for ${op.organizationId}:`, err.message);
-        }
+        console.error(`  ❌ Failed to restore profile for ${op.organizationId}:`, err.message);
       }
     }
     console.log(`  ✓ Restored ${opCount}/${orgProfiles.length} organization profiles.`);
-    
+
     console.log('\n🎉 RESTORATION COMPLETED SUCCESSFULLY!');
   } catch (globalErr) {
     console.error('\n❌ Restoration aborted due to error:', globalErr);

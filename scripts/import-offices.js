@@ -67,7 +67,7 @@ const officesList = [
 async function main() {
   console.log("\n=== Appwrite Office Bulk Importer ===");
 
-  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+  const endpoint = process.env.VITE_APPWRITE_ENDPOINT;
   const projectId = process.env.VITE_APPWRITE_PROJECT_ID;
   const orgId = "6a1708180016e88d6b82";
   const dbId = 'fleet_db';

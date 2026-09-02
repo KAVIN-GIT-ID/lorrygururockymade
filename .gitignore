@@ -16,7 +16,20 @@ test-results/
 .dev.vars*
 !.dev.vars.example
 
-# whatsapp gateway
+# Database backups — kept local, never pushed to git
+backups/
+
+# Docs folder — contains server credentials and sensitive restore guides
+docs/
+
+# Auto-generated app version file
+src/version.json
+
+# Temporary agent scratch scripts
+scratch_*
+/appwrite-backup-function
+server/
+
+# WhatsApp Gateway
 whatsapp-gateway/node_modules/
 whatsapp-gateway/auth_info_baileys/
-
