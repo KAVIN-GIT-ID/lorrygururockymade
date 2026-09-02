@@ -90,20 +90,64 @@ export const SyncService = {
       { key: 'coupons', collection: 'coupons' }
     ];
 
-    // First attempt 1 single consolidated batch HTTP pull for all collections
-    let batchState: any = null;
+    // 1 single consolidated batch HTTP pull for all collections and global configs
+    let batchRes: any = null;
     try {
-      batchState = await appwrite.pullAllCollections(orgId);
+      batchRes = await appwrite.pullAllCollections(orgId, lastSyncTime);
     } catch (_) {}
 
+    if (batchRes && batchRes.loadedState) {
+      const serverLoaded = batchRes.loadedState;
+      for (const cat of categories) {
+        verifiedCollections.push(cat.collection);
+        const docs = serverLoaded[cat.key] || [];
+        const updatedCollection = [...(loadedState[cat.key] || [])];
+        for (const doc of docs) {
+          const docId = doc.$id || doc.id;
+          if (!docId) continue;
+          if (doc.updatedAt) {
+            const docTime = new Date(doc.updatedAt).getTime();
+            if (docTime > maxUpdatedAt) maxUpdatedAt = docTime;
+          }
+          const parsedRecord = doc;
+          const idx = updatedCollection.findIndex(x => x.id === docId);
+          if (parsedRecord.deletedAt) {
+            if (idx > -1) updatedCollection.splice(idx, 1);
+          } else {
+            const nextRecord = { ...parsedRecord, id: docId, syncState: 'synced' as const };
+            if (idx > -1) {
+              updatedCollection[idx] = nextRecord;
+            } else {
+              updatedCollection.push(nextRecord);
+            }
+          }
+        }
+        if (docs.length > 0 || lastSyncTime === 0) {
+          loadedState[cat.key] = updatedCollection;
+        } else {
+          delete loadedState[cat.key];
+        }
+      }
+
+      userRightsData = batchRes.userRightsData || { userRightsList: [], organizationProfiles: [] };
+      if (userRightsData.appUpdateConfig) {
+        localStorage.setItem('ttt_app_update_config', JSON.stringify(userRightsData.appUpdateConfig));
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('ttt_app_update_event', { detail: userRightsData.appUpdateConfig }));
+        }
+      }
+
+      const syncTimestamp = maxUpdatedAt > 0 ? maxUpdatedAt : (batchRes.serverTime || Date.now());
+      loadedState.exportDate = syncTimestamp;
+      localStorage.setItem('appwrite_last_sync_time', String(syncTimestamp));
+
+      return { loadedState, userRightsData, verifiedCollections };
+    }
+
+    // Fallback: individual queries if consolidated batch unavailable
     const fetchPromises = categories.map(async (cat) => {
       try {
-        let docs: any[] = [];
-        if (batchState && batchState[cat.key]) {
-          docs = batchState[cat.key];
-        } else {
-          docs = await wrapAbort(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal, `fetch_${cat.collection}`);
-        }
+        const docs: any[] = (await wrapAbort<any[]>(appwrite.listFleetDocuments(databaseId, cat.collection, orgId, extraQueries), signal, `fetch_${cat.collection}`)) || [];
         verifiedCollections.push(cat.collection);
         
         const updatedCollection = [...(loadedState[cat.key] || [])];
@@ -140,7 +184,7 @@ export const SyncService = {
     });
 
     const loadRightsPromise = (async () => {
-      const allConfigs = await wrapAbort(appwrite.listGlobalConfigs(databaseId), signal, 'fetch_global_configs');
+      const allConfigs: any[] = (await wrapAbort<any[]>(appwrite.listGlobalConfigs(databaseId), signal, 'fetch_global_configs')) || [];
       userRightsData = { userRightsList: [], organizationProfiles: [] };
       for (const doc of allConfigs) {
         try {

@@ -1,4 +1,5 @@
 import { Client, Account as AppwriteAccount, Storage, Databases, ID, Teams, Query, Permission, Role, Realtime } from 'appwrite';
+import { secureFetch } from './secureChannel';
 
 import { projectID, endpoint, cleanEnvVar, isAppwriteConfigured, getAppOrigin } from './appwriteConfig';
 export { isAppwriteConfigured, getAppOrigin };
@@ -90,6 +91,14 @@ class AppwriteService {
   private realtime: Realtime;
   private sessionPromise: Promise<any> | null = null;
   private lastConnectionAlertAt = 0;
+  private jwt: string | null = null;
+  private cachedUser: any = null;
+  private writeQueue: Array<{
+    op: { type: 'save' | 'delete'; collectionId: string; docId: string; orgId?: string; dataObj?: any };
+    resolve: (val: any) => void;
+    reject: (err: any) => void;
+  }> = [];
+  private writeQueueTimer: any = null;
 
   constructor() {
     this.client = new Client();
@@ -213,39 +222,6 @@ class AppwriteService {
     return headers;
   }
 
-  getClient(): any {
-    return {
-      subscribe: (_channels: string | string[], callback: (response: any) => void) => {
-        this.subscribers.add(callback);
-        return () => {
-          this.subscribers.delete(callback);
-        };
-      },
-    };
-  }
-
-  async initSession(): Promise<any> {
-    if (typeof window !== 'undefined') {
-      const storedJwt = localStorage.getItem('ttt_cf_jwt');
-      if (storedJwt && storedJwt !== 'null' && storedJwt !== 'undefined' && storedJwt.length > 10) {
-        this.jwt = storedJwt;
-      }
-      if (!this.cachedUser) {
-        const stored = localStorage.getItem('ttt_cf_user');
-        if (stored) {
-          try { this.cachedUser = JSON.parse(stored); } catch (_) {}
-        }
-      }
-    }
-    if (this.cachedUser) return this.cachedUser;
-    if (!this.jwt) return null;
-    try {
-      return await this.getCurrentUser();
-    } catch (_) {
-      return this.cachedUser || null;
-    }
-  }
-
   async login(email: string, password: string): Promise<any> {
     const response = await secureFetch(`${this.getBaseUrl()}/api/auth/login`, {
       method: 'POST',
@@ -257,8 +233,18 @@ class AppwriteService {
       const errData = await response.json().catch(() => ({ error: 'Login failed' }));
       throw new Error(errData.error || `Login failed: ${response.statusText}`);
     }
-    const randomId = 'usr_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
-    return await this.account.create(randomId.substring(0, 36), email, password, name);
+
+    const data = await response.json();
+    this.jwt = data.jwt;
+    this.cachedUser = data.user || data;
+
+    if (typeof window !== 'undefined') {
+      if (this.jwt) localStorage.setItem('ttt_cf_jwt', this.jwt);
+      if (this.cachedUser) localStorage.setItem('ttt_cf_user', JSON.stringify(this.cachedUser));
+      localStorage.setItem('ttt_login_method', 'appwrite');
+    }
+
+    return this.cachedUser;
   }
 
   async register(email: string, password: string, name: string): Promise<any> {
@@ -606,75 +592,6 @@ class AppwriteService {
     }
   }
 
-  async listFleetDocuments(_dbId: string, collectionId: string, orgId: string): Promise<any[]> {
-    const res = await secureFetch(`${this.getBaseUrl()}/api/database/list/${collectionId}?orgId=${encodeURIComponent(orgId)}`, {
-      headers: this.getHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to list documents from ${collectionId}`);
-    }
-    const data = await res.json();
-    return data.documents || [];
-  }
-
-  async loadFleetDocument(_dbId: string, collectionId: string, docId: string): Promise<any> {
-    const res = await secureFetch(`${this.getBaseUrl()}/api/database/doc/${collectionId}/${encodeURIComponent(docId)}`, {
-      headers: this.getHeaders(),
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to load document ${docId}`);
-    return await res.json();
-  }
-
-  async updatePhone(phone: string, passwordStr: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.updatePhone(phone, passwordStr);
-  }
-
-  async createVerification(url: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.createVerification(url);
-  }
-
-  async updateVerification(userId: string, secret: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.updateVerification(userId, secret);
-  }
-
-  async createPhoneVerification() {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.createPhoneVerification();
-  }
-
-  async updatePhoneVerification(userId: string, secret: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.updatePhoneVerification(userId, secret);
-  }
-
-  async createRecovery(email: string, url: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.createRecovery(email, url);
-  }
-
-  async updateRecovery(userId: string, secret: string, passwordStr: string) {
-    if (!isAppwriteConfigured()) {
-      throw new Error('Appwrite is not configured.');
-    }
-    return await this.account.updateRecovery(userId, secret, passwordStr);
-  }
-
   normalizeTrip(trip: any): any {
     if (!trip) return trip;
     const arrayFields = ['payments', 'advances', 'fuels', 'subTrips'];
@@ -934,9 +851,6 @@ class AppwriteService {
       }
       throw new Error(msg);
     }
-
-    const data = await res.json();
-    return data.docId || docId;
   }
 
   /**
@@ -1092,11 +1006,71 @@ class AppwriteService {
     }
   }
 
+  private flushWriteQueue() {
+    if (this.writeQueueTimer) {
+      clearTimeout(this.writeQueueTimer);
+      this.writeQueueTimer = null;
+    }
+    if (this.writeQueue.length === 0) return;
+
+    const currentBatch = [...this.writeQueue];
+    this.writeQueue = [];
+
+    const operations = currentBatch.map(item => item.op);
+    this.proxyRequest('/api/database/batch-save', { operations })
+      .then(() => {
+        currentBatch.forEach(item => item.resolve(item.op.docId || true));
+      })
+      .catch((err) => {
+        // Fallback: If batch fails, execute individually
+        Promise.allSettled(
+          currentBatch.map(item => {
+            const endpoint = item.op.type === 'delete' ? '/api/database/delete' : '/api/database/save';
+            return this.proxyRequest(endpoint, item.op)
+              .then(() => item.resolve(item.op.docId || true))
+              .catch(e => item.reject(e));
+          })
+        );
+      });
+  }
+
+  private enqueueWrite(op: { type: 'save' | 'delete'; collectionId: string; docId: string; orgId?: string; dataObj?: any }): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.writeQueue.push({ op, resolve, reject });
+      if (this.writeQueue.length >= 25) {
+        this.flushWriteQueue();
+      } else if (!this.writeQueueTimer) {
+        this.writeQueueTimer = setTimeout(() => {
+          this.flushWriteQueue();
+        }, 80);
+      }
+    });
+  }
+
   /**
-   * Save a single document (upsert) to Appwrite Database via secure proxy.
+   * Batch save / delete multiple documents in a single atomic network request.
+   */
+  async saveFleetDocumentsBatch(operations: Array<{ type?: 'save' | 'delete'; collectionId: string; docId: string; orgId?: string; dataObj?: any }>): Promise<any> {
+    this.requireWriteConnection();
+    try {
+      const res = await this.proxyRequest('/api/database/batch-save', { operations });
+      return res;
+    } catch (err: any) {
+      if (err instanceof TypeError || /network|fetch|backend system down/i.test(err.message || '')) {
+        throw this.connectionRequiredError();
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Save a single document (upsert) to Appwrite Database via secure proxy or micro-batched queue.
    */
   async saveFleetDocument(dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any, bypassQueue = false): Promise<string> {
     this.requireWriteConnection();
+    if (!bypassQueue) {
+      return await this.enqueueWrite({ type: 'save', collectionId, docId, orgId, dataObj });
+    }
     try {
       const res = await this.proxyRequest('/api/database/save', { dbId, collectionId, docId, orgId, dataObj });
       return res.docId;
@@ -1109,10 +1083,13 @@ class AppwriteService {
   }
 
   /**
-   * Delete a single document from Appwrite Database via secure proxy.
+   * Delete a single document from Appwrite Database via secure proxy or micro-batched queue.
    */
   async deleteFleetDocument(dbId: string, collectionId: string, docId: string, bypassQueue = false): Promise<boolean> {
     this.requireWriteConnection();
+    if (!bypassQueue) {
+      return await this.enqueueWrite({ type: 'delete', collectionId, docId });
+    }
     try {
       const res = await this.proxyRequest('/api/database/delete', { dbId, collectionId, docId });
       return !!res.success;
@@ -1127,10 +1104,10 @@ class AppwriteService {
   /**
    * Batch pull all collections for active organization in a single HTTP request.
    */
-  async pullAllCollections(orgId: string): Promise<any> {
+  async pullAllCollections(orgId: string, lastSyncTime = 0): Promise<any> {
     try {
-      const res = await this.proxyRequest('/api/database/pull', { orgId });
-      return res?.loadedState || null;
+      const res = await this.proxyRequest('/api/database/pull', { orgId, lastSyncTime });
+      return res || null;
     } catch (err: any) {
       console.warn("Batch database pull failed, falling back to individual queries:", err.message || err);
       return null;
@@ -1261,147 +1238,6 @@ class AppwriteService {
     this.requireWriteConnection();
     await this.initSession();
     return await this.databases.deleteDocument(dbId, collectionId, documentId);
-  }
-
-  // Appwrite Teams wrappers
-
-  /**
-   * Create a new Appwrite Team (= new Organization).
-   * Returns the team's $id which becomes the organizationId.
-   */
-  async createTeam(displayName: string, customId?: string): Promise<string> {
-    if (!isAppwriteConfigured()) return '';
-    try {
-      this.requireWriteConnection();
-      const team = await this.teams.create(customId || ID.unique(), displayName);
-      return team.$id;
-    } catch (err: any) {
-      console.warn("Appwrite createTeam failed:", err);
-      if (err && err.code === 401) {
-        throw new Error("Unauthorized (401) when creating team. This usually means your browser is blocking Appwrite session cookies (third-party cookies). Please ensure third-party cookies are allowed for Appwrite (sgp.cloud.appwrite.io) in your browser settings, especially on localhost.");
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Get a single team by ID — used to validate an organizationId exists in Appwrite.
-   * Returns the team object or null if not found.
-   */
-  async getTeam(teamId: string): Promise<any | null> {
-    if (!isAppwriteConfigured()) return null;
-    try {
-      return await this.teams.get(teamId);
-    } catch (err: any) {
-      // 404 = team doesn't exist, any other error = network/auth issue
-      if (err && (err.code === 404 || err.type === 'team_not_found')) {
-        return null;
-      }
-      console.warn('Appwrite getTeam error:', err);
-      return null;
-    }
-  }
-
-  /**
-   * Get all teams the currently logged-in user belongs to.
-   * Used on login to derive the user's organizationId from Appwrite.
-   */
-  async getUserTeams(): Promise<any[]> {
-    if (!isAppwriteConfigured()) return [];
-    try {
-      const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 800));
-      const fetchPromise = this.teams.list().then(res => res.teams || []).catch(() => []);
-      return await Promise.race([fetchPromise, timeoutPromise]);
-    } catch (err) {
-      console.warn('Appwrite getUserTeams failed:', err);
-      return [];
-    }
-  }
-
-  /**
-   * Get all memberships for a team (org). Only works if the caller is the team owner.
-   * Used by admins to see pending/confirmed members.
-   */
-  async getTeamMemberships(teamId: string): Promise<any[]> {
-    if (!isAppwriteConfigured()) return [];
-    try {
-      const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2000));
-      const fetchPromise = (async () => {
-        const result = await this.teams.listMemberships(teamId);
-        if (Array.isArray(result)) return result;
-        if (result && Array.isArray(result.memberships)) return result.memberships;
-        if (result && Array.isArray((result as any).members)) return (result as any).members;
-        return [];
-      })();
-      return await Promise.race([fetchPromise, timeoutPromise]);
-    } catch (err) {
-      console.warn('Appwrite getTeamMemberships failed:', err);
-      return [];
-    }
-  }
-
-  /**
-   * Invite a user to a team by email. The invited user gets a pending membership.
-   * If the user doesn't have an Appwrite account yet, they'll be prompted to create one.
-   */
-  async inviteToTeam(teamId: string, email: string, name: string): Promise<any> {
-    if (!isAppwriteConfigured()) return null;
-    try {
-      this.requireWriteConnection();
-      const redirectUrl = getAppOrigin();
-      return await this.teams.createMembership(teamId, ['member'], email, undefined, undefined, redirectUrl, name);
-    } catch (err: any) {
-      // Ignore duplicate membership errors gracefully
-      if (err && (err.code === 409 || err.type === 'membership_already_exists')) {
-        console.info('Appwrite: user already a member of this team.');
-        return { alreadyMember: true };
-      }
-      console.warn("Appwrite inviteToTeam failed:", err);
-      return null;
-    }
-  }
-
-  async removeMembership(teamId: string, email: string): Promise<boolean> {
-    if (!isAppwriteConfigured()) return false;
-    try {
-      this.requireWriteConnection();
-      const list = await this.teams.listMemberships(teamId);
-      const match = list.memberships.find(m => 
-        (m.userEmail && m.userEmail.toLowerCase() === email.toLowerCase()) ||
-        ((m as any).email && (m as any).email.toLowerCase() === email.toLowerCase())
-      );
-      if (match) {
-        await this.teams.deleteMembership(teamId, match.$id);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.warn("Appwrite removeMembership failed:", err);
-      throw err;
-    }
-  }
-
-  async leaveTeam(teamId: string): Promise<boolean> {
-    if (!isAppwriteConfigured()) return false;
-    try {
-      this.requireWriteConnection();
-      const user = await this.account.get();
-      if (!user) return false;
-      const list = await this.teams.listMemberships(teamId);
-      const match = list.memberships.find(m => 
-        m.userId === user.$id || 
-        (m.userEmail && m.userEmail.toLowerCase() === user.email.toLowerCase()) ||
-        ((m as any).email && (m as any).email.toLowerCase() === user.email.toLowerCase())
-      );
-      if (match) {
-        await this.teams.deleteMembership(teamId, match.$id);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.warn(`Appwrite leaveTeam for ${teamId} failed:`, err);
-      return false;
-    }
   }
 
   /**
@@ -1678,33 +1514,6 @@ class AppwriteService {
       console.error("queryTrips failure:", err);
       throw err;
     }
-    if (filters.status) {
-      filtered = filtered.filter(t => t.status === filters.status);
-    }
-    if (filters.search) {
-      const s = filters.search.toLowerCase();
-      filtered = filtered.filter(t => (t.tripNo || '').toLowerCase().includes(s));
-    }
-    if (filters.startDate) {
-      filtered = filtered.filter(t => (t.startDate || '') >= filters.startDate!);
-    }
-    if (filters.endDate) {
-      filtered = filtered.filter(t => (t.startDate || '') <= filters.endDate!);
-    }
-
-    filtered.sort((a, b) => {
-      const aVal = a[sortField] || '';
-      const bVal = b[sortField] || '';
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    const total = filtered.length;
-    const startIndex = (page - 1) * limit;
-    const paginated = filtered.slice(startIndex, startIndex + limit);
-
-    return { documents: paginated, total };
   }
 
   async queryExpenses(
@@ -1945,4 +1754,4 @@ class AppwriteService {
 
 }
 
-export const appwrite = new CloudflareClientService();
+export const appwrite = new AppwriteService();

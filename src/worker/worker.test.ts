@@ -63,6 +63,9 @@ class MockD1Database implements D1Database {
             const match = db.files.find(f => f.id === id);
             return (match as T) || null;
           }
+          if (lower.includes('select max(m)')) {
+            return ({ latest: new Date().toISOString() } as T);
+          }
           return null;
         },
         async run() {
@@ -91,6 +94,16 @@ class MockD1Database implements D1Database {
             const item = { id: boundParams[0], organizationId: boundParams[1], truckNo: boundParams[2], ownerName: boundParams[3], status: boundParams[4], isApproved: boundParams[5] };
             if (existingIdx !== -1) db.trucks[existingIdx] = item;
             else db.trucks.push(item);
+          } else if (lower.includes('insert into drivers')) {
+            const existingIdx = db.drivers.findIndex(d => d.id === boundParams[0]);
+            const item = { id: boundParams[0], organizationId: boundParams[1], driverName: boundParams[2], phone: boundParams[3] };
+            if (existingIdx !== -1) db.drivers[existingIdx] = item;
+            else db.drivers.push(item);
+          } else if (lower.includes('insert into expenses')) {
+            const existingIdx = db.expenses.findIndex(e => e.id === boundParams[0]);
+            const item = { id: boundParams[0], organizationId: boundParams[1], truckNo: boundParams[2], expenseType: boundParams[3], amount: boundParams[4] };
+            if (existingIdx !== -1) db.expenses[existingIdx] = item;
+            else db.expenses.push(item);
           } else if (lower.includes('insert into files')) {
             db.files.push({ id: boundParams[0], organizationId: boundParams[1], name: boundParams[2], mimeType: boundParams[3], size: boundParams[4], data: boundParams[5] });
           } else if (lower.includes('delete from global_configs')) {
@@ -119,7 +132,17 @@ class MockD1Database implements D1Database {
   }
 
   async batch(statements: any[]) {
-    return [];
+    const results: any[] = [];
+    for (const stmt of statements) {
+      if (typeof stmt.all === 'function') {
+        results.push(await stmt.all());
+      } else if (typeof stmt.run === 'function') {
+        results.push(await stmt.run());
+      } else {
+        results.push({ success: true, results: [] });
+      }
+    }
+    return results;
   }
 
   async exec(query: string) {
@@ -255,6 +278,56 @@ describe('Cloudflare Worker Backend Integration Tests', () => {
     const pullData = await pullRes.json();
     expect(pullData.success).toBe(true);
     expect(pullData.loadedState.trucks).toBeDefined();
+
+    // Fast version check
+    const verReq = new Request('http://localhost:3000/api/database/version', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({
+        orgId: 'org_test',
+        localLastModified: Date.now() + 100000,
+      }),
+    });
+    const verRes = await worker.fetch(verReq, env, mockCtx);
+    expect(verRes.status).toBe(200);
+    const verData = await verRes.json();
+    expect(verData.success).toBe(true);
+    expect(verData.isUpToDate).toBe(true);
+
+    // Batch save multiple records in 1 atomic roundtrip
+    const batchReq = new Request('http://localhost:3000/api/database/batch-save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            type: 'save',
+            collectionId: 'drivers',
+            docId: 'drv_batch_1',
+            orgId: 'org_test',
+            dataObj: { id: 'drv_batch_1', driverName: 'Batch Driver 1', phone: '9876543210', organizationId: 'org_test' }
+          },
+          {
+            type: 'save',
+            collectionId: 'expenses',
+            docId: 'exp_batch_1',
+            orgId: 'org_test',
+            dataObj: { id: 'exp_batch_1', truckNo: 'TN01AB1234', expenseType: 'Fuel', amount: 5000, organizationId: 'org_test' }
+          }
+        ]
+      }),
+    });
+    const batchRes = await worker.fetch(batchReq, env, mockCtx);
+    expect(batchRes.status).toBe(200);
+    const batchData = await batchRes.json();
+    expect(batchData.success).toBe(true);
+    expect(batchData.count).toBe(2);
   });
 
   it('should handle file upload and retrieval in storage engine', async () => {

@@ -78,6 +78,14 @@ export function useAppUpdate(appVersion: string) {
   onMount(() => {
     const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
 
+    // Initialize from local cached config if present (0 network requests needed)
+    try {
+      const cached = localStorage.getItem('ttt_app_update_config');
+      if (cached) {
+        setAppUpdateConfig(JSON.parse(cached));
+      }
+    } catch (_) {}
+
     const fetchAppVersion = async () => {
       try {
         const config = await appwrite.loadGlobalConfig(databaseId, 'cfg_app_version');
@@ -99,7 +107,7 @@ export function useAppUpdate(appVersion: string) {
     const isMobileEnv = typeof window !== 'undefined' && 
       (window.location.protocol === 'capacitor:' || !!(window as any).Capacitor || window.innerWidth < 768);
 
-    if (isMobileEnv) {
+    if (isMobileEnv && !appUpdateConfig()) {
       fetchAppVersion();
     }
 

@@ -70,7 +70,16 @@ export function mergeSingleOrgProfile(p1: OrganizationProfile, p2: OrganizationP
   };
 }
 
+let inFlightGlobalConfigsPromise: Promise<any> | null = null;
+let lastGlobalConfigsCache: { data: any; timestamp: number } | null = null;
+const GLOBAL_CONFIGS_CACHE_TTL = 10000; // 10 seconds
+
 export const organizationService = {
+  clearGlobalConfigsCache() {
+    lastGlobalConfigsCache = null;
+    inFlightGlobalConfigsPromise = null;
+  },
+
   reconcileOrganizationProfiles(
     rights: UserPermission[],
     currentProfiles: OrganizationProfile[],
@@ -272,42 +281,58 @@ export const organizationService = {
     }
   },
 
-  async fetchAllGlobalConfigs(databaseId: string): Promise<{
+  async fetchAllGlobalConfigs(databaseId: string, forceRefresh = false): Promise<{
     userRightsList: UserPermission[];
     organizationProfiles: OrganizationProfile[];
     appUpdateConfig?: { version: string; releaseNotes: string; downloadUrl: string; updatedAt?: string } | null;
   }> {
-    try {
-      const allConfigs = await appwrite.listGlobalConfigs(databaseId);
-      const userRightsList: UserPermission[] = [];
-      const organizationProfiles: OrganizationProfile[] = [];
-      let appUpdateConfig = null;
-      for (const doc of allConfigs) {
-        try {
-          let parsed = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
-          if (parsed && typeof parsed.data === 'string') {
-            try { parsed = JSON.parse(parsed.data); } catch {}
-          }
-          const keyVal = doc.key || doc.$id || '';
-          if (keyVal.startsWith('usr_')) {
-            if (parsed && parsed.organizationId) {
-              userRightsList.push(parsed);
-            }
-          } else if (keyVal.startsWith('prf_')) {
-            if (parsed && parsed.organizationId) {
-              organizationProfiles.push(parsed);
-            }
-          } else if (keyVal === 'cfg_app_version') {
-            appUpdateConfig = parsed;
-          }
-        } catch (e) {
-          console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
-        }
-      }
-      return { userRightsList, organizationProfiles, appUpdateConfig };
-    } catch (e) {
-      console.warn("Could not fetch global configs:", e);
-      return { userRightsList: [], organizationProfiles: [], appUpdateConfig: null };
+    if (!forceRefresh && lastGlobalConfigsCache && (Date.now() - lastGlobalConfigsCache.timestamp < GLOBAL_CONFIGS_CACHE_TTL)) {
+      return lastGlobalConfigsCache.data;
     }
+
+    if (inFlightGlobalConfigsPromise) {
+      return inFlightGlobalConfigsPromise;
+    }
+
+    inFlightGlobalConfigsPromise = (async () => {
+      try {
+        const allConfigs = await appwrite.listGlobalConfigs(databaseId);
+        const userRightsList: UserPermission[] = [];
+        const organizationProfiles: OrganizationProfile[] = [];
+        let appUpdateConfig = null;
+        for (const doc of allConfigs) {
+          try {
+            let parsed = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
+            if (parsed && typeof parsed.data === 'string') {
+              try { parsed = JSON.parse(parsed.data); } catch {}
+            }
+            const keyVal = doc.key || doc.$id || '';
+            if (keyVal.startsWith('usr_')) {
+              if (parsed && parsed.organizationId) {
+                userRightsList.push(parsed);
+              }
+            } else if (keyVal.startsWith('prf_')) {
+              if (parsed && parsed.organizationId) {
+                organizationProfiles.push(parsed);
+              }
+            } else if (keyVal === 'cfg_app_version') {
+              appUpdateConfig = parsed;
+            }
+          } catch (e) {
+            console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
+          }
+        }
+        const result = { userRightsList, organizationProfiles, appUpdateConfig };
+        lastGlobalConfigsCache = { data: result, timestamp: Date.now() };
+        return result;
+      } catch (e) {
+        console.warn("Could not fetch global configs:", e);
+        return { userRightsList: [], organizationProfiles: [], appUpdateConfig: null };
+      } finally {
+        inFlightGlobalConfigsPromise = null;
+      }
+    })();
+
+    return inFlightGlobalConfigsPromise;
   }
 };
