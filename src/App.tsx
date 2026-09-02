@@ -312,6 +312,53 @@ export default function App() {
   const notificationRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
+  // ── Google OAuth callback handler ─────────────────────────────────────────
+  // After Google redirects back to /?google_jwt=..., this picks up the token
+  // and logs the user in automatically. Runs once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const googleJwt = params.get('google_jwt');
+    const googleEmail = params.get('google_email');
+    const googleName = params.get('google_name');
+    const googleOrg = params.get('google_org');
+    const googleRole = params.get('google_role');
+    const googleError = params.get('google_error');
+
+    if (googleError) {
+      const messages: Record<string, string> = {
+        no_code: 'Google sign-in was cancelled.',
+        token_exchange_failed: 'Google sign-in failed: could not exchange token. Please try again.',
+        no_email_from_google: 'Google did not return an email address.',
+        server_not_configured: 'Google OAuth is not yet configured on this server.',
+        internal_error: 'An internal error occurred during Google sign-in.',
+      };
+      alert(messages[googleError] || `Google sign-in error: ${googleError}`);
+      // Clean the URL
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (googleJwt && googleEmail) {
+      const userObj = {
+        $id: 'google_' + googleEmail.replace(/[^a-z0-9]/g, '_'),
+        id: 'google_' + googleEmail.replace(/[^a-z0-9]/g, '_'),
+        email: googleEmail,
+        name: googleName || googleEmail.split('@')[0],
+        emailVerification: true,
+        phoneVerification: false,
+        organizationId: googleOrg || 'org_default',
+        role: googleRole || 'Owner',
+      };
+      localStorage.setItem('ttt_cf_jwt', googleJwt);
+      localStorage.setItem('ttt_cf_user', JSON.stringify(userObj));
+      setCurrentUser(userObj);
+      setUnauthRoute('login');
+      // Clean the URL so the tokens are not visible in the address bar
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Read notification time scoped by current user to prevent cross-account read marks
   useEffect(() => {
     if (currentUser) {

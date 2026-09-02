@@ -32,6 +32,8 @@ export interface Env {
   PHONEPE_CLIENT_SECRET?: string;
   WHATSAPP_GATEWAY_URL?: string;
   CORS_ORIGIN?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 export interface UserClaims {

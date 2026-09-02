@@ -387,5 +387,175 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
     });
   }
 
+
+  // ── Google OAuth ─────────────────────────────────────────────────────────
+  // Step 1: redirect the browser to Google's consent screen
+  if (pathname === '/api/auth/google' && request.method === 'GET') {
+    const clientId = env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      return Response.json({ error: 'Google OAuth is not configured on this server.' }, { status: 503 });
+    }
+
+    const baseUrl = env.APP_URL || 'https://truck-trip-tracker.apkavin483.workers.dev';
+    const redirectUri = `${baseUrl}/api/auth/google/callback`;
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'select_account'
+    });
+
+    return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`, 302);
+  }
+
+  // Step 2: Google redirects back here with ?code=…
+  if (pathname === '/api/auth/google/callback' && request.method === 'GET') {
+    const url = new URL(request.url);
+    const code = url.searchParams.get('code');
+    const errorParam = url.searchParams.get('error');
+    const baseUrl = env.APP_URL || 'https://truck-trip-tracker.apkavin483.workers.dev';
+
+    if (errorParam || !code) {
+      return Response.redirect(`${baseUrl}/?google_error=${encodeURIComponent(errorParam || 'no_code')}`, 302);
+    }
+
+    const clientId = env.GOOGLE_CLIENT_ID;
+    const clientSecret = env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return Response.redirect(`${baseUrl}/?google_error=server_not_configured`, 302);
+    }
+
+    try {
+      // Exchange authorization code for tokens
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: `${baseUrl}/api/auth/google/callback`,
+          grant_type: 'authorization_code'
+        })
+      });
+
+      const tokenData: any = await tokenRes.json();
+      if (!tokenRes.ok || tokenData.error) {
+        console.error('[Google OAuth] Token exchange failed:', tokenData);
+        return Response.redirect(`${baseUrl}/?google_error=token_exchange_failed`, 302);
+      }
+
+      // Fetch Google user profile
+      const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      });
+      const profile: any = await profileRes.json();
+      if (!profile.email) {
+        return Response.redirect(`${baseUrl}/?google_error=no_email_from_google`, 302);
+      }
+
+      const cleanEmail = profile.email.trim().toLowerCase();
+      const displayName = profile.name || profile.given_name || cleanEmail.split('@')[0];
+
+      // Upsert user in D1
+      let existingUser = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(cleanEmail).first() as any;
+      let userId: string;
+      let orgId: string;
+      let role: string;
+
+      if (existingUser) {
+        // Existing user — use their stored org/role
+        userId = existingUser.id;
+        orgId = existingUser.organization_id || 'org_default';
+        role = existingUser.role || 'Owner';
+
+        // Update name if it came from Google and was previously blank
+        if (!existingUser.name && displayName) {
+          await env.DB.prepare('UPDATE users SET name = ?, updated_at = datetime("now") WHERE id = ?')
+            .bind(displayName, userId).run();
+        }
+      } else {
+        // New user — create account with no password (google-only)
+        userId = generateId('usr_');
+        orgId = `org_${generateId('')}`;
+        role = 'Owner';
+
+        await env.DB.prepare(`
+          INSERT INTO users (id, email, password_hash, name, phone, organization_id, role, email_verified, phone_verified)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+        `).bind(userId, cleanEmail, '', displayName, '', orgId, role).run();
+
+        // Sync into global_configs for permission lookups
+        const userDocId = getEmailDocId(cleanEmail);
+        const userConfigData = {
+          id: userId,
+          email: cleanEmail,
+          name: displayName,
+          phone: '',
+          role,
+          organizationId: orgId,
+          isEmailVerified: true,
+          isPhoneVerified: false,
+          permissions: ['read', 'write']
+        };
+        await env.DB.prepare(`
+          INSERT INTO global_configs (key, data, updated_at)
+          VALUES (?, ?, datetime('now'))
+          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+        `).bind(userDocId, JSON.stringify(userConfigData)).run();
+
+        // Also register an org profile row
+        const orgProfile = {
+          organizationId: orgId,
+          organizationName: displayName + "'s Organization",
+          ownerEmail: cleanEmail,
+          ownerName: displayName,
+          status: 'Active',
+          truckRequests: []
+        };
+        await env.DB.prepare(`
+          INSERT INTO global_configs (key, data, updated_at)
+          VALUES (?, ?, datetime('now'))
+          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+        `).bind(`prf_${orgId}`, JSON.stringify(orgProfile)).run();
+
+        console.log(`[Google OAuth] New user registered: ${cleanEmail} → org ${orgId}`);
+      }
+
+      // Check global_configs for any overridden org/role from admin rights panel
+      try {
+        const cfgDoc = await env.DB.prepare('SELECT data FROM global_configs WHERE key = ?')
+          .bind(getEmailDocId(cleanEmail)).first() as any;
+        if (cfgDoc?.data) {
+          const parsed = JSON.parse(cfgDoc.data);
+          if (parsed.organizationId) orgId = parsed.organizationId;
+          if (parsed.role) role = parsed.role;
+        }
+      } catch (_) {}
+
+      // Issue JWT
+      const jwt = await createJWT({
+        userId,
+        email: cleanEmail,
+        name: displayName,
+        role,
+        organizationId: orgId,
+        exp: Math.floor(Date.now() / 1000) + (30 * 24 * 3600) // 30 days
+      }, secret);
+
+      // Redirect back to app with JWT in query param (frontend will pick it up and store in localStorage)
+      return Response.redirect(
+        `${baseUrl}/?google_jwt=${encodeURIComponent(jwt)}&google_email=${encodeURIComponent(cleanEmail)}&google_name=${encodeURIComponent(displayName)}&google_org=${encodeURIComponent(orgId)}&google_role=${encodeURIComponent(role)}`,
+        302
+      );
+    } catch (err: any) {
+      console.error('[Google OAuth] Callback error:', err);
+      return Response.redirect(`${baseUrl}/?google_error=internal_error`, 302);
+    }
+  }
+
   return Response.json({ error: 'Endpoint not found' }, { status: 404 });
 }
