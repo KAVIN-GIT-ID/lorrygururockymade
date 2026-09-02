@@ -3,6 +3,8 @@
  * Drop-in replacement for legacy backend services, fully compatible with all UI components and hooks.
  */
 
+import { secureFetch } from './secureChannel';
+
 export function compressImageIfNeeded(file: File): Promise<File> {
   return new Promise((resolve) => {
     if (!file.type.startsWith('image/')) {
@@ -147,7 +149,7 @@ class CloudflareClientService {
   }
 
   async login(email: string, password: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/login`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -172,7 +174,7 @@ class CloudflareClientService {
   }
 
   async register(email: string, password: string, name: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/register`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
@@ -233,7 +235,7 @@ class CloudflareClientService {
     }
 
     try {
-      const response = await fetch(`${this.getBaseUrl()}/api/auth/me`, {
+      const response = await secureFetch(`${this.getBaseUrl()}/api/auth/me`, {
         method: 'GET',
         headers: this.getHeaders(),
       });
@@ -264,7 +266,7 @@ class CloudflareClientService {
   }
 
   async pullFleetData(orgId: string): Promise<any> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/pull`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/pull`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -290,7 +292,7 @@ class CloudflareClientService {
   }
 
   async updateName(newName: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/update-name`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/update-name`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ name: newName }),
@@ -306,7 +308,7 @@ class CloudflareClientService {
   }
 
   async updatePassword(newPassword: string, oldPassword: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/update-password`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/update-password`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ newPassword, oldPassword }),
@@ -319,7 +321,7 @@ class CloudflareClientService {
   }
 
   async updatePhone(phone: string, passwordStr: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/update-phone`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/update-phone`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ phone, password: passwordStr }),
@@ -351,7 +353,7 @@ class CloudflareClientService {
   }
 
   async createRecovery(email: string, url: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/recovery`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/recovery`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ email, url }),
@@ -364,7 +366,7 @@ class CloudflareClientService {
   }
 
   async updateRecovery(userId: string, secret: string, passwordStr: string): Promise<any> {
-    const response = await fetch(`${this.getBaseUrl()}/api/auth/update-recovery`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/auth/update-recovery`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ userId, secret, password: passwordStr }),
@@ -390,7 +392,7 @@ class CloudflareClientService {
     const headers: Record<string, string> = {};
     if (this.jwt) headers['Authorization'] = `Bearer ${this.jwt}`;
 
-    const response = await fetch(`${this.getBaseUrl()}/api/storage/upload`, {
+    const response = await secureFetch(`${this.getBaseUrl()}/api/storage/upload`, {
       method: 'POST',
       headers,
       body: formData,
@@ -412,7 +414,7 @@ class CloudflareClientService {
   async getSecureFileUrl(fileId: string): Promise<string> {
     if (!fileId) return '';
     try {
-      const response = await fetch(`${this.getBaseUrl()}/api/storage/file/${fileId}`, {
+      const response = await secureFetch(`${this.getBaseUrl()}/api/storage/file/${fileId}`, {
         headers: this.getHeaders(),
       });
       if (!response.ok) return this.getFileView(fileId);
@@ -431,7 +433,7 @@ class CloudflareClientService {
   async deleteFile(fileId: string): Promise<boolean> {
     if (!fileId) return false;
     try {
-      const res = await fetch(`${this.getBaseUrl()}/api/storage/file/${fileId}`, {
+      const res = await secureFetch(`${this.getBaseUrl()}/api/storage/file/${fileId}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
@@ -442,7 +444,7 @@ class CloudflareClientService {
   }
 
   async listFleetDocuments(_dbId: string, collectionId: string, orgId: string): Promise<any[]> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/list/${collectionId}?orgId=${encodeURIComponent(orgId)}`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/list/${collectionId}?orgId=${encodeURIComponent(orgId)}`, {
       headers: this.getHeaders(),
     });
     if (!res.ok) {
@@ -453,7 +455,7 @@ class CloudflareClientService {
   }
 
   async loadFleetDocument(_dbId: string, collectionId: string, docId: string): Promise<any> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/doc/${collectionId}/${encodeURIComponent(docId)}`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/doc/${collectionId}/${encodeURIComponent(docId)}`, {
       headers: this.getHeaders(),
     });
     if (res.status === 404) return null;
@@ -462,7 +464,7 @@ class CloudflareClientService {
   }
 
   async saveFleetDocument(_dbId: string, collectionId: string, docId: string, orgId: string, dataObj: any): Promise<string> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/save`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/save`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -484,7 +486,7 @@ class CloudflareClientService {
   }
 
   async deleteFleetDocument(_dbId: string, collectionId: string, docId: string): Promise<boolean> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/delete`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/delete`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -513,7 +515,7 @@ class CloudflareClientService {
   }
 
   async listGlobalConfigs(_dbId: string): Promise<any[]> {
-    const res = await fetch(`${this.getBaseUrl()}/api/database/list/global_configs`, {
+    const res = await secureFetch(`${this.getBaseUrl()}/api/database/list/global_configs`, {
       headers: this.getHeaders(),
     });
     if (!res.ok) return [];

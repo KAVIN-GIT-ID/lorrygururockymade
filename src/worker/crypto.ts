@@ -154,3 +154,66 @@ export function getEmailDocId(email: string): string {
   const hashStr = Math.abs(hash).toString(36);
   return `usr_${sanitized}_${hashStr}`.slice(0, 36);
 }
+
+const PAYLOAD_SECRET_SEED = 'lorryguru-secure-aes256-gcm-tunnel-2026-e2e-payload-guard';
+let cachedWorkerKey: CryptoKey | null = null;
+
+async function getWorkerCipherKey(): Promise<CryptoKey> {
+  if (cachedWorkerKey) return cachedWorkerKey;
+  const enc = new TextEncoder();
+  const rawKey = enc.encode(PAYLOAD_SECRET_SEED);
+  const hash = await crypto.subtle.digest('SHA-256', rawKey);
+  cachedWorkerKey = await crypto.subtle.importKey(
+    'raw',
+    hash,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+  return cachedWorkerKey;
+}
+
+export async function encryptPayload(data: any): Promise<string> {
+  try {
+    const key = await getWorkerCipherKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const encoded = enc.encode(typeof data === 'string' ? data : JSON.stringify(data));
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encoded
+    );
+
+    const ivStr = btoa(String.fromCharCode(...iv));
+    const ctStr = btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
+    return `${ivStr}.${ctStr}`;
+  } catch (err) {
+    console.warn('[WorkerCrypto] Encryption error:', err);
+    return typeof data === 'string' ? data : JSON.stringify(data);
+  }
+}
+
+export async function decryptPayload(encryptedStr: string): Promise<any> {
+  try {
+    const [ivStr, ctStr] = encryptedStr.split('.');
+    if (!ivStr || !ctStr) return null;
+    const iv = Uint8Array.from(atob(ivStr), c => c.charCodeAt(0));
+    const ct = Uint8Array.from(atob(ctStr), c => c.charCodeAt(0));
+    const key = await getWorkerCipherKey();
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ct
+    );
+    const decodedStr = new TextDecoder().decode(decrypted);
+    try {
+      return JSON.parse(decodedStr);
+    } catch {
+      return decodedStr;
+    }
+  } catch (err) {
+    console.warn('[WorkerCrypto] Decryption error:', err);
+    return null;
+  }
+}

@@ -98,7 +98,7 @@ describe('ExpenseMaster Component Tests', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Search shop name or expense type/i);
+    const searchInput = screen.getByPlaceholderText(/Search shop name/i);
     
     // Search for "MRF"
     fireEvent.change(searchInput, { target: { value: 'MRF' } });
