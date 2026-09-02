@@ -4664,30 +4664,32 @@ export default function App() {
                 )}
               </div>
 
-              {/* Cloud sync status badge */}
+              {/* Cloud sync status badge — ONLY visible for admin user */}
               {currentUser && (
-                <AppwriteCloudSync
-                  currentLocalState={{
-                    trucks,
-                    drivers,
-                    offices,
-                    accounts,
-                    trips,
-                    expenses,
-                    tyres,
-                    auditLogs
-                  }}
-                  onLoadCloudState={onLoadCloudState}
-                  showNotification={showNotification}
-                  logAction={logAction}
-                  currentUserOrgId={currentUserOrgId}
-                  isAdmin={currentUserRights.isAdmin}
-                  onInitialSyncComplete={setInitialPullDone}
-                  onConnectionChange={(online, reason) => {
-                    setIsOnline(online);
-                    setDisconnectReason(reason);
-                  }}
-                />
+                <div className={currentUserRights.isAdmin ? 'inline-block' : 'hidden'}>
+                  <AppwriteCloudSync
+                    currentLocalState={{
+                      trucks,
+                      drivers,
+                      offices,
+                      accounts,
+                      trips,
+                      expenses,
+                      tyres,
+                      auditLogs
+                    }}
+                    onLoadCloudState={onLoadCloudState}
+                    showNotification={showNotification}
+                    logAction={logAction}
+                    currentUserOrgId={currentUserOrgId}
+                    isAdmin={currentUserRights.isAdmin}
+                    onInitialSyncComplete={setInitialPullDone}
+                    onConnectionChange={(online, reason) => {
+                      setIsOnline(online);
+                      setDisconnectReason(reason);
+                    }}
+                  />
+                </div>
               )}
 
               {/* ── Admin tool buttons — shown inline on lg+, hidden on smaller ── */}

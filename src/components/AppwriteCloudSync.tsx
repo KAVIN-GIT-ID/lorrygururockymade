@@ -725,7 +725,7 @@ export default function AppwriteCloudSync({
   };
 
   return (
-    <div className="relative inline-block text-left">
+    <div className={`relative inline-block text-left ${isAdmin ? '' : 'hidden'}`}>
       {/* Mini connection status bar */}
       <button
         id="btn-appwrite-sync-trigger"
