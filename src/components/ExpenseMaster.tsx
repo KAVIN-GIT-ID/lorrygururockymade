@@ -133,128 +133,39 @@ export default function ExpenseMaster({
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [displayedExpenses, setDisplayedExpenses] = useState<ExpenseEntry[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
-
-  const online = isAppwriteConfigured();
 
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter]);
 
-  // Offline / local logic
-  useEffect(() => {
-    if (!online) {
-      const filtered = expenses.filter(exp => {
-        const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                              exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
-        const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
-        const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
-        const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
-        return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-      });
-
-      setTotalCount(filtered.length);
-      const startIdx = (currentPage - 1) * pageSize;
-      setDisplayedExpenses(filtered.slice(startIdx, startIdx + pageSize));
-    }
-  }, [expenses, searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online]);
-
-  // Online Appwrite logic
-  useEffect(() => {
-    if (online) {
-      const fetchServerExpenses = async () => {
-        setLoading(true);
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
-
-          const res = await appwrite.queryExpenses(
-            databaseId,
-            orgId,
-            {
-              search: searchQuery || undefined,
-              truckNo: selectedTruckFilter || undefined,
-              expenseType: selectedTypeFilter || undefined,
-              startDate: startDateFilter || undefined,
-              endDate: endDateFilter || undefined
-            },
-            currentPage,
-            pageSize
-          );
-
-          const mapped = (res.documents || []).map(doc => {
-            try {
-              if (doc.data) {
-                const parsed = JSON.parse(doc.data);
-                return { id: doc.$id, ...parsed };
-              }
-            } catch (e) {
-              console.warn("Failed to parse doc.data for expense:", doc.$id, e);
-            }
-            return {
-              id: doc.$id,
-              organizationId: doc.organizationId,
-              truckNo: doc.truckNo || '',
-              expenseType: doc.expenseType || '',
-              shopName: doc.shopName || '',
-              amount: Number(doc.amount) || 0,
-              paymentMode: doc.paymentMode || '',
-              date: doc.date || '',
-              status: doc.status || 'Pending',
-              accountType: doc.accountType || 'Account',
-              driverName: doc.driverName || ''
-            };
-          });
-          setDisplayedExpenses(mapped);
-          setTotalCount(res.total || 0);
-        } catch (err) {
-          console.error("Failed to query expenses from Appwrite:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      const delayDebounce = setTimeout(() => {
-        fetchServerExpenses();
-      }, 300);
-
-      return () => clearTimeout(delayDebounce);
-    }
-  }, [searchQuery, selectedTruckFilter, selectedTypeFilter, startDateFilter, endDateFilter, currentPage, pageSize, online, organizationId]);
-
-  const totalExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
+  // Derived filtered expenses directly from synchronized props
+  const filteredExpenses = expenses.filter(exp => {
+    const matchesSearch = !searchQuery || 
+      (exp.shopName && exp.shopName.toLowerCase().includes(searchQuery.toLowerCase())) || 
+      (exp.expenseType && exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (exp.truckNo && exp.truckNo.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
     const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
     const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
     const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
     return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-  })).reduce((sum, item) => sum + item.amount, 0);
+  });
 
-  const pendingExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
-    const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
-    const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
-    const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
-    return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-  })).filter(e => e.status === 'Pending').reduce((sum, item) => sum + item.amount, 0);
+  const totalCount = filteredExpenses.length;
+  const startIdx = (currentPage - 1) * pageSize;
+  const displayedExpenses = filteredExpenses.slice(startIdx, startIdx + pageSize);
 
-  const paidExpenseSum = (online ? displayedExpenses : expenses.filter(exp => {
-    const matchesSearch = exp.shopName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          exp.expenseType.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTruck = selectedTruckFilter ? exp.truckNo === selectedTruckFilter : true;
-    const matchesType = selectedTypeFilter ? exp.expenseType === selectedTypeFilter : true;
-    const matchesStartDate = startDateFilter ? exp.date >= startDateFilter : true;
-    const matchesEndDate = endDateFilter ? exp.date <= endDateFilter : true;
-    return matchesSearch && matchesTruck && matchesType && matchesStartDate && matchesEndDate;
-  })).filter(e => e.status === 'Paid').reduce((sum, item) => sum + item.amount, 0);
+  const totalExpenseSum = filteredExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  const pendingExpenseSum = filteredExpenses
+    .filter(e => e.status === 'Pending')
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  const paidExpenseSum = filteredExpenses
+    .filter(e => e.status === 'Paid')
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   const uniqueExpenseTypes = Array.from(new Set(expenses.map(e => e.expenseType).filter(Boolean)));
 
