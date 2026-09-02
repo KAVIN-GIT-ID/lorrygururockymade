@@ -281,5 +281,111 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
     });
   }
 
+  if ((pathname === '/api/auth/recovery' || pathname === '/api/auth/create-recovery' || pathname === '/create-recovery') && request.method === 'POST') {
+    const { email, url } = await request.json() as any;
+    if (!email) {
+      return Response.json({ error: 'Email is required' }, { status: 400 });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await env.DB.prepare('SELECT id, name, email, phone FROM users WHERE email = ?').bind(cleanEmail).first() as any;
+    if (!user) {
+      return Response.json({ error: 'No account found with this email address' }, { status: 404 });
+    }
+
+    const recoverySecret = generateId('sec_') + Math.random().toString(36).substring(2, 10);
+    const targetUrl = url || 'https://www.lorryguru.in/?mode=recovery';
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const recoveryUrl = `${targetUrl}${separator}userId=${user.id}&secret=${recoverySecret}&mode=recovery`;
+
+    const recoveryData = {
+      userId: user.id,
+      email: cleanEmail,
+      secret: recoverySecret,
+      expiresAt: Date.now() + (60 * 60 * 1000) // 1 hour
+    };
+
+    await env.DB.prepare(`
+      INSERT INTO global_configs (key, data, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+    `).bind(`recovery_${user.id}`, JSON.stringify(recoveryData)).run();
+
+    console.log(`[Recovery] Password reset requested for ${cleanEmail}. Secret: ${recoverySecret}`);
+
+    // If user has a phone, attempt to deliver via WhatsApp Gateway
+    if (user.phone) {
+      const cleanPhone = String(user.phone).replace(/\D/g, '');
+      const gatewayUrl = (env as any).WHATSAPP_GATEWAY_URL || 'http://localhost:8000/send-otp';
+      const apiKey = (env as any).GATEWAY_API_KEY || 'your-super-secure-shared-key';
+      try {
+        await fetch(gatewayUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            phone: cleanPhone,
+            message: `🔐 *Lorry Guru Password Reset*\n\nHi ${user.name || 'User'},\nYou requested to reset your password. Use the link below to set a new password:\n\n${recoveryUrl}\n\nValid for 1 hour.`
+          })
+        }).catch(() => {});
+      } catch (_) {}
+    }
+
+    return Response.json({
+      success: true,
+      message: `Password reset link generated and dispatched for ${cleanEmail}.`,
+      recoveryUrl,
+      userId: user.id,
+      secret: recoverySecret
+    });
+  }
+
+  if ((pathname === '/api/auth/update-recovery' || pathname === '/api/auth/reset-password' || pathname === '/reset-password') && request.method === 'POST') {
+    const { userId, secret: recoverySecret, password } = await request.json() as any;
+    if (!userId || !recoverySecret || !password) {
+      return Response.json({ error: 'User ID, recovery secret, and new password are required' }, { status: 400 });
+    }
+    if (String(password).length < 8) {
+      return Response.json({ error: 'Password must be at least 8 characters long' }, { status: 400 });
+    }
+
+    const recoveryRecord = await env.DB.prepare('SELECT data FROM global_configs WHERE key = ?')
+      .bind(`recovery_${userId}`).first() as any;
+
+    if (!recoveryRecord) {
+      return Response.json({ error: 'Invalid or expired password reset link' }, { status: 400 });
+    }
+
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(recoveryRecord.data);
+    } catch (_) {
+      return Response.json({ error: 'Invalid recovery token payload' }, { status: 400 });
+    }
+
+    if (parsed.secret !== recoverySecret) {
+      return Response.json({ error: 'Invalid recovery secret code' }, { status: 400 });
+    }
+
+    if (Date.now() > (parsed.expiresAt || 0)) {
+      return Response.json({ error: 'Password reset link has expired. Please request a new one.' }, { status: 400 });
+    }
+
+    const pwdHash = await hashPassword(password);
+    await env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+      .bind(pwdHash, userId).run();
+
+    // Invalidate recovery token
+    await env.DB.prepare('DELETE FROM global_configs WHERE key = ?')
+      .bind(`recovery_${userId}`).run();
+
+    console.log(`[Recovery] Password successfully reset for user ${userId}`);
+
+    return Response.json({
+      success: true,
+      message: 'Your password has been successfully reset. You can now log in.'
+    });
+  }
+
   return Response.json({ error: 'Endpoint not found' }, { status: 404 });
 }

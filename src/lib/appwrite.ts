@@ -285,12 +285,30 @@ class CloudflareClientService {
     return { success: true };
   }
 
-  async createRecovery(_email: string, _url: string): Promise<any> {
-    return { success: true };
+  async createRecovery(email: string, url: string): Promise<any> {
+    const response = await fetch(`${this.getBaseUrl()}/api/auth/recovery`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ email, url }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Failed to create recovery request' }));
+      throw new Error(err.error || 'Failed to create recovery request');
+    }
+    return response.json();
   }
 
-  async updateRecovery(_userId: string, _secret: string, _passwordStr: string): Promise<any> {
-    return { success: true };
+  async updateRecovery(userId: string, secret: string, passwordStr: string): Promise<any> {
+    const response = await fetch(`${this.getBaseUrl()}/api/auth/update-recovery`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ userId, secret, password: passwordStr }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Failed to reset password' }));
+      throw new Error(err.error || 'Failed to reset password');
+    }
+    return response.json();
   }
 
   getBucketId(): string {

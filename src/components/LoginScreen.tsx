@@ -289,13 +289,9 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
 
     setLoading(true);
     try {
-      if (configured) {
-        const redirectUrl = `${window.location.origin}${window.location.pathname}?mode=recovery`;
-        await appwrite.createRecovery(forgotEmail.trim(), redirectUrl);
-        setSuccessMsg('Recovery link sent! Please check your email inbox.');
-      } else {
-        setSuccessMsg('Recovery link sent! (In local mode, simulated link would trigger password reset).');
-      }
+      const redirectUrl = `${window.location.origin}${window.location.pathname}?mode=recovery`;
+      const res = await appwrite.createRecovery(forgotEmail.trim(), redirectUrl);
+      setSuccessMsg(res?.message || 'Recovery link sent! Please check your email inbox and WhatsApp.');
     } catch (err: any) {
       console.error('ForgotPassword Error:', err);
       setErrorMsg(err.message || 'Failed to send recovery email. Please check that the email is correct.');

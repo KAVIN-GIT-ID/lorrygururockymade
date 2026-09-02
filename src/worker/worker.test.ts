@@ -95,6 +95,11 @@ class MockD1Database implements D1Database {
             db.files.push({ id: boundParams[0], organizationId: boundParams[1], name: boundParams[2], mimeType: boundParams[3], size: boundParams[4], data: boundParams[5] });
           } else if (lower.includes('delete from global_configs')) {
             db.global_configs = db.global_configs.filter(c => c.key !== boundParams[0]);
+          } else if (lower.includes('update users set password_hash')) {
+            const pwdHash = boundParams[0];
+            const userId = boundParams[1];
+            const u = db.users.find(user => user.id === userId);
+            if (u) u.password_hash = pwdHash;
           }
           return { success: true };
         },
@@ -310,5 +315,67 @@ describe('Cloudflare Worker Backend Integration Tests', () => {
     expect(data.success).toBe(true);
     expect(data.redirectUrl).toBeDefined();
     expect(data.transactionId).toBeDefined();
+  });
+
+  it('should generate password recovery link and reset password successfully', async () => {
+    // 0. Register user
+    const regReq = new Request('http://localhost:3000/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'recoveryuser@lorryguru.in',
+        password: 'OldPassword123!',
+        name: 'Recovery User',
+        phone: '+919876543210',
+      }),
+    });
+    const regRes = await worker.fetch(regReq, env, mockCtx);
+    expect(regRes.status).toBe(200);
+
+    // 1. Request recovery
+    const recReq = new Request('http://localhost:3000/api/auth/recovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'recoveryuser@lorryguru.in',
+        url: 'https://www.lorryguru.in/?mode=recovery'
+      })
+    });
+    const recRes = await worker.fetch(recReq, env, mockCtx);
+    expect(recRes.status).toBe(200);
+    const recData = await recRes.json();
+    expect(recData.success).toBe(true);
+    expect(recData.recoveryUrl).toContain('mode=recovery');
+    expect(recData.secret).toBeDefined();
+
+    // 2. Reset password using valid secret
+    const resetReq = new Request('http://localhost:3000/api/auth/update-recovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: recData.userId,
+        secret: recData.secret,
+        password: 'NewSecurePassword123!'
+      })
+    });
+    const resetRes = await worker.fetch(resetReq, env, mockCtx);
+    expect(resetRes.status).toBe(200);
+    const resetData = await resetRes.json();
+    expect(resetData.success).toBe(true);
+
+    // 3. Login with new password
+    const loginReq = new Request('http://localhost:3000/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'recoveryuser@lorryguru.in',
+        password: 'NewSecurePassword123!'
+      })
+    });
+    const loginRes = await worker.fetch(loginReq, env, mockCtx);
+    expect(loginRes.status).toBe(200);
+    const loginData = await loginRes.json();
+    expect(loginData.success).toBe(true);
+    expect(loginData.jwt).toBeDefined();
   });
 });
