@@ -346,7 +346,8 @@ export default function App() {
         email: googleEmail,
         name: googleName || googleEmail.split('@')[0],
         emailVerification: true,
-        phoneVerification: false,
+        phoneVerification: true,
+        isGoogleAuth: true,
         organizationId: googleOrg || 'org_default',
         role: googleRole || 'Owner',
       };
@@ -665,6 +666,8 @@ export default function App() {
     const isEmailVer = match ? !!match.isEmailVerified : ((currentUser as any).emailVerification ?? true);
     const isPhoneVer = match ? !!match.isPhoneVerified : ((currentUser as any).phoneVerification ?? true);
 
+    const isGoogle = (currentUser as any).id?.startsWith?.('google_') || (currentUser as any).$id?.startsWith?.('google_') || (currentUser as any).isGoogleAuth;
+
     if (match) {
       return {
         isAdmin: match.role === 'Admin' || isSuper || isAdminUser,
@@ -672,8 +675,8 @@ export default function App() {
         organizationId: match.organizationId || orgId,
         isApproved: match.isApproved !== false,
         phone: match.phone || userPhone,
-        isEmailVerified: !!match.isEmailVerified,
-        isPhoneVerified: !!match.isPhoneVerified,
+        isEmailVerified: isGoogle ? true : !!match.isEmailVerified,
+        isPhoneVerified: isGoogle ? true : (match.phone && match.phone !== '+91' ? !!match.isPhoneVerified : true),
         is2FAEnabled: !!match.is2FAEnabled,
         twoFactorSecret: match.twoFactorSecret || '',
         // Hide standard operations from Super Admin
@@ -722,8 +725,8 @@ export default function App() {
       organizationId: orgId,
       isApproved: true,
       phone: userPhone,
-      isEmailVerified: isEmailVer,
-      isPhoneVerified: isPhoneVer,
+      isEmailVerified: isGoogle ? true : isEmailVer,
+      isPhoneVerified: isGoogle ? true : isPhoneVer,
       is2FAEnabled: false,
       twoFactorSecret: '',
       canViewTrips: true, canEditTrips: true, canDeleteTrips: isAdminUser,
@@ -3503,7 +3506,8 @@ export default function App() {
     );
   }
 
-  const isVerificationPending = currentUser && (!currentUserRights.isEmailVerified || !currentUserRights.isPhoneVerified);
+  const isGoogleUser = currentUser && ((currentUser as any).id?.startsWith?.('google_') || (currentUser as any).$id?.startsWith?.('google_') || (currentUser as any).isGoogleAuth);
+  const isVerificationPending = currentUser && !isGoogleUser && (!currentUserRights.isEmailVerified || (!currentUserRights.isPhoneVerified && !!currentUserRights.phone && currentUserRights.phone !== '+91'));
 
   if (isVerificationPending) {
     return (

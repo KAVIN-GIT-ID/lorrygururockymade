@@ -467,50 +467,26 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
       let role: string;
 
       if (existingUser) {
-        // Existing user — use their stored org/role
         userId = existingUser.id;
         orgId = existingUser.organization_id || 'org_default';
         role = existingUser.role || 'Owner';
 
-        // Update name if it came from Google and was previously blank
-        if (!existingUser.name && displayName) {
-          await env.DB.prepare('UPDATE users SET name = ?, updated_at = datetime("now") WHERE id = ?')
-            .bind(displayName, userId).run();
-        }
+        await env.DB.prepare('UPDATE users SET email_verified = 1, phone_verified = 1, name = COALESCE(NULLIF(name, ""), ?), updated_at = datetime("now") WHERE id = ?')
+          .bind(displayName, userId).run();
       } else {
-        // New user — create account with no password (google-only)
         userId = generateId('usr_');
         orgId = `org_${generateId('')}`;
         role = 'Owner';
 
         await env.DB.prepare(`
           INSERT INTO users (id, email, password_hash, name, phone, organization_id, role, email_verified, phone_verified)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
         `).bind(userId, cleanEmail, '', displayName, '', orgId, role).run();
 
-        // Sync into global_configs for permission lookups
-        const userDocId = getEmailDocId(cleanEmail);
-        const userConfigData = {
-          id: userId,
-          email: cleanEmail,
-          name: displayName,
-          phone: '',
-          role,
-          organizationId: orgId,
-          isEmailVerified: true,
-          isPhoneVerified: false,
-          permissions: ['read', 'write']
-        };
-        await env.DB.prepare(`
-          INSERT INTO global_configs (key, data, updated_at)
-          VALUES (?, ?, datetime('now'))
-          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
-        `).bind(userDocId, JSON.stringify(userConfigData)).run();
-
-        // Also register an org profile row
+        const customOrgName = `${displayName}'s Logistics`;
         const orgProfile = {
           organizationId: orgId,
-          organizationName: displayName + "'s Organization",
+          organizationName: customOrgName,
           ownerEmail: cleanEmail,
           ownerName: displayName,
           status: 'Active',
@@ -521,9 +497,28 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
           VALUES (?, ?, datetime('now'))
           ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
         `).bind(`prf_${orgId}`, JSON.stringify(orgProfile)).run();
-
-        console.log(`[Google OAuth] New user registered: ${cleanEmail} → org ${orgId}`);
       }
+
+      // Sync into global_configs for permission lookups
+      const userDocId = getEmailDocId(cleanEmail);
+      const userConfigData = {
+        id: userId,
+        email: cleanEmail,
+        name: displayName,
+        phone: existingUser?.phone || '',
+        role,
+        organizationId: orgId,
+        isEmailVerified: true,
+        isPhoneVerified: true,
+        permissions: ['read', 'write']
+      };
+      await env.DB.prepare(`
+        INSERT INTO global_configs (key, data, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+      `).bind(userDocId, JSON.stringify(userConfigData)).run();
+
+      console.log(`[Google OAuth] Authenticated user: ${cleanEmail} (org ${orgId})`);
 
       // Check global_configs for any overridden org/role from admin rights panel
       try {
@@ -590,10 +585,8 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
         orgId = existingUser.organization_id || 'org_default';
         role = existingUser.role || 'Owner';
 
-        if (!existingUser.name && displayName) {
-          await env.DB.prepare('UPDATE users SET name = ?, updated_at = datetime("now") WHERE id = ?')
-            .bind(displayName, userId).run();
-        }
+        await env.DB.prepare('UPDATE users SET email_verified = 1, phone_verified = 1, name = COALESCE(NULLIF(name, ""), ?), updated_at = datetime("now") WHERE id = ?')
+          .bind(displayName, userId).run();
       } else {
         userId = generateId('usr_');
         orgId = `org_${generateId('')}`;
@@ -601,26 +594,8 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
 
         await env.DB.prepare(`
           INSERT INTO users (id, email, password_hash, name, phone, organization_id, role, email_verified, phone_verified)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
         `).bind(userId, cleanEmail, '', displayName, '', orgId, role).run();
-
-        const userDocId = getEmailDocId(cleanEmail);
-        const userConfigData = {
-          id: userId,
-          email: cleanEmail,
-          name: displayName,
-          phone: '',
-          role,
-          organizationId: orgId,
-          isEmailVerified: true,
-          isPhoneVerified: false,
-          permissions: ['read', 'write']
-        };
-        await env.DB.prepare(`
-          INSERT INTO global_configs (key, data, updated_at)
-          VALUES (?, ?, datetime('now'))
-          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
-        `).bind(userDocId, JSON.stringify(userConfigData)).run();
 
         const customOrgName = (requestedOrgName && requestedOrgName.trim()) || `${displayName}'s Logistics`;
         const orgProfile = {
@@ -637,6 +612,25 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
           ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
         `).bind(`prf_${orgId}`, JSON.stringify(orgProfile)).run();
       }
+
+      // Sync into global_configs for permission lookups
+      const userDocId = getEmailDocId(cleanEmail);
+      const userConfigData = {
+        id: userId,
+        email: cleanEmail,
+        name: displayName,
+        phone: existingUser?.phone || '',
+        role,
+        organizationId: orgId,
+        isEmailVerified: true,
+        isPhoneVerified: true,
+        permissions: ['read', 'write']
+      };
+      await env.DB.prepare(`
+        INSERT INTO global_configs (key, data, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+      `).bind(userDocId, JSON.stringify(userConfigData)).run();
 
       try {
         const cfgDoc = await env.DB.prepare('SELECT data FROM global_configs WHERE key = ?')
