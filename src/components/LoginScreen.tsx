@@ -75,13 +75,12 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
         throw new Error(data.error || 'Google login failed');
       }
 
-      setSuccessMsg(`Welcome, ${data.user.name || data.user.email}! Logging you in...`);
+      setSuccessMsg(`Welcome, ${data.user.name || data.user.email}!`);
       localStorage.setItem('ttt_cf_jwt', data.jwt);
       localStorage.setItem('ttt_cf_user', JSON.stringify(data.user));
+      localStorage.setItem('ttt_login_method', 'appwrite');
 
-      setTimeout(() => {
-        onLoginSuccess(data.user);
-      }, 700);
+      onLoginSuccess(data.user);
     } catch (err: any) {
       console.error('[Google GIS Error]:', err);
       setErrorMsg(err.message || 'Failed to authenticate with Google');

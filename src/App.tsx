@@ -353,10 +353,14 @@ export default function App() {
       };
       localStorage.setItem('ttt_cf_jwt', googleJwt);
       localStorage.setItem('ttt_cf_user', JSON.stringify(userObj));
+      localStorage.setItem('ttt_login_method', 'appwrite');
       setCurrentUser(userObj);
-      setUnauthRoute('login');
+      setLoadingUser(false);
+      setInitialPullDone(true);
+      showNotification(`Welcome, ${userObj.name}! Logged in successfully.`);
       // Clean the URL so the tokens are not visible in the address bar
       window.history.replaceState({}, '', window.location.pathname);
+      reconcileSession(userObj).catch(err => console.error(err));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3505,15 +3509,14 @@ export default function App() {
         onLoginSuccess={async (user) => {
           localStorage.setItem('ttt_login_method', 'appwrite');
           localStorage.removeItem('ttt_guest_user');
-          setLoadingUser(true);
-          setInitialPullDone(false);
+          setCurrentUser(user);
+          setLoadingUser(false);
+          setInitialPullDone(true);
+          showNotification(`Successfully logged in as ${user.name || user.email}`);
           try {
             await reconcileSession(user);
-            showNotification(`Successfully logged in as ${user.name || user.email}`);
           } catch (err) {
             console.error(err);
-          } finally {
-            setLoadingUser(false);
           }
         }}
         checkUserApproval={checkUserApproval}
