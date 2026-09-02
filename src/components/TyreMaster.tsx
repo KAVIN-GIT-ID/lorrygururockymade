@@ -20,7 +20,6 @@ import {
   Activity,
   Tag 
 } from 'lucide-react';
-import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 
 interface TyreMasterProps {
   tyres: Tyre[];
@@ -99,89 +98,36 @@ export default function TyreMaster({
   const [pageSize, setPageSize] = useState(12);
   const [displayedTyres, setDisplayedTyres] = useState<Tyre[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(false);
-
-  const online = isAppwriteConfigured();
+  const loading = false;
 
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter]);
 
-  // Offline / local logic fallback
+  // Always use local prop-based filtering.
+  // The tyres prop is pre-hydrated by the unified batch pull (AppwriteCloudSync),
+  // so there is no need for a redundant per-component server round-trip.
   useEffect(() => {
-    if (!online) {
-      const filtered = tyres.filter(tyre => {
-        const matchesStatus = statusFilter ? tyre.status === statusFilter : true;
-        const matchesSearch = searchQuery 
-          ? tyre.tyreNo.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            tyre.manufacturer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery.toLowerCase()))
-          : true;
-        return matchesStatus && matchesSearch;
-      });
+    const normalized = tyres.map(t => ({
+      ...t,
+      movementHistory: Array.isArray(t.movementHistory) ? t.movementHistory : []
+    }));
 
-      setTotalCount(filtered.length);
-      const startIdx = (currentPage - 1) * pageSize;
-      setDisplayedTyres(filtered.slice(startIdx, startIdx + pageSize));
-    }
-  }, [tyres, searchQuery, statusFilter, currentPage, pageSize, online]);
+    const filtered = normalized.filter(tyre => {
+      const matchesStatus = statusFilter ? tyre.status === statusFilter : true;
+      const matchesSearch = searchQuery
+        ? tyre.tyreNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          tyre.manufacturer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (tyre.currentTruckNo && tyre.currentTruckNo.toLowerCase().includes(searchQuery.toLowerCase()))
+        : true;
+      return matchesStatus && matchesSearch;
+    });
 
-  // Online Appwrite logic
-  useEffect(() => {
-    if (online) {
-      const fetchServerTyres = async () => {
-        setLoading(true);
-        try {
-          const databaseId = localStorage.getItem('appwrite_database_id') || 'fleet_db';
-          const orgId = organizationId || localStorage.getItem('ttt_organization_id') || 'org_default';
-
-          const res = await appwrite.queryTyres(
-            databaseId,
-            orgId,
-            {
-              search: searchQuery || undefined,
-              status: statusFilter || undefined
-            },
-            currentPage,
-            pageSize
-          );
-
-          const mapped = (res.documents || []).map(doc => {
-            try {
-              if (doc.data) {
-                const parsed = JSON.parse(doc.data);
-                return { id: doc.$id, ...parsed };
-              }
-            } catch (e) {
-              console.warn("Failed to parse doc.data for tyre:", doc.$id, e);
-            }
-            return {
-              id: doc.$id,
-              tyreNo: doc.tyreNo || '',
-              manufacturer: doc.manufacturer || '',
-              status: doc.status || 'Available',
-              currentTruckNo: doc.currentTruckNo || '',
-              purchaseDate: doc.purchaseDate || '',
-              movementHistory: []
-            };
-          });
-          setDisplayedTyres(mapped);
-          setTotalCount(res.total || 0);
-        } catch (err) {
-          console.error("Failed to query tyres from Appwrite:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      const delayDebounce = setTimeout(() => {
-        fetchServerTyres();
-      }, 300);
-
-      return () => clearTimeout(delayDebounce);
-    }
-  }, [searchQuery, statusFilter, currentPage, pageSize, online, organizationId]);
+    setTotalCount(filtered.length);
+    const startIdx = (currentPage - 1) * pageSize;
+    setDisplayedTyres(filtered.slice(startIdx, startIdx + pageSize));
+  }, [tyres, searchQuery, statusFilter, currentPage, pageSize]);
 
   const resetAddForm = () => {
     setTyreNo('');
