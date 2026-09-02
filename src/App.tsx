@@ -19,6 +19,14 @@ import UserAccessControl from './components/UserAccessControl';
 import BackendDashboard from './components/BackendDashboard';
 import VoiceAssistant from './components/VoiceAssistant';
 import ConnectionStatusBlocker from './components/ConnectionStatusBlocker';
+import { ToastNotification } from './components/common/ToastNotification';
+import { ProfileModal } from './components/modals/ProfileModal';
+import { MobileChangeWizardModal } from './components/modals/MobileChangeWizardModal';
+import { Setup2FAModal, Disable2FAModal } from './components/modals/TwoFactorAuthModal';
+import { ConfirmationModal, ConfirmModalState } from './components/modals/ConfirmationModal';
+import { VerificationGate } from './components/modals/VerificationGate';
+import { AppSidebar, AppTab } from './components/layout/AppSidebar';
+import { AppNavbar } from './components/layout/AppNavbar';
 import { appwrite, isAppwriteConfigured } from './lib/appwrite';
 import { useDrivers } from './hooks/useDrivers';
 import { useOffices } from './hooks/useOffices';
@@ -1806,7 +1814,13 @@ export default function App() {
     return { success: true };
   };
 
-  const handleUpdateProfile = async (newName: string, newOrgName?: string, newPassword?: string, oldPassword?: string) => {
+  const handleUpdateProfile = async (
+    newName: string,
+    newOrgName?: string,
+    newPassword?: string,
+    oldPassword?: string,
+    newVoiceLang?: string
+  ) => {
     try {
       const loginMethod = localStorage.getItem('ttt_login_method');
       if (loginMethod === 'appwrite') {
@@ -1853,10 +1867,12 @@ export default function App() {
       }
 
       // Save voice language settings
-      if (currentUser) {
+      const langToSave = newVoiceLang || profileVoiceLang || userVoiceLang;
+      if (currentUser && langToSave) {
         const userEmail = (currentUser.email || '').toLowerCase().trim();
-        localStorage.setItem(`ttt_voice_lang_${userEmail}`, profileVoiceLang);
-        setUserVoiceLang(profileVoiceLang);
+        localStorage.setItem(`ttt_voice_lang_${userEmail}`, langToSave);
+        localStorage.setItem('ttt_voice_assistant_lang', langToSave);
+        setUserVoiceLang(langToSave);
       }
 
       showNotification("Profile updated successfully!");
@@ -3612,372 +3628,145 @@ export default function App() {
 
   if (isVerificationPending) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 dark:bg-slate-950 font-sans p-4 overflow-auto transition-colors duration-200">
-        {/* GLOBAL IN-APP TOAST POPUP */}
-        {toast && (
-          <div
-            id="toast-notify"
-            className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 animate-fade-in max-w-sm sm:max-w-md ${
-              toast.type === 'error'
-                ? 'bg-rose-950/95 text-rose-100 border-rose-800 shadow-rose-950/40'
-                : toast.type === 'warning'
-                  ? 'bg-amber-950/95 text-amber-100 border-amber-800 shadow-amber-950/40'
-                  : 'bg-slate-900/95 text-white border-slate-750 shadow-slate-950/40'
-            }`}
-          >
-            {toast.type === 'error' ? (
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-            ) : toast.type === 'warning' ? (
-              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-            ) : (
-              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-            )}
-            <span className="text-xs font-semibold leading-snug flex-1">{toast.message}</span>
-            <button
-              onClick={() => setToast(null)}
-              className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition cursor-pointer shrink-0"
-              aria-label="Dismiss Notification"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-6 md:p-8 space-y-6 transition-all">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-50 dark:bg-blue-950/40 rounded-2xl shadow-inner border border-blue-100 dark:border-blue-900/30 mb-2">
-              <ShieldCheck className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">Verification Required</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Please verify your email address and mobile number to access the platform.</p>
-          </div>
-
-          <div className="space-y-5">
-            {/* Email Verification Section */}
-            <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Email Verification</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${currentUserRights.isEmailVerified
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30'
-                    : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/30'
-                  }`}>
-                  {currentUserRights.isEmailVerified ? 'Verified' : 'Unverified'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Registered Email: <span className="text-slate-800 dark:text-slate-200 font-mono font-medium">{currentUser.email}</span>
-              </p>
-              {!currentUserRights.isEmailVerified && (
-                <button
-                  type="button"
-                  disabled={emailTimer > 0}
-                  onClick={async () => {
-                    try {
-                      if (isAppwriteConfigured()) {
-                        const redirectUrl = `${window.location.origin}?mode=verify`;
-                        await appwrite.createVerification(redirectUrl);
-                      }
-                      setEmailTimer(120);
-                      showNotification("Verification email sent successfully!");
-                    } catch (e: any) {
-                      showNotification(`Error: ${e.message || e}`);
-                    }
-                  }}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                >
-                  {emailTimer > 0 ? `Resend Email in ${emailTimer}s` : "Send Verification Email"}
-                </button>
-              )}
-              {!isAppwriteConfigured() && !currentUserRights.isEmailVerified && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const email = (currentUser.email || '').toLowerCase().trim();
-                    const updated = userRightsList.map(ur =>
-                      ur.email.toLowerCase().trim() === email ? { ...ur, isEmailVerified: true } : ur
-                    );
-                    setUserRightsList(updated);
-                    localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                    showNotification("Simulated Email verification succeeded!");
-                  }}
-                  className="w-full py-1.5 border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-500/50 text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 rounded-xl text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  [Mock Sandbox] Force Verify Email
-                </button>
-              )}
-            </div>
-
-            {/* Phone Verification Section */}
-            <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Mobile Verification</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${currentUserRights.isPhoneVerified
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30'
-                    : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/30'
-                  }`}>
-                  {currentUserRights.isPhoneVerified ? 'Verified' : 'Unverified'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400">
-                <span>Mobile Number: <span className="text-slate-800 dark:text-slate-200 font-mono font-medium">{currentUserRights.phone || 'Not Set'}</span></span>
-                {!currentUserRights.isPhoneVerified && (
-                  <button
-                    type="button"
-                    onClick={() => setShowPhoneUpdateModal(true)}
-                    className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-bold transition cursor-pointer"
-                  >
-                    {currentUserRights.phone ? 'Update' : 'Add Number'}
-                  </button>
-                )}
-              </div>
-
-              {!currentUserRights.isPhoneVerified && (
-                <div className="space-y-2">
-                  {!verificationOtpSent ? (
-                    <button
-                      type="button"
-                      disabled={phoneTimer > 0}
-                      onClick={async () => {
-                        if (!currentUserRights.phone) {
-                          setShowPhoneUpdateModal(true);
-                          return;
-                        }
-                        try {
-                          if (isAppwriteConfigured()) {
-                            await sendWhatsAppOTP(currentUserRights.phone);
-                            showNotification("An OTP verification code has been sent via WhatsApp!");
-                          } else {
-                            showNotification("Mock OTP verification code sent! Enter 123456.");
-                          }
-                          setVerificationOtpSent(true);
-                          showNotification("OTP sent successfully!");
-                          setPhoneTimer(120);
-                        } catch (e: any) {
-                          showNotification(`Error: ${e.message || e}`);
-                        }
-                      }}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
-                      {phoneTimer > 0 ? `Resend OTP in ${phoneTimer}s` : "Send WhatsApp OTP Code"}
-                    </button>
-                  ) : (
-                    <form onSubmit={async (e) => {
-                      e.preventDefault();
-                      const target = e.target as any;
-                      const code = target.otpCode.value.trim();
-                      if (!code) {
-                        showNotification("Please enter the OTP code.");
-                        return;
-                      }
-
-                      try {
-                        if (isAppwriteConfigured()) {
-                          const storedOtp = whatsappOtpCode || sessionStorage.getItem('whatsapp_otp_code');
-                          if (code === storedOtp || code === '123456') {
-                            const email = (currentUser.email || '').toLowerCase().trim();
-                            const updated = userRightsList.map(ur =>
-                              ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
-                            );
-                            setUserRightsList(updated);
-                            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                            await pushPermissionsToCloud(updated);
-                            
-                            await appwrite.updatePhoneVerification(currentUser.$id || currentUser.id, code).catch(() => {});
-                            
-                            // Trigger admin-level Auth user verification via the Worker
-                            try {
-                              const verifyUrl = '/api/auth/verify-user-phone';
-                              console.info(`[WhatsAppOTP] Requesting user verification sync via ${verifyUrl}`);
-                              await fetch(verifyUrl, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  apiKey: 'ft_92hf83hdkw9812hskd',
-                                  userId: currentUser.$id || currentUser.id,
-                                  phone: currentUser.phone
-                                })
-                              }).catch(() => {});
-                              console.info('[WhatsAppOTP] Successfully synchronized user-level verification!');
-                            } catch (gateErr) {
-                              console.warn('[WhatsAppOTP] Failed to sync admin verification state:', gateErr);
-                            }
-
-                            const freshUser = await appwrite.getCurrentUser();
-                            if (freshUser) {
-                              setCurrentUser(freshUser);
-                              await reconcileSession(freshUser);
-                            }
-                            showNotification("WhatsApp OTP verification succeeded!");
-                            showNotification("Mobile number verified successfully!");
-                          } else {
-                            showNotification("Invalid OTP code. Please enter the verification code sent to your WhatsApp device.");
-                          }
-                        } else {
-                          if (code === '123456') {
-                            const email = (currentUser.email || '').toLowerCase().trim();
-                            const updated = userRightsList.map(ur =>
-                              ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
-                            );
-                            setUserRightsList(updated);
-                            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                            showNotification("Mock OTP verification succeeded!");
-                          } else {
-                            showNotification("Invalid OTP code. The predefined mock OTP is 123456.");
-                          }
-                        }
-                      } catch (otpErr: any) {
-                        console.error(otpErr);
-                        showNotification(`Verification failed: ${otpErr.message || otpErr}`);
-                      }
-                    }} className="space-y-2 text-left">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="otpCode"
-                          placeholder="Enter OTP (e.g. 123456)"
-                          className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs focus:outline-none transition-all placeholder:text-slate-400"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="submit"
-                          className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[10px] transition-all cursor-pointer shadow-sm"
-                        >
-                          Verify Code
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVerificationOtpSent(false)}
-                          className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] transition-all font-bold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      <div className="flex justify-between items-center text-[9px] mt-1">
-                        <button
-                          type="button"
-                          disabled={phoneTimer > 0}
-                          onClick={async () => {
-                            try {
-                              if (isAppwriteConfigured()) {
-                                await appwrite.createPhoneVerification();
-                              }
-                              showNotification("An OTP verification code has been sent via SMS.");
-                              setPhoneTimer(120);
-                            } catch (e: any) {
-                              showNotification(`Error: ${e.message || e}`);
-                            }
-                          }}
-                          className="text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-                        >
-                          {phoneTimer > 0 ? `Resend OTP in ${phoneTimer}s` : "Resend OTP"}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-4">
-            <button
-              type="button"
-              onClick={async () => {
-                setLoadingUser(true);
+      <>
+        <ToastNotification toast={toast} onClose={() => setToast(null)} />
+        <VerificationGate
+          currentUser={currentUser}
+          currentUserRights={currentUserRights}
+          initialEmailTimer={emailTimer}
+          initialPhoneTimer={phoneTimer}
+          onSendEmailVerification={async () => {
+            try {
+              if (isAppwriteConfigured()) {
+                const redirectUrl = `${window.location.origin}?mode=verify`;
+                await appwrite.createVerification(redirectUrl);
+              }
+              showNotification("Verification email sent successfully!");
+            } catch (e: any) {
+              showNotification(`Error: ${e.message || e}`);
+            }
+          }}
+          onForceVerifyEmail={async () => {
+            const email = (currentUser.email || '').toLowerCase().trim();
+            const updated = userRightsList.map(ur =>
+              ur.email.toLowerCase().trim() === email ? { ...ur, isEmailVerified: true } : ur
+            );
+            setUserRightsList(updated);
+            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+            showNotification("Simulated Email verification succeeded!");
+          }}
+          onSendPhoneVerification={async () => {
+            try {
+              if (isAppwriteConfigured()) {
+                await sendWhatsAppOTP(currentUserRights.phone || '');
+                showNotification("An OTP verification code has been sent via WhatsApp!");
+              } else {
+                showNotification("Mock OTP verification code sent! Enter 123456.");
+              }
+              showNotification("OTP sent successfully!");
+            } catch (e: any) {
+              showNotification(`Error: ${e.message || e}`);
+            }
+          }}
+          onVerifyPhoneCode={async (code: string) => {
+            try {
+              if (isAppwriteConfigured()) {
+                await appwrite.updatePhoneVerification(currentUser.$id || currentUser.id, code);
+                const email = (currentUser.email || '').toLowerCase().trim();
+                const updated = userRightsList.map(ur =>
+                  ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
+                );
+                setUserRightsList(updated);
+                localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+                await pushPermissionsToCloud(updated);
+                
                 try {
-                  if (isAppwriteConfigured()) {
-                    const user = await appwrite.getCurrentUser();
-                    if (user) {
-                      await reconcileSession(user);
-                    }
-                  } else {
-                    const storedRights = localStorage.getItem('ttt_user_rights');
-                    if (storedRights) {
-                      setUserRightsList(migrateUserPermissions(JSON.parse(storedRights)));
-                    }
-                    const storedOrgs = localStorage.getItem('ttt_organization_profiles');
-                    if (storedOrgs) {
-                      setOrganizationProfiles(JSON.parse(storedOrgs));
-                    }
-                  }
-                  showNotification("Verification status refreshed.");
-                } catch (err) {
-                  console.warn(err);
-                } finally {
-                  setLoadingUser(false);
+                  const verifyUrl = '/api/auth/verify-user-phone';
+                  await fetch(verifyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      apiKey: 'ft_92hf83hdkw9812hskd',
+                      userId: currentUser.$id || currentUser.id,
+                      phone: currentUser.phone
+                    })
+                  }).catch(() => {});
+                } catch (gateErr) {
+                  console.warn('[WhatsAppOTP] Failed to sync admin verification state:', gateErr);
                 }
-              }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh Status</span>
-            </button>
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-550 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Log Out</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Phone update modal popup for existing users */}
-        {showPhoneUpdateModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 overflow-auto animate-fade-in">
-            <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 space-y-4 text-left">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Add / Update Mobile Number</h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Please set your mobile number to receive verification OTPs.</p>
-              </div>
-
-              <form onSubmit={handlePhoneUpdateSubmit} className="space-y-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Mobile Number</label>
-                  <CountryPhoneInput
-                    value={phoneModalNumber || currentUserRights.phone || '+91'}
-                    onChange={(val) => setPhoneModalNumber(val)}
-                    placeholder="Enter mobile number"
-                    required
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Current Password</label>
-                    <input
-                      type="password"
-                      name="currentPassword"
-                      required
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-200 text-xs focus:outline-none transition-all"
-                    />
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowPhoneUpdateModal(false)}
-                    className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
-                  >
-                    Save & Verify
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
+                const freshUser = await appwrite.getCurrentUser();
+                if (freshUser) {
+                  setCurrentUser(freshUser);
+                  await reconcileSession(freshUser);
+                } else {
+                  const updatedUser = { ...currentUser, phoneVerification: true };
+                  setCurrentUser(updatedUser);
+                  await reconcileSession(updatedUser);
+                }
+                showNotification("WhatsApp OTP verification succeeded!");
+                showNotification("Mobile number verified successfully!");
+              } else {
+                if (code === '123456') {
+                  const email = (currentUser.email || '').toLowerCase().trim();
+                  const updated = userRightsList.map(ur =>
+                    ur.email.toLowerCase().trim() === email ? { ...ur, isPhoneVerified: true } : ur
+                  );
+                  setUserRightsList(updated);
+                  localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+                  showNotification("Mock OTP verification succeeded!");
+                } else {
+                  showNotification("Invalid OTP code. The predefined mock OTP is 123456.");
+                }
+              }
+            } catch (otpErr: any) {
+              showNotification(`Verification failed: ${otpErr.message || otpErr}`);
+            }
+          }}
+          onUpdatePhoneSubmit={async (phone: string, password?: string) => {
+            let normalized = phone.trim();
+            if (!normalized.startsWith('+')) {
+              const clean = normalized.replace(/[^0-9]/g, '');
+              if (clean.length === 10) normalized = `+91${clean}`;
+              else if (clean.length === 12 && clean.startsWith('91')) normalized = `+${clean}`;
+              else if (clean.length > 0) normalized = `+${clean}`;
+            }
+            if (isAppwriteConfigured() && password) {
+              await appwrite.updatePhone(normalized, password);
+              await appwrite.createPhoneVerification();
+            }
+            const email = (currentUser.email || '').toLowerCase().trim();
+            const updated = userRightsList.map(ur =>
+              ur.email.toLowerCase().trim() === email ? { ...ur, phone: normalized } : ur
+            );
+            setUserRightsList(updated);
+            localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+            await pushPermissionsToCloud(updated);
+            const updatedUser = { ...currentUser, phone: normalized };
+            setCurrentUser(updatedUser);
+            await reconcileSession(updatedUser);
+            showNotification("Mobile number saved and verification OTP sent successfully!");
+          }}
+          onRefreshStatus={async () => {
+            setLoadingUser(true);
+            try {
+              if (isAppwriteConfigured()) {
+                const user = await appwrite.getCurrentUser();
+                if (user) await reconcileSession(user);
+              } else {
+                const storedRights = localStorage.getItem('ttt_user_rights');
+                if (storedRights) setUserRightsList(migrateUserPermissions(JSON.parse(storedRights)));
+                const storedOrgs = localStorage.getItem('ttt_organization_profiles');
+                if (storedOrgs) setOrganizationProfiles(JSON.parse(storedOrgs));
+              }
+              showNotification("Verification status refreshed.");
+            } finally {
+              setLoadingUser(false);
+            }
+          }}
+          onLogout={handleLogout}
+        />
+      </>
     );
   }
 
@@ -4206,36 +3995,8 @@ export default function App() {
 
   return (
     <div className="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
-
       {/* GLOBAL IN-APP TOAST NOTIFICATION POPUP */}
-      {toast && (
-        <div
-          id="toast-notify"
-          className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 animate-fade-in max-w-sm sm:max-w-md ${
-            toast.type === 'error'
-              ? 'bg-rose-950/95 text-rose-100 border-rose-800 shadow-rose-950/40'
-              : toast.type === 'warning'
-                ? 'bg-amber-950/95 text-amber-100 border-amber-800 shadow-amber-950/40'
-                : 'bg-slate-900/95 text-white border-slate-750 shadow-slate-950/40'
-          }`}
-        >
-          {toast.type === 'error' ? (
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          ) : toast.type === 'warning' ? (
-            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-          ) : (
-            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-          )}
-          <span className="text-xs font-semibold leading-snug flex-1">{toast.message}</span>
-          <button
-            onClick={() => setToast(null)}
-            className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition cursor-pointer shrink-0"
-            aria-label="Dismiss Notification"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      <ToastNotification toast={toast} onClose={() => setToast(null)} />
 
       {/* Mobile Top App Bar (Only on < md) */}
       <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-30">
@@ -4260,619 +4021,60 @@ export default function App() {
         </button>
       </div>
 
-      {/* Mobile Backdrop Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
-        />
-      )}
-
       {/* Sidebar Navigation */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-slate-900 flex flex-col border-r border-slate-200 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-in-out
-        md:static md:w-64 md:h-full md:z-auto md:shadow-none md:translate-x-0 shrink-0
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        {/* Header Panel (Logo & Close Button inside drawer) */}
-        <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 shrink-0">
-          <div className="flex items-center gap-2.5 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
-            <img
-              src="/assets/logo-CkJqcrTB.png"
-              alt="LorryGuru Logo"
-              className="h-8 w-auto object-contain shrink-0"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }}
-            />
-            <span>Lorry<span className="text-blue-600">Guru</span><span className="text-amber-500">.in</span></span>
-          </div>
-
-          {/* Drawer Close Button (Mobile Only) */}
-          <button
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="md:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
-            aria-label="Close Navigation Menu"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          {/* Navigation Items */}
-          <div className="p-4 md:p-6 pt-2 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
-            <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
-              <button
-                id="tab-btn-dashboard"
-                onClick={() => selectTab('DASHBOARD')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DASHBOARD'
-                  ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                  : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                  }`}
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span>Dashboard</span>
-              </button>
-              {currentUserRights.canViewTrips && (
-                <button
-                  id="tab-btn-trips"
-                  onClick={() => selectTab('TRIPS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRIPS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  <span>Trip Management</span>
-                </button>
-              )}
-              {currentUserRights.canViewTrucks && (
-                <button
-                  id="tab-btn-trucks"
-                  onClick={() => selectTab('TRUCKS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TRUCKS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <TruckIcon className="w-4 h-4" />
-                  <span>Truck Registry</span>
-                </button>
-              )}
-              {currentUserRights.canViewOffices && (
-                <button
-                  id="tab-btn-offices"
-                  onClick={() => selectTab('OFFICES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'OFFICES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <MapPin className="w-4 h-4" />
-                  <span>Offices</span>
-                </button>
-              )}
-              {currentUserRights.canViewAccounts && (
-                <button
-                  id="tab-btn-accounts"
-                  onClick={() => selectTab('ACCOUNTS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'ACCOUNTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Coins className="w-4 h-4" />
-                  <span>Account Ledger</span>
-                </button>
-              )}
-              {currentUserRights.canViewDrivers && (
-                <button
-                  id="tab-btn-drivers"
-                  onClick={() => selectTab('DRIVERS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'DRIVERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>Drivers Database</span>
-                </button>
-              )}
-              {currentUserRights.canViewExpenses && (
-                <button
-                  id="tab-btn-expenses"
-                  onClick={() => selectTab('EXPENSES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'EXPENSES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>Expense Ledger</span>
-                </button>
-              )}
-              {currentUserRights.canViewTrips && (
-                <button
-                  id="tab-btn-reports"
-                  onClick={() => selectTab('REPORTS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'REPORTS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Monthly Reports</span>
-                </button>
-              )}
-              {currentUserRights.isAdmin && (
-                <button
-                  id="tab-btn-audit"
-                  onClick={() => selectTab('AUDIT')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'AUDIT'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <History className="w-4 h-4" />
-                  <span>System Audit Logs</span>
-                </button>
-              )}
-              {currentUserRights.canViewTyres && (
-                <button
-                  id="tab-btn-tyres"
-                  onClick={() => selectTab('TYRES')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'TYRES'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Disc className="w-4 h-4" />
-                  <span>Tyre Ledger & ODO</span>
-                </button>
-              )}
-              {hasUsersTabAccess && (
-                <button
-                  id="tab-btn-users"
-                  onClick={() => selectTab('USERS')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'USERS'
-                    ? 'bg-blue-50 dark:bg-blue-600/10 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Access Control</span>
-                </button>
-              )}
-              {currentUserRights.isSuperAdmin && (
-                <button
-                  id="tab-btn-backend"
-                  onClick={() => selectTab('BACKEND')}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-all rounded-lg font-medium duration-150 ${activeTab === 'BACKEND'
-                    ? 'bg-purple-50 dark:bg-purple-650/10 text-purple-650 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-2.5'
-                    : 'text-slate-655 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                >
-                  <Settings className="w-4 h-4 text-purple-500" />
-                  <span>Backend Dashboard</span>
-                </button>
-              )}
-            </nav>
-          </div>
-
-          {/* User Profile Info Footer Panel */}
-          <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-850 space-y-3 shrink-0">
-            <div>
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 px-1">Logged in as</div>
-              <div className="text-xs text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-2 px-1 truncate" title={currentUser?.email || currentUser?.name || 'User'}>
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-                <span className="truncate">{currentUser?.name || currentUser?.email || 'Logistics Admin'}</span>
-              </div>
-            </div>
-            {currentUserOrgId && (
-              <div className="flex items-center justify-between bg-slate-150 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-600 dark:text-slate-400">
-                <span className="truncate font-semibold select-all" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentUserOrgId);
-                    showNotification("Organization ID copied to clipboard!");
-                  }}
-                  className="text-slate-555 hover:text-slate-900 dark:hover:text-white transition-colors p-0.5 shrink-0 ml-1.5 cursor-pointer"
-                  title="Copy Organization ID"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-660 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 text-xs font-bold transition cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+      <AppSidebar
+        activeTab={activeTab}
+        selectTab={selectTab}
+        isMobileMenuOpen={isMobileMenuOpen}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+        currentUserRights={currentUserRights}
+        hasUsersTabAccess={hasUsersTabAccess}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
-
-        {/* ── Header ──────────────────────────────────────────────── */}
-        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 sticky top-0 z-30 shadow-xs">
-
-          {/* Row 1: Title + primary actions */}
-          <div className="flex items-center justify-between px-4 sm:px-6 md:px-8 h-14">
-
-            {/* Left: Page title + count badge */}
-            <div className="flex items-center gap-2 min-w-0 shrink">
-              <h1 className="text-sm sm:text-base md:text-lg font-bold text-slate-800 dark:text-white tracking-tight truncate">
-                {activeTab === 'DASHBOARD' && 'Operations Dashboard'}
-                {activeTab === 'TRIPS' && 'Manage Active Trips'}
-                {activeTab === 'TRUCKS' && 'Truck Datasheet'}
-                {activeTab === 'OFFICES' && 'Office Branch Directory'}
-                {activeTab === 'ACCOUNTS' && 'Mapped Account Ledgers'}
-                {activeTab === 'DRIVERS' && 'Operator Drivers Database'}
-                {activeTab === 'EXPENSES' && 'Voucher & Expenses Ledger'}
-                {activeTab === 'REPORTS' && 'Fleet Profitability Reports'}
-                {activeTab === 'AUDIT' && 'System Audit Trails'}
-                {activeTab === 'TYRES' && 'Tyre Inventory & Life Tracking'}
-              </h1>
-              <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold border border-slate-200 dark:border-slate-700 whitespace-nowrap">
-                {activeTab === 'TRIPS' && `${orgTrips.length} Total Trips`}
-                {activeTab === 'TRUCKS' && `${orgTrucks.length} Trucks`}
-                {activeTab === 'OFFICES' && `${orgOffices.length} Offices`}
-                {activeTab === 'ACCOUNTS' && `${orgAccounts.length} Ledgers`}
-                {activeTab === 'DRIVERS' && `${orgDrivers.length} Drivers`}
-                {activeTab === 'DASHBOARD' && `${orgTrips.length} Segments`}
-                {activeTab === 'EXPENSES' && `${orgExpenses.length} Vouchers`}
-                {activeTab === 'REPORTS' && 'Auditing'}
-                {activeTab === 'AUDIT' && `${orgAuditLogs.length} Activities`}
-                {activeTab === 'TYRES' && `${orgTyres.length} Tyres`}
-              </span>
-            </div>
-
-            {/* Right: Compact icon row */}
-            <div className="flex items-center gap-1.5 shrink-0 ml-3">
-
-              {/* Search — desktop only */}
-              <div className="relative hidden xl:block w-44">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search... ⌘K"
-                  className="block w-full pl-9 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/50 dark:bg-slate-800 dark:hover:bg-slate-700/50 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500 cursor-pointer transition"
-                  readOnly
-                  onClick={() => showNotification("Global search feature is coming soon!")}
-                />
-              </div>
-
-              {/* Cyan quick-action icon */}
-              <button
-                onClick={handleCyanClick}
-                className="relative p-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-lg border border-cyan-500/25 transition cursor-pointer"
-                title={currentUserRights.isAdmin ? `${cyanCount} Pending Approvals` : `${cyanCount} Active/Pending Trips`}
-              >
-                {currentUserRights.isAdmin ? <Users className="w-4 h-4" /> : <TruckIcon className="w-4 h-4" />}
-                {cyanCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold bg-cyan-500 text-white rounded-full leading-none min-w-[16px] text-center border border-white dark:border-slate-900 shadow-sm animate-pulse">
-                    {cyanCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Notifications */}
-              <div ref={notificationRef} className="relative">
-                <button
-                  id="btn-notifications-toggle"
-                  onClick={() => {
-                    setNotificationOpen(!notificationOpen);
-                    setProfileDropdownOpen(false);
-                    const now = Date.now();
-                    setLastReadNotificationTime(now);
-                    if (currentUser) {
-                      const key = `ttt_last_read_notifications_${(currentUser.email || '').toLowerCase().trim()}`;
-                      localStorage.setItem(key, now.toString());
-                    }
-                  }}
-                  className="relative p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-660 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                  title="Notification Center"
-                >
-                  <Bell className="w-4 h-4" />
-                  {hasUnreadNotifications && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
-                  )}
-                </button>
-
-                {notificationOpen && (
-                  <div className="
-                    fixed left-3 right-3 top-16
-                    md:absolute md:left-auto md:right-0 md:top-auto md:mt-2 md:w-80
-                    bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800
-                    text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-3 animate-fade-in text-left
-                  ">
-                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-                      <span className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Recent Activity Logs</span>
-                      <button
-                        onClick={() => setNotificationOpen(false)}
-                        className="text-slate-400 dark:text-slate-500 hover:text-slate-655 dark:hover:text-slate-350 text-xs p-1 font-bold"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                      {orgAuditLogs.length === 0 ? (
-                        <p className="text-center py-6 text-xs text-slate-400 dark:text-slate-500 italic">No recent activities logged.</p>
-                      ) : (
-                        orgAuditLogs.slice(0, 8).map((log) => (
-                          <div key={log.id} className="text-[11px] p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 space-y-1">
-                            <div className="flex justify-between items-center">
-                              <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${log.action === 'Approved' ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-900/50' :
-                                log.action === 'Rejected' ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50' :
-                                  log.action === 'Created' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-150 dark:border-blue-900/50' :
-                                    log.action === 'Deleted' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-150 dark:border-red-900/50' :
-                                      log.action === 'Edited' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-150 dark:border-amber-900/50' :
-                                        'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200'
-                              }`}>
-                                {log.action}
-                              </span>
-                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">{(log.timestamp || '').substring(11, 16)}</span>
-                            </div>
-                            <p className="text-slate-700 dark:text-slate-300 leading-tight">
-                              <strong className="text-slate-900 dark:text-white">{log.category} ({log.reference}):</strong> {log.details}
-                            </p>
-                            <p className="text-[9px] text-slate-400 dark:text-slate-500">By {log.user}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    {orgAuditLogs.length > 0 && currentUserRights.isAdmin && (
-                      <button
-                        onClick={() => {
-                          setActiveTab('AUDIT');
-                          setNotificationOpen(false);
-                        }}
-                        className="w-full text-center text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline pt-1 block border-t border-slate-100 dark:border-slate-800"
-                      >
-                        View Full Audit Trail
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Voice assistant */}
-              <button
-                onClick={() => setIsVoiceAssistantOpen(true)}
-                className="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer hidden sm:flex items-center justify-center"
-                title="Voice Assistant (Alt+V)"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-
-              {/* Theme toggle */}
-              <button
-                onClick={() => {
-                  const nextTheme = theme === 'light' ? 'dark' : 'light';
-                  setTheme(nextTheme);
-                  localStorage.setItem('ttt_theme', nextTheme);
-                }}
-                className="p-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-650 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
-              >
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-              </button>
-
-              {/* Avatar / Profile dropdown */}
-              <div ref={profileDropdownRef} className="relative">
-                <button
-                  id="btn-profile-avatar-toggle"
-                  onClick={() => {
-                    setProfileDropdownOpen(!profileDropdownOpen);
-                    setNotificationOpen(false);
-                  }}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 font-bold border border-blue-600/20 dark:border-blue-500/30 flex items-center justify-center text-xs cursor-pointer hover:bg-blue-600/20 transition-all select-none"
-                  title="User Profile Menu"
-                >
-                  {getUserInitials(currentUser)}
-                </button>
-
-                {profileDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 rounded-xl shadow-2xl z-50 p-1.5 animate-fade-in text-left font-sans">
-                    <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-850 mb-1 space-y-0.5">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{currentUser?.name || 'Logistics User'}</p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentUser?.email || 'user@fleettrack.local'}</p>
-                      {currentUserOrgId && (
-                        <div className="flex items-center justify-between mt-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1">
-                          <span className="text-[9px] font-mono text-slate-500 dark:text-slate-400 truncate" title={currentUserOrgId}>Org: {currentUserOrgId}</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(currentUserOrgId);
-                              showNotification('Organization ID copied!');
-                            }}
-                            className="ml-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer shrink-0"
-                            title="Copy Org ID"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setProfileModalOpen(true);
-                        setProfileDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
-                    >
-                      <Settings className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Profile Settings</span>
-                    </button>
-
-                    {hasUsersTabAccess && (
-                      <button
-                        onClick={() => {
-                          setActiveTab('USERS');
-                          setProfileDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-left transition cursor-pointer"
-                      >
-                        <Users className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Access Control</span>
-                      </button>
-                    )}
-
-                    <div className="border-t border-slate-100 dark:border-slate-850 my-1" />
-
-                    <button
-                      onClick={() => {
-                        setProfileDropdownOpen(false);
-                        handleLogout();
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg text-left transition cursor-pointer font-semibold"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sign Out</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Cloud sync status badge — ONLY visible for admin user */}
-              {currentUser && (
-                <div className={currentUserRights.isAdmin ? 'inline-block' : 'hidden'}>
-                  <AppwriteCloudSync
-                    currentLocalState={{
-                      trucks,
-                      drivers,
-                      offices,
-                      accounts,
-                      trips,
-                      expenses,
-                      tyres,
-                      auditLogs
-                    }}
-                    onLoadCloudState={onLoadCloudState}
-                    showNotification={showNotification}
-                    logAction={logAction}
-                    currentUserOrgId={currentUserOrgId}
-                    isAdmin={currentUserRights.isAdmin}
-                    onInitialSyncComplete={setInitialPullDone}
-                    onConnectionChange={(online, reason) => {
-                      setIsOnline(online);
-                      setDisconnectReason(reason);
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* ── Admin tool buttons — shown inline on lg+, hidden on smaller ── */}
-              {currentUserRights.isAdmin && (
-                <div className="hidden lg:flex items-center gap-1.5">
-                  <button
-                    id="btn-clear-data"
-                    onClick={triggerClearAllLocalData}
-                    title="Wipe all local database logs and start fresh"
-                    className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-rose-500 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span className="hidden xl:inline">Clear Data</span>
-                  </button>
-
-                  <button
-                    id="btn-backup-download"
-                    onClick={handleTriggerDownloadBackup}
-                    title="Download Snapshot Backup File (.json)"
-                    className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="hidden xl:inline">Backup</span>
-                  </button>
-
-                  <label
-                    title="Restore from Backup File (.json)"
-                    className="p-2 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1 font-medium shadow-2xs cursor-pointer select-none"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="hidden xl:inline">Restore</span>
-                    <input
-                      id="file-restore-input"
-                      type="file"
-                      accept=".json"
-                      onChange={handleUploadBackupChange}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              )}
-
-              {/* Divider */}
-              {currentUserRights.canEditTrips && currentUserRights.isAdmin && (
-                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 self-center" />
-              )}
-
-              {/* New Entry — always visible */}
-              {currentUserRights.canEditTrips && (
-                <button
-                  id="btn-quick-post-trip"
-                  onClick={() => {
-                    if (orgTrucks.length === 0 || orgOffices.length === 0) {
-                      alert("Hold on! Register Trucks and Offices in their master sheets before booking cargo entries.");
-                      return;
-                    }
-                    setEditingTrip(null);
-                    setBookingModalOpen(true);
-                  }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-colors shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">New Entry</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Row 2: Admin quick tools — visible only on sm/md (hidden on lg+ where they're inline above) */}
-          {currentUserRights.isAdmin && (
-            <div className="lg:hidden flex items-center gap-2 px-4 sm:px-6 py-2 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/70 dark:bg-slate-900/70 overflow-x-auto">
-              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">Admin Tools:</span>
-
-              <button
-                onClick={triggerClearAllLocalData}
-                title="Clear local data"
-                className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 text-rose-500 rounded-md border border-slate-200 dark:border-slate-700 text-[11px] font-medium cursor-pointer hover:bg-rose-50 dark:hover:bg-rose-950/20 transition"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear Data
-              </button>
-
-              <button
-                onClick={handleTriggerDownloadBackup}
-                title="Download backup"
-                className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md border border-slate-200 dark:border-slate-700 text-[11px] font-medium cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-              >
-                <Download className="w-3 h-3" />
-                Backup
-              </button>
-
-              <label className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md border border-slate-200 dark:border-slate-700 text-[11px] font-medium cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition select-none">
-                <Upload className="w-3 h-3" />
-                Restore
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleUploadBackupChange}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          )}
-        </header>
+        <AppNavbar
+          activeTab={activeTab}
+          currentUser={currentUser}
+          currentUserRights={currentUserRights}
+          currentUserOrgId={currentUserOrgId}
+          theme={theme}
+          setTheme={setTheme}
+          orgAuditLogs={orgAuditLogs}
+          orgTrips={orgTrips}
+          orgTrucks={orgTrucks}
+          orgOffices={orgOffices}
+          orgAccounts={orgAccounts}
+          orgDrivers={orgDrivers}
+          orgExpenses={orgExpenses}
+          orgTyres={orgTyres}
+          trucks={trucks}
+          drivers={drivers}
+          offices={offices}
+          accounts={accounts}
+          trips={trips}
+          expenses={expenses}
+          tyres={tyres}
+          auditLogs={auditLogs}
+          hasUsersTabAccess={hasUsersTabAccess}
+          onSelectTab={selectTab}
+          onOpenProfileModal={() => setProfileModalOpen(true)}
+          onOpenVoiceAssistant={() => setIsVoiceAssistantOpen(true)}
+          onOpenNewTripModal={() => {
+            setEditingTrip(null);
+            setBookingModalOpen(true);
+          }}
+          onTriggerClearAllData={triggerClearAllLocalData}
+          onTriggerDownloadBackup={handleTriggerDownloadBackup}
+          onUploadBackupChange={handleUploadBackupChange}
+          onLogout={handleLogout}
+          onLoadCloudState={onLoadCloudState}
+          showNotification={showNotification}
+          logAction={logAction}
+          setInitialPullDone={setInitialPullDone}
+          setIsOnline={setIsOnline}
+          setDisconnectReason={setDisconnectReason}
+        />
 
         {/* Outer content container */}
         <div id="app-viewport-container" className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 space-y-6">
@@ -5144,798 +4346,149 @@ export default function App() {
         voiceLang={userVoiceLang}
       />
 
-      {profileModalOpen && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl animate-fade-in text-left">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
-              <h3 className="font-bold text-slate-900 text-base">Profile Settings</h3>
-              <button
-                onClick={() => setProfileModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
-              >
-                ✕
-              </button>
-            </div>
+      {/* PROFILE SETTINGS MODAL */}
+      <ProfileModal
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        currentUser={currentUser}
+        currentUserRights={currentUserRights}
+        initialName={currentUser?.name || ''}
+        initialOrgName={organizationProfiles.find(p => p.organizationId === currentUserOrgId)?.name || ''}
+        initialVoiceLang={userVoiceLang}
+        onOpenMobileWizard={() => {
+          setMobileWizardStep(1);
+          setMobileWizardOpen(true);
+          setMobileWizardOtpSent(false);
+          setMobileWizardTimer(0);
+          setMobileWizardCode('');
+          setMobileWizardNewPhone('');
+          setMobileWizardPassword('');
+          setMobileWizardError(null);
+          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          setMobileWizardGeneratedOtp(otp);
+          alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
+        }}
+        onOpenSetup2FA={async () => {
+          const secret = generateSecret();
+          setSetup2FASecret(secret);
+          setSetup2FACode('');
+          setSetup2FAPassword('');
+          setSetup2FAOpen(true);
+          setSetup2FAError(null);
+        }}
+        onOpenDisable2FA={() => {
+          setDisable2FAOpen(true);
+          setDisable2FACode('');
+          setDisable2FAPassword('');
+          setDisable2FAError(null);
+        }}
+        onUpdateProfile={async (name, orgName, newPassword, oldPassword, voiceLang) => {
+          await handleUpdateProfile(
+            name,
+            currentUserRights.isAdmin ? orgName : undefined,
+            newPassword || undefined,
+            oldPassword || undefined,
+            voiceLang
+          );
+        }}
+      />
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (newPassword && newPassword !== confirmPassword) {
-                alert("New passwords do not match!");
-                return;
-              }
-              const loginMethod = localStorage.getItem('ttt_login_method');
-              if (loginMethod === 'appwrite' && newPassword && !oldPassword) {
-                alert("Current password is required to change password in Appwrite.");
-                return;
-              }
-              await handleUpdateProfile(
-                profileName,
-                currentUserRights.isAdmin ? profileOrgName : undefined,
-                newPassword || undefined,
-                oldPassword || undefined
-              );
-            }} className="space-y-4">
-              {/* DISPLAY NAME */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Display Name</label>
-                <input
-                  type="text"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                  required
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                />
-              </div>
+      {/* MOBILE CHANGE WIZARD MODAL */}
+      <MobileChangeWizardModal
+        isOpen={mobileWizardOpen}
+        onClose={() => setMobileWizardOpen(false)}
+        currentPhone={currentUserRights.phone || ''}
+        onConfirmChange={async (newPhoneClean, pwd) => {
+          if (isAppwriteConfigured() && pwd) {
+            await appwrite.updatePhone(newPhoneClean, pwd);
+          }
+          const email = (currentUser.email || '').toLowerCase().trim();
+          const updated = userRightsList.map(ur =>
+            ur.email.toLowerCase().trim() === email
+              ? { ...ur, phone: newPhoneClean, isPhoneVerified: true }
+              : ur
+          );
+          setUserRightsList(updated);
+          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+          await pushPermissionsToCloud(updated);
 
-              {/* ORGANIZATION NAME */}
-              {currentUserRights.isAdmin && currentUserRights.organizationId && currentUserRights.organizationId !== 'org_backend' && (
-                <div>
-                  <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Organization Name</label>
-                  <input
-                    type="text"
-                    value={profileOrgName}
-                    onChange={(e) => setProfileOrgName(e.target.value)}
-                    required
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                  />
-                </div>
-              )}
+          const updatedUser = {
+            ...currentUser,
+            phone: newPhoneClean,
+            phoneVerification: true
+          };
+          setCurrentUser(updatedUser);
+          await reconcileSession(updatedUser);
 
-              {/* EMAIL (READ-ONLY) */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Email Address (Read-only)</label>
-                <input
-                  type="email"
-                  value={currentUser?.email || ''}
-                  disabled
-                  className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                />
-              </div>
+          showNotification('Mobile number successfully changed & verified!');
+        }}
+      />
 
-              {/* MOBILE NUMBER */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Mobile Number</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={currentUserRights.phone || 'Not Set'}
-                    disabled
-                    className="flex-1 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileWizardStep(1);
-                      setMobileWizardOpen(true);
-                      setMobileWizardOtpSent(false);
-                      setMobileWizardTimer(0);
-                      setMobileWizardCode('');
-                      setMobileWizardNewPhone('');
-                      setMobileWizardPassword('');
-                      setMobileWizardError(null);
-                      // Generate simulated OTP for Step 1
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-                    }}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10 cursor-pointer"
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
+      {/* ENABLE 2FA MODAL */}
+      <Setup2FAModal
+        isOpen={setup2FAOpen}
+        onClose={() => setSetup2FAOpen(false)}
+        currentUserEmail={currentUser?.email || ''}
+        secret={setup2FASecret}
+        onConfirmEnable={async (secretKey, code, password) => {
+          if (isAppwriteConfigured() && password) {
+            await appwrite.login(currentUser.email, password);
+          }
 
-              {/* VOICE ASSISTANT LANGUAGE */}
-              <div>
-                <label htmlFor="voice-lang-select" className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Voice Assistant Language</label>
-                <select
-                  id="voice-lang-select"
-                  value={profileVoiceLang}
-                  onChange={(e) => setProfileVoiceLang(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
-                >
-                  <option value="en-IN">English (India) - en-IN</option>
-                  <option value="hi-IN">Hindi (हिन्दी) - hi-IN</option>
-                  <option value="ta-IN">Tamil (தமிழ்) - ta-IN</option>
-                  <option value="te-IN">Telugu (తెలుగు) - te-IN</option>
-                  <option value="kn-IN">Kannada (ಕನ್ನಡ) - kn-IN</option>
-                  <option value="mr-IN">Marathi (मराठी) - mr-IN</option>
-                </select>
-              </div>
+          const verified = await verifyTOTP(secretKey, code);
+          if (!verified) {
+            throw new Error('Invalid authenticator verification code.');
+          }
 
-              {/* TWO-FACTOR AUTHENTICATION (2FA) */}
-              <div className="border-t border-slate-100 pt-3">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Two-Factor Authentication (2FA)</span>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex justify-between items-center">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${currentUserRights.is2FAEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                      <span className="text-xs font-bold text-slate-800">{currentUserRights.is2FAEnabled ? 'Enabled' : 'Disabled'}</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-normal">
-                      Protect your account with Google Authenticator TOTP codes.
-                    </p>
-                  </div>
-                  {currentUserRights.is2FAEnabled ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDisable2FAOpen(true);
-                        setDisable2FACode('');
-                        setDisable2FAPassword('');
-                        setDisable2FAError(null);
-                      }}
-                      className="px-3 py-1.5 border border-red-500/30 hover:border-red-500 text-red-500 hover:bg-red-50 rounded-lg text-[10px] font-bold transition cursor-pointer"
-                    >
-                      Disable
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const secret = generateSecret();
-                        setSetup2FASecret(secret);
-                        setSetup2FACode('');
-                        setSetup2FAPassword('');
-                        setSetup2FAOpen(true);
-                        setSetup2FAError(null);
-                      }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-md shadow-blue-600/10 transition cursor-pointer"
-                    >
-                      Enable
-                    </button>
-                  )}
-                </div>
-              </div>
+          const email = (currentUser.email || '').toLowerCase().trim();
+          const updated = userRightsList.map(ur =>
+            ur.email.toLowerCase().trim() === email
+              ? { ...ur, is2FAEnabled: true, twoFactorSecret: secretKey }
+              : ur
+          );
+          setUserRightsList(updated);
+          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+          await pushPermissionsToCloud(updated);
+          await reconcileSession(currentUser);
 
-              <div className="border-t border-slate-100 pt-3">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-extrabold block mb-2 font-sans">Change Password</span>
+          showNotification('Two-Factor Authentication successfully enabled!');
+        }}
+      />
 
-                {localStorage.getItem('ttt_login_method') === 'appwrite' && (
-                  <div className="mb-3">
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Current Password</label>
-                    <input
-                      type="password"
-                      value={oldPassword}
-                      onChange={(e) => setOldPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                )}
+      {/* DISABLE 2FA MODAL */}
+      <Disable2FAModal
+        isOpen={disable2FAOpen}
+        onClose={() => setDisable2FAOpen(false)}
+        onConfirmDisable={async (code, password) => {
+          if (isAppwriteConfigured() && password) {
+            await appwrite.login(currentUser.email, password);
+          }
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">New Password</label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-slate-650 uppercase tracking-wider mb-1.5">Confirm Password</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
+          const verified = await verifyTOTP(currentUserRights.twoFactorSecret || '', code);
+          if (!verified) {
+            throw new Error('Invalid authenticator verification code.');
+          }
 
-              <div className="mt-5.5 flex justify-end gap-2.5 select-none pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setProfileModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10 hover:shadow-blue-600/20 cursor-pointer"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          const email = (currentUser.email || '').toLowerCase().trim();
+          const updated = userRightsList.map(ur =>
+            ur.email.toLowerCase().trim() === email
+              ? { ...ur, is2FAEnabled: false, twoFactorSecret: '' }
+              : ur
+          );
+          setUserRightsList(updated);
+          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
+          await pushPermissionsToCloud(updated);
+          await reconcileSession(currentUser);
 
-      {/* MOBILE CHANGE WIZARD SUB-MODAL */}
-      {mobileWizardOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-                Change Mobile Number
-              </h3>
-              <button
-                onClick={() => setMobileWizardOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
+          showNotification('Two-Factor Authentication successfully disabled.');
+        }}
+      />
 
-            {/* Wizard Steps indicator */}
-            <div className="flex justify-between items-center bg-slate-950/40 p-2.5 rounded-xl border border-slate-800 mb-4 font-mono text-[10px] text-slate-405">
-              <span className={mobileWizardStep === 1 ? 'text-blue-400 font-bold' : ''}>1. Verify Old</span>
-              <span className="text-slate-600">→</span>
-              <span className={mobileWizardStep === 2 ? 'text-blue-400 font-bold' : ''}>2. New Number</span>
-              <span className="text-slate-600">→</span>
-              <span className={mobileWizardStep === 3 ? 'text-blue-400 font-bold' : ''}>3. Verify New</span>
-            </div>
-
-            {mobileWizardError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{mobileWizardError}</span>
-              </div>
-            )}
-
-            {/* STEP 1: VERIFY OLD MOBILE */}
-            {mobileWizardStep === 1 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We've sent a 6-digit verification OTP to your current mobile number ending in <span className="font-mono text-slate-200">{(currentUserRights.phone || '').slice(-4) || 'XXXX'}</span>. Please enter it to proceed.
-                </p>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification OTP Code</label>
-                  <input
-                    data-testid="mobile-wizard-old-otp"
-                    type="text"
-                    maxLength={6}
-                    placeholder="Enter 6-digit OTP"
-                    value={mobileWizardCode}
-                    onChange={(e) => setMobileWizardCode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                  />
-                </div>
-
-                <div className="flex gap-2.5 pt-2 border-t border-slate-800/60 mt-4 justify-between items-center">
-                  <button
-                    type="button"
-                    disabled={mobileWizardTimer > 0}
-                    onClick={() => {
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to existing mobile: ${otp}`);
-                    }}
-                    className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {mobileWizardTimer > 0 ? `Resend Code in ${mobileWizardTimer}s` : 'Resend Code'}
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMobileWizardOpen(false)}
-                      className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (mobileWizardCode === mobileWizardGeneratedOtp || mobileWizardCode === '123456') {
-                          setMobileWizardStep(2);
-                          setMobileWizardCode('');
-                          setMobileWizardError(null);
-                        } else {
-                          setMobileWizardError('Invalid verification OTP code.');
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                    >
-                      Next Step
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: ENTER NEW MOBILE */}
-            {mobileWizardStep === 2 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Please enter your new mobile number in international E.164 format (e.g. <span className="font-mono text-slate-200">+919876543210</span>, starts with country code).
-                </p>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">New Mobile Number</label>
-                  <CountryPhoneInput
-                    value={mobileWizardNewPhone || '+91'}
-                    onChange={(val) => setMobileWizardNewPhone(val)}
-                    placeholder="Enter mobile number"
-                    className="bg-slate-950 border-slate-800"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileWizardStep(1);
-                      setMobileWizardError(null);
-                    }}
-                    className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      let normalized = mobileWizardNewPhone.trim();
-                      if (!normalized.startsWith('+')) {
-                        const clean = normalized.replace(/[^0-9]/g, '');
-                        if (clean.length === 10) {
-                          normalized = `+91${clean}`;
-                        } else if (clean.length === 12 && clean.startsWith('91')) {
-                          normalized = `+${clean}`;
-                        } else if (clean.length > 0) {
-                          normalized = `+${clean}`;
-                        }
-                      }
-                      const e164Regex = /^\+[1-9]\d{6,14}$/;
-                      if (!e164Regex.test(normalized)) {
-                        setMobileWizardError('Mobile number must be in E.164 format (e.g. +919876543210).');
-                        return;
-                      }
-                      setMobileWizardNewPhone(normalized);
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
-                      setMobileWizardStep(3);
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                  >
-                    Send OTP Verification
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: VERIFY NEW MOBILE & PASSWORD */}
-            {mobileWizardStep === 3 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We've sent a verification code to your new mobile number <span className="font-mono text-slate-200">{mobileWizardNewPhone}</span>. Enter the code and your current account password to complete the change.
-                </p>
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification OTP Code</label>
-                    <input
-                      data-testid="mobile-wizard-new-otp"
-                      type="text"
-                      maxLength={6}
-                      placeholder="Enter 6-digit OTP"
-                      value={mobileWizardCode}
-                      onChange={(e) => setMobileWizardCode(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                  {isAppwriteConfigured() && (
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                      <input
-                        data-testid="mobile-wizard-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={mobileWizardPassword}
-                        onChange={(e) => setMobileWizardPassword(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2.5 pt-2 border-t border-slate-800/60 mt-4 justify-between items-center">
-                  <button
-                    type="button"
-                    disabled={mobileWizardTimer > 0}
-                    onClick={() => {
-                      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                      setMobileWizardGeneratedOtp(otp);
-                      setMobileWizardTimer(120);
-                      setMobileWizardError(null);
-                      alert(`[Mock Verification OTP] Sent code to new mobile: ${otp}`);
-                    }}
-                    className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {mobileWizardTimer > 0 ? `Resend Code in ${mobileWizardTimer}s` : 'Resend Code'}
-                  </button>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileWizardStep(2);
-                        setMobileWizardCode('');
-                        setMobileWizardError(null);
-                      }}
-                      className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (mobileWizardCode !== mobileWizardGeneratedOtp && mobileWizardCode !== '123456') {
-                          setMobileWizardError('Invalid verification OTP code.');
-                          return;
-                        }
-                        if (isAppwriteConfigured() && !mobileWizardPassword.trim()) {
-                          setMobileWizardError('Current password is required to perform account changes.');
-                          return;
-                        }
-
-                        try {
-                          if (isAppwriteConfigured()) {
-                            await appwrite.updatePhone(mobileWizardNewPhone, mobileWizardPassword);
-                          }
-
-                          const email = (currentUser.email || '').toLowerCase().trim();
-                          const updated = userRightsList.map(ur =>
-                            ur.email.toLowerCase().trim() === email
-                              ? { ...ur, phone: mobileWizardNewPhone, isPhoneVerified: true }
-                              : ur
-                          );
-                          setUserRightsList(updated);
-                          localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                          await pushPermissionsToCloud(updated);
-
-                          const updatedUser = {
-                            ...currentUser,
-                            phone: mobileWizardNewPhone,
-                            phoneVerification: true
-                          };
-                          setCurrentUser(updatedUser);
-                          await reconcileSession(updatedUser);
-
-                          showNotification('Mobile number successfully changed & verified!');
-                          setMobileWizardOpen(false);
-                        } catch (err: any) {
-                          setMobileWizardError(err.message || 'Verification or password invalid.');
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                    >
-                      Confirm Change
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ENABLE 2FA WIZARD MODAL */}
-      {setup2FAOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-blue-500" />
-                Enable 2FA Protection
-              </h3>
-              <button
-                onClick={() => setSetup2FAOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {setup2FAError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{setup2FAError}</span>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Scan the QR code below or manually type the secret key into Google Authenticator/Microsoft Authenticator app to begin.
-              </p>
-
-              {/* QR Code and Secret display */}
-              <div className="flex flex-col items-center bg-slate-950/60 p-4 rounded-xl border border-slate-850 space-y-3">
-                <div className="bg-white p-2 rounded-lg">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
-                      `otpauth://totp/FleetTrack:${currentUser?.email || ''}?secret=${setup2FASecret}&issuer=FleetTrack`
-                    )}`}
-                    alt="Scan with Authenticator App"
-                    className="w-36 h-36 border border-slate-200"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                </div>
-                <div className="w-full text-center space-y-1">
-                  <span className="text-[9px] text-slate-500 uppercase tracking-widest font-extrabold block">Secret Setup Key</span>
-                  <div className="flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 font-mono text-xs text-blue-400 font-bold select-all">
-                    <span>{setup2FASecret}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(setup2FASecret);
-                        alert('Secret key copied to clipboard!');
-                      }}
-                      className="text-slate-400 hover:text-white p-0.5"
-                      title="Copy Key"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Verify Fields */}
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Code</label>
-                  <input
-                    data-testid="setup-2fa-code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="e.g. 000000"
-                    value={setup2FACode}
-                    onChange={(e) => setSetup2FACode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700 font-mono text-center tracking-widest"
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                    <input
-                      data-testid="setup-2fa-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={setup2FAPassword}
-                      onChange={(e) => setSetup2FAPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setSetup2FAOpen(false)}
-                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (setup2FACode.length !== 6) {
-                      setSetup2FAError('Please enter a valid 6-digit authenticator code.');
-                      return;
-                    }
-                    if (isAppwriteConfigured() && !setup2FAPassword.trim()) {
-                      setSetup2FAError('Your current password is required.');
-                      return;
-                    }
-
-                    try {
-                      if (isAppwriteConfigured()) {
-                        await appwrite.login(currentUser.email, setup2FAPassword);
-                      }
-
-                      const verified = await verifyTOTP(setup2FASecret, setup2FACode);
-                      if (!verified) {
-                        setSetup2FAError('Invalid authenticator verification code.');
-                        return;
-                      }
-
-                      const email = (currentUser.email || '').toLowerCase().trim();
-                      const updated = userRightsList.map(ur =>
-                        ur.email.toLowerCase().trim() === email
-                          ? { ...ur, is2FAEnabled: true, twoFactorSecret: setup2FASecret }
-                          : ur
-                      );
-                      setUserRightsList(updated);
-                      localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                      await pushPermissionsToCloud(updated);
-                      await reconcileSession(currentUser);
-
-                      showNotification('Two-Factor Authentication successfully enabled!');
-                      setSetup2FAOpen(false);
-                    } catch (err: any) {
-                      setSetup2FAError(err.message || 'Verification or password invalid.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-blue-600/10"
-                >
-                  Enable 2FA
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DISABLE 2FA WIZARD MODAL */}
-      {disable2FAOpen && (
-        <div className="fixed inset-0 z-110 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md font-sans">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in text-left text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                Disable 2FA Protection
-              </h3>
-              <button
-                onClick={() => setDisable2FAOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold p-1 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {disable2FAError && (
-              <div className="mb-4 p-3 bg-red-950/30 border border-red-500/20 rounded-xl flex items-start gap-2.5 text-red-400 text-xs leading-normal">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{disable2FAError}</span>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Confirm you want to disable two-factor authentication. Enter your current 6-digit authenticator code and password.
-              </p>
-
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Code</label>
-                  <input
-                    data-testid="disable-2fa-code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="e.g. 000000"
-                    value={disable2FACode}
-                    onChange={(e) => setDisable2FACode(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700 font-mono text-center tracking-widest"
-                  />
-                </div>
-
-                {isAppwriteConfigured() && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Current Account Password</label>
-                    <input
-                      data-testid="disable-2fa-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={disable2FAPassword}
-                      onChange={(e) => setDisable2FAPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-slate-202 text-xs font-semibold focus:outline-none placeholder:text-slate-700"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-2 border-t border-slate-800/60 mt-4 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setDisable2FAOpen(false)}
-                  className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (disable2FACode.length !== 6) {
-                      setDisable2FAError('Please enter a valid 6-digit authenticator code.');
-                      return;
-                    }
-                    if (isAppwriteConfigured() && !disable2FAPassword.trim()) {
-                      setDisable2FAError('Your current password is required.');
-                      return;
-                    }
-
-                    try {
-                      if (isAppwriteConfigured()) {
-                        await appwrite.login(currentUser.email, disable2FAPassword);
-                      }
-
-                      const verified = await verifyTOTP(currentUserRights.twoFactorSecret || '', disable2FACode);
-                      if (!verified) {
-                        setDisable2FAError('Invalid authenticator verification code.');
-                        return;
-                      }
-
-                      const email = (currentUser.email || '').toLowerCase().trim();
-                      const updated = userRightsList.map(ur =>
-                        ur.email.toLowerCase().trim() === email
-                          ? { ...ur, is2FAEnabled: false, twoFactorSecret: '' }
-                          : ur
-                      );
-                      setUserRightsList(updated);
-                      localStorage.setItem('ttt_user_rights', JSON.stringify(updated));
-                      await pushPermissionsToCloud(updated);
-                      await reconcileSession(currentUser);
-
-                      showNotification('Two-Factor Authentication successfully disabled.');
-                      setDisable2FAOpen(false);
-                    } catch (err: any) {
-                      setDisable2FAError(err.message || 'Verification or password invalid.');
-                    }
-                  }}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-rose-600/10"
-                >
-                  Disable 2FA
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmModal && confirmModal.isOpen && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl animate-fade-in text-left">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
-                <AlertCircle className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="font-bold text-slate-900 text-base">{confirmModal.title}</h3>
-                <p className="text-slate-600 text-xs leading-relaxed font-medium">{confirmModal.message}</p>
-              </div>
-            </div>
-            <div className="mt-5.5 flex justify-end gap-2.5 select-none">
-              <button
-                type="button"
-                onClick={() => setConfirmModal(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer border border-slate-200/40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmModal.onConfirm}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-rose-600/10 hover:shadow-rose-600/20 cursor-pointer"
-              >
-                Confirm Action
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* CONFIRMATION MODAL */}
+      <ConfirmationModal
+        modalState={confirmModal}
+        onClose={() => setConfirmModal(null)}
+      />
 
       {!isOnline && (
         <ConnectionStatusBlocker reason={disconnectReason} />
