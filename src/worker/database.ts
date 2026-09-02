@@ -604,7 +604,7 @@ export async function handleDatabase(request: Request, env: Env, pathname: strin
       console.warn('Version check query error:', err.message);
     }
 
-    const isUpToDate = localLastModified > 0 && maxUpdatedTime > 0 && localLastModified >= maxUpdatedTime;
+    const isUpToDate = maxUpdatedTime === 0 ? true : (localLastModified >= maxUpdatedTime);
     return Response.json({
       success: true,
       isUpToDate,
