@@ -636,7 +636,7 @@ describe('App Component Root Integration Tests', () => {
     fireEvent.change(phoneInput, { target: { value: '12' } });
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
     fireEvent.click(saveVerifyBtn);
-    expect(alertSpy).toHaveBeenLastCalledWith("Invalid phone number format. It must start with '+' and follow E.164 standards (e.g. +919876543210).");
+    await screen.findByText(/Invalid phone number format/i);
 
     // Test successful phone number submission
     fireEvent.change(phoneInput, { target: { value: '9876543210' } });
@@ -645,8 +645,9 @@ describe('App Component Root Integration Tests', () => {
     await waitFor(() => {
       expect(mockUpdatePhone).toHaveBeenCalledWith('+919876543210', 'password123');
       expect(mockCreatePhoneVerification).toHaveBeenCalled();
-      expect(alertSpy).toHaveBeenLastCalledWith('Mobile number saved and verification OTP sent successfully!');
     });
+
+    await screen.findByText(/Mobile number saved and verification OTP sent successfully!/i);
 
     // The modal should close, and the OTP verification form is displayed instead of the send button
     expect(screen.queryByText('Add / Update Mobile Number')).not.toBeInTheDocument();

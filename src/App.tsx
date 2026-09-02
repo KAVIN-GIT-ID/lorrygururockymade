@@ -676,7 +676,7 @@ export default function App() {
         isApproved: match.isApproved !== false,
         phone: match.phone || userPhone,
         isEmailVerified: isGoogle ? true : !!match.isEmailVerified,
-        isPhoneVerified: isGoogle ? true : (match.phone && match.phone !== '+91' ? !!match.isPhoneVerified : true),
+        isPhoneVerified: isGoogle ? true : !!match.isPhoneVerified,
         is2FAEnabled: !!match.is2FAEnabled,
         twoFactorSecret: match.twoFactorSecret || '',
         // Hide standard operations from Super Admin
@@ -3529,7 +3529,7 @@ export default function App() {
   }
 
   const isGoogleUser = currentUser && ((currentUser as any).id?.startsWith?.('google_') || (currentUser as any).$id?.startsWith?.('google_') || (currentUser as any).isGoogleAuth);
-  const isVerificationPending = currentUser && !isGoogleUser && (!currentUserRights.isEmailVerified || (!currentUserRights.isPhoneVerified && !!currentUserRights.phone && currentUserRights.phone !== '+91'));
+  const isVerificationPending = currentUser && !isGoogleUser && (!currentUserRights.isEmailVerified || !currentUserRights.isPhoneVerified);
 
   if (isVerificationPending) {
     return (
