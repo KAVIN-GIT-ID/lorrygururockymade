@@ -212,22 +212,44 @@ export default function AppwriteCloudSync({
         { key: 'auditLogs', collection: 'audit_logs' }
       ];
 
+      const parseDocRecord = (doc: any) => {
+        if (!doc) return null;
+        let parsed: any = null;
+        if (doc.data !== undefined && doc.data !== null) {
+          if (typeof doc.data === 'string') {
+            try {
+              parsed = JSON.parse(doc.data);
+            } catch (_) {
+              parsed = doc.data;
+            }
+          } else if (typeof doc.data === 'object') {
+            parsed = doc.data;
+          }
+        }
+        if (typeof parsed === 'object' && parsed !== null) {
+          return { ...doc, ...parsed, id: doc.id || doc.$id || parsed.id || parsed.$id };
+        }
+        return { ...doc, id: doc.id || doc.$id };
+      };
+
       const fetchPromises = categories.map(async (cat) => {
         try {
           const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
           const parsedRecords: any[] = [];
           for (const doc of docs) {
             try {
-              const record = JSON.parse(doc.data);
-              parsedRecords.push(record);
-              if (doc.$updatedAt) {
-                const docTime = new Date(doc.$updatedAt).getTime();
+              const record = parseDocRecord(doc);
+              if (record) {
+                parsedRecords.push(record);
+              }
+              if (doc.$updatedAt || doc.updated_at) {
+                const docTime = new Date(doc.$updatedAt || doc.updated_at).getTime();
                 if (docTime > maxUpdatedAt) {
                   maxUpdatedAt = docTime;
                 }
               }
             } catch (e) {
-              console.warn(`Failed to parse document payload for ${doc.$id} in ${cat.collection}:`, e);
+              console.warn(`Failed to parse document payload for ${doc.$id || doc.id} in ${cat.collection}:`, e);
             }
           }
           loadedState[cat.key] = parsedRecords;
@@ -242,14 +264,15 @@ export default function AppwriteCloudSync({
           userRightsData = { userRightsList: [], organizationProfiles: [] };
           for (const doc of allConfigs) {
             try {
-              const parsed = JSON.parse(doc.data);
-              if (doc.key.startsWith('usr_')) {
+              const parsed = parseDocRecord(doc);
+              const keyStr = String(doc.key || doc.id || doc.$id || '');
+              if (keyStr.startsWith('usr_')) {
                 userRightsData.userRightsList.push(parsed);
-              } else if (doc.key.startsWith('prf_')) {
+              } else if (keyStr.startsWith('prf_')) {
                 userRightsData.organizationProfiles.push(parsed);
               }
             } catch (e) {
-              console.warn(`Failed to parse global config doc ${doc.$id}:`, e);
+              console.warn(`Failed to parse global config doc ${doc.$id || doc.key}:`, e);
             }
           }
         } catch (e) {
@@ -503,15 +526,21 @@ export default function AppwriteCloudSync({
                     localProfiles = localProfiles.filter((p: any) => p.organizationId !== orgId);
                   }
                 } else {
-                  const parsedItem = JSON.parse(doc.data);
-                  if (doc.key.startsWith('usr_')) {
-                    const idx = localRights.findIndex((r: any) => r.email.toLowerCase().trim() === parsedItem.email.toLowerCase().trim());
+                  let parsedItem: any = doc.data;
+                  if (typeof doc.data === 'string') {
+                    try { parsedItem = JSON.parse(doc.data); } catch (_) { parsedItem = doc.data; }
+                  }
+                  parsedItem = typeof parsedItem === 'object' && parsedItem ? { ...doc, ...parsedItem } : doc;
+                  const keyStr = String(doc.key || doc.id || doc.$id || '');
+                  if (keyStr.startsWith('usr_')) {
+                    const emailKey = (parsedItem.email || '').toLowerCase().trim();
+                    const idx = localRights.findIndex((r: any) => (r.email || '').toLowerCase().trim() === emailKey);
                     if (idx > -1) {
                       localRights[idx] = parsedItem;
                     } else {
                       localRights.push(parsedItem);
                     }
-                  } else if (doc.key.startsWith('prf_')) {
+                  } else if (keyStr.startsWith('prf_')) {
                     const idx = localProfiles.findIndex((p: any) => p.organizationId === parsedItem.organizationId);
                     if (idx > -1) {
                       localProfiles[idx] = parsedItem;
@@ -540,14 +569,20 @@ export default function AppwriteCloudSync({
 
             if (!key || !nextState[key]) return;
 
+            const docIdentifier = doc.$id || doc.id;
+
             if (eventType.endsWith('.delete')) {
               // Delete document locally
-              nextState[key] = (nextState[key] as any[]).filter(x => x.id !== doc.$id);
+              nextState[key] = (nextState[key] as any[]).filter(x => x.id !== docIdentifier);
             } else {
               // Create or Update document locally
               try {
-                const parsedRecord = JSON.parse(doc.data);
-                const index = (nextState[key] as any[]).findIndex(x => x.id === doc.$id);
+                let parsedRecord: any = doc.data;
+                if (typeof doc.data === 'string') {
+                  try { parsedRecord = JSON.parse(doc.data); } catch (_) { parsedRecord = doc.data; }
+                }
+                parsedRecord = typeof parsedRecord === 'object' && parsedRecord ? { ...doc, ...parsedRecord, id: docIdentifier } : { ...doc, id: docIdentifier };
+                const index = (nextState[key] as any[]).findIndex(x => x.id === docIdentifier);
                 if (index > -1) {
                   (nextState[key] as any[])[index] = parsedRecord;
                 } else {

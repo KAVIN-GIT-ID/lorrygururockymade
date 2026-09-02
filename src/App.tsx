@@ -1108,13 +1108,7 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const loginMethod = localStorage.getItem('ttt_login_method');
-        if (loginMethod === 'mock') {
-          localStorage.removeItem('ttt_guest_user');
-          localStorage.removeItem('ttt_login_method');
-          setCurrentUser(null);
-          setInitialPullDone(true);
-        } else if (loginMethod === 'appwrite' && isAppwriteConfigured()) {
+        if (isAppwriteConfigured()) {
           const user = await appwrite.getCurrentUser();
           if (user) {
             await reconcileSession(user);
@@ -1123,11 +1117,16 @@ export default function App() {
             setInitialPullDone(true);
           }
         } else {
+          const loginMethod = localStorage.getItem('ttt_login_method');
+          if (loginMethod === 'mock') {
+            localStorage.removeItem('ttt_guest_user');
+            localStorage.removeItem('ttt_login_method');
+          }
           setCurrentUser(null);
           setInitialPullDone(true);
         }
       } catch (err) {
-        console.warn('Appwrite user authentication verification bypassed/offline:', err);
+        console.warn('User authentication verification error:', err);
         setInitialPullDone(true);
       } finally {
         setLoadingUser(false);

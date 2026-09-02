@@ -123,11 +123,17 @@ class CloudflareClientService {
       this.jwt = localStorage.getItem('ttt_cf_jwt') || null;
     }
     if (this.cachedUser) return this.cachedUser;
-    if (!this.jwt) return null;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('ttt_cf_user');
+      if (stored) {
+        try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+      }
+    }
+    if (!this.jwt) return this.cachedUser || null;
     try {
       return await this.getCurrentUser();
     } catch (_) {
-      return null;
+      return this.cachedUser || null;
     }
   }
 
@@ -145,11 +151,12 @@ class CloudflareClientService {
 
     const data = await response.json();
     this.jwt = data.jwt;
-    this.cachedUser = data.user;
+    this.cachedUser = data.user || data;
 
     if (typeof window !== 'undefined') {
       if (this.jwt) localStorage.setItem('ttt_cf_jwt', this.jwt);
       if (this.cachedUser) localStorage.setItem('ttt_cf_user', JSON.stringify(this.cachedUser));
+      localStorage.setItem('ttt_login_method', 'appwrite');
     }
 
     return this.cachedUser;
@@ -169,11 +176,12 @@ class CloudflareClientService {
 
     const data = await response.json();
     this.jwt = data.jwt;
-    this.cachedUser = data.user;
+    this.cachedUser = data.user || data;
 
     if (typeof window !== 'undefined') {
       if (this.jwt) localStorage.setItem('ttt_cf_jwt', this.jwt);
       if (this.cachedUser) localStorage.setItem('ttt_cf_user', JSON.stringify(this.cachedUser));
+      localStorage.setItem('ttt_login_method', 'appwrite');
     }
 
     return this.cachedUser;
@@ -193,6 +201,7 @@ class CloudflareClientService {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('ttt_cf_jwt');
         localStorage.removeItem('ttt_cf_user');
+        localStorage.removeItem('ttt_login_method');
       }
     }
   }
@@ -201,7 +210,13 @@ class CloudflareClientService {
     if (!this.jwt && typeof window !== 'undefined') {
       this.jwt = localStorage.getItem('ttt_cf_jwt') || null;
     }
-    if (!this.jwt) return null;
+    if (!this.cachedUser && typeof window !== 'undefined') {
+      const stored = localStorage.getItem('ttt_cf_user');
+      if (stored) {
+        try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+      }
+    }
+    if (!this.jwt) return this.cachedUser || null;
 
     try {
       const response = await fetch(`${this.getBaseUrl()}/api/auth/me`, {
@@ -210,10 +225,20 @@ class CloudflareClientService {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.jwt = null;
+          this.cachedUser = null;
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('ttt_cf_jwt');
+            localStorage.removeItem('ttt_cf_user');
+          }
+          return null;
+        }
         return this.cachedUser || null;
       }
 
-      const user = await response.json();
+      const data = await response.json();
+      const user = data.user || data;
       this.cachedUser = user;
       if (typeof window !== 'undefined') {
         localStorage.setItem('ttt_cf_user', JSON.stringify(user));
