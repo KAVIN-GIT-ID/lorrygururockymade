@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 
 const BASE_URL = 'https://truck-trip-tracker.apkavin483.workers.dev';
 
@@ -478,5 +478,31 @@ describe('End-to-End Live Regression & System Audit Suite', () => {
       // D1 prepared statement safely escapes string, returning 0 rows for malicious orgId
       expect(data.loadedState.trucks.length).toBe(0);
     });
+  });
+
+  // TEARDOWN: Automatically clean up test data so database remains pristine
+  afterAll(async () => {
+    if (!adminJwt) return;
+    const cleanupPayloads = [
+      { collection: 'trucks', id: testTruckId },
+      { collection: 'drivers', id: testDriverId },
+      { collection: 'offices', id: testOfficeId },
+      { collection: 'accounts', id: testAccountId },
+      { collection: 'trips', id: testTripId },
+      { collection: 'expenses', id: testExpenseId },
+      { collection: 'tyres', id: testTyreId },
+    ];
+
+    for (const item of cleanupPayloads) {
+      if (item.id) {
+        try {
+          await fetch(`${BASE_URL}/api/database/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminJwt}` },
+            body: JSON.stringify({ collection: item.collection, id: item.id }),
+          });
+        } catch (_) {}
+      }
+    }
   });
 });
