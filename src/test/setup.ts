@@ -44,6 +44,38 @@ vi.mock('../lib/appwrite', () => {
       getCurrentUser: vi.fn().mockResolvedValue(null),
       getUserTeams: vi.fn().mockResolvedValue([]),
       listFleetDocuments: vi.fn().mockResolvedValue([]),
+      pullFleetData: vi.fn().mockImplementation(async () => {
+        const storedRights = JSON.parse(localStorage.getItem('ttt_user_rights') || '[]');
+        const storedProfiles = JSON.parse(localStorage.getItem('ttt_organization_profiles') || '[]');
+        const configs: any[] = [];
+        for (const r of storedRights) {
+          configs.push({
+            $id: 'usr_' + (r.email || '').replace(/[^a-zA-Z0-9]/g, '_'),
+            key: 'usr_' + (r.email || '').replace(/[^a-zA-Z0-9]/g, '_'),
+            data: JSON.stringify(r),
+            ...r
+          });
+        }
+        for (const p of storedProfiles) {
+          configs.push({
+            $id: 'prf_' + p.organizationId,
+            key: 'prf_' + p.organizationId,
+            data: JSON.stringify(p),
+            ...p
+          });
+        }
+        return {
+          trucks: JSON.parse(localStorage.getItem('ttt_trucks') || '[]'),
+          drivers: JSON.parse(localStorage.getItem('ttt_drivers') || '[]'),
+          offices: JSON.parse(localStorage.getItem('ttt_offices') || '[]'),
+          accounts: JSON.parse(localStorage.getItem('ttt_accounts') || '[]'),
+          trips: JSON.parse(localStorage.getItem('ttt_trips') || '[]'),
+          expenses: JSON.parse(localStorage.getItem('ttt_expenses') || '[]'),
+          tyres: JSON.parse(localStorage.getItem('ttt_tyres') || '[]'),
+          auditLogs: JSON.parse(localStorage.getItem('fleet_audit_logs') || '[]'),
+          global_configs: configs
+        };
+      }),
       saveFleetDocument: vi.fn().mockResolvedValue('doc-id'),
       deleteFleetDocument: vi.fn().mockResolvedValue(true),
       listGlobalConfigs: vi.fn().mockImplementation(async () => {

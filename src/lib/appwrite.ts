@@ -97,12 +97,18 @@ class CloudflareClientService {
   }
 
   private getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+    if (!this.jwt && typeof window !== 'undefined') {
+      const storedJwt = localStorage.getItem('ttt_cf_jwt');
+      if (storedJwt && storedJwt !== 'null' && storedJwt !== 'undefined' && storedJwt.length > 10) {
+        this.jwt = storedJwt;
+      }
+    }
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...extraHeaders,
     };
-    if (this.jwt) {
-      headers['Authorization'] = `Bearer ${this.jwt}`;
+    if (this.jwt && this.jwt !== 'null' && this.jwt !== 'undefined' && this.jwt.length > 10) {
+      headers['Authorization'] = `Bearer ${this.jwt.trim()}`;
     }
     return headers;
   }
@@ -119,17 +125,20 @@ class CloudflareClientService {
   }
 
   async initSession(): Promise<any> {
-    if (!this.jwt && typeof window !== 'undefined') {
-      this.jwt = localStorage.getItem('ttt_cf_jwt') || null;
-    }
-    if (this.cachedUser) return this.cachedUser;
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('ttt_cf_user');
-      if (stored) {
-        try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+      const storedJwt = localStorage.getItem('ttt_cf_jwt');
+      if (storedJwt && storedJwt !== 'null' && storedJwt !== 'undefined' && storedJwt.length > 10) {
+        this.jwt = storedJwt;
+      }
+      if (!this.cachedUser) {
+        const stored = localStorage.getItem('ttt_cf_user');
+        if (stored) {
+          try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+        }
       }
     }
-    if (!this.jwt) return this.cachedUser || null;
+    if (this.cachedUser) return this.cachedUser;
+    if (!this.jwt) return null;
     try {
       return await this.getCurrentUser();
     } catch (_) {
@@ -207,16 +216,21 @@ class CloudflareClientService {
   }
 
   async getCurrentUser(): Promise<any> {
-    if (!this.jwt && typeof window !== 'undefined') {
-      this.jwt = localStorage.getItem('ttt_cf_jwt') || null;
-    }
-    if (!this.cachedUser && typeof window !== 'undefined') {
-      const stored = localStorage.getItem('ttt_cf_user');
-      if (stored) {
-        try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+    if (typeof window !== 'undefined') {
+      const storedJwt = localStorage.getItem('ttt_cf_jwt');
+      if (storedJwt && storedJwt !== 'null' && storedJwt !== 'undefined' && storedJwt.length > 10) {
+        this.jwt = storedJwt;
+      }
+      if (!this.cachedUser) {
+        const stored = localStorage.getItem('ttt_cf_user');
+        if (stored) {
+          try { this.cachedUser = JSON.parse(stored); } catch (_) {}
+        }
       }
     }
-    if (!this.jwt) return this.cachedUser || null;
+    if (!this.jwt || this.jwt === 'null' || this.jwt === 'undefined' || this.jwt.length < 10) {
+      return this.cachedUser || null;
+    }
 
     try {
       const response = await fetch(`${this.getBaseUrl()}/api/auth/me`, {
@@ -247,6 +261,32 @@ class CloudflareClientService {
     } catch (err) {
       return this.cachedUser || null;
     }
+  }
+
+  async pullFleetData(orgId: string): Promise<any> {
+    const res = await fetch(`${this.getBaseUrl()}/api/database/pull`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        orgId,
+        targetCollections: [
+          'trucks',
+          'drivers',
+          'offices',
+          'accounts',
+          'trips',
+          'expenses',
+          'tyres',
+          'audit_logs',
+          'global_configs'
+        ]
+      })
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to pull database: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return data.loadedState || {};
   }
 
   async updateName(newName: string): Promise<any> {

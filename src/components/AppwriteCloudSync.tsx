@@ -185,7 +185,7 @@ export default function AppwriteCloudSync({
     }
     
     try {
-      console.log('Appwrite DB: Fetching fleet documents from multi-collection structure...');
+      console.log('Appwrite DB: Fetching fleet documents via unified batch pull...');
       
       const loadedState: any = {
         trucks: [],
@@ -198,19 +198,8 @@ export default function AppwriteCloudSync({
         auditLogs: []
       };
       
-      let userRightsData: any = null;
+      let userRightsData: any = { userRightsList: [], organizationProfiles: [] };
       let maxUpdatedAt = 0;
-
-      const categories: { key: keyof typeof loadedState; collection: string }[] = [
-        { key: 'trucks', collection: 'trucks' },
-        { key: 'drivers', collection: 'drivers' },
-        { key: 'offices', collection: 'offices' },
-        { key: 'accounts', collection: 'accounts' },
-        { key: 'trips', collection: 'trips' },
-        { key: 'expenses', collection: 'expenses' },
-        { key: 'tyres', collection: 'tyres' },
-        { key: 'auditLogs', collection: 'audit_logs' }
-      ];
 
       const parseDocRecord = (doc: any) => {
         if (!doc) return null;
@@ -232,55 +221,70 @@ export default function AppwriteCloudSync({
         return { ...doc, id: doc.id || doc.$id };
       };
 
-      const fetchPromises = categories.map(async (cat) => {
-        try {
-          const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
-          const parsedRecords: any[] = [];
-          for (const doc of docs) {
-            try {
+      try {
+        const pulled = await appwrite.pullFleetData(orgId);
+        
+        const parseList = (list: any[]) => {
+          if (!Array.isArray(list)) return [];
+          return list.map(doc => {
+            const record = parseDocRecord(doc);
+            if (doc.$updatedAt || doc.updated_at) {
+              const docTime = new Date(doc.$updatedAt || doc.updated_at).getTime();
+              if (docTime > maxUpdatedAt) maxUpdatedAt = docTime;
+            }
+            return record;
+          }).filter(Boolean);
+        };
+
+        loadedState.trucks = parseList(pulled.trucks || []);
+        loadedState.drivers = parseList(pulled.drivers || []);
+        loadedState.offices = parseList(pulled.offices || []);
+        loadedState.accounts = parseList(pulled.accounts || []);
+        loadedState.trips = parseList(pulled.trips || []);
+        loadedState.expenses = parseList(pulled.expenses || []);
+        loadedState.tyres = parseList(pulled.tyres || []);
+        loadedState.auditLogs = parseList(pulled.auditLogs || pulled.audit_logs || []);
+
+        const configs = pulled.global_configs || pulled.globalConfigs || [];
+        for (const doc of configs) {
+          const parsed = parseDocRecord(doc);
+          const keyStr = String(doc.key || doc.id || doc.$id || '');
+          if (keyStr.startsWith('usr_')) {
+            userRightsData.userRightsList.push(parsed);
+          } else if (keyStr.startsWith('prf_')) {
+            userRightsData.organizationProfiles.push(parsed);
+          }
+        }
+      } catch (pullErr: any) {
+        console.warn('Unified batch pull fallback to multi-collection list:', pullErr.message);
+
+        const categories: { key: keyof typeof loadedState; collection: string }[] = [
+          { key: 'trucks', collection: 'trucks' },
+          { key: 'drivers', collection: 'drivers' },
+          { key: 'offices', collection: 'offices' },
+          { key: 'accounts', collection: 'accounts' },
+          { key: 'trips', collection: 'trips' },
+          { key: 'expenses', collection: 'expenses' },
+          { key: 'tyres', collection: 'tyres' },
+          { key: 'auditLogs', collection: 'audit_logs' }
+        ];
+
+        const fetchPromises = categories.map(async (cat) => {
+          try {
+            const docs = await appwrite.listFleetDocuments(databaseId, cat.collection, orgId);
+            const parsedRecords: any[] = [];
+            for (const doc of docs) {
               const record = parseDocRecord(doc);
-              if (record) {
-                parsedRecords.push(record);
-              }
-              if (doc.$updatedAt || doc.updated_at) {
-                const docTime = new Date(doc.$updatedAt || doc.updated_at).getTime();
-                if (docTime > maxUpdatedAt) {
-                  maxUpdatedAt = docTime;
-                }
-              }
-            } catch (e) {
-              console.warn(`Failed to parse document payload for ${doc.$id || doc.id} in ${cat.collection}:`, e);
+              if (record) parsedRecords.push(record);
             }
+            loadedState[cat.key] = parsedRecords;
+          } catch (e: any) {
+            console.warn(`Fallback fetch failed for ${cat.collection}:`, e.message);
           }
-          loadedState[cat.key] = parsedRecords;
-        } catch (catErr: any) {
-          console.warn(`Failed to fetch/parse documents for collection ${cat.collection}:`, catErr.message);
-        }
-      });
+        });
 
-      const loadRightsPromise = (async () => {
-        try {
-          const allConfigs = await appwrite.listGlobalConfigs(databaseId);
-          userRightsData = { userRightsList: [], organizationProfiles: [] };
-          for (const doc of allConfigs) {
-            try {
-              const parsed = parseDocRecord(doc);
-              const keyStr = String(doc.key || doc.id || doc.$id || '');
-              if (keyStr.startsWith('usr_')) {
-                userRightsData.userRightsList.push(parsed);
-              } else if (keyStr.startsWith('prf_')) {
-                userRightsData.organizationProfiles.push(parsed);
-              }
-            } catch (e) {
-              console.warn(`Failed to parse global config doc ${doc.$id || doc.key}:`, e);
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to load global rights config:', e);
-        }
-      })();
-
-      await Promise.all([...fetchPromises, loadRightsPromise]);
+        await Promise.all(fetchPromises);
+      }
 
       if (maxUpdatedAt > 0) {
         loadedState.exportDate = maxUpdatedAt;
