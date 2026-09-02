@@ -2042,8 +2042,29 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Notifications systems
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // In-app Toast Notification System (replaces all browser alerts)
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+
+  // Auto-dismiss toast after 4.5 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Intercept all native browser window.alert calls application-wide and route to sleek in-app toasts
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const originalAlert = window.alert;
+    window.alert = (msg?: any) => {
+      if (msg) showNotification(String(msg));
+    };
+    return () => {
+      window.alert = originalAlert;
+    };
+  }, []);
 
   function touchLastModified() {
     localStorage.setItem('ttt_last_modified_at', Date.now().toString());
@@ -2448,16 +2469,17 @@ export default function App() {
 
 
 
-  function showNotification(msg: string) {
-    try {
-      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-        window.alert(msg);
-      }
-    } catch (_) {}
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
+  function showNotification(msg: string, type?: 'success' | 'error' | 'info' | 'warning') {
+    if (!msg) return;
+    const lower = msg.toLowerCase();
+    const resolvedType = type || (
+      lower.includes('error') || lower.includes('fail') || lower.includes('cannot') || lower.includes('invalid') || lower.includes('denied')
+        ? 'error'
+        : lower.includes('warning') || lower.includes('alert') || lower.includes('hold on') || lower.includes('required')
+          ? 'warning'
+          : 'success'
+    );
+    setToast({ message: msg, type: resolvedType });
   }
 
   const handleUpdateOrgStatus = async (orgId: string, status: 'Active' | 'Disabled') => {
@@ -3512,11 +3534,33 @@ export default function App() {
   if (isVerificationPending) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 dark:bg-slate-950 font-sans p-4 overflow-auto transition-colors duration-200">
-        {/* GLOBAL TOAST BANNER IN VERIFICATION SCREEN */}
-        {toastMessage && (
-          <div id="toast-notify" className="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-            <CheckCircle className="w-4 h-4 text-white" />
-            <span className="text-xs font-semibold">{toastMessage}</span>
+        {/* GLOBAL IN-APP TOAST POPUP */}
+        {toast && (
+          <div
+            id="toast-notify"
+            className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 animate-fade-in max-w-sm sm:max-w-md ${
+              toast.type === 'error'
+                ? 'bg-rose-950/95 text-rose-100 border-rose-800 shadow-rose-950/40'
+                : toast.type === 'warning'
+                  ? 'bg-amber-950/95 text-amber-100 border-amber-800 shadow-amber-950/40'
+                  : 'bg-slate-900/95 text-white border-slate-750 shadow-slate-950/40'
+            }`}
+          >
+            {toast.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+            ) : toast.type === 'warning' ? (
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+            ) : (
+              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            )}
+            <span className="text-xs font-semibold leading-snug flex-1">{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+              aria-label="Dismiss Notification"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -4084,11 +4128,33 @@ export default function App() {
   return (
     <div className="h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col md:flex-row font-sans select-none selection:bg-blue-600/10 overflow-hidden">
 
-      {/* GLOBAL TOAST BANNER */}
-      {toastMessage && (
-        <div id="toast-notify" className="fixed bottom-5 right-5 z-50 bg-blue-600 border border-blue-400/30 text-white p-3.5 px-6 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce">
-          <CheckCircle className="w-4 h-4 text-white" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
+      {/* GLOBAL IN-APP TOAST NOTIFICATION POPUP */}
+      {toast && (
+        <div
+          id="toast-notify"
+          className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all duration-300 animate-fade-in max-w-sm sm:max-w-md ${
+            toast.type === 'error'
+              ? 'bg-rose-950/95 text-rose-100 border-rose-800 shadow-rose-950/40'
+              : toast.type === 'warning'
+                ? 'bg-amber-950/95 text-amber-100 border-amber-800 shadow-amber-950/40'
+                : 'bg-slate-900/95 text-white border-slate-750 shadow-slate-950/40'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+          ) : toast.type === 'warning' ? (
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+          ) : (
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+          )}
+          <span className="text-xs font-semibold leading-snug flex-1">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+            aria-label="Dismiss Notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
