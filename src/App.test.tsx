@@ -83,8 +83,8 @@ describe('App Component Root Integration Tests', () => {
     });
 
     // Check header logo text and user initials
-    expect(screen.getByAltText('LorryGuru Logo')).toBeInTheDocument();
-    expect(screen.getByText('Lorry')).toBeInTheDocument();
+    expect(screen.getAllByAltText('LorryGuru Logo').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Lorry').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('TA')).toBeInTheDocument(); // initials for "Test Admin"
 
     // Sidebar navigation tabs should render

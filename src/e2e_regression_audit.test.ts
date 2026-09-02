@@ -32,7 +32,7 @@ describe('End-to-End Live Regression & System Audit Suite', () => {
       const res = await fetch(`${BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'admin@lorryguru.in', password: 'Admin@12345' }),
+        body: JSON.stringify({ email: 'admin@lorryguru.in', password: 'Admin@123' }),
       });
       expect(res.status).toBe(200);
       const data = (await res.json()) as any;

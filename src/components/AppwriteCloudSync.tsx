@@ -691,18 +691,24 @@ export default function AppwriteCloudSync({
       <button
         id="btn-appwrite-sync-trigger"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition ${
+        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition shrink-0 ${
           isConfigured 
-            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30 font-bold'
+            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-bold'
             : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/20'
         }`}
+        title="Cloud Database Sync Pipeline"
       >
-        <Database className={`w-3.5 h-3.5 ${realtimeConnected ? 'animate-pulse text-emerald-400' : ''}`} />
-        <span>Appwrite DB: {isConfigured ? realtimeConnected ? 'Live' : 'Connected' : 'Offline'}</span>
+        <Database className={`w-3.5 h-3.5 ${realtimeConnected ? 'animate-pulse text-emerald-500 dark:text-emerald-400' : ''}`} />
+        <span className="hidden sm:inline">Appwrite DB: </span>
+        <span>{isConfigured ? realtimeConnected ? 'Live' : 'Connected' : 'Offline'}</span>
       </button>
 
       {isOpen && (
-        <div id="appwrite-sync-popup" className="absolute right-0 mt-2 w-80 md:w-96 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-fade-in text-xs">
+        <div id="appwrite-sync-popup" className="
+          fixed left-3 right-3 top-16
+          sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 md:w-96
+          bg-slate-900 border border-slate-800 text-slate-100 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-fade-in text-xs
+        ">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-1.5">
               <Database className="w-4 h-4 text-emerald-400" />

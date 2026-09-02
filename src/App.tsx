@@ -74,6 +74,7 @@ import {
   ShieldCheck,
   Trash2,
   X,
+  Menu,
   Mic
 } from 'lucide-react';
 
@@ -4025,10 +4026,45 @@ export default function App() {
         </div>
       )}
 
+      {/* Mobile Top App Bar (Only on < md) */}
+      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0 z-30">
+        <div className="flex items-center gap-2.5 text-slate-900 dark:text-white font-bold text-base tracking-tight">
+          <img
+            src="/assets/logo-CkJqcrTB.png"
+            alt="LorryGuru Logo"
+            className="h-7 w-auto object-contain shrink-0"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
+          />
+          <span>Lorry<span className="text-blue-600">Guru</span><span className="text-amber-500">.in</span></span>
+        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
+          aria-label="Toggle Navigation Menu"
+        >
+          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* Mobile Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
+        />
+      )}
+
       {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 md:h-full bg-white dark:bg-slate-900 flex flex-col border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 shrink-0">
-        {/* Header Panel (Logo & Mobile Toggle Button) */}
-        <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 md:border-b-0 shrink-0">
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white dark:bg-slate-900 flex flex-col border-r border-slate-200 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-in-out
+        md:static md:w-64 md:h-full md:z-auto md:shadow-none md:translate-x-0 shrink-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        {/* Header Panel (Logo & Close Button inside drawer) */}
+        <div className="p-4 md:p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 shrink-0">
           <div className="flex items-center gap-2.5 text-slate-900 dark:text-white font-bold text-lg md:text-xl tracking-tight">
             <img
               src="/assets/logo-CkJqcrTB.png"
@@ -4042,26 +4078,20 @@ export default function App() {
             <span>Lorry<span className="text-blue-600">Guru</span><span className="text-amber-500">.in</span></span>
           </div>
 
-          {/* Mobile Menu Toggle Button */}
+          {/* Drawer Close Button (Mobile Only) */}
           <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={() => setIsMobileMenuOpen(false)}
             className="md:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 cursor-pointer transition"
-            aria-label="Toggle Navigation Menu"
+            aria-label="Close Navigation Menu"
           >
-            {isMobileMenuOpen ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
-              </svg>
-            )}
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Collapsible Content Area */}
-        <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-h-0 overflow-hidden`}>
+        {/* Content Area */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Navigation Items */}
-          <div className="p-6 pt-4 md:p-6 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="p-4 md:p-6 pt-2 md:pt-0 flex-1 flex flex-col min-h-0 overflow-hidden">
             <nav className="space-y-1 flex-1 overflow-y-auto pr-1">
               <button
                 id="tab-btn-dashboard"
@@ -4260,9 +4290,9 @@ export default function App() {
       <main className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden">
 
         {/* Header */}
-        <header className="h-auto md:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between px-6 md:px-8 py-3 md:py-0 gap-3 shrink-0 shadow-xs sticky top-0 z-40">
-          <div className="flex items-center gap-4 self-stretch sm:self-auto">
-            <h1 className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">
+        <header className="h-auto md:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between px-4 sm:px-6 md:px-8 py-2.5 sm:py-3 md:py-0 gap-2.5 shrink-0 shadow-xs sticky top-0 z-30">
+          <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-4 shrink-0">
+            <h1 className="text-base sm:text-lg md:text-xl font-bold text-slate-800 dark:text-white tracking-tight truncate max-w-[200px] sm:max-w-none">
               {activeTab === 'DASHBOARD' && 'Operations Dashboard'}
               {activeTab === 'TRIPS' && 'Manage Active Trips'}
               {activeTab === 'TRUCKS' && 'Truck Datasheet'}
@@ -4274,24 +4304,24 @@ export default function App() {
               {activeTab === 'AUDIT' && 'System Audit Trails'}
               {activeTab === 'TYRES' && 'Tyre Inventory & Life Tracking'}
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] sm:text-xs font-semibold border border-slate-200 dark:border-slate-700 shadow-2xs whitespace-nowrap">
               {activeTab === 'TRIPS' && `${orgTrips.length} Total Trips`}
               {activeTab === 'TRUCKS' && `${orgTrucks.length} Trucks`}
               {activeTab === 'OFFICES' && `${orgOffices.length} Offices`}
               {activeTab === 'ACCOUNTS' && `${orgAccounts.length} Ledgers`}
               {activeTab === 'DRIVERS' && `${orgDrivers.length} Drivers`}
-              {activeTab === 'DASHBOARD' && `${orgTrips.length} Load Segments`}
+              {activeTab === 'DASHBOARD' && `${orgTrips.length} Segments`}
               {activeTab === 'EXPENSES' && `${orgExpenses.length} Vouchers`}
-              {activeTab === 'REPORTS' && 'Monthly Auditing'}
+              {activeTab === 'REPORTS' && 'Auditing'}
               {activeTab === 'AUDIT' && `${orgAuditLogs.length} Activities`}
               {activeTab === 'TYRES' && `${orgTyres.length} Tyres`}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto self-stretch sm:self-auto justify-end ml-auto">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 w-full sm:w-auto self-stretch sm:self-auto justify-end ml-auto">
 
             {/* Search Bar */}
-            <div className="relative w-40 md:w-56 hidden sm:block">
+            <div className="relative w-36 md:w-52 hidden lg:block">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
               </div>
