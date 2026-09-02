@@ -557,5 +557,126 @@ export async function handleAuth(request: Request, env: Env, pathname: string): 
     }
   }
 
+  // Step 3: Direct Google ID Token Authentication from GIS Frontend Popup
+  if (pathname === '/api/auth/google-token' && request.method === 'POST') {
+    const { credential, orgName: requestedOrgName } = await request.json() as any;
+    if (!credential) {
+      return Response.json({ error: 'Google credential token is required' }, { status: 400 });
+    }
+
+    try {
+      // Verify token with Google's public tokeninfo endpoint
+      const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+      if (!verifyRes.ok) {
+        return Response.json({ error: 'Invalid Google credential token' }, { status: 401 });
+      }
+
+      const payload: any = await verifyRes.json();
+      if (!payload.email) {
+        return Response.json({ error: 'Google account has no verified email' }, { status: 400 });
+      }
+
+      const cleanEmail = payload.email.trim().toLowerCase();
+      const displayName = payload.name || payload.given_name || cleanEmail.split('@')[0];
+
+      // Check if user exists in D1
+      let existingUser = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(cleanEmail).first() as any;
+      let userId: string;
+      let orgId: string;
+      let role: string;
+
+      if (existingUser) {
+        userId = existingUser.id;
+        orgId = existingUser.organization_id || 'org_default';
+        role = existingUser.role || 'Owner';
+
+        if (!existingUser.name && displayName) {
+          await env.DB.prepare('UPDATE users SET name = ?, updated_at = datetime("now") WHERE id = ?')
+            .bind(displayName, userId).run();
+        }
+      } else {
+        userId = generateId('usr_');
+        orgId = `org_${generateId('')}`;
+        role = 'Owner';
+
+        await env.DB.prepare(`
+          INSERT INTO users (id, email, password_hash, name, phone, organization_id, role, email_verified, phone_verified)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+        `).bind(userId, cleanEmail, '', displayName, '', orgId, role).run();
+
+        const userDocId = getEmailDocId(cleanEmail);
+        const userConfigData = {
+          id: userId,
+          email: cleanEmail,
+          name: displayName,
+          phone: '',
+          role,
+          organizationId: orgId,
+          isEmailVerified: true,
+          isPhoneVerified: false,
+          permissions: ['read', 'write']
+        };
+        await env.DB.prepare(`
+          INSERT INTO global_configs (key, data, updated_at)
+          VALUES (?, ?, datetime('now'))
+          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+        `).bind(userDocId, JSON.stringify(userConfigData)).run();
+
+        const customOrgName = (requestedOrgName && requestedOrgName.trim()) || `${displayName}'s Logistics`;
+        const orgProfile = {
+          organizationId: orgId,
+          organizationName: customOrgName,
+          ownerEmail: cleanEmail,
+          ownerName: displayName,
+          status: 'Active',
+          truckRequests: []
+        };
+        await env.DB.prepare(`
+          INSERT INTO global_configs (key, data, updated_at)
+          VALUES (?, ?, datetime('now'))
+          ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = datetime('now')
+        `).bind(`prf_${orgId}`, JSON.stringify(orgProfile)).run();
+      }
+
+      try {
+        const cfgDoc = await env.DB.prepare('SELECT data FROM global_configs WHERE key = ?')
+          .bind(getEmailDocId(cleanEmail)).first() as any;
+        if (cfgDoc?.data) {
+          const parsed = JSON.parse(cfgDoc.data);
+          if (parsed.organizationId) orgId = parsed.organizationId;
+          if (parsed.role) role = parsed.role;
+        }
+      } catch (_) {}
+
+      const token = await createJWT({
+        userId,
+        email: cleanEmail,
+        name: displayName,
+        role,
+        organizationId: orgId,
+        exp: Math.floor(Date.now() / 1000) + (30 * 24 * 3600)
+      }, secret);
+
+      return Response.json({
+        success: true,
+        user: {
+          $id: userId,
+          id: userId,
+          name: displayName,
+          email: cleanEmail,
+          phone: '',
+          emailVerification: true,
+          phoneVerification: false,
+          organizationId: orgId,
+          role
+        },
+        jwt: token
+      });
+    } catch (err: any) {
+      console.error('[Google Token Auth Error]:', err);
+      return Response.json({ error: 'Failed to authenticate Google token: ' + (err.message || err) }, { status: 500 });
+    }
+  }
+
   return Response.json({ error: 'Endpoint not found' }, { status: 404 });
 }

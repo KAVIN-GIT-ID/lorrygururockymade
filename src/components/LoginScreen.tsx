@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { appwrite, isAppwriteConfigured } from '../lib/appwrite';
 import {
   Lock,
@@ -49,6 +49,89 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
   const [totpCode, setTotpCode] = useState('');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingTwoFactorSecret, setPendingTwoFactorSecret] = useState('');
+
+  // Google Identity Services (Frontend GIS)
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const GOOGLE_CLIENT_ID = '1081442493959-0dj6evko43gkvmdntjt1bmf2vihb0jd1.apps.googleusercontent.com';
+
+  const handleGoogleCredential = async (response: any) => {
+    if (!response?.credential) return;
+    setLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await fetch('/api/auth/google-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credential: response.credential,
+          orgName: orgName || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Google login failed');
+      }
+
+      setSuccessMsg(`Welcome, ${data.user.name || data.user.email}! Logging you in...`);
+      localStorage.setItem('ttt_cf_jwt', data.jwt);
+      localStorage.setItem('ttt_cf_user', JSON.stringify(data.user));
+
+      setTimeout(() => {
+        onLoginSuccess(data.user);
+      }, 700);
+    } catch (err: any) {
+      console.error('[Google GIS Error]:', err);
+      setErrorMsg(err.message || 'Failed to authenticate with Google');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const initGIS = () => {
+      const g = (window as any).google;
+      if (!g?.accounts?.id) return;
+
+      try {
+        g.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCredential,
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        if (googleBtnRef.current) {
+          googleBtnRef.current.innerHTML = '';
+          g.accounts.id.renderButton(googleBtnRef.current, {
+            theme: 'outline',
+            size: 'large',
+            type: 'standard',
+            shape: 'rectangular',
+            text: isLogin ? 'signin_with' : 'signup_with',
+            logo_alignment: 'left',
+            width: 360
+          });
+        }
+      } catch (e) {
+        console.warn('GIS init skipped:', e);
+      }
+    };
+
+    if ((window as any).google?.accounts?.id) {
+      initGIS();
+    } else {
+      const t = setInterval(() => {
+        if ((window as any).google?.accounts?.id) {
+          initGIS();
+          clearInterval(t);
+        }
+      }, 300);
+      return () => clearInterval(t);
+    }
+  }, [isLogin, orgName]);
 
   const handle2FAVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -698,24 +781,10 @@ export default function LoginScreen({ onLoginSuccess, checkUserApproval, onRegis
               <div className="flex-1 h-px bg-slate-800" />
             </div>
 
-            {/* Google Sign In / Sign Up button */}
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = '/api/auth/google';
-              }}
-              className="w-full flex items-center justify-center gap-2.5 py-2.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl font-semibold text-xs shadow-sm transition cursor-pointer"
-            >
-              {/* Google G logo */}
-              <svg width="16" height="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.16 2.85l6.09-6.09C34.46 2.99 29.5 1 24 1 14.74 1 6.9 6.62 3.4 14.6l7.16 5.56C12.29 13.72 17.67 9.5 24 9.5z"/>
-                <path fill="#4285F4" d="M46.52 24.5c0-1.64-.15-3.22-.42-4.74H24v8.97h12.64c-.55 2.97-2.2 5.49-4.68 7.18l7.16 5.56C43.43 38.1 46.52 31.82 46.52 24.5z"/>
-                <path fill="#FBBC05" d="M10.56 28.44A14.42 14.42 0 0 1 9.5 24c0-1.55.26-3.06.73-4.44l-7.16-5.56A23.94 23.94 0 0 0 .5 24c0 3.87.93 7.53 2.57 10.77l7.49-6.33z"/>
-                <path fill="#34A853" d="M24 47c6.48 0 11.92-2.15 15.9-5.85l-7.16-5.56c-2.18 1.46-4.97 2.32-8.74 2.32-6.33 0-11.7-4.22-13.63-9.9l-7.49 6.33C6.9 41.38 14.74 47 24 47z"/>
-                <path fill="none" d="M0 0h48v48H0z"/>
-              </svg>
-              <span>Continue with Google</span>
-            </button>
+            {/* Google Sign In / Sign Up GIS Container */}
+            <div className="w-full flex justify-center min-h-[44px]">
+              <div ref={googleBtnRef} className="w-full flex justify-center" />
+            </div>
           </form>
         )}
 
